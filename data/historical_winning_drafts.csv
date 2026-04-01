@@ -139,6 +139,26 @@ date,winner_rank,slot_index,player_name,team,position,real_score,slot_mult,card_
 2026-03-28,8,3,Luis Robert Jr.,CWS,OF,5.5,1.6,
 2026-03-28,8,4,Ramon Laureano,ATL,OF,2.0,1.4,
 2026-03-28,8,5,Chris Raleigh,SEA,C,0.6,1.2,
+2026-03-30,1,1,Lance McCullers Jr.,HOU,P,6.2,2.0,
+2026-03-30,1,2,Bryce Elder,ATL,P,5.1,1.8,
+2026-03-30,1,3,Ronald Acuña Jr.,ATL,OF,2.4,1.6,3.0
+2026-03-30,1,4,Yordan Alvarez,HOU,DH,3.1,1.4,2.2
+2026-03-30,1,5,Jose Altuve,HOU,2B,5.7,1.2,3.0
+2026-03-30,2,1,Edward Cabrera,CIN,P,6.2,2.0,
+2026-03-30,2,2,Mookie Betts,LAD,OF,1.3,1.8,1.7
+2026-03-30,2,3,Corbin Carroll,ARI,OF,5.9,1.6,3.0
+2026-03-30,2,4,Francisco Lindor,NYM,SS,1.2,1.4,3.0
+2026-03-30,2,5,Steven Kwan,CLE,OF,3.6,1.2,3.0
+2026-03-30,3,1,Vinnie Pasquantino,KC,1B,0.1,2.0,3.0
+2026-03-30,3,2,Vladimir Guerrero Jr.,TOR,1B,-0.4,1.8,3.0
+2026-03-30,3,3,Gunnar Henderson,BAL,SS,3.0,1.6,3.0
+2026-03-30,3,4,Corbin Carroll,ARI,OF,5.9,1.4,3.0
+2026-03-30,3,5,Jose Altuve,HOU,2B,5.7,1.2,3.0
+2026-03-30,4,1,Chase Burns,CIN,P,5.0,2.0,
+2026-03-30,4,2,Edward Cabrera,CIN,P,6.2,1.8,
+2026-03-30,4,3,Jack Leiter,TEX,P,4.0,1.6,
+2026-03-30,4,4,Riley Greene,DET,OF,1.8,1.4,3.0
+2026-03-30,4,5,Corbin Carroll,ARI,OF,5.9,1.2,3.0
 2026-03-31,1,1,Max Fried,NYY,P,6.8,2.0,
 2026-03-31,1,2,Shohei Ohtani,LAD,DH,5.8,1.8,3.0
 2026-03-31,1,3,Logan Webb,SF,P,3.7,1.6,3.0
