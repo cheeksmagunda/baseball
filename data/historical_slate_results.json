@@ -26,5 +26,14 @@
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-01T00:00:00Z"
+  },
+  {
+    "date": "2026-03-28",
+    "game_count": 1,
+    "games": [],
+    "notes": "Saturday regular season slate with top 8 winning lineups captured.",
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-01T00:00:00Z"
   }
 ]
