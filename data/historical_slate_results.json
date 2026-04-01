@@ -1,7 +1,30 @@
 [
   {
+    "date": "2026-03-25",
+    "game_count": 1,
+    "games": [
+      {
+        "home": "NYY",
+        "away": "SF",
+        "home_score": null,
+        "away_score": null,
+        "winner": null,
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null
+      }
+    ],
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-01T00:00:00Z"
+  },
+  {
     "date": "2026-03-26",
-    "game_count": 0,
-    "games": []
+    "game_count": 15,
+    "games": [],
+    "notes": "Large Opening Day slate (~15 games). Teams represented in results: BOS, DET, LAA, PHI, MIN, BAL, HOU, MIL, CLE, LAD, PIT, STL, CIN, SEA, TEX. Box scores not captured \u2014 add when available.",
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-01T00:00:00Z"
   }
 ]
