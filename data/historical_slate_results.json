@@ -53,5 +53,14 @@
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-01T00:00:00Z"
+  },
+  {
+    "date": "2026-03-29",
+    "game_count": null,
+    "games": [],
+    "notes": "Sunday slate. Teams represented in leaderboards: HOU, SF, ARI, CHC, LAA, SEA, STL, BOS, TB, NYM, CLE, MIL, PHI, TOR, ATL, OAK, KC, CWS, MIN. Top 4 winning lineups captured.",
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-01T00:00:00Z"
   }
 ]
