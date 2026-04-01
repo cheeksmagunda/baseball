@@ -35,5 +35,14 @@
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-01T00:00:00Z"
+  },
+  {
+    "date": "2026-03-31",
+    "game_count": null,
+    "games": [],
+    "notes": "Tuesday slate. Teams represented in leaderboards: LAD, PIT, SF, MIN, LAA, HOU, TEX, NYY, MIL, OAK, CLE, PHI, TOR, STL, NYM. Top 4 winning lineups captured. First day with widespread card_boost data.",
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-01T00:00:00Z"
   }
 ]

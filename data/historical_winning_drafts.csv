@@ -139,3 +139,23 @@ date,winner_rank,slot_index,player_name,team,position,real_score,slot_mult,card_
 2026-03-28,8,3,Luis Robert Jr.,CWS,OF,5.5,1.6,
 2026-03-28,8,4,Ramon Laureano,ATL,OF,2.0,1.4,
 2026-03-28,8,5,Chris Raleigh,SEA,C,0.6,1.2,
+2026-03-31,1,1,Max Fried,NYY,P,6.8,2.0,
+2026-03-31,1,2,Shohei Ohtani,LAD,DH,5.8,1.8,3.0
+2026-03-31,1,3,Logan Webb,SF,P,3.7,1.6,3.0
+2026-03-31,1,4,Tanner Bibee,CLE,P,2.7,1.4,3.0
+2026-03-31,1,5,Willy Adames,SF,SS,5.5,1.2,3.0
+2026-03-31,2,1,Shohei Ohtani,LAD,DH,5.8,2.0,3.0
+2026-03-31,2,2,Logan Webb,SF,P,3.7,1.8,3.0
+2026-03-31,2,3,Tanner Bibee,CLE,P,2.7,1.6,3.0
+2026-03-31,2,4,Willy Adames,SF,SS,5.5,1.4,3.0
+2026-03-31,2,5,Matt Chapman,SF,3B,2.3,1.2,3.0
+2026-03-31,3,1,Hunter Brown,HOU,P,6.2,2.0,
+2026-03-31,3,2,Shohei Ohtani,LAD,DH,5.8,1.8,3.0
+2026-03-31,3,3,Logan Webb,SF,P,3.7,1.6,3.0
+2026-03-31,3,4,Tanner Bibee,CLE,P,2.7,1.4,3.0
+2026-03-31,3,5,Willy Adames,SF,SS,5.5,1.2,3.0
+2026-03-31,4,1,Shohei Ohtani,LAD,DH,5.8,2.0,3.0
+2026-03-31,4,2,Max Fried,NYY,P,6.8,1.8,
+2026-03-31,4,3,Logan Webb,SF,P,3.7,1.6,3.0
+2026-03-31,4,4,Hunter Brown,HOU,P,6.2,1.4,
+2026-03-31,4,5,Willy Adames,SF,SS,5.5,1.2,3.0
