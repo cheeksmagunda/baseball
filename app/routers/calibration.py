@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.calibration import CalibrationResult
+from app.models.slate import Slate
 from app.schemas.calibration import CalibrationResultOut, WeightsOut, WeightsIn
 from app.core.weights import get_current_weights, save_weights, ScoringWeights
 from app.services.calibration import calibrate_slate
@@ -29,7 +30,6 @@ def calibration_history(db: Session = Depends(get_db)):
     )
     out = []
     for r in results:
-        from app.models.slate import Slate
         slate = db.query(Slate).get(r.slate_id)
         out.append(CalibrationResultOut(
             slate_date=slate.date if slate else date.min,

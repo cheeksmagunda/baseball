@@ -132,13 +132,14 @@ def _float_or_empty(val) -> str:
 
 
 def _compute_total_value(real_score: str, card_boost: str) -> str:
-    """total_value = real_score * (2 + card_boost). Returns '' if real_score missing."""
+    """total_value = real_score * (BASE_MULTIPLIER + card_boost). Returns '' if real_score missing."""
+    from app.core.utils import BASE_MULTIPLIER
     if real_score == "":
         return ""
     try:
         rs = float(real_score)
         cb = float(card_boost) if card_boost != "" else 0.0
-        return str(round(rs * (2 + cb), 2))
+        return str(round(rs * (BASE_MULTIPLIER + cb), 2))
     except ValueError:
         return ""
 

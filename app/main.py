@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import players, slates, scoring, draft, calibration, pipeline
+from app.routers import players, slates, scoring, draft, calibration, pipeline, popularity
 
 
 @asynccontextmanager
@@ -35,6 +35,7 @@ app.include_router(scoring.router, prefix="/api/score", tags=["scoring"])
 app.include_router(draft.router, prefix="/api/draft", tags=["draft"])
 app.include_router(calibration.router, prefix="/api/calibration", tags=["calibration"])
 app.include_router(pipeline.router, prefix="/api/pipeline", tags=["pipeline"])
+app.include_router(popularity.router, prefix="/api/popularity", tags=["popularity"])
 
 
 @app.get("/api/health")

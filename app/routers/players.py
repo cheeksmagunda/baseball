@@ -1,10 +1,9 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.player import Player, PlayerStats, PlayerGameLog, normalize_name
 from app.schemas.player import PlayerOut, PlayerDetailOut, PlayerStatsOut, PlayerGameLogOut
-from app.config import settings
 
 router = APIRouter()
 
@@ -33,7 +32,6 @@ def list_players(
 def get_player(player_id: int, db: Session = Depends(get_db)):
     player = db.query(Player).get(player_id)
     if not player:
-        from fastapi import HTTPException
         raise HTTPException(404, "Player not found")
 
     stats = (

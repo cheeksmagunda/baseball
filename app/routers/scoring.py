@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.utils import find_player_by_name, compute_expected_total_value, get_latest_player_score
 from app.models.player import Player
-from app.models.slate import Slate, SlatePlayer
+from app.models.slate import Slate
 from app.models.scoring import ScoreBreakdown
 from app.schemas.scoring import PlayerScoreOut, SlateRankingsOut, TraitBreakdown
 from app.services.scoring_engine import score_player

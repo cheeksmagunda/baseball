@@ -72,12 +72,59 @@ It's not a machine learning model nor a deterministic predictive engine — it's
 | 20-39 | 0.5 – 1.5 |
 | 0-19 | -0.5 – 0.5 |
 
+## Popularity Signal Aggregator
+
+The optimizer automatically fades over-hyped players and targets under-the-radar picks using real-time web signals:
+
+| Source | Weight | What It Measures |
+|---|---|---|
+| Social trending | 40% | Google Trends — is the casual public talking about this player? |
+| Sports news | 20% | ESPN/MLB.com RSS — is this player in headlines? |
+| DFS ownership | 20% | RotoGrinders/NumberFire — cross-platform fantasy ownership |
+| Search volume | 20% | Google autocomplete — casual search interest |
+
+**Classification:** FADE (25% EV penalty), TARGET (15% EV bonus), or NEUTRAL. The key insight: "trending" is not the same as "popular." A breakout rookie trending upward is a TARGET. A slumping star trending on ESPN is a FADE.
+
+### Sharp Signal (Underground)
+
+A fifth signal source used exclusively by the Moonshot lineup:
+
+| Source | What It Scrapes |
+|---|---|
+| r/fantasybaseball, r/baseball | Reddit JSON API — niche community buzz |
+| FanGraphs community blogs | RSS feed — deep-dive analyst chatter |
+| Prospects Live | RSS feed — prospect/breakout coverage |
+
+If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +25% EV boost in Moonshot only.
+
+## Dual-Lineup Optimizer
+
+The optimizer produces **two lineups** from the same ranked candidate pool:
+
+| Lineup | Strategy | Popularity | Edge |
+|---|---|---|---|
+| **Starting 5** | Best EV, safe | FADE=0.75, TARGET=1.15 | Most likely to win any slate |
+| **Moonshot** | Completely different 5 | FADE=0.60, TARGET=1.30 | Anti-crowd, sharp signal, HR power |
+
+**Moonshot EV formula:**
+```
+moonshot_ev = raw_ev × pop_adj × sharp_bonus(+25% max) × explosive_bonus(+10% max)
+```
+
+- Zero player overlap with Starting 5
+- Soft penalty (0.85x) for same-game exposure as Starting 5
+- Batters: power_profile trait as tiebreaker
+- Pitchers: k_rate trait as tiebreaker
+- Sharp underground signal boosts EV up to +20%
+
+Both lineups use the same scoring engine, same rearrangement inequality, same candidate pool. Moonshot just swings bigger.
+
 ## Strategy Insights
 
 - **Winning formula**: All 5 RS ≥ 1.0 with 2+ RS ≥ 3.0
-- **Anti-popularity edge**: Low-ownership players consistently outperform
+- **Anti-popularity edge**: Low-ownership players consistently outperform — popularity estimated dynamically via web signals, not historical draft counts
 - **Card boost leverage**: A +3.0x boosted player with RS 2.4 matches an unboosted ace with RS 6.0
-- **Draft optimizer**: Rearrangement inequality — highest expected value → highest slot multiplier
+- **Draft optimizer**: Rearrangement inequality — highest expected value → highest slot multiplier, with popularity adjustments
 
 ## API Endpoints
 
@@ -108,8 +155,15 @@ All endpoints are under `/api/`.
 ### Draft
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/draft/optimize` | Optimal 5-player lineup |
+| POST | `/api/draft/optimize` | Optimal Starting 5 lineup (popularity-aware) |
+| POST | `/api/draft/dual-optimize` | Both Starting 5 + Moonshot lineups (sharp-signal-aware) |
 | POST | `/api/draft/evaluate` | Evaluate a proposed lineup |
+
+### Popularity
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/popularity/player` | Check popularity signals for a player |
+| POST | `/api/popularity/slate/{date}` | Popularity analysis for entire slate |
 
 ### Calibration
 | Method | Path | Description |
@@ -158,7 +212,8 @@ app/
 ├── routers/                # API route handlers
 └── services/
     ├── scoring_engine.py   # THE HEART — trait-based scorer
-    ├── draft_optimizer.py  # Rearrangement inequality optimizer
+    ├── draft_optimizer.py  # Dual-lineup optimizer (Starting 5 + Moonshot)
+    ├── popularity.py       # Web-scraping popularity signal aggregator
     ├── data_collection.py  # MLB API data fetching
     ├── pipeline.py         # Fetch → Score → Rank orchestrator
     └── calibration.py      # Prediction vs actual feedback loop

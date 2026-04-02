@@ -79,16 +79,64 @@ All shared formulas and lookups live here. **Always use these instead of reimple
 - `get_recent_games(game_logs, n)` — N most recent games sorted by date
 - `scale_score(value, floor, ceiling, max_pts)` — Linear scaling helper
 
-## API Structure (6 routers under `/api/`)
+## Popularity Signal Aggregator (`app/services/popularity.py`)
+
+Web-scraping signal aggregator that estimates which players the crowd will over-draft. This is NOT rule-based — it's dynamic, fetching real-time external signals.
+
+**Signal sources (weighted):**
+- Social trending (40%): Google Trends autocomplete + daily trends
+- Sports news (20%): ESPN and MLB.com RSS feeds
+- DFS ownership (20%): RotoGrinders, NumberFire cross-platform ownership
+- Search volume (20%): Google autocomplete context terms
+
+**Classification logic:**
+- High attention + any performance level → **FADE** (crowd is already here)
+- High performance + low attention → **TARGET** (under the radar)
+- Low attention + mid performance → **TARGET** (value pick)
+- Otherwise → **NEUTRAL**
+
+**Optimizer integration:** FADE players get 25% EV penalty, TARGET players get 15% EV bonus. Constants in `draft_optimizer.py:POPULARITY_ADJUSTMENTS`. Boost math still dominates — a FADE with +3.0x boost still beats a TARGET with no boost.
+
+**Key distinction:** "Trending" ≠ "popular." A breakout rookie trending upward (TARGET) is different from a slumping star trending on ESPN (FADE). The aggregator distinguishes by cross-referencing attention volume against performance score.
+
+**Sharp signal (underground):** A 5th source scraped from Reddit (r/fantasybaseball, r/baseball), FanGraphs community blogs, and Prospects Live. Used exclusively by the Moonshot lineup. If niche smart accounts are on a player but mainstream isn't, that's a Moonshot BUY. `sharp_score` is 0-100, separate from the composite score.
+
+## Dual-Lineup Optimizer (`app/services/draft_optimizer.py`)
+
+The optimizer produces **two lineups** from the same candidate pool — not two pipelines.
+
+**Starting 5** — Best EV, standard anti-popularity adjustments (FADE=0.75, TARGET=1.15).
+
+**Moonshot** — Completely different 5 players. Heavier anti-crowd lean:
+- `MOONSHOT_POPULARITY_ADJUSTMENTS`: FADE=0.60, NEUTRAL=0.95, TARGET=1.30
+- Sharp signal bonus: up to +25% EV from underground buzz
+- Explosive bonus: up to +10% EV from power_profile (batters) or k_rate (pitchers)
+- Game diversification: 0.85x soft penalty for same-team overlap with Starting 5
+- Zero player overlap with Starting 5
+
+**Moonshot EV formula:**
+```
+moonshot_ev = raw_ev × pop_adj × sharp_bonus × explosive_bonus × game_diversification
+```
+
+**Key functions:**
+- `optimize_lineup()` — Starting 5 (or floor strategy)
+- `optimize_moonshot()` — Moonshot with exclusions
+- `optimize_dual()` — One call, two lineups
+- `_compute_moonshot_ev()` — Moonshot-specific EV with all bonuses
+- `evaluate_lineup()` — Score a user-proposed slot order
+
+## API Structure (7 routers under `/api/`)
 
 | Router | Prefix | Purpose |
 |---|---|---|
 | players | `/api/players` | Player CRUD + search |
 | slates | `/api/slates` | Slate management + draft cards + results |
 | scoring | `/api/score` | On-demand scoring + rankings |
-| draft | `/api/draft` | Lineup optimization + evaluation |
+| draft | `/api/draft` | Dual-lineup optimization (Starting 5 + Moonshot) + evaluation |
 | calibration | `/api/calibration` | Feedback loop + weight tuning |
 | pipeline | `/api/pipeline` | Orchestrated fetch → score → rank |
+| popularity | `/api/popularity` | Player/slate popularity analysis |
 
 ## Core Rules & Business Logic
 
@@ -101,7 +149,7 @@ All shared formulas and lookups live here. **Always use these instead of reimple
 ## Strategy (Key Insights from Historical Analysis)
 
 - **Winning formula**: All 5 RS ≥ 1.0 with 2+ RS ≥ 3.0
-- **Anti-popularity edge**: Low-ownership players consistently outperform
+- **Anti-popularity edge**: Low-ownership players consistently outperform. Popularity is estimated via web signals (social, news, DFS ownership, search), NOT historical draft counts
 - **Card boost leverage**: +3.0x boosted player with RS 2.4 = unboosted ace with RS 6.0
 - **Pitcher profile**: Aces with high K rates in favorable matchups
 - **Batter profile**: Power hitters batting 2-4 in hitter-friendly parks
