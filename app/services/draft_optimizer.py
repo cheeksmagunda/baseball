@@ -9,6 +9,7 @@ to maximize expected total lineup value.
 from dataclasses import dataclass
 
 from app.core.constants import SLOT_MULTIPLIERS
+from app.core.utils import compute_total_value
 from app.services.scoring_engine import PlayerScoreResult
 
 
@@ -37,12 +38,12 @@ class OptimizedLineup:
 
 def compute_expected_value(score_result: PlayerScoreResult, card_boost: float) -> float:
     """Compute expected total_value for a card: estimated_rs * (2 + card_boost)."""
-    return score_result.estimated_rs_mid * (2.0 + card_boost)
+    return compute_total_value(score_result.estimated_rs_mid, card_boost)
 
 
 def compute_floor_value(score_result: PlayerScoreResult, card_boost: float) -> float:
     """Compute floor total_value using rs_low: estimated_rs_low * (2 + card_boost)."""
-    return score_result.estimated_rs_low * (2.0 + card_boost)
+    return compute_total_value(score_result.estimated_rs_low, card_boost)
 
 
 def optimize_lineup(

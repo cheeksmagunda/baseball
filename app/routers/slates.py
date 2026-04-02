@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.utils import compute_total_value
 from app.models.player import Player, normalize_name
 from app.models.slate import Slate, SlatePlayer
 from app.schemas.slate import SlateOut, SlatePlayerIn, SlatePlayerOut, SlateResultsIn
@@ -146,7 +147,7 @@ def update_slate_results(
         )
         if sp:
             sp.real_score = rs
-            sp.total_value = rs * (2 + sp.card_boost)
+            sp.total_value = compute_total_value(rs, sp.card_boost)
             updated += 1
 
     slate.status = "completed"

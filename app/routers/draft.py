@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.player import Player, normalize_name
+from app.core.utils import find_player_by_name
 from app.schemas.draft import (
     DraftCard,
     DraftSlotOut,
@@ -25,8 +25,7 @@ def _resolve_cards(cards: list[DraftCard], db: Session) -> list[CardWithScore]:
     """Look up each card's player and score them."""
     resolved = []
     for card in cards:
-        norm = normalize_name(card.player_name)
-        player = db.query(Player).filter(Player.name_normalized.contains(norm)).first()
+        player = find_player_by_name(db, card.player_name)
         if not player:
             continue
 

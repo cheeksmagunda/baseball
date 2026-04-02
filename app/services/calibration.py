@@ -9,8 +9,8 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.models.slate import Slate, SlatePlayer
-from app.models.scoring import PlayerScore
 from app.models.calibration import CalibrationResult
+from app.core.utils import get_latest_player_score
 from app.core.weights import get_current_weights, save_weights
 
 
@@ -32,12 +32,7 @@ def calibrate_slate(db: Session, game_date: date) -> dict:
             continue
 
         # Get the most recent prediction for this slate player
-        ps = (
-            db.query(PlayerScore)
-            .filter_by(slate_player_id=sp.id)
-            .order_by(PlayerScore.created_at.desc())
-            .first()
-        )
+        ps = get_latest_player_score(db, sp.id)
         if not ps:
             continue
 

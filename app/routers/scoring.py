@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.player import Player, normalize_name
+from app.core.utils import find_player_by_name, compute_expected_total_value, get_latest_player_score
+from app.models.player import Player
 from app.models.slate import Slate, SlatePlayer
-from app.models.scoring import PlayerScore, ScoreBreakdown
+from app.models.scoring import ScoreBreakdown
 from app.schemas.scoring import PlayerScoreOut, SlateRankingsOut, TraitBreakdown
 from app.services.scoring_engine import score_player
 from app.services.pipeline import run_score_slate
@@ -22,17 +23,13 @@ def score_single_player(
     db: Session = Depends(get_db),
 ):
     """Score a single player on demand."""
-    norm = normalize_name(player_name)
-    q = db.query(Player).filter(Player.name_normalized.contains(norm))
-    if team:
-        q = q.filter(Player.team == team.upper())
-    player = q.first()
+    player = find_player_by_name(db, player_name, team)
 
     if not player:
         raise HTTPException(404, f"Player not found: {player_name}")
 
     result = score_player(db, player)
-    ev = result.estimated_rs_mid * (2 + card_boost) if card_boost else None
+    ev = compute_expected_total_value(result.estimated_rs_mid, card_boost) if card_boost else None
 
     return PlayerScoreOut(
         player_name=result.player_name,
@@ -75,7 +72,7 @@ def score_slate(slate_date: date, db: Session = Depends(get_db)):
     rankings = []
     for r in results:
         boost = boost_map.get(r.player_name, 0.0)
-        ev = r.estimated_rs_mid * (2 + boost)
+        ev = compute_expected_total_value(r.estimated_rs_mid, boost)
         rankings.append(PlayerScoreOut(
             player_name=r.player_name,
             team=r.team,
@@ -117,17 +114,12 @@ def get_cached_rankings(slate_date: date, db: Session = Depends(get_db)):
         if not player:
             continue
 
-        ps = (
-            db.query(PlayerScore)
-            .filter_by(slate_player_id=sp.id)
-            .order_by(PlayerScore.created_at.desc())
-            .first()
-        )
+        ps = get_latest_player_score(db, sp.id)
         if not ps:
             continue
 
         breakdowns = db.query(ScoreBreakdown).filter_by(player_score_id=ps.id).all()
-        ev = ps.estimated_rs_mid * (2 + sp.card_boost)
+        ev = compute_expected_total_value(ps.estimated_rs_mid, sp.card_boost)
 
         rankings.append(PlayerScoreOut(
             player_name=player.name,

@@ -11,6 +11,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.core.constants import PARK_HR_FACTORS, PITCHER_POSITIONS, SCORE_TO_RS_RANGES
+from app.core.utils import get_recent_games, scale_score
 from app.core.weights import ScoringWeights, get_current_weights
 from app.models.player import Player, PlayerGameLog, PlayerStats
 
@@ -121,7 +122,7 @@ def score_pitcher_recent_form(
     if not game_logs:
         return TraitResult("recent_form", max_pts * 0.4, max_pts, "no recent games")
 
-    recent = sorted(game_logs, key=lambda g: g.game_date, reverse=True)[:3]
+    recent = get_recent_games(game_logs, 3)
     total_score = 0
     for g in recent:
         # Quality start proxy: 5+ IP and <=3 ER
@@ -246,7 +247,7 @@ def score_batter_recent_form(
     if not game_logs:
         return TraitResult("recent_form", max_pts * 0.4, max_pts, "no recent games")
 
-    recent = sorted(game_logs, key=lambda g: g.game_date, reverse=True)[:7]
+    recent = get_recent_games(game_logs, 7)
     total_h = sum(g.hits for g in recent)
     total_ab = sum(g.ab for g in recent) or 1
     total_hr = sum(g.hr for g in recent)
@@ -283,7 +284,7 @@ def score_hot_streak(game_logs: list[PlayerGameLog], max_pts: float) -> TraitRes
     if not game_logs:
         return TraitResult("hot_streak", 0, max_pts, "no recent games")
 
-    recent = sorted(game_logs, key=lambda g: g.game_date, reverse=True)[:3]
+    recent = get_recent_games(game_logs, 3)
     multi_hit = sum(1 for g in recent if g.hits >= 2)
 
     if multi_hit >= 3:
