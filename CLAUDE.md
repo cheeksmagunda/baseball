@@ -11,7 +11,7 @@ total_value = real_score × (2 + card_boost)
 ```
 
 - `BASE_MULTIPLIER = 2.0` is defined in `app/core/utils.py`
-- `compute_total_value()` and `compute_expected_total_value()` are the ONLY places this formula should be computed
+- `compute_total_value()` is the ONLY place this formula should be computed
 - Slot multipliers are separate and defined in `app/core/constants.py`
 - Lineup score = Σ real_score × (slot_mult + card_boost)
 
@@ -61,19 +61,11 @@ Rule-based scoring engine (NOT ML) with a feedback loop. The goal is to **win dr
 
 Weights are configurable via the calibration API (`GET/PUT /api/calibration/weights`).
 
-### Score-to-RS Mapping
-- 80-100 → RS 4.0-6.0
-- 60-79 → RS 2.5-4.0
-- 40-59 → RS 1.5-2.5
-- 20-39 → RS 0.5-1.5
-- 0-19 → RS -0.5-0.5
-
 ## Shared Utilities (`app/core/utils.py`)
 
 All shared formulas and lookups live here. **Always use these instead of reimplementing:**
 
 - `compute_total_value(real_score, card_boost)` — The core formula
-- `compute_expected_total_value(estimated_rs, card_boost)` — Rounded version for display
 - `find_player_by_name(db, name, team)` — Accent-insensitive player lookup
 - `get_latest_player_score(db, slate_player_id)` — Most recent PlayerScore
 - `get_recent_games(game_logs, n)` — N most recent games sorted by date

@@ -37,27 +37,23 @@ def calibrate_slate(db: Session, game_date: date) -> dict:
             continue
 
         pairs.append({
-            "predicted_rs": ps.estimated_rs_mid,
-            "actual_rs": sp.real_score,
             "player_score": ps.total_score,
+            "actual_rs": sp.real_score,
             "is_hv": sp.is_highest_value,
         })
 
     if not pairs:
         return {"error": "No predictions to compare"}
 
-    predicted = np.array([p["predicted_rs"] for p in pairs])
+    scores = np.array([p["player_score"] for p in pairs])
     actual = np.array([p["actual_rs"] for p in pairs])
 
-    # Mean Absolute Error
-    mae = float(np.mean(np.abs(predicted - actual)))
-
-    # Spearman rank correlation
+    # Spearman rank correlation (score ranking vs actual RS ranking)
     correlation = None
     if len(pairs) > 2:
         from scipy.stats import spearmanr
         try:
-            corr, _ = spearmanr(predicted, actual)
+            corr, _ = spearmanr(scores, actual)
             correlation = float(corr) if not np.isnan(corr) else None
         except Exception:
             # scipy not available — compute manually
@@ -75,7 +71,7 @@ def calibrate_slate(db: Session, game_date: date) -> dict:
     # Store result
     result = CalibrationResult(
         slate_id=slate.id,
-        mean_absolute_error=round(mae, 3),
+        mean_absolute_error=0.0,  # deprecated — score and RS are different scales
         correlation=round(correlation, 3) if correlation is not None else None,
         top_quintile_hit_rate=round(top_quintile_hit_rate, 3) if top_quintile_hit_rate else None,
     )
@@ -88,7 +84,6 @@ def calibrate_slate(db: Session, game_date: date) -> dict:
     return {
         "date": game_date.isoformat(),
         "pairs_evaluated": len(pairs),
-        "mae": result.mean_absolute_error,
         "correlation": result.correlation,
         "top_quintile_hit_rate": result.top_quintile_hit_rate,
     }

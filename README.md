@@ -63,14 +63,7 @@ It's not a machine learning model nor a deterministic predictive engine — it's
 | hot_streak | 10 | Multi-hit games in last 3 |
 | speed_component | 5 | Stolen base pace |
 
-### Score → RS Mapping
-| Score | Estimated RS Range |
-|---|---|
-| 80-100 | 4.0 – 6.0 |
-| 60-79 | 2.5 – 4.0 |
-| 40-59 | 1.5 – 2.5 |
-| 20-39 | 0.5 – 1.5 |
-| 0-19 | -0.5 – 0.5 |
+The scoring engine outputs a **0-100 ranking signal**, not an RS prediction. We don't pretend to know Real Score — we rank players by pre-game indicators and let the optimizer do the rest.
 
 ## Popularity Signal Aggregator
 

@@ -24,7 +24,7 @@ def score_data(game_date: date, db: Session = Depends(get_db)):
         date=game_date.isoformat(),
         scored=len(results),
         top_5=[
-            PlayerSummary(name=r.player_name, score=r.total_score, est_rs=r.estimated_rs_mid)
+            PlayerSummary(name=r.player_name, score=r.total_score)
             for r in results[:5]
         ],
     )

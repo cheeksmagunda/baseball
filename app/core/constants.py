@@ -3,15 +3,6 @@
 # Draft slot multipliers (slot 1 = highest)
 SLOT_MULTIPLIERS = {1: 2.0, 2: 1.8, 3: 1.6, 4: 1.4, 5: 1.2}
 
-# Score-to-RS range mapping: (score_low, score_high, rs_low, rs_high)
-SCORE_TO_RS_RANGES = [
-    (80, 100, 4.0, 6.0),
-    (60, 79, 2.5, 4.0),
-    (40, 59, 1.5, 2.5),
-    (20, 39, 0.5, 1.5),
-    (0, 19, -0.5, 0.5),
-]
-
 # Ballpark HR factors (relative to league average = 1.0)
 # Values > 1.0 favor hitters; < 1.0 favor pitchers
 PARK_HR_FACTORS = {

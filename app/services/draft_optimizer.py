@@ -49,7 +49,7 @@ class CardWithScore:
     player_name: str
     card_boost: float
     score_result: PlayerScoreResult
-    expected_value: float = 0.0  # estimated_rs * (2 + card_boost)
+    expected_value: float = 0.0  # total_score * (2 + card_boost)
     popularity: PopularityClass = PopularityClass.NEUTRAL
     sharp_score: float = 0.0     # underground signal (0-100), used by Moonshot
 
@@ -80,13 +80,8 @@ class DualLineup:
 # ---------------------------------------------------------------------------
 
 def compute_expected_value(score_result: PlayerScoreResult, card_boost: float) -> float:
-    """Compute expected total_value for a card: estimated_rs * (2 + card_boost)."""
-    return compute_total_value(score_result.estimated_rs_mid, card_boost)
-
-
-def compute_floor_value(score_result: PlayerScoreResult, card_boost: float) -> float:
-    """Compute floor total_value using rs_low: estimated_rs_low * (2 + card_boost)."""
-    return compute_total_value(score_result.estimated_rs_low, card_boost)
+    """Compute ranking signal: total_score * (2 + card_boost). Not an RS prediction."""
+    return compute_total_value(score_result.total_score, card_boost)
 
 
 def _get_trait_score(score_result: PlayerScoreResult, trait_name: str) -> float:
@@ -141,19 +136,14 @@ def optimize_lineup(
     """
     Optimal slot assignment via the rearrangement inequality.
 
-    Strategies:
-    - "maximize_ev": uses estimated_rs_mid (expected case)
-    - "maximize_floor": uses estimated_rs_low (worst case floor)
+    Ranks on total_score * (2 + card_boost) with popularity adjustments.
+    This is a filter/ranking signal, not an RS prediction.
     """
     if not cards:
         return OptimizedLineup(slots=[], total_expected_value=0.0, strategy=strategy)
 
     for card in cards:
-        if strategy == "maximize_floor":
-            raw_ev = compute_floor_value(card.score_result, card.card_boost)
-        else:
-            raw_ev = compute_expected_value(card.score_result, card.card_boost)
-
+        raw_ev = compute_expected_value(card.score_result, card.card_boost)
         pop_adj = POPULARITY_ADJUSTMENTS.get(card.popularity, 1.0)
         card.expected_value = raw_ev * pop_adj
 

@@ -20,11 +20,6 @@ def compute_total_value(real_score: float, card_boost: float) -> float:
     return real_score * (BASE_MULTIPLIER + card_boost)
 
 
-def compute_expected_total_value(estimated_rs: float, card_boost: float) -> float:
-    """Compute expected total value from estimated RS and card boost."""
-    return round(estimated_rs * (BASE_MULTIPLIER + card_boost), 2)
-
-
 # ---------------------------------------------------------------------------
 # Player lookup
 # ---------------------------------------------------------------------------

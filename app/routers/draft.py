@@ -36,7 +36,6 @@ def _lineup_to_slots(result: OptimizedLineup) -> list[DraftSlotOut]:
             slot_mult=s.slot_mult,
             player_name=s.card.player_name,
             card_boost=s.card.card_boost,
-            estimated_rs=s.card.score_result.estimated_rs_mid,
             expected_slot_value=s.expected_slot_value,
             player_score=s.card.score_result.total_score,
             popularity=s.card.popularity.value,
