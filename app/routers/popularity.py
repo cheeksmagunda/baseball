@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.utils import get_latest_player_score
 from app.models.player import Player
 from app.models.slate import Slate, SlatePlayer
-from app.models.scoring import PlayerScore
 from app.schemas.popularity import (
     PopularityPlayerIn,
     PopularityProfileOut,
@@ -65,12 +65,7 @@ async def check_slate_popularity(slate_date: date, db: Session = Depends(get_db)
             continue
 
         # Get performance score if available
-        ps = (
-            db.query(PlayerScore)
-            .filter_by(slate_player_id=sp.id)
-            .order_by(PlayerScore.created_at.desc())
-            .first()
-        )
+        ps = get_latest_player_score(db, sp.id)
         player_score = ps.total_score if ps else 50.0
 
         players_input.append({
