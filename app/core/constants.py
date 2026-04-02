@@ -54,3 +54,6 @@ ALL_POSITIONS = PITCHER_POSITIONS | BATTER_POSITIONS
 
 # Teams
 MLB_TEAMS = sorted(PARK_HR_FACTORS.keys())
+
+# Draft evaluation: warn if user's lineup is this % worse than optimal
+SUBOPTIMAL_THRESHOLD = 1.05  # 5% EV variance

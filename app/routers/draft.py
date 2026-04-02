@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.constants import SUBOPTIMAL_THRESHOLD
 from app.core.utils import find_player_by_name
 from app.schemas.draft import (
     DraftCard,
@@ -101,7 +102,7 @@ async def evaluate_draft(req: EvaluateRequest, db: Session = Depends(get_db)):
     warnings = []
     # Check if this is suboptimal vs optimizer
     optimal = optimize_lineup(cards)
-    if optimal.total_expected_value > result.total_expected_value * 1.05:
+    if optimal.total_expected_value > result.total_expected_value * SUBOPTIMAL_THRESHOLD:
         warnings.append(
             f"Suboptimal slot assignment. Optimal would score "
             f"{optimal.total_expected_value:.1f} vs your {result.total_expected_value:.1f}"

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.utils import get_latest_player_score
 from app.models.player import Player
-from app.models.slate import Slate, SlatePlayer
+from app.models.slate import Slate
 from app.schemas.popularity import (
     PopularityPlayerIn,
     PopularityProfileOut,
