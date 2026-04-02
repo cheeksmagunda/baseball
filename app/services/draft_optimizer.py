@@ -15,7 +15,12 @@ rearrangement inequality for slot assignment.
 
 from dataclasses import dataclass, field
 
-from app.core.constants import SLOT_MULTIPLIERS, PITCHER_POSITIONS
+from app.core.constants import (
+    SLOT_MULTIPLIERS,
+    PITCHER_POSITIONS,
+    MIN_SCORE_THRESHOLD,
+    MIN_SCORE_PENALTY,
+)
 from app.core.utils import compute_total_value
 from app.services.scoring_engine import PlayerScoreResult
 from app.services.popularity import PopularityClass
@@ -81,7 +86,11 @@ class DualLineup:
 
 def compute_expected_value(score_result: PlayerScoreResult, card_boost: float) -> float:
     """Compute ranking signal: total_score * (2 + card_boost). Not an RS prediction."""
-    return compute_total_value(score_result.total_score, card_boost)
+    ev = compute_total_value(score_result.total_score, card_boost)
+    # Low-score penalty: a bad player with a great boost is often a trap
+    if score_result.total_score < MIN_SCORE_THRESHOLD:
+        ev *= MIN_SCORE_PENALTY
+    return ev
 
 
 def _get_trait_score(score_result: PlayerScoreResult, trait_name: str) -> float:
