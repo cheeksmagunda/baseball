@@ -158,11 +158,9 @@ All endpoints are under `/api/`.
 | POST | `/api/popularity/player` | Check popularity signals for a player |
 | POST | `/api/popularity/slate/{date}` | Popularity analysis for entire slate |
 
-### Calibration
+### Weights
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/calibration/{date}` | Calibrate predictions vs actuals |
-| GET | `/api/calibration/history` | View calibration history |
 | GET | `/api/calibration/weights` | Get current scoring weights |
 | PUT | `/api/calibration/weights` | Update scoring weights |
 
