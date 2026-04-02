@@ -26,7 +26,7 @@ router = APIRouter()
 async def check_player_popularity(req: PopularityPlayerIn):
     """Check popularity signals for a single player."""
     profile = await get_popularity_profile(
-        req.player_name, req.team, req.player_score
+        req.player_name, req.team, req.player_score, include_sharp=True
     )
     return PopularityProfileOut(
         player_name=profile.player_name,
@@ -35,6 +35,7 @@ async def check_player_popularity(req: PopularityPlayerIn):
         news_score=profile.news_score,
         dfs_ownership_score=profile.dfs_ownership_score,
         search_score=profile.search_score,
+        sharp_score=profile.sharp_score,
         composite_score=profile.composite_score,
         classification=profile.classification.value,
         reason=profile.reason,
@@ -87,6 +88,7 @@ async def check_slate_popularity(slate_date: date, db: Session = Depends(get_db)
             news_score=p.news_score,
             dfs_ownership_score=p.dfs_ownership_score,
             search_score=p.search_score,
+            sharp_score=p.sharp_score,
             composite_score=p.composite_score,
             classification=p.classification.value,
             reason=p.reason,

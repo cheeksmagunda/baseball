@@ -14,6 +14,7 @@ class PopularityProfileOut(BaseModel):
     news_score: float
     dfs_ownership_score: float
     search_score: float
+    sharp_score: float = 0.0
     composite_score: float
     classification: str  # FADE, TARGET, NEUTRAL
     reason: str

@@ -85,6 +85,40 @@ The optimizer automatically fades over-hyped players and targets under-the-radar
 
 **Classification:** FADE (25% EV penalty), TARGET (15% EV bonus), or NEUTRAL. The key insight: "trending" is not the same as "popular." A breakout rookie trending upward is a TARGET. A slumping star trending on ESPN is a FADE.
 
+### Sharp Signal (Underground)
+
+A fifth signal source used exclusively by the Moonshot lineup:
+
+| Source | What It Scrapes |
+|---|---|
+| r/fantasybaseball, r/baseball | Reddit JSON API — niche community buzz |
+| FanGraphs community blogs | RSS feed — deep-dive analyst chatter |
+| Prospects Live | RSS feed — prospect/breakout coverage |
+
+If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +20% EV boost in Moonshot only.
+
+## Dual-Lineup Optimizer
+
+The optimizer produces **two lineups** from the same ranked candidate pool:
+
+| Lineup | Strategy | Popularity | Edge |
+|---|---|---|---|
+| **Starting 5** | Best EV, safe | FADE=0.75, TARGET=1.15 | Most likely to win any slate |
+| **Moonshot** | Completely different 5 | FADE=0.60, TARGET=1.30 | Anti-crowd, sharp signal, HR power |
+
+**Moonshot EV formula:**
+```
+moonshot_ev = raw_ev × pop_adj × sharp_bonus(+20% max) × explosive_bonus(+10% max)
+```
+
+- Zero player overlap with Starting 5
+- Soft penalty (0.85x) for same-game exposure as Starting 5
+- Batters: power_profile trait as tiebreaker
+- Pitchers: k_rate trait as tiebreaker
+- Sharp underground signal boosts EV up to +20%
+
+Both lineups use the same scoring engine, same rearrangement inequality, same candidate pool. Moonshot just swings bigger.
+
 ## Strategy Insights
 
 - **Winning formula**: All 5 RS ≥ 1.0 with 2+ RS ≥ 3.0
@@ -121,7 +155,8 @@ All endpoints are under `/api/`.
 ### Draft
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/draft/optimize` | Optimal 5-player lineup (popularity-aware) |
+| POST | `/api/draft/optimize` | Optimal Starting 5 lineup (popularity-aware) |
+| POST | `/api/draft/dual-optimize` | Both Starting 5 + Moonshot lineups (sharp-signal-aware) |
 | POST | `/api/draft/evaluate` | Evaluate a proposed lineup |
 
 ### Popularity
@@ -177,7 +212,8 @@ app/
 ├── routers/                # API route handlers
 └── services/
     ├── scoring_engine.py   # THE HEART — trait-based scorer
-    ├── draft_optimizer.py  # Rearrangement inequality optimizer
+    ├── draft_optimizer.py  # Dual-lineup optimizer (Starting 5 + Moonshot)
+    ├── popularity.py       # Web-scraping popularity signal aggregator
     ├── data_collection.py  # MLB API data fetching
     ├── pipeline.py         # Fetch → Score → Rank orchestrator
     └── calibration.py      # Prediction vs actual feedback loop

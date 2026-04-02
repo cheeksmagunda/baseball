@@ -99,6 +99,33 @@ Web-scraping signal aggregator that estimates which players the crowd will over-
 
 **Key distinction:** "Trending" ≠ "popular." A breakout rookie trending upward (TARGET) is different from a slumping star trending on ESPN (FADE). The aggregator distinguishes by cross-referencing attention volume against performance score.
 
+**Sharp signal (underground):** A 5th source scraped from Reddit (r/fantasybaseball, r/baseball), FanGraphs community blogs, and Prospects Live. Used exclusively by the Moonshot lineup. If niche smart accounts are on a player but mainstream isn't, that's a Moonshot BUY. `sharp_score` is 0-100, separate from the composite score.
+
+## Dual-Lineup Optimizer (`app/services/draft_optimizer.py`)
+
+The optimizer produces **two lineups** from the same candidate pool — not two pipelines.
+
+**Starting 5** — Best EV, standard anti-popularity adjustments (FADE=0.75, TARGET=1.15).
+
+**Moonshot** — Completely different 5 players. Heavier anti-crowd lean:
+- `MOONSHOT_POPULARITY_ADJUSTMENTS`: FADE=0.60, NEUTRAL=0.95, TARGET=1.30
+- Sharp signal bonus: up to +20% EV from underground buzz
+- Explosive bonus: up to +10% EV from power_profile (batters) or k_rate (pitchers)
+- Game diversification: 0.85x soft penalty for same-team overlap with Starting 5
+- Zero player overlap with Starting 5
+
+**Moonshot EV formula:**
+```
+moonshot_ev = raw_ev × pop_adj × sharp_bonus × explosive_bonus × game_diversification
+```
+
+**Key functions:**
+- `optimize_lineup()` — Starting 5 (or floor strategy)
+- `optimize_moonshot()` — Moonshot with exclusions
+- `optimize_dual()` — One call, two lineups
+- `_compute_moonshot_ev()` — Moonshot-specific EV with all bonuses
+- `evaluate_lineup()` — Score a user-proposed slot order
+
 ## API Structure (7 routers under `/api/`)
 
 | Router | Prefix | Purpose |
@@ -106,7 +133,7 @@ Web-scraping signal aggregator that estimates which players the crowd will over-
 | players | `/api/players` | Player CRUD + search |
 | slates | `/api/slates` | Slate management + draft cards + results |
 | scoring | `/api/score` | On-demand scoring + rankings |
-| draft | `/api/draft` | Lineup optimization + evaluation (popularity-aware) |
+| draft | `/api/draft` | Dual-lineup optimization (Starting 5 + Moonshot) + evaluation |
 | calibration | `/api/calibration` | Feedback loop + weight tuning |
 | pipeline | `/api/pipeline` | Orchestrated fetch → score → rank |
 | popularity | `/api/popularity` | Player/slate popularity analysis |
