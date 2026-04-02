@@ -109,7 +109,7 @@ The optimizer produces **two lineups** from the same candidate pool — not two 
 
 **Moonshot** — Completely different 5 players. Heavier anti-crowd lean:
 - `MOONSHOT_POPULARITY_ADJUSTMENTS`: FADE=0.60, NEUTRAL=0.95, TARGET=1.30
-- Sharp signal bonus: up to +20% EV from underground buzz
+- Sharp signal bonus: up to +25% EV from underground buzz
 - Explosive bonus: up to +10% EV from power_profile (batters) or k_rate (pitchers)
 - Game diversification: 0.85x soft penalty for same-team overlap with Starting 5
 - Zero player overlap with Starting 5

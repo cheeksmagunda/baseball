@@ -176,8 +176,8 @@ def _compute_moonshot_ev(card: CardWithScore) -> float:
     # 1. Popularity adjustment (stronger than Starting 5)
     pop_adj = MOONSHOT_POPULARITY_ADJUSTMENTS.get(card.popularity, 0.95)
 
-    # 2. Sharp signal bonus: 0-100 score → 0-20% EV boost
-    sharp_bonus = 1.0 + (card.sharp_score / 100.0) * 0.20
+    # 2. Sharp signal bonus: 0-100 score → 0-25% EV boost
+    sharp_bonus = 1.0 + (card.sharp_score / 100.0) * 0.25
 
     # 3. HR power / K-rate tiebreaker: reward explosive potential
     #    Batters: use power_profile trait (0-25 score → 0-10% boost)

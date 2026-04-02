@@ -95,7 +95,7 @@ A fifth signal source used exclusively by the Moonshot lineup:
 | FanGraphs community blogs | RSS feed — deep-dive analyst chatter |
 | Prospects Live | RSS feed — prospect/breakout coverage |
 
-If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +20% EV boost in Moonshot only.
+If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +25% EV boost in Moonshot only.
 
 ## Dual-Lineup Optimizer
 
@@ -108,7 +108,7 @@ The optimizer produces **two lineups** from the same ranked candidate pool:
 
 **Moonshot EV formula:**
 ```
-moonshot_ev = raw_ev × pop_adj × sharp_bonus(+20% max) × explosive_bonus(+10% max)
+moonshot_ev = raw_ev × pop_adj × sharp_bonus(+25% max) × explosive_bonus(+10% max)
 ```
 
 - Zero player overlap with Starting 5
