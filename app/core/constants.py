@@ -48,3 +48,9 @@ MLB_TEAMS = sorted(PARK_HR_FACTORS.keys())
 
 # Draft evaluation: warn if user's lineup is this % worse than optimal
 SUBOPTIMAL_THRESHOLD = 1.05  # 5% EV variance
+
+# Minimum score threshold: players below this get an EV penalty
+# Data shows ~65% of winning lineups have all players RS >= 1.0
+# A low-scoring player with a huge boost is often a trap
+MIN_SCORE_THRESHOLD = 15  # out of 100
+MIN_SCORE_PENALTY = 0.50  # 50% EV haircut for below-threshold players

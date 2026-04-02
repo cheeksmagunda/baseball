@@ -110,6 +110,8 @@ The optimizer produces **two lineups** from the same candidate pool — not two 
 moonshot_ev = raw_ev × pop_adj × sharp_bonus × explosive_bonus × game_diversification
 ```
 
+**Low-score floor:** Players scoring below `MIN_SCORE_THRESHOLD` (15/100) get a 50% EV haircut regardless of boost. Prevents the "huge boost on a terrible player" trap (e.g. Shane Smith RS -3.5 with +3.0x). Constants in `app/core/constants.py`.
+
 **Key functions:**
 - `optimize_lineup()` — Starting 5 (or floor strategy)
 - `optimize_moonshot()` — Moonshot with exclusions

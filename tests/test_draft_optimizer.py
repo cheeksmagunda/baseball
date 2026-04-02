@@ -168,6 +168,30 @@ def test_fade_with_huge_boost_can_still_win():
     assert slot1.card.player_name == "Ohtani"
 
 
+def test_low_score_penalty_prevents_boost_trap():
+    """A terrible player with a huge boost should lose to a decent unboosted player.
+    Shane Smith scenario: score 10/100 with +3.0x boost looks great on paper
+    but the penalty drops EV below a moderately scored player."""
+    trap = _make_card("Trap", boost=3.0, score=10.0)     # raw EV=50, penalized→25
+    decent = _make_card("Decent", boost=0.5, score=16.0)  # EV=16*(2.5)=40, no penalty
+
+    result = optimize_lineup([trap, decent])
+
+    slot1 = next(s for s in result.slots if s.slot_index == 1)
+    # Without penalty, Trap (50) beats Decent (40). With penalty, Trap (25) loses.
+    assert slot1.card.player_name == "Decent"
+
+
+def test_above_threshold_no_penalty():
+    """A player just above the threshold should NOT get penalized."""
+    above = _make_card("Above", boost=0.0, score=20.0)
+    below = _make_card("Below", boost=0.0, score=10.0)
+
+    result = optimize_lineup([above, below])
+    slot1 = next(s for s in result.slots if s.slot_index == 1)
+    assert slot1.card.player_name == "Above"
+
+
 # ---------------------------------------------------------------------------
 # Moonshot tests
 # ---------------------------------------------------------------------------
