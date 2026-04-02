@@ -4,7 +4,6 @@ from pydantic import BaseModel
 class PlayerSummary(BaseModel):
     name: str
     score: float
-    est_rs: float
 
 
 class FetchResult(BaseModel):

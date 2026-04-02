@@ -4,7 +4,6 @@ from app.models.player import Player, PlayerStats, PlayerGameLog
 from app.services.scoring_engine import (
     score_pitcher,
     score_batter,
-    score_to_rs_range,
     score_ace_status,
     score_pitcher_k_rate,
     score_power_profile,
@@ -13,25 +12,6 @@ from app.services.scoring_engine import (
     score_hot_streak,
 )
 from app.core.weights import ScoringWeights
-
-
-def test_score_to_rs_range_high():
-    low, high, mid = score_to_rs_range(90)
-    assert low == 4.0
-    assert high == 6.0
-    assert 4.0 <= mid <= 6.0
-
-
-def test_score_to_rs_range_mid():
-    low, high, mid = score_to_rs_range(50)
-    assert low == 1.5
-    assert high == 2.5
-
-
-def test_score_to_rs_range_low():
-    low, high, mid = score_to_rs_range(10)
-    assert low == -0.5
-    assert high == 0.5
 
 
 def test_ace_status_great_era():
@@ -135,7 +115,6 @@ def test_pitcher_full_score():
     result = score_pitcher(player, stats, logs)
     # A dominant ace should score 75+
     assert result.total_score >= 75
-    assert result.estimated_rs_mid >= 3.5
 
 
 def test_batter_full_score():
@@ -158,4 +137,3 @@ def test_batter_full_score():
     result = score_batter(player, stats, logs, batting_order=3, park_team="COL")
     # Power hitter at Coors batting 3rd should score 70+
     assert result.total_score >= 65
-    assert result.estimated_rs_mid >= 2.5

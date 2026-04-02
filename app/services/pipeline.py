@@ -66,9 +66,6 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
         ps = PlayerScore(
             slate_player_id=sp.id,
             total_score=result.total_score,
-            estimated_rs_low=result.estimated_rs_low,
-            estimated_rs_high=result.estimated_rs_high,
-            estimated_rs_mid=result.estimated_rs_mid,
         )
         db.add(ps)
         db.flush()
@@ -103,7 +100,7 @@ async def run_full_pipeline(db: Session, game_date: date) -> dict:
         "stats": stats_result,
         "scored_players": len(scores),
         "top_5": [
-            {"name": s.player_name, "score": s.total_score, "est_rs": s.estimated_rs_mid}
+            {"name": s.player_name, "score": s.total_score}
             for s in scores[:5]
         ],
     }

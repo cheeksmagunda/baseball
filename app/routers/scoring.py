@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.utils import find_player_by_name, compute_expected_total_value, get_latest_player_score
+from app.core.utils import find_player_by_name, compute_total_value, get_latest_player_score
 from app.models.player import Player
 from app.models.slate import Slate
 from app.models.scoring import ScoreBreakdown
@@ -29,18 +29,15 @@ def score_single_player(
         raise HTTPException(404, f"Player not found: {player_name}")
 
     result = score_player(db, player)
-    ev = compute_expected_total_value(result.estimated_rs_mid, card_boost) if card_boost else None
+    ev = compute_total_value(result.total_score, card_boost) if card_boost else None
 
     return PlayerScoreOut(
         player_name=result.player_name,
         team=result.team,
         position=result.position,
         total_score=result.total_score,
-        estimated_rs_low=result.estimated_rs_low,
-        estimated_rs_high=result.estimated_rs_high,
-        estimated_rs_mid=result.estimated_rs_mid,
         card_boost=card_boost,
-        expected_total_value=round(ev, 2) if ev else None,
+        expected_value=round(ev, 2) if ev else None,
         breakdowns=[
             TraitBreakdown(
                 trait_name=t.name,
@@ -72,17 +69,14 @@ def score_slate(slate_date: date, db: Session = Depends(get_db)):
     rankings = []
     for r in results:
         boost = boost_map.get(r.player_name, 0.0)
-        ev = compute_expected_total_value(r.estimated_rs_mid, boost)
+        ev = compute_total_value(r.total_score, boost)
         rankings.append(PlayerScoreOut(
             player_name=r.player_name,
             team=r.team,
             position=r.position,
             total_score=r.total_score,
-            estimated_rs_low=r.estimated_rs_low,
-            estimated_rs_high=r.estimated_rs_high,
-            estimated_rs_mid=r.estimated_rs_mid,
             card_boost=boost,
-            expected_total_value=round(ev, 2),
+            expected_value=round(ev, 2),
             breakdowns=[
                 TraitBreakdown(
                     trait_name=t.name,
@@ -119,18 +113,15 @@ def get_cached_rankings(slate_date: date, db: Session = Depends(get_db)):
             continue
 
         breakdowns = db.query(ScoreBreakdown).filter_by(player_score_id=ps.id).all()
-        ev = compute_expected_total_value(ps.estimated_rs_mid, sp.card_boost)
+        ev = compute_total_value(ps.total_score, sp.card_boost)
 
         rankings.append(PlayerScoreOut(
             player_name=player.name,
             team=player.team,
             position=player.position,
             total_score=ps.total_score,
-            estimated_rs_low=ps.estimated_rs_low,
-            estimated_rs_high=ps.estimated_rs_high,
-            estimated_rs_mid=ps.estimated_rs_mid,
             card_boost=sp.card_boost,
-            expected_total_value=round(ev, 2),
+            expected_value=round(ev, 2),
             breakdowns=[
                 TraitBreakdown(
                     trait_name=b.trait_name,

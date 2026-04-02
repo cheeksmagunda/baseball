@@ -14,9 +14,6 @@ class PlayerScore(Base):
         Integer, ForeignKey("slate_players.id"), nullable=False
     )
     total_score: Mapped[float] = mapped_column(Float, nullable=False)
-    estimated_rs_low: Mapped[float] = mapped_column(Float, nullable=False)
-    estimated_rs_high: Mapped[float] = mapped_column(Float, nullable=False)
-    estimated_rs_mid: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     slate_player: Mapped["SlatePlayer"] = relationship(back_populates="scores")

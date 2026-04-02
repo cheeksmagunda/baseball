@@ -1,21 +1,9 @@
-from datetime import date, datetime
+from datetime import date
 
-from sqlalchemy import Date, DateTime, Float, Integer, String, ForeignKey, Text
+from sqlalchemy import Date, String, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
-
-
-class CalibrationResult(Base):
-    __tablename__ = "calibration_results"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    slate_id: Mapped[int] = mapped_column(Integer, ForeignKey("slates.id"), nullable=False)
-    mean_absolute_error: Mapped[float] = mapped_column(Float, nullable=False)
-    correlation: Mapped[float | None] = mapped_column(Float, nullable=True)
-    top_quintile_hit_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
-    notes: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class WeightHistory(Base):

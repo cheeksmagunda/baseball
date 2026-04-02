@@ -11,7 +11,6 @@ class DraftSlotOut(BaseModel):
     slot_mult: float
     player_name: str
     card_boost: float
-    estimated_rs: float
     expected_slot_value: float
     player_score: float
     popularity: str = "NEUTRAL"  # FADE, TARGET, or NEUTRAL
@@ -26,7 +25,7 @@ class LineupOut(BaseModel):
 
 class OptimizeRequest(BaseModel):
     cards: list[DraftCard]
-    strategy: str = "maximize_ev"  # "maximize_ev" or "maximize_floor"
+    strategy: str = "maximize_ev"
 
 
 class OptimizeResponse(BaseModel):

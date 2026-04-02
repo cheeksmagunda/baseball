@@ -10,7 +10,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.core.constants import PARK_HR_FACTORS, PITCHER_POSITIONS, SCORE_TO_RS_RANGES
+from app.core.constants import PARK_HR_FACTORS, PITCHER_POSITIONS
 from app.core.utils import get_recent_games, scale_score
 from app.core.weights import ScoringWeights, get_current_weights
 from app.models.player import Player, PlayerGameLog, PlayerStats
@@ -30,25 +30,7 @@ class PlayerScoreResult:
     team: str
     position: str
     total_score: float
-    estimated_rs_low: float
-    estimated_rs_high: float
-    estimated_rs_mid: float
     traits: list[TraitResult]
-
-
-# ---------------------------------------------------------------------------
-# Score-to-RS mapping
-# ---------------------------------------------------------------------------
-
-def score_to_rs_range(score: float) -> tuple[float, float, float]:
-    """Map a 0-100 score to (rs_low, rs_high, rs_mid)."""
-    for s_low, s_high, rs_low, rs_high in SCORE_TO_RS_RANGES:
-        if s_low <= score <= s_high:
-            # Interpolate within the range
-            pct = (score - s_low) / max(s_high - s_low, 1)
-            rs_mid = rs_low + pct * (rs_high - rs_low)
-            return rs_low, rs_high, round(rs_mid, 2)
-    return -0.5, 0.5, 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -345,16 +327,12 @@ def score_pitcher(
     ]
 
     total = sum(t.score for t in traits)
-    rs_low, rs_high, rs_mid = score_to_rs_range(total)
 
     return PlayerScoreResult(
         player_name=player.name,
         team=player.team,
         position=player.position,
         total_score=round(total, 1),
-        estimated_rs_low=rs_low,
-        estimated_rs_high=rs_high,
-        estimated_rs_mid=rs_mid,
         traits=traits,
     )
 
@@ -382,16 +360,12 @@ def score_batter(
     ]
 
     total = sum(t.score for t in traits)
-    rs_low, rs_high, rs_mid = score_to_rs_range(total)
 
     return PlayerScoreResult(
         player_name=player.name,
         team=player.team,
         position=player.position,
         total_score=round(total, 1),
-        estimated_rs_low=rs_low,
-        estimated_rs_high=rs_high,
-        estimated_rs_mid=rs_mid,
         traits=traits,
     )
 
