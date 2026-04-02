@@ -28,6 +28,15 @@
     "saved_at": "2026-04-01T00:00:00Z"
   },
   {
+    "date": "2026-03-27",
+    "game_count": null,
+    "games": [],
+    "notes": "Friday slate. Teams represented in leaderboards: LAD, ATL, TOR, NYY, HOU, SEA, SF, MIA, SD, LAA, CLE, ARI, OAK. Top 8 winning lineups captured.",
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-01T00:00:00Z"
+  },
+  {
     "date": "2026-03-28",
     "game_count": 1,
     "games": [],
@@ -50,6 +59,15 @@
     "game_count": null,
     "games": [],
     "notes": "Tuesday slate. Teams represented in leaderboards: LAD, PIT, SF, MIN, LAA, HOU, TEX, NYY, MIL, OAK, CLE, PHI, TOR, STL, NYM. Top 4 winning lineups captured. First day with widespread card_boost data.",
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-01T00:00:00Z"
+  },
+  {
+    "date": "2026-03-29",
+    "game_count": null,
+    "games": [],
+    "notes": "Sunday slate. Teams represented in leaderboards: HOU, SF, ARI, CHC, LAA, SEA, STL, BOS, TB, NYM, CLE, MIL, PHI, TOR, ATL, OAK, KC, CWS, MIN. Top 4 winning lineups captured.",
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-01T00:00:00Z"
