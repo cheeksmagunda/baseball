@@ -5,7 +5,9 @@ from app.services.draft_optimizer import (
     optimize_lineup,
     evaluate_lineup,
     compute_expected_value,
+    POPULARITY_ADJUSTMENTS,
 )
+from app.services.popularity import PopularityClass
 from app.services.scoring_engine import PlayerScoreResult, TraitResult
 
 
@@ -109,3 +111,41 @@ def test_real_world_montgomery_scenario():
     cards = [CardWithScore("Montgomery", 3.0, score)]
     result = optimize_lineup(cards)
     assert result.slots[0].expected_slot_value == 63.0
+
+
+def test_fade_penalizes_popular_player():
+    """A FADE player's EV should be reduced, causing them to drop in lineup priority."""
+    # Two players with identical raw stats
+    popular = CardWithScore("Judge", 0.0, _make_score("Judge", 5.0), popularity=PopularityClass.FADE)
+    hidden = CardWithScore("Montgomery", 0.0, _make_score("Montgomery", 5.0), popularity=PopularityClass.TARGET)
+
+    result = optimize_lineup([popular, hidden])
+
+    # TARGET player (hidden gem) should get slot 1 due to EV bonus
+    slot1 = next(s for s in result.slots if s.slot_index == 1)
+    assert slot1.card.player_name == "Montgomery"
+
+
+def test_target_beats_neutral():
+    """A TARGET player should rank above an identical NEUTRAL player."""
+    target = CardWithScore("Caissie", 2.0, _make_score("Caissie", 3.0), popularity=PopularityClass.TARGET)
+    neutral = CardWithScore("Smith", 2.0, _make_score("Smith", 3.0), popularity=PopularityClass.NEUTRAL)
+
+    result = optimize_lineup([target, neutral])
+
+    slot1 = next(s for s in result.slots if s.slot_index == 1)
+    assert slot1.card.player_name == "Caissie"
+
+
+def test_fade_with_huge_boost_can_still_win():
+    """A FADE player with massive boost should still beat a TARGET with no boost."""
+    # FADE + 3.0x boost: raw EV = 3.0 * 5.0 = 15.0, after 0.75 penalty = 11.25
+    fade = CardWithScore("Ohtani", 3.0, _make_score("Ohtani", 3.0), popularity=PopularityClass.FADE)
+    # TARGET + 0x boost: raw EV = 3.0 * 2.0 = 6.0, after 1.15 bonus = 6.9
+    target = CardWithScore("Rookie", 0.0, _make_score("Rookie", 3.0), popularity=PopularityClass.TARGET)
+
+    result = optimize_lineup([fade, target])
+
+    # FADE player still wins because the boost math is too strong
+    slot1 = next(s for s in result.slots if s.slot_index == 1)
+    assert slot1.card.player_name == "Ohtani"

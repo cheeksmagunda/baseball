@@ -6,11 +6,21 @@ select 5 and assign to slots (mult 2.0, 1.8, 1.6, 1.4, 1.2)
 to maximize expected total lineup value.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.core.constants import SLOT_MULTIPLIERS
 from app.core.utils import compute_total_value
 from app.services.scoring_engine import PlayerScoreResult
+from app.services.popularity import PopularityClass
+
+
+# Popularity penalty applied to expected value during optimization.
+# FADE players get their EV reduced, TARGET players get a boost.
+POPULARITY_ADJUSTMENTS = {
+    PopularityClass.FADE: 0.75,     # 25% EV penalty — crowd is already here
+    PopularityClass.NEUTRAL: 1.0,   # no adjustment
+    PopularityClass.TARGET: 1.15,   # 15% EV bonus — under the radar edge
+}
 
 
 @dataclass
@@ -19,6 +29,7 @@ class CardWithScore:
     card_boost: float
     score_result: PlayerScoreResult
     expected_value: float = 0.0  # estimated_rs * (2 + card_boost)
+    popularity: PopularityClass = PopularityClass.NEUTRAL
 
 
 @dataclass
@@ -61,12 +72,16 @@ def optimize_lineup(
     if not cards:
         return OptimizedLineup(slots=[], total_expected_value=0.0, strategy=strategy)
 
-    # Compute expected values
+    # Compute expected values with popularity adjustment
     for card in cards:
         if strategy == "maximize_floor":
-            card.expected_value = compute_floor_value(card.score_result, card.card_boost)
+            raw_ev = compute_floor_value(card.score_result, card.card_boost)
         else:
-            card.expected_value = compute_expected_value(card.score_result, card.card_boost)
+            raw_ev = compute_expected_value(card.score_result, card.card_boost)
+
+        # Apply popularity penalty/bonus — FADE players are docked, TARGET players boosted
+        pop_adj = POPULARITY_ADJUSTMENTS.get(card.popularity, 1.0)
+        card.expected_value = raw_ev * pop_adj
 
     # Sort by expected value, descending
     sorted_cards = sorted(cards, key=lambda c: c.expected_value, reverse=True)

@@ -14,6 +14,7 @@ class DraftSlotOut(BaseModel):
     estimated_rs: float
     expected_slot_value: float
     player_score: float
+    popularity: str = "NEUTRAL"  # FADE, TARGET, or NEUTRAL
 
 
 class OptimizeRequest(BaseModel):

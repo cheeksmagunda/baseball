@@ -72,12 +72,25 @@ It's not a machine learning model nor a deterministic predictive engine — it's
 | 20-39 | 0.5 – 1.5 |
 | 0-19 | -0.5 – 0.5 |
 
+## Popularity Signal Aggregator
+
+The optimizer automatically fades over-hyped players and targets under-the-radar picks using real-time web signals:
+
+| Source | Weight | What It Measures |
+|---|---|---|
+| Social trending | 40% | Google Trends — is the casual public talking about this player? |
+| Sports news | 20% | ESPN/MLB.com RSS — is this player in headlines? |
+| DFS ownership | 20% | RotoGrinders/NumberFire — cross-platform fantasy ownership |
+| Search volume | 20% | Google autocomplete — casual search interest |
+
+**Classification:** FADE (25% EV penalty), TARGET (15% EV bonus), or NEUTRAL. The key insight: "trending" is not the same as "popular." A breakout rookie trending upward is a TARGET. A slumping star trending on ESPN is a FADE.
+
 ## Strategy Insights
 
 - **Winning formula**: All 5 RS ≥ 1.0 with 2+ RS ≥ 3.0
-- **Anti-popularity edge**: Low-ownership players consistently outperform
+- **Anti-popularity edge**: Low-ownership players consistently outperform — popularity estimated dynamically via web signals, not historical draft counts
 - **Card boost leverage**: A +3.0x boosted player with RS 2.4 matches an unboosted ace with RS 6.0
-- **Draft optimizer**: Rearrangement inequality — highest expected value → highest slot multiplier
+- **Draft optimizer**: Rearrangement inequality — highest expected value → highest slot multiplier, with popularity adjustments
 
 ## API Endpoints
 
@@ -108,8 +121,14 @@ All endpoints are under `/api/`.
 ### Draft
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/draft/optimize` | Optimal 5-player lineup |
+| POST | `/api/draft/optimize` | Optimal 5-player lineup (popularity-aware) |
 | POST | `/api/draft/evaluate` | Evaluate a proposed lineup |
+
+### Popularity
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/popularity/player` | Check popularity signals for a player |
+| POST | `/api/popularity/slate/{date}` | Popularity analysis for entire slate |
 
 ### Calibration
 | Method | Path | Description |
