@@ -71,5 +71,14 @@
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-01T00:00:00Z"
+  },
+  {
+    "date": "2026-04-03",
+    "game_count": null,
+    "games": [],
+    "notes": "Friday slate. Teams represented in leaderboards: LAD, NYY, PHI, BOS, CIN, SEA, PIT, BAL, HOU, OAK, CWS, ARI, CLE, DET, NYM, TEX, WSH, TB, TOR, MIN. Top 8 winning lineups captured (ranks 3-4 tied at 86.88 with identical lineups). Bryan Woo (SEA) RS 7.3 highest individual RS. Sonny Gray (BOS) most drafted 3x at 1.9k. Michael Lorenzen RS -6.4 notable bust.",
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-04T00:00:00Z"
   }
 ]
