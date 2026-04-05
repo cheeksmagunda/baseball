@@ -3,6 +3,7 @@ Data collection service: fetches player stats from MLB Stats API
 and stores them in the database.
 """
 
+import asyncio
 from datetime import date
 
 from sqlalchemy.orm import Session
@@ -102,15 +103,21 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict:
     added = 0
     skipped = 0
 
-    for game in games:
+    # Fetch all boxscores in parallel, then process DB writes sequentially.
+    async def _fetch_boxscore(game):
         if game.mlb_game_pk is None:
             logger.warning("SlateGame %s has no mlb_game_pk — skipping roster populate", game.id)
-            continue
-
+            return game, None
         try:
-            boxscore = await get_game_boxscore(game.mlb_game_pk)
+            return game, await get_game_boxscore(game.mlb_game_pk)
         except Exception as exc:
             logger.warning("Failed to fetch boxscore for game_pk=%s: %s", game.mlb_game_pk, exc)
+            return game, None
+
+    game_boxscores = await asyncio.gather(*[_fetch_boxscore(g) for g in games])
+
+    for game, boxscore in game_boxscores:
+        if boxscore is None:
             continue
 
         teams_data = boxscore.get("teams", {})
