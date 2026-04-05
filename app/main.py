@@ -10,6 +10,8 @@ from app.routers import players, slates, scoring, draft, calibration, pipeline, 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from pathlib import Path
+    Path(settings.database_url.replace("sqlite:///", "")).parent.mkdir(parents=True, exist_ok=True)
     init_db()
     yield
 
