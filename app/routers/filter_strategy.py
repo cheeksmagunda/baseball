@@ -18,6 +18,7 @@ from app.schemas.filter_strategy import (
     FilterCard,
     FilterOptimizeRequest,
     FilterOptimizeResponse,
+    FilterLineupOut,
     FilterSlotOut,
     FilterCandidateOut,
     GameEnvironment,
@@ -31,7 +32,7 @@ from app.services.filter_strategy import (
     classify_ownership,
     compute_pitcher_env_score,
     compute_batter_env_score,
-    run_filter_strategy,
+    run_dual_filter_strategy,
 )
 
 router = APIRouter()
@@ -147,15 +148,22 @@ def _resolve_candidates(
 @router.post("/optimize", response_model=FilterOptimizeResponse)
 def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_db)):
     """
-    Run the full "Filter, Not Forecast" pipeline.
+    Run the full "Filter, Not Forecast" dual-lineup pipeline.
 
-    This is the primary draft optimization endpoint. It:
+    Returns both Starting 5 and Moonshot lineups from a single call.
+
+    Starting 5: Best filter EV, standard ownership adjustments.
+    Moonshot: Completely different 5 players — heavier anti-crowd lean,
+              sharp signal boost, explosive trait bonus, game diversification.
+
+    Pipeline:
     1. Classifies the slate type (tiny/pitcher_day/hitter_day/standard)
     2. Scores all players and computes environmental advantages
     3. Applies ownership leverage adjustments
     4. Gates boosts against environmental support
     5. Enforces composition targets and game diversification
     6. Assigns players to slots with smart sequencing
+    7. Builds Moonshot from remaining pool with stronger filters
 
     Provide game environment data for best results. Without it,
     environmental filters default to neutral (0.5).
@@ -172,8 +180,8 @@ def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_db)):
     if not candidates:
         raise HTTPException(404, "No matching players found in database")
 
-    # Steps 4-5: Run the filter strategy optimizer
-    result = run_filter_strategy(candidates, slate_class)
+    # Steps 4-7: Run the dual filter strategy optimizer
+    dual = run_dual_filter_strategy(candidates, slate_class)
 
     def _traits_to_breakdowns(traits: list) -> list[TraitBreakdown]:
         return [
@@ -181,28 +189,35 @@ def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_db)):
             for t in traits
         ]
 
-    # Build response
-    lineup_out = [
-        FilterSlotOut(
-            slot_index=s.slot_index,
-            slot_mult=s.slot_mult,
-            player_name=s.candidate.player_name,
-            team=s.candidate.team,
-            position=s.candidate.position,
-            card_boost=s.candidate.card_boost,
-            total_score=s.candidate.total_score,
-            env_score=round(s.candidate.env_score, 3),
-            env_factors=s.candidate.env_factors,
-            ownership_tier=s.candidate.ownership_tier.value,
-            is_debut_or_return=s.candidate.is_debut_or_return,
-            filter_ev=round(s.candidate.filter_ev, 2),
-            expected_slot_value=s.expected_slot_value,
-            game_id=s.candidate.game_id,
-            drafts=s.candidate.drafts,
-            breakdowns=_traits_to_breakdowns(s.candidate.traits),
+    def _build_lineup_out(result) -> FilterLineupOut:
+        slots_out = [
+            FilterSlotOut(
+                slot_index=s.slot_index,
+                slot_mult=s.slot_mult,
+                player_name=s.candidate.player_name,
+                team=s.candidate.team,
+                position=s.candidate.position,
+                card_boost=s.candidate.card_boost,
+                total_score=s.candidate.total_score,
+                env_score=round(s.candidate.env_score, 3),
+                env_factors=s.candidate.env_factors,
+                ownership_tier=s.candidate.ownership_tier.value,
+                is_debut_or_return=s.candidate.is_debut_or_return,
+                filter_ev=round(s.candidate.filter_ev, 2),
+                expected_slot_value=s.expected_slot_value,
+                game_id=s.candidate.game_id,
+                drafts=s.candidate.drafts,
+                breakdowns=_traits_to_breakdowns(s.candidate.traits),
+            )
+            for s in result.slots
+        ]
+        return FilterLineupOut(
+            lineup=slots_out,
+            total_expected_value=result.total_expected_value,
+            strategy=result.strategy,
+            composition=result.composition,
+            warnings=result.warnings,
         )
-        for s in result.slots
-    ]
 
     all_candidates_out = [
         FilterCandidateOut(
@@ -225,17 +240,14 @@ def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_db)):
 
     return FilterOptimizeResponse(
         slate_classification=SlateClassificationOut(
-            slate_type=result.slate_classification.slate_type.value,
-            game_count=result.slate_classification.game_count,
-            quality_sp_matchups=result.slate_classification.quality_sp_matchups,
-            high_total_games=result.slate_classification.high_total_games,
-            reason=result.slate_classification.reason,
+            slate_type=dual.starting_5.slate_classification.slate_type.value,
+            game_count=dual.starting_5.slate_classification.game_count,
+            quality_sp_matchups=dual.starting_5.slate_classification.quality_sp_matchups,
+            high_total_games=dual.starting_5.slate_classification.high_total_games,
+            reason=dual.starting_5.slate_classification.reason,
         ),
-        lineup=lineup_out,
-        total_expected_value=result.total_expected_value,
-        strategy=result.strategy,
-        composition=result.composition,
-        warnings=result.warnings,
+        starting_5=_build_lineup_out(dual.starting_5),
+        moonshot=_build_lineup_out(dual.moonshot),
         all_candidates=sorted(all_candidates_out, key=lambda c: c.filter_ev, reverse=True),
     )
 

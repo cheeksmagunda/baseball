@@ -125,3 +125,21 @@ BATTER_ENV_TOP_LINEUP = 4             # batting 1-4 = top of lineup
 
 # Debut/return premium (§2.3 Condition C)
 DEBUT_RETURN_EV_BONUS = 1.15          # 15% EV bonus for debut/return players
+
+# ---------------------------------------------------------------------------
+# Moonshot constants (dual-lineup optimizer)
+# ---------------------------------------------------------------------------
+
+# Moonshot ownership adjustments (heavier anti-crowd lean)
+MOONSHOT_CHALK_EV_PENALTY = 0.60      # 40% penalty (vs 20% for Starting 5)
+MOONSHOT_MEDIUM_EV_PENALTY = 0.95     # 5% penalty (neutral gets slight haircut)
+MOONSHOT_LEVERAGE_EV_BONUS = 1.30     # 30% bonus (vs 20% for Starting 5)
+
+# Sharp signal bonus: underground buzz → up to +25% EV
+MOONSHOT_SHARP_BONUS_MAX = 0.25
+
+# Explosive bonus: power_profile (batters) or k_rate (pitchers) → up to +10% EV
+MOONSHOT_EXPLOSIVE_BONUS_MAX = 0.10
+
+# Game diversification: soft penalty for same-team overlap with Starting 5
+MOONSHOT_SAME_TEAM_PENALTY = 0.85

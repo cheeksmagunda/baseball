@@ -11,11 +11,8 @@ from app.core.utils import find_player_by_name
 from app.schemas.draft import (
     DraftCard,
     DraftSlotOut,
-    LineupOut,
     OptimizeRequest,
     OptimizeResponse,
-    DualOptimizeRequest,
-    DualOptimizeResponse,
     EvaluateRequest,
     EvaluateResponse,
 )
@@ -25,7 +22,6 @@ from app.services.draft_optimizer import (
     CardWithScore,
     OptimizedLineup,
     optimize_lineup,
-    optimize_dual,
     evaluate_lineup,
 )
 from app.services.popularity import PopularityClass, get_popularity_profile
@@ -115,40 +111,6 @@ async def optimize_draft(req: OptimizeRequest, db: Session = Depends(get_db)):
         lineup=_lineup_to_slots(result),
         total_expected_value=result.total_expected_value,
         strategy=result.strategy,
-    )
-
-
-@router.post("/dual-optimize", response_model=DualOptimizeResponse)
-async def dual_optimize_draft(req: DualOptimizeRequest, db: Session = Depends(get_db)):
-    """
-    Return both Starting 5 and Moonshot lineups from the same card pool.
-
-    Starting 5: Best EV, standard anti-popularity adjustments.
-    Moonshot:   Completely different 5. Heavier TARGET lean, sharp underground
-                signal boost, HR power tiebreaker, game diversification.
-
-    Both are competitive to win — Moonshot just swings bigger.
-    """
-    if len(req.cards) < 6:
-        raise HTTPException(400, "Need at least 6 cards for dual lineup (5 + 5 with no overlap)")
-
-    cards = await _resolve_cards(req.cards, db, include_sharp=True)
-    if len(cards) < 6:
-        raise HTTPException(404, "Not enough matching players found for dual lineup")
-
-    dual = optimize_dual(cards)
-
-    return DualOptimizeResponse(
-        starting_5=LineupOut(
-            lineup=_lineup_to_slots(dual.starting_5),
-            total_expected_value=dual.starting_5.total_expected_value,
-            strategy=dual.starting_5.strategy,
-        ),
-        moonshot=LineupOut(
-            lineup=_lineup_to_slots(dual.moonshot),
-            total_expected_value=dual.moonshot.total_expected_value,
-            strategy=dual.moonshot.strategy,
-        ),
     )
 
 

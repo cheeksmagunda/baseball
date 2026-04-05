@@ -51,8 +51,14 @@ from app.core.constants import (
     BATTER_ENV_WEAK_PITCHER_ERA,
     BATTER_ENV_TOP_LINEUP,
     DEBUT_RETURN_EV_BONUS,
+    MOONSHOT_CHALK_EV_PENALTY,
+    MOONSHOT_MEDIUM_EV_PENALTY,
+    MOONSHOT_LEVERAGE_EV_BONUS,
+    MOONSHOT_SHARP_BONUS_MAX,
+    MOONSHOT_EXPLOSIVE_BONUS_MAX,
+    MOONSHOT_SAME_TEAM_PENALTY,
 )
-from app.core.utils import BASE_MULTIPLIER, compute_total_value
+from app.core.utils import BASE_MULTIPLIER, compute_total_value, get_trait_score
 
 logger = logging.getLogger(__name__)
 
@@ -676,3 +682,120 @@ def run_filter_strategy(
         composition={"pitchers": pitcher_count, "hitters": hitter_count},
         warnings=warnings,
     )
+
+
+# ---------------------------------------------------------------------------
+# Moonshot — completely different 5, anti-crowd, sharp-signal, explosive
+# ---------------------------------------------------------------------------
+
+def _moonshot_ownership_adj(tier: OwnershipTier) -> float:
+    """Return Moonshot-specific ownership EV multiplier (heavier lean)."""
+    if tier == OwnershipTier.CHALK:
+        return MOONSHOT_CHALK_EV_PENALTY
+    if tier == OwnershipTier.LEVERAGE:
+        return MOONSHOT_LEVERAGE_EV_BONUS
+    return MOONSHOT_MEDIUM_EV_PENALTY
+
+
+def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
+    """
+    Moonshot EV through the filter pipeline. Same base as Starting 5 but:
+    1. Heavier anti-ownership lean (CHALK=0.60, TARGET=1.30)
+    2. Sharp signal bonus (underground buzz -> up to +25% EV)
+    3. Explosive bonus (power_profile or k_rate trait -> up to +10% EV)
+    """
+    base_ev = compute_total_value(candidate.total_score, candidate.card_boost)
+
+    # Low-score penalty (same as Starting 5)
+    if candidate.total_score < MIN_SCORE_THRESHOLD:
+        base_ev *= MIN_SCORE_PENALTY
+
+    # Boost-environment gating (same as Starting 5)
+    if candidate.card_boost >= 1.0 and candidate.env_score < ENV_PASS_THRESHOLD:
+        base_ev *= BOOST_NO_ENV_PENALTY
+
+    # Moonshot ownership adjustment (heavier than Starting 5)
+    ownership_adj = _moonshot_ownership_adj(candidate.ownership_tier)
+    base_ev *= ownership_adj
+
+    # Debut/return premium
+    if candidate.is_debut_or_return:
+        base_ev *= DEBUT_RETURN_EV_BONUS
+
+    # Sharp signal bonus: 0-100 score -> 0-25% EV boost
+    sharp_bonus = 1.0 + (candidate.sharp_score / 100.0) * MOONSHOT_SHARP_BONUS_MAX
+
+    # Explosive bonus: power_profile (batters) or k_rate (pitchers)
+    if candidate.is_pitcher:
+        explosive_trait = get_trait_score(candidate.traits, "k_rate")
+    else:
+        explosive_trait = get_trait_score(candidate.traits, "power_profile")
+    # Normalize trait (max is 25) to a 0-10% bonus
+    explosive_bonus = 1.0 + (explosive_trait / 25.0) * MOONSHOT_EXPLOSIVE_BONUS_MAX
+
+    return base_ev * sharp_bonus * explosive_bonus
+
+
+@dataclass
+class DualFilterOptimizedResult:
+    starting_5: FilterOptimizedLineup
+    moonshot: FilterOptimizedLineup
+
+
+def run_dual_filter_strategy(
+    candidates: list[FilteredCandidate],
+    slate_classification: SlateClassification,
+) -> DualFilterOptimizedResult:
+    """
+    Produce both Starting 5 and Moonshot from the same candidate pool.
+
+    Starting 5: Best filter EV, standard ownership adjustments.
+    Moonshot: Completely different 5 players, heavier anti-crowd lean,
+              sharp signal boost, explosive trait bonus, game diversification.
+    """
+    # Phase 1: Starting 5 (standard filter pipeline)
+    starting_5 = run_filter_strategy(candidates, slate_classification)
+
+    # Extract Starting 5 player names and teams for exclusion
+    s5_names = {s.candidate.player_name for s in starting_5.slots}
+    s5_teams = {s.candidate.team for s in starting_5.slots}
+
+    # Phase 2: Moonshot from remaining pool
+    moonshot_pool = [c for c in candidates if c.player_name not in s5_names]
+
+    if not moonshot_pool:
+        empty_moonshot = FilterOptimizedLineup(
+            slots=[],
+            total_expected_value=0.0,
+            strategy="moonshot",
+            slate_classification=slate_classification,
+        )
+        return DualFilterOptimizedResult(starting_5=starting_5, moonshot=empty_moonshot)
+
+    # Compute moonshot EV for each remaining candidate
+    for c in moonshot_pool:
+        c.filter_ev = _compute_moonshot_filter_ev(c)
+
+        # Game diversification: soft penalty for same-team overlap with Starting 5
+        if c.team in s5_teams:
+            c.filter_ev *= MOONSHOT_SAME_TEAM_PENALTY
+
+    # Enforce composition and build moonshot lineup
+    moonshot_lineup = _enforce_composition(moonshot_pool, slate_classification)
+    moonshot_warnings = _apply_game_diversification(moonshot_lineup)
+    moonshot_slots = _smart_slot_assignment(moonshot_lineup)
+
+    moonshot_total_ev = sum(s.expected_slot_value for s in moonshot_slots)
+    moonshot_pitcher_count = sum(1 for s in moonshot_slots if s.candidate.is_pitcher)
+    moonshot_hitter_count = len(moonshot_slots) - moonshot_pitcher_count
+
+    moonshot = FilterOptimizedLineup(
+        slots=moonshot_slots,
+        total_expected_value=round(moonshot_total_ev, 2),
+        strategy="moonshot",
+        slate_classification=slate_classification,
+        composition={"pitchers": moonshot_pitcher_count, "hitters": moonshot_hitter_count},
+        warnings=moonshot_warnings,
+    )
+
+    return DualFilterOptimizedResult(starting_5=starting_5, moonshot=moonshot)
