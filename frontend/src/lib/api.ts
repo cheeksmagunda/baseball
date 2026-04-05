@@ -17,7 +17,12 @@ export async function fetchLineups(signal?: AbortSignal): Promise<FilterOptimize
   });
 
   if (!res.ok) {
-    throw new ApiError(res.status, `API error: ${res.status}`);
+    let message = `API error: ${res.status}`;
+    try {
+      const body = await res.json();
+      message = body.detail ?? body.message ?? message;
+    } catch {}
+    throw new ApiError(res.status, message);
   }
 
   return res.json();
