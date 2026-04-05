@@ -38,7 +38,11 @@ async def run_fetch(db: Session, game_date: date) -> dict:
 
 
 async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
-    """Fetch stats for all players in a slate."""
+    """Fetch stats for all players in a slate, then backfill SlateGame starter stats."""
+    from app.models.player import PlayerStats
+    import logging
+    logger = logging.getLogger(__name__)
+
     slate = db.query(Slate).filter_by(date=game_date).first()
     if not slate:
         return {"error": "No slate found for this date"}
@@ -62,6 +66,41 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
         except Exception:
             failed += 1
 
+    # Backfill SlateGame starter ERA/K9 from newly-fetched PlayerStats.
+    # This feeds the environmental scoring engine (Filter 2).
+    games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+    for game in games:
+        for starter_field, era_field, k9_field, team_field in [
+            ("home_starter", "home_starter_era", "home_starter_k_per_9", "home_team"),
+            ("away_starter", "away_starter_era", "away_starter_k_per_9", "away_team"),
+        ]:
+            starter_name = getattr(game, starter_field)
+            if not starter_name:
+                continue
+            if getattr(game, era_field) is not None:
+                continue  # already populated
+
+            team = getattr(game, team_field)
+            from app.models.player import normalize_name
+            norm = normalize_name(starter_name)
+            player = db.query(Player).filter_by(name_normalized=norm, team=team).first()
+            if not player:
+                continue
+
+            ps = (
+                db.query(PlayerStats)
+                .filter_by(player_id=player.id, season=game_date.year)
+                .first()
+            )
+            if not ps:
+                continue
+
+            if ps.era is not None:
+                setattr(game, era_field, ps.era)
+            if ps.k_per_9 is not None:
+                setattr(game, k9_field, ps.k_per_9)
+
+    db.commit()
     return {"fetched": fetched, "failed": failed}
 
 

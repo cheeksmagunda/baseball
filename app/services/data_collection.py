@@ -17,7 +17,7 @@ from app.core.mlb_api import (
     TEAM_MLB_IDS,
 )
 from app.models.player import Player, PlayerStats, PlayerGameLog, normalize_name
-from app.models.slate import Slate, SlateGame
+from app.models.slate import Slate, SlateGame, SlatePlayer
 
 
 async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
@@ -49,15 +49,36 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
 
         game_pk = game.get("gamePk")
 
+        # Extract probable pitcher names and MLB IDs from schedule hydration
+        home_prob = game.get("teams", {}).get("home", {}).get("probablePitcher", {})
+        away_prob = game.get("teams", {}).get("away", {}).get("probablePitcher", {})
+        home_starter_name = home_prob.get("fullName") if home_prob else None
+        away_starter_name = away_prob.get("fullName") if away_prob else None
+        home_starter_mlb_id = home_prob.get("id") if home_prob else None
+        away_starter_mlb_id = away_prob.get("id") if away_prob else None
+
         existing = (
             db.query(SlateGame)
             .filter_by(slate_id=slate.id, home_team=home, away_team=away)
             .first()
         )
         if not existing:
-            db.add(SlateGame(slate_id=slate.id, home_team=home, away_team=away, mlb_game_pk=game_pk))
-        elif game_pk and not existing.mlb_game_pk:
-            existing.mlb_game_pk = game_pk
+            existing = SlateGame(
+                slate_id=slate.id,
+                home_team=home,
+                away_team=away,
+                mlb_game_pk=game_pk,
+                home_starter=home_starter_name,
+                away_starter=away_starter_name,
+            )
+            db.add(existing)
+        else:
+            if game_pk and not existing.mlb_game_pk:
+                existing.mlb_game_pk = game_pk
+            if home_starter_name and not existing.home_starter:
+                existing.home_starter = home_starter_name
+            if away_starter_name and not existing.away_starter:
+                existing.away_starter = away_starter_name
 
     db.commit()
     return slate
@@ -92,6 +113,7 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict:
             logger.warning("Failed to fetch boxscore for game_pk=%s: %s", game.mlb_game_pk, exc)
             continue
 
+        game_added = 0
         teams_data = boxscore.get("teams", {})
         for side in ("home", "away"):
             side_data = teams_data.get(side, {})
@@ -154,7 +176,65 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict:
                     player_status="active",
                 )
                 db.add(sp)
+                game_added += 1
                 added += 1
+
+        # Fallback for pre-game / scheduled states: if the boxscore returned no
+        # players at all (lineup cards not yet submitted), add the probable starters
+        # stored from the schedule hydration so the optimizer has at least pitchers.
+        if game_added == 0:
+            for starter_name, team_abbr in [
+                (game.home_starter, game.home_team),
+                (game.away_starter, game.away_team),
+            ]:
+                if not starter_name:
+                    continue
+                norm = normalize_name(starter_name)
+                team_abbr = canonicalize_team(team_abbr)
+                player = db.query(Player).filter_by(name_normalized=norm, team=team_abbr).first()
+                if not player:
+                    # Attempt to resolve MLB ID via search
+                    try:
+                        results = await search_player(starter_name)
+                        mlb_id = None
+                        for r in results:
+                            if canonicalize_team(r.get("currentTeam", {}).get("abbreviation", "")) == team_abbr:
+                                mlb_id = r["id"]
+                                break
+                        if not mlb_id and results:
+                            mlb_id = results[0]["id"]
+                    except Exception:
+                        mlb_id = None
+
+                    player = Player(
+                        name=starter_name,
+                        name_normalized=norm,
+                        team=team_abbr,
+                        position="SP",
+                        mlb_id=mlb_id,
+                    )
+                    db.add(player)
+                    db.flush()
+
+                # Skip if SlatePlayer already exists
+                existing_sp = (
+                    db.query(SlatePlayer)
+                    .filter_by(slate_id=slate.id, player_id=player.id)
+                    .first()
+                )
+                if existing_sp:
+                    skipped += 1
+                    continue
+
+                db.add(SlatePlayer(
+                    slate_id=slate.id,
+                    player_id=player.id,
+                    card_boost=0.0,
+                    game_id=game.id,
+                    player_status="active",
+                ))
+                added += 1
+                logger.info("Added probable starter %s (%s) as fallback for scheduled game %s", starter_name, team_abbr, game.mlb_game_pk)
 
     db.commit()
     logger.info("Populated %d slate players (%d skipped/existing)", added, skipped)
