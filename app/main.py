@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     try:
         if db.query(Player).count() == 0:
             logger.info("Database empty, loading seed data...")
-            run_seed()
+            run_seed(db)
     finally:
         db.close()
 
@@ -40,7 +40,9 @@ async def lifespan(app: FastAPI):
             result = await run_full_pipeline(db, date.today())
             logger.info("Startup pipeline complete: %s", result)
         except Exception as exc:
-            logger.warning("Startup pipeline failed (non-fatal): %s", exc)
+            import traceback
+            logger.error("Startup pipeline failed: %s", exc)
+            logger.error("Traceback: %s", traceback.format_exc())
         finally:
             db.close()
 
