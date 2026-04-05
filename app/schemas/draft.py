@@ -17,35 +17,7 @@ class DraftSlotOut(BaseModel):
     card_boost: float
     expected_slot_value: float
     player_score: float
-    popularity: str = "NEUTRAL"  # FADE, TARGET, or NEUTRAL
-    sharp_score: float = 0.0     # underground signal (0-100)
     breakdowns: list[TraitBreakdown] = []
-
-
-class LineupOut(BaseModel):
-    lineup: list[DraftSlotOut]
-    total_expected_value: float
-    strategy: str
-
-
-class OptimizeRequest(BaseModel):
-    cards: list[DraftCard]
-    strategy: str = "maximize_ev"
-
-
-class OptimizeResponse(BaseModel):
-    lineup: list[DraftSlotOut]
-    total_expected_value: float
-    strategy: str
-
-
-class DualOptimizeRequest(BaseModel):
-    cards: list[DraftCard]
-
-
-class DualOptimizeResponse(BaseModel):
-    starting_5: LineupOut
-    moonshot: LineupOut
 
 
 class EvaluateRequest(BaseModel):

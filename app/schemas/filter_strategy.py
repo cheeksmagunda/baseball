@@ -69,7 +69,7 @@ class FilterCandidateOut(BaseModel):
     total_score: float
     env_score: float
     env_factors: list[str] = []
-    ownership_tier: str
+    popularity: str  # FADE, TARGET, or NEUTRAL (web-scraped)
     is_debut_or_return: bool = False
     filter_ev: float
     game_id: int | str | None = None
@@ -87,7 +87,7 @@ class FilterSlotOut(BaseModel):
     total_score: float
     env_score: float
     env_factors: list[str] = []
-    ownership_tier: str
+    popularity: str  # FADE, TARGET, or NEUTRAL (web-scraped)
     is_debut_or_return: bool = False
     filter_ev: float
     expected_slot_value: float
@@ -96,11 +96,17 @@ class FilterSlotOut(BaseModel):
     breakdowns: list[TraitBreakdown] = []
 
 
-class FilterOptimizeResponse(BaseModel):
-    slate_classification: SlateClassificationOut
+class FilterLineupOut(BaseModel):
+    """A single optimized lineup (Starting 5 or Moonshot)."""
     lineup: list[FilterSlotOut]
     total_expected_value: float
     strategy: str
     composition: dict = {}
     warnings: list[str] = []
+
+
+class FilterOptimizeResponse(BaseModel):
+    slate_classification: SlateClassificationOut
+    starting_5: FilterLineupOut
+    moonshot: FilterLineupOut
     all_candidates: list[FilterCandidateOut] = []

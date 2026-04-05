@@ -72,7 +72,6 @@ class SlatePlayer(Base):
     is_debut_or_return: Mapped[bool] = mapped_column(Boolean, default=False)
     player_status: Mapped[str] = mapped_column(String, default="active")  # active, DNP, scratched, data_missing
     game_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("slate_games.id"), nullable=True, index=True)
-    ownership_tier: Mapped[str | None] = mapped_column(String, nullable=True)  # chalk, medium, leverage
     env_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0-1.0, computed by env filter
 
     slate: Mapped["Slate"] = relationship(back_populates="players")

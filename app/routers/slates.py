@@ -90,7 +90,6 @@ def get_slate_players(slate_date: date, db: Session = Depends(get_db)):
             platoon_advantage=sp.platoon_advantage,
             is_debut_or_return=sp.is_debut_or_return,
             player_status=sp.player_status,
-            ownership_tier=sp.ownership_tier,
             env_score=sp.env_score,
         ))
     return results

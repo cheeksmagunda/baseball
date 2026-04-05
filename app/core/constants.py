@@ -94,14 +94,6 @@ SLATE_COMPOSITION = {
     "standard": {"min_pitchers": 2, "max_pitchers": 3},
 }
 
-# Ownership leverage thresholds (Filter 3 — §4.2 Filter 3)
-CHALK_DRAFT_THRESHOLD = 2000     # > 2000 drafts = "chalk" (avoid unless elite)
-LEVERAGE_DRAFT_THRESHOLD = 200   # < 200 drafts = "leverage play" (target)
-
-# Ownership EV adjustments
-CHALK_EV_PENALTY = 0.80          # 20% EV penalty for chalk players
-LEVERAGE_EV_BONUS = 1.20         # 20% EV bonus for leverage plays
-
 # Boost-environment gating (Filter 4 — §4.2 Filter 4)
 # A boost without environmental support is a trap (§3.5 "Boost Trap")
 BOOST_NO_ENV_PENALTY = 0.70      # 30% EV haircut when boost has no env support
@@ -125,3 +117,29 @@ BATTER_ENV_TOP_LINEUP = 4             # batting 1-4 = top of lineup
 
 # Debut/return premium (§2.3 Condition C)
 DEBUT_RETURN_EV_BONUS = 1.15          # 15% EV bonus for debut/return players
+
+# ---------------------------------------------------------------------------
+# Popularity-based EV adjustments (web-scraped FADE/TARGET/NEUTRAL)
+# ---------------------------------------------------------------------------
+
+# Starting 5: standard adjustments (same as draft_optimizer)
+POPULARITY_FADE_PENALTY = 0.75        # 25% EV penalty — crowd is already here
+POPULARITY_TARGET_BONUS = 1.15        # 15% EV bonus — under the radar edge
+
+# ---------------------------------------------------------------------------
+# Moonshot constants (dual-lineup optimizer)
+# ---------------------------------------------------------------------------
+
+# Moonshot popularity adjustments (heavier anti-crowd lean)
+MOONSHOT_FADE_PENALTY = 0.60          # 40% penalty (vs 25% for Starting 5)
+MOONSHOT_NEUTRAL_PENALTY = 0.95       # 5% penalty (if you're not a TARGET, step aside)
+MOONSHOT_TARGET_BONUS = 1.30          # 30% bonus (vs 15% for Starting 5)
+
+# Sharp signal bonus: underground buzz → up to +25% EV
+MOONSHOT_SHARP_BONUS_MAX = 0.25
+
+# Explosive bonus: power_profile (batters) or k_rate (pitchers) → up to +10% EV
+MOONSHOT_EXPLOSIVE_BONUS_MAX = 0.10
+
+# Game diversification: soft penalty for same-team overlap with Starting 5
+MOONSHOT_SAME_TEAM_PENALTY = 0.85

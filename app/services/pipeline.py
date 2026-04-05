@@ -21,7 +21,6 @@ from app.services.data_collection import fetch_schedule_for_date, fetch_player_s
 from app.services.filter_strategy import (
     FilteredCandidate,
     classify_slate,
-    classify_ownership,
     compute_pitcher_env_score,
     compute_batter_env_score,
     run_filter_strategy,
@@ -200,8 +199,6 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
 
         # Store env_score on slate player for reference
         sp.env_score = env_score
-        sp.ownership_tier = classify_ownership(sp.drafts).value
-
         candidates.append(FilteredCandidate(
             player_name=player.name,
             team=player.team,
@@ -210,7 +207,6 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             total_score=result.total_score,
             env_score=env_score,
             env_factors=env_factors,
-            ownership_tier=classify_ownership(sp.drafts),
             is_debut_or_return=sp.is_debut_or_return,
             game_id=game_id,
             is_pitcher=is_pitcher,
@@ -242,7 +238,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 "score": s.candidate.total_score,
                 "env_score": round(s.candidate.env_score, 3),
                 "env_factors": s.candidate.env_factors,
-                "ownership": s.candidate.ownership_tier.value,
+                "popularity": s.candidate.popularity.value,
                 "filter_ev": round(s.candidate.filter_ev, 2),
                 "slot_value": s.expected_slot_value,
             }
