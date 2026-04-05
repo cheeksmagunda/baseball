@@ -1,13 +1,13 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 from app.database import get_db
 from app.core.utils import find_player_by_name, compute_total_value, get_latest_player_score
 from app.models.player import Player
-from app.models.slate import Slate
-from app.models.scoring import ScoreBreakdown
+from app.models.slate import Slate, SlatePlayer
+from app.models.scoring import ScoreBreakdown, PlayerScore
 from app.schemas.scoring import PlayerScoreOut, SlateRankingsOut, TraitBreakdown
 from app.services.scoring_engine import score_player
 from app.services.pipeline import run_score_slate
@@ -58,13 +58,17 @@ def score_slate(slate_date: date, db: Session = Depends(get_db)):
         raise HTTPException(404, "No slate or players found for this date")
 
     # Look up boosts from slate_players
-    slate = db.query(Slate).filter_by(date=slate_date).first()
+    slate = (
+        db.query(Slate)
+        .options(selectinload(Slate.players).joinedload(SlatePlayer.player))
+        .filter_by(date=slate_date)
+        .first()
+    )
     boost_map = {}
     if slate:
         for sp in slate.players:
-            p = db.query(Player).get(sp.player_id)
-            if p:
-                boost_map[p.name] = sp.card_boost
+            if sp.player:
+                boost_map[sp.player.name] = sp.card_boost
 
     rankings = []
     for r in results:
@@ -98,21 +102,33 @@ def score_slate(slate_date: date, db: Session = Depends(get_db)):
 @router.get("/{slate_date}/rankings", response_model=SlateRankingsOut)
 def get_cached_rankings(slate_date: date, db: Session = Depends(get_db)):
     """Get previously computed rankings for a slate."""
-    slate = db.query(Slate).filter_by(date=slate_date).first()
+    slate = (
+        db.query(Slate)
+        .options(
+            selectinload(Slate.players)
+            .joinedload(SlatePlayer.player),
+            selectinload(Slate.players)
+            .selectinload(SlatePlayer.scores)
+            .selectinload(PlayerScore.breakdowns),
+        )
+        .filter_by(date=slate_date)
+        .first()
+    )
     if not slate:
         raise HTTPException(404, "Slate not found")
 
     rankings = []
     for sp in slate.players:
-        player = db.query(Player).get(sp.player_id)
+        player = sp.player
         if not player:
             continue
 
-        ps = get_latest_player_score(db, sp.id)
+        # Get latest score from eagerly loaded scores
+        ps = max(sp.scores, key=lambda s: s.created_at) if sp.scores else None
         if not ps:
             continue
 
-        breakdowns = db.query(ScoreBreakdown).filter_by(player_score_id=ps.id).all()
+        breakdowns = ps.breakdowns
         ev = compute_total_value(ps.total_score, sp.card_boost)
 
         rankings.append(PlayerScoreOut(

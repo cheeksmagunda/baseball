@@ -25,7 +25,7 @@ from app.core.constants import (
     MIN_SCORE_THRESHOLD,
     MIN_SCORE_PENALTY,
 )
-from app.core.utils import BASE_MULTIPLIER, compute_total_value
+from app.core.utils import BASE_MULTIPLIER, compute_total_value, get_trait_score
 from app.services.scoring_engine import PlayerScoreResult
 from app.services.popularity import PopularityClass
 
@@ -98,11 +98,11 @@ def compute_expected_value(score_result: PlayerScoreResult, card_boost: float) -
 
 
 def _get_trait_score(score_result: PlayerScoreResult, trait_name: str) -> float:
-    """Extract a specific trait score from a PlayerScoreResult."""
-    for t in score_result.traits:
-        if t.name == trait_name:
-            return t.score
-    return 0.0
+    """Extract a specific trait score from a PlayerScoreResult.
+
+    Thin wrapper around the shared get_trait_score() utility.
+    """
+    return get_trait_score(score_result.traits, trait_name)
 
 
 # ---------------------------------------------------------------------------

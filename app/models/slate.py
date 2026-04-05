@@ -24,7 +24,7 @@ class SlateGame(Base):
     __tablename__ = "slate_games"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    slate_id: Mapped[int] = mapped_column(Integer, ForeignKey("slates.id"), nullable=False)
+    slate_id: Mapped[int] = mapped_column(Integer, ForeignKey("slates.id"), nullable=False, index=True)
     home_team: Mapped[str] = mapped_column(String, nullable=False)
     away_team: Mapped[str] = mapped_column(String, nullable=False)
     mlb_game_pk: Mapped[int | None] = mapped_column(Integer, nullable=True)  # MLB Stats API game PK
@@ -46,6 +46,7 @@ class SlateGame(Base):
     wind_direction: Mapped[str | None] = mapped_column(String, nullable=True)
     temperature_f: Mapped[int | None] = mapped_column(Integer, nullable=True)
     park_team: Mapped[str | None] = mapped_column(String, nullable=True)
+    scheduled_game_time: Mapped[str | None] = mapped_column(String, nullable=True)  # e.g. "7:05 PM ET"
 
     slate: Mapped["Slate"] = relationship(back_populates="games")
 
@@ -55,8 +56,8 @@ class SlatePlayer(Base):
     __table_args__ = (UniqueConstraint("slate_id", "player_id", name="uq_slate_player"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    slate_id: Mapped[int] = mapped_column(Integer, ForeignKey("slates.id"), nullable=False)
-    player_id: Mapped[int] = mapped_column(Integer, ForeignKey("players.id"), nullable=False)
+    slate_id: Mapped[int] = mapped_column(Integer, ForeignKey("slates.id"), nullable=False, index=True)
+    player_id: Mapped[int] = mapped_column(Integer, ForeignKey("players.id"), nullable=False, index=True)
     card_boost: Mapped[float] = mapped_column(Float, default=0.0)
     drafts: Mapped[int | None] = mapped_column(Integer, nullable=True)
     real_score: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -70,7 +71,7 @@ class SlatePlayer(Base):
     platoon_advantage: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     is_debut_or_return: Mapped[bool] = mapped_column(Boolean, default=False)
     player_status: Mapped[str] = mapped_column(String, default="active")  # active, DNP, scratched, data_missing
-    game_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("slate_games.id"), nullable=True)
+    game_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("slate_games.id"), nullable=True, index=True)
     ownership_tier: Mapped[str | None] = mapped_column(String, nullable=True)  # chalk, medium, leverage
     env_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0-1.0, computed by env filter
 

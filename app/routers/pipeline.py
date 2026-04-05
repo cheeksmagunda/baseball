@@ -1,10 +1,13 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas.pipeline import FetchResult, ScoreResult, PlayerSummary, PipelineResult
+from app.schemas.pipeline import (
+    FetchResult, ScoreResult, PlayerSummary, PipelineResult,
+    FilterStrategyPipelineResult,
+)
 from app.services.pipeline import run_fetch, run_full_pipeline, run_score_slate, run_filter_strategy_from_slate
 
 router = APIRouter()
@@ -36,7 +39,7 @@ async def run_pipeline(game_date: date, db: Session = Depends(get_db)):
     return await run_full_pipeline(db, game_date)
 
 
-@router.post("/filter-strategy/{game_date}")
+@router.post("/filter-strategy/{game_date}", response_model=FilterStrategyPipelineResult)
 def run_filter_strategy_pipeline(game_date: date, db: Session = Depends(get_db)):
     """
     Run the "Filter, Not Forecast" strategy on an existing scored slate.
@@ -54,6 +57,5 @@ def run_filter_strategy_pipeline(game_date: date, db: Session = Depends(get_db))
     """
     result = run_filter_strategy_from_slate(db, game_date)
     if "error" in result:
-        from fastapi import HTTPException
         raise HTTPException(404, result["error"])
     return result

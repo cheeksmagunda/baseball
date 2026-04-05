@@ -385,6 +385,8 @@ class FilteredCandidate:
     is_pitcher: bool = False
     sharp_score: float = 0.0
     popularity_class: str = "NEUTRAL"
+    drafts: int | None = None
+    traits: list = field(default_factory=list)  # TraitScore list from scoring engine
 
     # Computed by the optimizer
     filter_ev: float = 0.0

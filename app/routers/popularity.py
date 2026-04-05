@@ -1,12 +1,12 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 from app.database import get_db
 from app.core.utils import get_latest_player_score
 from app.models.player import Player
-from app.models.slate import Slate
+from app.models.slate import Slate, SlatePlayer
 from app.schemas.popularity import (
     PopularityPlayerIn,
     PopularityProfileOut,
@@ -54,19 +54,27 @@ async def check_slate_popularity(slate_date: date, db: Session = Depends(get_db)
     Returns each player classified as FADE, TARGET, or NEUTRAL,
     sorted by composite popularity score (most popular first).
     """
-    slate = db.query(Slate).filter_by(date=slate_date).first()
+    slate = (
+        db.query(Slate)
+        .options(
+            selectinload(Slate.players).joinedload(SlatePlayer.player),
+            selectinload(Slate.players).selectinload(SlatePlayer.scores),
+        )
+        .filter_by(date=slate_date)
+        .first()
+    )
     if not slate:
         raise HTTPException(404, "Slate not found")
 
     # Build player list with their performance scores
     players_input = []
     for sp in slate.players:
-        player = db.query(Player).get(sp.player_id)
+        player = sp.player
         if not player:
             continue
 
-        # Get performance score if available
-        ps = get_latest_player_score(db, sp.id)
+        # Get performance score from eagerly loaded scores
+        ps = max(sp.scores, key=lambda s: s.created_at) if sp.scores else None
         player_score = ps.total_score if ps else 50.0
 
         players_input.append({
