@@ -11,7 +11,7 @@ class PlayerScore(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     slate_player_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("slate_players.id"), nullable=False
+        Integer, ForeignKey("slate_players.id"), nullable=False, index=True
     )
     total_score: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -27,7 +27,7 @@ class ScoreBreakdown(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     player_score_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("player_scores.id"), nullable=False
+        Integer, ForeignKey("player_scores.id"), nullable=False, index=True
     )
     trait_name: Mapped[str] = mapped_column(String, nullable=False)
     trait_score: Mapped[float] = mapped_column(Float, nullable=False)

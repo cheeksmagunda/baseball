@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.schemas.scoring import TraitBreakdown
+
 
 class DraftCard(BaseModel):
     player_name: str
@@ -10,11 +12,14 @@ class DraftSlotOut(BaseModel):
     slot_index: int
     slot_mult: float
     player_name: str
+    team: str = ""
+    position: str = ""
     card_boost: float
     expected_slot_value: float
     player_score: float
     popularity: str = "NEUTRAL"  # FADE, TARGET, or NEUTRAL
     sharp_score: float = 0.0     # underground signal (0-100)
+    breakdowns: list[TraitBreakdown] = []
 
 
 class LineupOut(BaseModel):

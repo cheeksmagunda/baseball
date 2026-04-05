@@ -12,7 +12,15 @@ class SlateGameOut(BaseModel):
     away_moneyline: int | None = None
     home_starter: str | None = None
     away_starter: str | None = None
+    home_starter_era: float | None = None
+    away_starter_era: float | None = None
+    home_starter_k_per_9: float | None = None
+    away_starter_k_per_9: float | None = None
     temperature_f: int | None = None
+    wind_speed_mph: float | None = None
+    wind_direction: str | None = None
+    park_team: str | None = None
+    scheduled_game_time: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -38,6 +46,13 @@ class SlatePlayerOut(BaseModel):
     total_value: float | None = None
     is_highest_value: bool = False
     drafts: int | None = None
+    opponent_team: str | None = None
+    batting_order: int | None = None
+    platoon_advantage: bool | None = None
+    is_debut_or_return: bool = False
+    player_status: str = "active"
+    ownership_tier: str | None = None
+    env_score: float | None = None
 
     model_config = {"from_attributes": True}
 
@@ -53,6 +68,12 @@ class SlateOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PlayerResultIn(BaseModel):
+    """A single player's post-game result."""
+    player_name: str
+    real_score: float
+
+
 class SlateResultsIn(BaseModel):
     """Post-game: upload actual RS values."""
-    results: list[dict]  # [{player_name, real_score}]
+    results: list[PlayerResultIn]

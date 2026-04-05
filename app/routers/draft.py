@@ -1,5 +1,9 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.core.constants import SUBOPTIMAL_THRESHOLD
@@ -15,6 +19,7 @@ from app.schemas.draft import (
     EvaluateRequest,
     EvaluateResponse,
 )
+from app.schemas.scoring import TraitBreakdown
 from app.services.scoring_engine import score_player
 from app.services.draft_optimizer import (
     CardWithScore,
@@ -35,11 +40,22 @@ def _lineup_to_slots(result: OptimizedLineup) -> list[DraftSlotOut]:
             slot_index=s.slot_index,
             slot_mult=s.slot_mult,
             player_name=s.card.player_name,
+            team=s.card.score_result.team,
+            position=s.card.score_result.position,
             card_boost=s.card.card_boost,
             expected_slot_value=s.expected_slot_value,
             player_score=s.card.score_result.total_score,
             popularity=s.card.popularity.value,
             sharp_score=s.card.sharp_score,
+            breakdowns=[
+                TraitBreakdown(
+                    trait_name=t.name,
+                    score=t.score,
+                    max_score=t.max_score,
+                    raw_value=t.raw_value,
+                )
+                for t in s.card.score_result.traits
+            ],
         )
         for s in result.slots
     ]
@@ -70,8 +86,8 @@ async def _resolve_cards(
                 )
                 pop_class = profile.classification
                 sharp_score = profile.sharp_score
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Popularity fetch failed for %s: %s", card.player_name, exc)
 
         resolved.append(CardWithScore(
             player_name=card.player_name,

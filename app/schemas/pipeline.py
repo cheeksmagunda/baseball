@@ -29,3 +29,29 @@ class PipelineResult(BaseModel):
     stats: StatsResult
     scored_players: int
     top_5: list[PlayerSummary]
+
+
+class FilterStrategySlotOut(BaseModel):
+    slot: int
+    slot_mult: float
+    player: str
+    team: str
+    position: str
+    boost: float
+    score: float
+    env_score: float
+    env_factors: list[str] = []
+    ownership: str
+    filter_ev: float
+    slot_value: float
+
+
+class FilterStrategyPipelineResult(BaseModel):
+    date: str
+    slate_type: str
+    slate_reason: str
+    composition: dict = {}
+    total_expected_value: float
+    warnings: list[str] = []
+    lineup: list[FilterStrategySlotOut]
+    candidate_count: int

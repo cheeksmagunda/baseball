@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.constants import PITCHER_POSITIONS
-from app.core.utils import find_player_by_name
+from app.core.utils import find_player_by_name, get_trait_score
+from app.schemas.scoring import TraitBreakdown
 from app.schemas.filter_strategy import (
     FilterCard,
     FilterOptimizeRequest,
@@ -87,11 +88,14 @@ def _resolve_candidates(
             opp_k_pct = None  # not in game env, but could be added
             park_team = game.home_team.upper()
 
+            # Extract K-rate trait and scale to K/9 (max trait score 25 → ~12 K/9)
+            k_rate_score = get_trait_score(score_result.traits, "k_rate")
+            k_rate_max = next((t.max_score for t in score_result.traits if t.name == "k_rate"), 25.0)
+            pitcher_k9 = (k_rate_score / k_rate_max * 12.0) if k_rate_max > 0 else None
+
             env_score, env_factors = compute_pitcher_env_score(
                 opp_team_ops=opp_ops,
-                pitcher_k_per_9=score_result.traits[1].score / score_result.traits[1].max_score * 12.0
-                if score_result.traits and len(score_result.traits) > 1 and score_result.traits[1].max_score > 0
-                else None,
+                pitcher_k_per_9=pitcher_k9,
                 park_team=park_team,
                 is_home=is_home,
                 is_debut_or_return=card.is_debut_or_return,
@@ -133,6 +137,8 @@ def _resolve_candidates(
             is_debut_or_return=card.is_debut_or_return,
             game_id=game_id,
             is_pitcher=is_pitcher,
+            drafts=card.drafts,
+            traits=score_result.traits,
         ))
 
     return candidates
@@ -169,6 +175,12 @@ def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_db)):
     # Steps 4-5: Run the filter strategy optimizer
     result = run_filter_strategy(candidates, slate_class)
 
+    def _traits_to_breakdowns(traits: list) -> list[TraitBreakdown]:
+        return [
+            TraitBreakdown(trait_name=t.name, score=t.score, max_score=t.max_score, raw_value=t.raw_value)
+            for t in traits
+        ]
+
     # Build response
     lineup_out = [
         FilterSlotOut(
@@ -186,6 +198,8 @@ def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_db)):
             filter_ev=round(s.candidate.filter_ev, 2),
             expected_slot_value=s.expected_slot_value,
             game_id=s.candidate.game_id,
+            drafts=s.candidate.drafts,
+            breakdowns=_traits_to_breakdowns(s.candidate.traits),
         )
         for s in result.slots
     ]
@@ -203,6 +217,8 @@ def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_db)):
             is_debut_or_return=c.is_debut_or_return,
             filter_ev=round(c.filter_ev, 2),
             game_id=c.game_id,
+            drafts=c.drafts,
+            breakdowns=_traits_to_breakdowns(c.traits),
         )
         for c in candidates
     ]

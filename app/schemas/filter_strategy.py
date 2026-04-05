@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel
 
+from app.schemas.scoring import TraitBreakdown
+
 
 # ---------------------------------------------------------------------------
 # Request schemas
@@ -71,6 +73,8 @@ class FilterCandidateOut(BaseModel):
     is_debut_or_return: bool = False
     filter_ev: float
     game_id: int | str | None = None
+    drafts: int | None = None
+    breakdowns: list[TraitBreakdown] = []
 
 
 class FilterSlotOut(BaseModel):
@@ -88,6 +92,8 @@ class FilterSlotOut(BaseModel):
     filter_ev: float
     expected_slot_value: float
     game_id: int | str | None = None
+    drafts: int | None = None
+    breakdowns: list[TraitBreakdown] = []
 
 
 class FilterOptimizeResponse(BaseModel):

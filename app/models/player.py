@@ -21,8 +21,8 @@ class Player(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     name_normalized: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    team: Mapped[str] = mapped_column(String, nullable=False)
-    position: Mapped[str] = mapped_column(String, nullable=False)
+    team: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    position: Mapped[str] = mapped_column(String, nullable=False, index=True)
     mlb_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     stats: Mapped[list["PlayerStats"]] = relationship(back_populates="player", cascade="all")
@@ -36,7 +36,7 @@ class PlayerStats(Base):
     __table_args__ = (UniqueConstraint("player_id", "season", name="uq_player_season"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False, index=True)
     season: Mapped[int] = mapped_column(Integer, nullable=False)
     games: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -71,7 +71,7 @@ class PlayerGameLog(Base):
     __table_args__ = (UniqueConstraint("player_id", "game_date", name="uq_player_game"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False, index=True)
     game_date: Mapped[date] = mapped_column(Date, nullable=False)
     opponent: Mapped[str | None] = mapped_column(String, nullable=True)
 

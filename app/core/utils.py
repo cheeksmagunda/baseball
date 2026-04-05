@@ -64,6 +64,18 @@ def get_recent_games(
 # Scoring math helpers
 # ---------------------------------------------------------------------------
 
+def get_trait_score(traits: list, trait_name: str) -> float:
+    """Extract a specific trait score by name from a list of trait results.
+
+    Works with any object that has .name and .score attributes (e.g. TraitScore).
+    Returns 0.0 if the trait is not found.
+    """
+    for t in traits:
+        if t.name == trait_name:
+            return t.score
+    return 0.0
+
+
 def scale_score(value: float, floor: float, ceiling: float, max_pts: float) -> float:
     """Linearly scale a value between floor and ceiling to 0..max_pts."""
     if ceiling == floor:

@@ -10,7 +10,7 @@ The full pipeline is:
 
 from datetime import date
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 from app.core.constants import PITCHER_POSITIONS
 from app.models.player import Player
@@ -44,12 +44,17 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     if not slate:
         return {"error": "No slate found for this date"}
 
-    slate_players = db.query(SlatePlayer).filter_by(slate_id=slate.id).all()
+    slate_players = (
+        db.query(SlatePlayer)
+        .options(joinedload(SlatePlayer.player))
+        .filter_by(slate_id=slate.id)
+        .all()
+    )
     fetched = 0
     failed = 0
 
     for sp in slate_players:
-        player = db.query(Player).get(sp.player_id)
+        player = sp.player
         if not player:
             continue
         try:
@@ -67,11 +72,16 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
     if not slate:
         return []
 
-    slate_players = db.query(SlatePlayer).filter_by(slate_id=slate.id).all()
+    slate_players = (
+        db.query(SlatePlayer)
+        .options(joinedload(SlatePlayer.player))
+        .filter_by(slate_id=slate.id)
+        .all()
+    )
     results = []
 
     for sp in slate_players:
-        player = db.query(Player).get(sp.player_id)
+        player = sp.player
         if not player:
             continue
 
@@ -138,14 +148,19 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
     slate_class = classify_slate(len(games), game_dicts)
 
     # Build candidates from slate players
-    slate_players = db.query(SlatePlayer).filter_by(slate_id=slate.id).all()
+    slate_players = (
+        db.query(SlatePlayer)
+        .options(joinedload(SlatePlayer.player))
+        .filter_by(slate_id=slate.id)
+        .all()
+    )
     candidates = []
 
     for sp in slate_players:
         if sp.player_status in ("DNP", "scratched"):
             continue
 
-        player = db.query(Player).get(sp.player_id)
+        player = sp.player
         if not player:
             continue
 
@@ -159,11 +174,11 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
         # Compute environmental score
         if is_pitcher and game:
             is_home = game.home_team == player.team
+            # Get pitcher K/9 from game environment data if available
+            pitcher_k9 = game.home_starter_k_per_9 if is_home else game.away_starter_k_per_9
             env_score, env_factors = compute_pitcher_env_score(
                 opp_team_ops=None,  # would need team stats
-                pitcher_k_per_9=getattr(
-                    db.query(Player).get(sp.player_id), "k_per_9", None
-                ) if hasattr(player, "k_per_9") else None,
+                pitcher_k_per_9=pitcher_k9,
                 park_team=game.home_team,
                 is_home=is_home,
                 is_debut_or_return=sp.is_debut_or_return,

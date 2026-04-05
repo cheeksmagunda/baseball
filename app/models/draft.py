@@ -10,7 +10,7 @@ class DraftLineup(Base):
     __tablename__ = "draft_lineups"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    slate_id: Mapped[int] = mapped_column(Integer, ForeignKey("slates.id"), nullable=False)
+    slate_id: Mapped[int] = mapped_column(Integer, ForeignKey("slates.id"), nullable=False, index=True)
     source: Mapped[str] = mapped_column(String, nullable=False)
     expected_total_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     actual_total_value: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -25,11 +25,11 @@ class DraftSlot(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     lineup_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("draft_lineups.id"), nullable=False
+        Integer, ForeignKey("draft_lineups.id"), nullable=False, index=True
     )
     slot_index: Mapped[int] = mapped_column(Integer, nullable=False)
     slate_player_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("slate_players.id"), nullable=True
+        Integer, ForeignKey("slate_players.id"), nullable=True, index=True
     )
     player_name: Mapped[str] = mapped_column(String, nullable=False)
     team: Mapped[str | None] = mapped_column(String, nullable=True)

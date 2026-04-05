@@ -1,12 +1,12 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 from app.database import get_db
-from app.core.utils import compute_total_value
+from app.core.utils import compute_total_value, find_player_by_name
 from app.models.player import Player, normalize_name
-from app.models.slate import Slate, SlatePlayer
+from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.schemas.slate import SlateOut, SlatePlayerIn, SlatePlayerOut, SlateResultsIn
 
 router = APIRouter()
@@ -45,23 +45,53 @@ def get_slate(slate_date: date, db: Session = Depends(get_db)):
 
 @router.get("/{slate_date}/players", response_model=list[SlatePlayerOut])
 def get_slate_players(slate_date: date, db: Session = Depends(get_db)):
-    slate = db.query(Slate).filter_by(date=slate_date).first()
+    slate = (
+        db.query(Slate)
+        .options(
+            selectinload(Slate.players).joinedload(SlatePlayer.player),
+            selectinload(Slate.games),
+        )
+        .filter_by(date=slate_date)
+        .first()
+    )
     if not slate:
         raise HTTPException(404, "Slate not found")
 
+    # Build game lookup for opponent resolution
+    game_by_id: dict[int, SlateGame] = {g.id: g for g in slate.games}
+    team_to_game: dict[str, SlateGame] = {}
+    for g in slate.games:
+        team_to_game[g.home_team.upper()] = g
+        team_to_game[g.away_team.upper()] = g
+
     results = []
     for sp in slate.players:
-        player = db.query(Player).get(sp.player_id)
+        player = sp.player
+        team = player.team if player else ""
+
+        # Resolve opponent team from game context
+        opponent_team = None
+        game = game_by_id.get(sp.game_id) if sp.game_id else team_to_game.get(team.upper())
+        if game:
+            opponent_team = game.away_team if game.home_team.upper() == team.upper() else game.home_team
+
         results.append(SlatePlayerOut(
             id=sp.id,
             player_name=player.name if player else "Unknown",
-            team=player.team if player else "",
+            team=team,
             position=player.position if player else "",
             card_boost=sp.card_boost,
             real_score=sp.real_score,
             total_value=sp.total_value,
             is_highest_value=sp.is_highest_value,
             drafts=sp.drafts,
+            opponent_team=opponent_team,
+            batting_order=sp.batting_order,
+            platoon_advantage=sp.platoon_advantage,
+            is_debut_or_return=sp.is_debut_or_return,
+            player_status=sp.player_status,
+            ownership_tier=sp.ownership_tier,
+            env_score=sp.env_score,
         ))
     return results
 
@@ -81,12 +111,11 @@ def add_slate_players(
 
     results = []
     for card in cards:
-        norm = normalize_name(card.player_name)
-        player = db.query(Player).filter_by(name_normalized=norm).first()
+        player = find_player_by_name(db, card.player_name, card.team)
         if not player:
             player = Player(
                 name=card.player_name,
-                name_normalized=norm,
+                name_normalized=normalize_name(card.player_name),
                 team=card.team or "UNK",
                 position=card.position or "DH",
             )
@@ -134,13 +163,7 @@ def update_slate_results(
 
     updated = 0
     for result in body.results:
-        name = result.get("player_name", "")
-        rs = result.get("real_score")
-        if rs is None:
-            continue
-
-        norm = normalize_name(name)
-        player = db.query(Player).filter_by(name_normalized=norm).first()
+        player = find_player_by_name(db, result.player_name)
         if not player:
             continue
 
@@ -150,8 +173,8 @@ def update_slate_results(
             .first()
         )
         if sp:
-            sp.real_score = rs
-            sp.total_value = compute_total_value(rs, sp.card_boost)
+            sp.real_score = result.real_score
+            sp.total_value = compute_total_value(result.real_score, sp.card_boost)
             updated += 1
 
     slate.status = "completed"
