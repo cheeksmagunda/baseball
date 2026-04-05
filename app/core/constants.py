@@ -143,3 +143,30 @@ MOONSHOT_EXPLOSIVE_BONUS_MAX = 0.10
 
 # Game diversification: soft penalty for same-team overlap with Starting 5
 MOONSHOT_SAME_TEAM_PENALTY = 0.85
+
+# ---------------------------------------------------------------------------
+# Draft-count ownership leverage (§2.2, §4.2 Filter 3, Commandment 5)
+# Based on actual draft counts, NOT web-scraped popularity.
+# Ghost players with env support are the highest-EV pool historically.
+# ---------------------------------------------------------------------------
+GHOST_DRAFT_THRESHOLD = 100           # < 100 drafts = ghost player
+GHOST_ENV_BONUS = 1.20                # 20% EV bonus for ghosts with env support
+GHOST_MOONSHOT_ENV_BONUS = 1.30       # 30% EV bonus for ghosts in Moonshot
+LOW_DRAFT_THRESHOLD = 200             # < 200 drafts = low-ownership differentiator
+LOW_DRAFT_BONUS = 1.10                # 10% EV bonus
+CHALK_DRAFT_THRESHOLD = 2000          # >= 2000 drafts = chalk (over-drafted)
+CHALK_PENALTY = 0.85                  # 15% EV penalty for chalk
+CHALK_EXEMPT_MIN_BOOST = 3.0          # Chalk exemption requires 3.0 boost + env pass
+
+# ---------------------------------------------------------------------------
+# Boost concentration penalty (§4.2 Filter 4)
+# Don't put all boosted players in the same game.
+# ---------------------------------------------------------------------------
+BOOST_CONCENTRATION_THRESHOLD = 3     # 3+ boosted in same game triggers penalty
+BOOST_CONCENTRATION_PENALTY = 0.85    # 15% penalty for 3rd+ boosted in same game
+
+# ---------------------------------------------------------------------------
+# Slot 1 Differentiator Principle (§4.2 Filter 5, §3.4)
+# When the field converges on an obvious Slot 1, put the contrarian there.
+# ---------------------------------------------------------------------------
+SLOT1_DIFFERENTIATOR_EV_THRESHOLD = 0.90  # Only swap if contrarian within 10% EV
