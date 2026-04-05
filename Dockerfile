@@ -2,13 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir .
-
+# Copy everything first so pip install can find the package
 COPY . .
 
-# Create db directory and seed from CSV data on build
-RUN mkdir -p db && python -m app.seed
+# Install dependencies and create db directory
+RUN pip install --no-cache-dir . && mkdir -p db && python -m app.seed
 
 EXPOSE 8000
 
