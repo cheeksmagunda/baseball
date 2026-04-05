@@ -7,8 +7,8 @@ RUN pip install --no-cache-dir .
 
 COPY . .
 
-# Seed DB from CSV data on build
-RUN python -m app.seed
+# Create db directory and seed from CSV data on build
+RUN mkdir -p db && python -m app.seed
 
 EXPOSE 8000
 
