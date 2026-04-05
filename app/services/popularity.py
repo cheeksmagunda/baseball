@@ -32,7 +32,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT = 10.0
+TIMEOUT = 5.0
 
 
 # ---------------------------------------------------------------------------
@@ -85,24 +85,40 @@ async def fetch_social_signal(player_name: str, team: str) -> SignalResult:
     Estimate social media buzz via Google Trends.
 
     Presence in Google autocomplete or daily trends = mainstream attention.
+    Both endpoints are fetched in parallel.
     """
     query = f"{player_name} MLB"
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            resp = await client.get(
+    last_name = player_name.split()[-1].lower()
+
+    async def _autocomplete(client: httpx.AsyncClient) -> bool:
+        try:
+            r = await client.get(
                 "https://trends.google.com/trends/api/autocomplete",
                 params={"hl": "en-US", "tz": "300", "q": query},
             )
-            if resp.status_code == 200 and player_name.split()[-1].lower() in resp.text.lower():
-                return SignalResult("social", 70.0, f"Trending on Google: '{query}'")
+            return r.status_code == 200 and last_name in r.text.lower()
+        except Exception:
+            return False
 
-            resp2 = await client.get(
+    async def _dailytrends(client: httpx.AsyncClient) -> bool:
+        try:
+            r = await client.get(
                 "https://trends.google.com/trends/api/dailytrends",
                 params={"hl": "en-US", "tz": "300", "geo": "US", "ns": "15"},
             )
-            if resp2.status_code == 200 and player_name.split()[-1].lower() in resp2.text.lower():
-                return SignalResult("social", 85.0, f"In Google daily trends: '{player_name}'")
+            return r.status_code == 200 and last_name in r.text.lower()
+        except Exception:
+            return False
 
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            in_autocomplete, in_daily = await asyncio.gather(
+                _autocomplete(client), _dailytrends(client)
+            )
+        if in_daily:
+            return SignalResult("social", 85.0, f"In Google daily trends: '{player_name}'")
+        if in_autocomplete:
+            return SignalResult("social", 70.0, f"Trending on Google: '{query}'")
     except Exception as e:
         logger.debug(f"Social signal fetch failed for {player_name}: {e}")
 
@@ -113,58 +129,65 @@ async def fetch_news_signal(player_name: str, team: str) -> SignalResult:
     """
     Check sports news for recent headlines mentioning the player.
 
-    Uses ESPN and MLB.com RSS feeds — free, no auth.
+    Uses ESPN and MLB.com RSS feeds — free, no auth. Both fetched in parallel.
     """
     last_name = player_name.split()[-1].lower()
-    score = 0.0
+
+    async def _feed(client: httpx.AsyncClient, name: str, url: str) -> str | None:
+        try:
+            r = await client.get(url)
+            return name if r.status_code == 200 and last_name in r.text.lower() else None
+        except Exception:
+            return None
+
     sources_found = []
-
-    feeds = [
-        ("ESPN", "https://www.espn.com/espn/rss/mlb/news"),
-        ("MLB", "https://www.mlb.com/feeds/news/rss.xml"),
-    ]
-
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
-            for source_name, url in feeds:
-                try:
-                    resp = await client.get(url)
-                    if resp.status_code == 200 and last_name in resp.text.lower():
-                        score += 40.0
-                        sources_found.append(source_name)
-                except Exception:
-                    continue
+            results = await asyncio.gather(
+                _feed(client, "ESPN", "https://www.espn.com/espn/rss/mlb/news"),
+                _feed(client, "MLB", "https://www.mlb.com/feeds/news/rss.xml"),
+            )
+        sources_found = [s for s in results if s]
     except Exception as e:
         logger.debug(f"News signal fetch failed for {player_name}: {e}")
 
+    score = min(len(sources_found) * 40.0, 100.0)
     context = f"Found in: {', '.join(sources_found)}" if sources_found else "No news mentions"
-    return SignalResult("news", min(score, 100.0), context)
+    return SignalResult("news", score, context)
 
 
 async def fetch_dfs_ownership_signal(player_name: str, team: str) -> SignalResult:
     """
     Estimate cross-platform DFS ownership.
 
-    Scrapes publicly visible ownership data from major DFS platforms.
+    Scrapes publicly visible ownership data from major DFS platforms. Both fetched in parallel.
     """
     last_name = player_name.split()[-1].lower()
 
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
-            resp = await client.get(
-                "https://rotogrinders.com/resultsdb/mlb",
-                headers={"User-Agent": "Mozilla/5.0"},
-            )
-            if resp.status_code == 200 and last_name in resp.text.lower():
-                return SignalResult("dfs_ownership", 60.0, "Found on RotoGrinders results")
+    async def _rotogrinders(client: httpx.AsyncClient) -> bool:
+        try:
+            r = await client.get("https://rotogrinders.com/resultsdb/mlb", headers={"User-Agent": "Mozilla/5.0"})
+            return r.status_code == 200 and last_name in r.text.lower()
+        except Exception:
+            return False
 
-            resp2 = await client.get(
+    async def _numberfire(client: httpx.AsyncClient) -> bool:
+        try:
+            r = await client.get(
                 "https://www.numberfire.com/mlb/daily-fantasy/daily-baseball-projections",
                 headers={"User-Agent": "Mozilla/5.0"},
             )
-            if resp2.status_code == 200 and last_name in resp2.text.lower():
-                return SignalResult("dfs_ownership", 45.0, "Found on NumberFire projections")
+            return r.status_code == 200 and last_name in r.text.lower()
+        except Exception:
+            return False
 
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
+            roto, nfire = await asyncio.gather(_rotogrinders(client), _numberfire(client))
+        if roto:
+            return SignalResult("dfs_ownership", 60.0, "Found on RotoGrinders results")
+        if nfire:
+            return SignalResult("dfs_ownership", 45.0, "Found on NumberFire projections")
     except Exception as e:
         logger.debug(f"DFS ownership signal fetch failed for {player_name}: {e}")
 
@@ -215,63 +238,43 @@ async def fetch_sharp_signal(player_name: str, team: str) -> SignalResult:
       - Reddit r/fantasybaseball (hot posts, daily threads)
       - Reddit r/baseball (rising posts)
       - Prospect/analytics blogs (FanGraphs community, Prospects Live)
+
+    All sources fetched in parallel.
     """
     last_name = player_name.split()[-1].lower()
+
+    SOURCES = [
+        ("r/fantasybaseball", "https://www.reddit.com/r/fantasybaseball/hot.json", 35.0,
+         {"limit": "50"}, {"User-Agent": "BaseballDFS/1.0"}),
+        ("r/baseball", "https://www.reddit.com/r/baseball/hot.json", 25.0,
+         {"limit": "50"}, {"User-Agent": "BaseballDFS/1.0"}),
+        ("FanGraphs community", "https://community.fangraphs.com/feed/", 30.0,
+         {}, {"User-Agent": "Mozilla/5.0"}),
+        ("Prospects Live", "https://www.prospectslive.com/feed", 25.0,
+         {}, {"User-Agent": "Mozilla/5.0"}),
+    ]
+
+    async def _fetch(client: httpx.AsyncClient, name: str, url: str, pts: float,
+                     params: dict, headers: dict) -> tuple[str, float]:
+        try:
+            r = await client.get(url, params=params or None, headers=headers)
+            if r.status_code == 200 and last_name in r.text.lower():
+                return name, pts
+        except Exception:
+            pass
+        return name, 0.0
+
     score = 0.0
     sources_found = []
-
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
-            # Reddit r/fantasybaseball — the sharpest DFS community
-            try:
-                resp = await client.get(
-                    "https://www.reddit.com/r/fantasybaseball/hot.json",
-                    params={"limit": 50},
-                    headers={"User-Agent": "BaseballDFS/1.0"},
-                )
-                if resp.status_code == 200 and last_name in resp.text.lower():
-                    score += 35.0
-                    sources_found.append("r/fantasybaseball")
-            except Exception:
-                pass
-
-            # Reddit r/baseball — broader but catches breakout players
-            try:
-                resp = await client.get(
-                    "https://www.reddit.com/r/baseball/hot.json",
-                    params={"limit": 50},
-                    headers={"User-Agent": "BaseballDFS/1.0"},
-                )
-                if resp.status_code == 200 and last_name in resp.text.lower():
-                    score += 25.0
-                    sources_found.append("r/baseball")
-            except Exception:
-                pass
-
-            # FanGraphs community blogs — advanced stats crowd
-            try:
-                resp = await client.get(
-                    "https://community.fangraphs.com/feed/",
-                    headers={"User-Agent": "Mozilla/5.0"},
-                )
-                if resp.status_code == 200 and last_name in resp.text.lower():
-                    score += 30.0
-                    sources_found.append("FanGraphs community")
-            except Exception:
-                pass
-
-            # Prospects Live — catches breakout minor leaguers / call-ups
-            try:
-                resp = await client.get(
-                    "https://www.prospectslive.com/feed",
-                    headers={"User-Agent": "Mozilla/5.0"},
-                )
-                if resp.status_code == 200 and last_name in resp.text.lower():
-                    score += 25.0
-                    sources_found.append("Prospects Live")
-            except Exception:
-                pass
-
+            results = await asyncio.gather(
+                *[_fetch(client, name, url, pts, params, hdrs) for name, url, pts, params, hdrs in SOURCES]
+            )
+        for name, pts in results:
+            if pts > 0:
+                score += pts
+                sources_found.append(name)
     except Exception as e:
         logger.debug(f"Sharp signal fetch failed for {player_name}: {e}")
 

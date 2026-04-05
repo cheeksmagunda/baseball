@@ -8,6 +8,7 @@ The full pipeline is:
   4. [Optional] Run filter strategy ("Filter, Not Forecast") for optimized lineups
 """
 
+import asyncio
 from datetime import date
 
 from sqlalchemy.orm import Session, selectinload, joinedload
@@ -56,15 +57,21 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     fetched = 0
     failed = 0
 
-    for sp in slate_players:
-        player = sp.player
-        if not player:
-            continue
-        try:
-            await fetch_player_season_stats(db, player)
-            fetched += 1
-        except Exception:
+    # Fetch all player stats in parallel (HTTP is async; DB ops serialize naturally
+    # since asyncio is single-threaded and yields only at await points).
+    _SEM = asyncio.Semaphore(20)  # cap concurrent MLB API connections
+
+    async def _fetch(player):
+        async with _SEM:
+            return await fetch_player_season_stats(db, player)
+
+    players = [sp.player for sp in slate_players if sp.player]
+    results = await asyncio.gather(*[_fetch(p) for p in players], return_exceptions=True)
+    for r in results:
+        if isinstance(r, Exception):
             failed += 1
+        else:
+            fetched += 1
 
     # Backfill SlateGame starter ERA/K9 from newly-fetched PlayerStats.
     # This feeds the environmental scoring engine (Filter 2).

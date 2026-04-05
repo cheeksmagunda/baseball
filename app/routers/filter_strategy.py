@@ -5,6 +5,7 @@ This is the primary draft optimization endpoint. It implements
 the full 5-filter pipeline from the Master Strategy Document.
 """
 
+import asyncio
 import logging
 from datetime import date
 
@@ -37,6 +38,7 @@ from app.services.filter_strategy import (
 )
 from app.services.popularity import PopularityClass, get_popularity_profile
 from app.services.pipeline import run_full_pipeline
+from app.services.lineup_cache import lineup_cache
 
 logger = logging.getLogger(__name__)
 
@@ -64,13 +66,13 @@ async def _resolve_candidates(
     Resolve cards into FilteredCandidates by:
     1. Looking up player in DB and scoring them
     2. Computing environmental score (Filter 2)
-    3. Fetching web-scraped popularity (Filter 3)
+    3. Fetching web-scraped popularity (Filter 3) — all players in parallel
     """
     game_by_id, team_to_game = _build_game_lookup(games)
-    candidates = []
 
+    # Stage 1: synchronous work (DB lookups, scoring, env score)
+    pre_candidates = []
     for card in cards:
-        # Score the player
         player = find_player_by_name(db, card.player_name, card.team)
         if not player:
             continue
@@ -119,37 +121,60 @@ async def _resolve_candidates(
             env_score = 0.5
             env_factors = ["No game environment data available"]
 
-        # Fetch web-scraped popularity (Filter 3)
-        pop_class = PopularityClass.NEUTRAL
-        sharp_score = 0.0
-        try:
-            profile = await get_popularity_profile(
-                card.player_name,
-                card.team,
-                score_result.total_score,
-                include_sharp=True,
-            )
-            pop_class = profile.classification
-            sharp_score = profile.sharp_score
-        except Exception as exc:
-            logger.warning("Popularity fetch failed for %s: %s", card.player_name, exc)
-
         game_id = card.game_id
         if game_id is None and game is not None:
             game_id = game.game_id
 
+        pre_candidates.append({
+            "card": card,
+            "player": player,
+            "is_pitcher": is_pitcher,
+            "score_result": score_result,
+            "env_score": env_score,
+            "env_factors": env_factors,
+            "game_id": game_id,
+        })
+
+    # Stage 2: fetch popularity for all players in parallel (Filter 3)
+    popularity_results = await asyncio.gather(
+        *[
+            get_popularity_profile(
+                p["card"].player_name,
+                p["card"].team,
+                p["score_result"].total_score,
+                include_sharp=True,
+            )
+            for p in pre_candidates
+        ],
+        return_exceptions=True,
+    )
+
+    # Stage 3: assemble FilteredCandidates
+    candidates = []
+    for pre, pop_result in zip(pre_candidates, popularity_results):
+        card = pre["card"]
+        score_result = pre["score_result"]
+
+        pop_class = PopularityClass.NEUTRAL
+        sharp_score = 0.0
+        if isinstance(pop_result, Exception):
+            logger.warning("Popularity fetch failed for %s: %s", card.player_name, pop_result)
+        else:
+            pop_class = pop_result.classification
+            sharp_score = pop_result.sharp_score
+
         candidates.append(FilteredCandidate(
             player_name=card.player_name,
             team=card.team,
-            position=player.position,
+            position=pre["player"].position,
             card_boost=card.card_boost,
             total_score=score_result.total_score,
-            env_score=env_score,
-            env_factors=env_factors,
+            env_score=pre["env_score"],
+            env_factors=pre["env_factors"],
             popularity=pop_class,
             is_debut_or_return=card.is_debut_or_return,
-            game_id=game_id,
-            is_pitcher=is_pitcher,
+            game_id=pre["game_id"],
+            is_pitcher=pre["is_pitcher"],
             sharp_score=sharp_score,
             drafts=card.drafts,
             traits=score_result.traits,
@@ -214,29 +239,130 @@ def _load_today_slate(db: Session) -> tuple[list[FilterCard], list[GameEnvironme
     return cards, games
 
 
+def _traits_to_breakdowns(traits: list) -> list[TraitBreakdown]:
+    return [
+        TraitBreakdown(trait_name=t.name, score=t.score, max_score=t.max_score, raw_value=t.raw_value)
+        for t in traits
+    ]
+
+
+def _build_lineup_out(result) -> FilterLineupOut:
+    slots_out = [
+        FilterSlotOut(
+            slot_index=s.slot_index,
+            slot_mult=s.slot_mult,
+            player_name=s.candidate.player_name,
+            team=s.candidate.team,
+            position=s.candidate.position,
+            card_boost=s.candidate.card_boost,
+            total_score=s.candidate.total_score,
+            env_score=round(s.candidate.env_score, 3),
+            env_factors=s.candidate.env_factors,
+            popularity=s.candidate.popularity.value,
+            is_debut_or_return=s.candidate.is_debut_or_return,
+            filter_ev=round(s.candidate.filter_ev, 2),
+            expected_slot_value=s.expected_slot_value,
+            game_id=s.candidate.game_id,
+            drafts=s.candidate.drafts,
+            breakdowns=_traits_to_breakdowns(s.candidate.traits),
+        )
+        for s in result.slots
+    ]
+    return FilterLineupOut(
+        lineup=slots_out,
+        total_expected_value=result.total_expected_value,
+        strategy=result.strategy,
+        composition=result.composition,
+        warnings=result.warnings,
+    )
+
+
+def _build_response(dual, candidates) -> FilterOptimizeResponse:
+    """Assemble the FilterOptimizeResponse from a dual-lineup result + candidate list."""
+    all_candidates_out = [
+        FilterCandidateOut(
+            player_name=c.player_name,
+            team=c.team,
+            position=c.position,
+            card_boost=c.card_boost,
+            total_score=c.total_score,
+            env_score=round(c.env_score, 3),
+            env_factors=c.env_factors,
+            popularity=c.popularity.value,
+            is_debut_or_return=c.is_debut_or_return,
+            filter_ev=round(c.filter_ev, 2),
+            game_id=c.game_id,
+            drafts=c.drafts,
+            breakdowns=_traits_to_breakdowns(c.traits),
+        )
+        for c in candidates
+    ]
+    return FilterOptimizeResponse(
+        slate_classification=SlateClassificationOut(
+            slate_type=dual.starting_5.slate_classification.slate_type.value,
+            game_count=dual.starting_5.slate_classification.game_count,
+            quality_sp_matchups=dual.starting_5.slate_classification.quality_sp_matchups,
+            high_total_games=dual.starting_5.slate_classification.high_total_games,
+            reason=dual.starting_5.slate_classification.reason,
+        ),
+        starting_5=_build_lineup_out(dual.starting_5),
+        moonshot=_build_lineup_out(dual.moonshot),
+        all_candidates=sorted(all_candidates_out, key=lambda c: c.filter_ev, reverse=True),
+    )
+
+
+async def build_and_cache_lineups(db: Session) -> FilterOptimizeResponse | None:
+    """
+    Pre-compute today's dual-lineup result and store it in the in-process cache.
+
+    Called by the startup pipeline so the first frontend request is instant.
+    Returns the response object, or None if no slate data is available.
+    """
+    cards, games = _load_today_slate(db)
+    if not cards:
+        logger.warning("build_and_cache_lineups: no slate data available, skipping cache warm")
+        return None
+
+    game_dicts = [g.model_dump() for g in games]
+    slate_class = classify_slate(len(games), game_dicts)
+
+    candidates = await _resolve_candidates(cards, games, db)
+    if not candidates:
+        logger.warning("build_and_cache_lineups: no matching players found, skipping cache warm")
+        return None
+
+    dual = run_dual_filter_strategy(candidates, slate_class)
+    response = _build_response(dual, candidates)
+    lineup_cache.store(response)
+    logger.info(
+        "Lineup cache warmed: %d candidates, slate=%s",
+        len(candidates),
+        slate_class.slate_type.value,
+    )
+    return response
+
+
 @router.post("/optimize", response_model=FilterOptimizeResponse)
 async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_db)):
     """
     Run the full "Filter, Not Forecast" dual-lineup pipeline.
 
     Returns both Starting 5 and Moonshot lineups from a single call.
-    When no cards are provided, auto-loads today's slate from the database.
+    When no cards are provided, serves from the in-process cache that the
+    startup pipeline pre-computes — so the response is instant.
 
     Starting 5: Best filter EV with web-scraped popularity adjustments.
     Moonshot: Completely different 5 players — heavier anti-crowd lean,
               sharp signal boost, explosive trait bonus, game diversification.
-
-    Pipeline:
-    1. Classifies the slate type (tiny/pitcher_day/hitter_day/standard)
-    2. Scores all players and computes environmental advantages
-    3. Fetches web-scraped popularity (FADE/TARGET/NEUTRAL)
-    4. Gates boosts against environmental support
-    5. Enforces composition targets and game diversification
-    6. Assigns players to slots with smart sequencing
-    7. Builds Moonshot from remaining pool with stronger filters
     """
     cards = req.cards
     games = req.games
+
+    # Fast path: serve pre-computed result from cache when no custom cards given
+    if not cards:
+        cached = lineup_cache.get()
+        if cached is not None:
+            return cached
 
     if not cards:
         cards, games = _load_today_slate(db)
@@ -264,74 +390,13 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
 
     # Steps 4-7: Run the dual filter strategy optimizer
     dual = run_dual_filter_strategy(candidates, slate_class)
+    response = _build_response(dual, candidates)
 
-    def _traits_to_breakdowns(traits: list) -> list[TraitBreakdown]:
-        return [
-            TraitBreakdown(trait_name=t.name, score=t.score, max_score=t.max_score, raw_value=t.raw_value)
-            for t in traits
-        ]
+    # Cache the result for subsequent frontend requests
+    if not req.cards:
+        lineup_cache.store(response)
 
-    def _build_lineup_out(result) -> FilterLineupOut:
-        slots_out = [
-            FilterSlotOut(
-                slot_index=s.slot_index,
-                slot_mult=s.slot_mult,
-                player_name=s.candidate.player_name,
-                team=s.candidate.team,
-                position=s.candidate.position,
-                card_boost=s.candidate.card_boost,
-                total_score=s.candidate.total_score,
-                env_score=round(s.candidate.env_score, 3),
-                env_factors=s.candidate.env_factors,
-                popularity=s.candidate.popularity.value,
-                is_debut_or_return=s.candidate.is_debut_or_return,
-                filter_ev=round(s.candidate.filter_ev, 2),
-                expected_slot_value=s.expected_slot_value,
-                game_id=s.candidate.game_id,
-                drafts=s.candidate.drafts,
-                breakdowns=_traits_to_breakdowns(s.candidate.traits),
-            )
-            for s in result.slots
-        ]
-        return FilterLineupOut(
-            lineup=slots_out,
-            total_expected_value=result.total_expected_value,
-            strategy=result.strategy,
-            composition=result.composition,
-            warnings=result.warnings,
-        )
-
-    all_candidates_out = [
-        FilterCandidateOut(
-            player_name=c.player_name,
-            team=c.team,
-            position=c.position,
-            card_boost=c.card_boost,
-            total_score=c.total_score,
-            env_score=round(c.env_score, 3),
-            env_factors=c.env_factors,
-            popularity=c.popularity.value,
-            is_debut_or_return=c.is_debut_or_return,
-            filter_ev=round(c.filter_ev, 2),
-            game_id=c.game_id,
-            drafts=c.drafts,
-            breakdowns=_traits_to_breakdowns(c.traits),
-        )
-        for c in candidates
-    ]
-
-    return FilterOptimizeResponse(
-        slate_classification=SlateClassificationOut(
-            slate_type=dual.starting_5.slate_classification.slate_type.value,
-            game_count=dual.starting_5.slate_classification.game_count,
-            quality_sp_matchups=dual.starting_5.slate_classification.quality_sp_matchups,
-            high_total_games=dual.starting_5.slate_classification.high_total_games,
-            reason=dual.starting_5.slate_classification.reason,
-        ),
-        starting_5=_build_lineup_out(dual.starting_5),
-        moonshot=_build_lineup_out(dual.moonshot),
-        all_candidates=sorted(all_candidates_out, key=lambda c: c.filter_ev, reverse=True),
-    )
+    return response
 
 
 @router.post("/classify-slate", response_model=SlateClassificationOut)
