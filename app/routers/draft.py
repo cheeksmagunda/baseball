@@ -1,9 +1,5 @@
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-
-logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.core.constants import SUBOPTIMAL_THRESHOLD
@@ -11,8 +7,6 @@ from app.core.utils import find_player_by_name
 from app.schemas.draft import (
     DraftCard,
     DraftSlotOut,
-    OptimizeRequest,
-    OptimizeResponse,
     EvaluateRequest,
     EvaluateResponse,
 )
@@ -24,7 +18,6 @@ from app.services.draft_optimizer import (
     optimize_lineup,
     evaluate_lineup,
 )
-from app.services.popularity import PopularityClass, get_popularity_profile
 
 router = APIRouter()
 
@@ -41,8 +34,6 @@ def _lineup_to_slots(result: OptimizedLineup) -> list[DraftSlotOut]:
             card_boost=s.card.card_boost,
             expected_slot_value=s.expected_slot_value,
             player_score=s.card.score_result.total_score,
-            popularity=s.card.popularity.value,
-            sharp_score=s.card.sharp_score,
             breakdowns=[
                 TraitBreakdown(
                     trait_name=t.name,
@@ -57,70 +48,29 @@ def _lineup_to_slots(result: OptimizedLineup) -> list[DraftSlotOut]:
     ]
 
 
-async def _resolve_cards(
-    cards: list[DraftCard],
-    db: Session,
-    use_popularity: bool = True,
-    include_sharp: bool = False,
-) -> list[CardWithScore]:
-    """Look up each card's player, score them, and optionally assess popularity."""
+def _resolve_cards(cards: list[DraftCard], db: Session) -> list[CardWithScore]:
+    """Look up each card's player and score them (no popularity needed for evaluate)."""
     resolved = []
     for card in cards:
         player = find_player_by_name(db, card.player_name)
         if not player:
             continue
-
         result = score_player(db, player)
-
-        pop_class = PopularityClass.NEUTRAL
-        sharp_score = 0.0
-        if use_popularity:
-            try:
-                profile = await get_popularity_profile(
-                    card.player_name, player.team, result.total_score,
-                    include_sharp=include_sharp,
-                )
-                pop_class = profile.classification
-                sharp_score = profile.sharp_score
-            except Exception as exc:
-                logger.warning("Popularity fetch failed for %s: %s", card.player_name, exc)
-
         resolved.append(CardWithScore(
             player_name=card.player_name,
             card_boost=card.card_boost,
             score_result=result,
-            popularity=pop_class,
-            sharp_score=sharp_score,
         ))
     return resolved
 
 
-@router.post("/optimize", response_model=OptimizeResponse)
-async def optimize_draft(req: OptimizeRequest, db: Session = Depends(get_db)):
-    """Given available cards, return the optimal Starting 5 lineup."""
-    if len(req.cards) < 1:
-        raise HTTPException(400, "Need at least 1 card")
-
-    cards = await _resolve_cards(req.cards, db)
-    if not cards:
-        raise HTTPException(404, "No matching players found in database")
-
-    result = optimize_lineup(cards, strategy=req.strategy)
-
-    return OptimizeResponse(
-        lineup=_lineup_to_slots(result),
-        total_expected_value=result.total_expected_value,
-        strategy=result.strategy,
-    )
-
-
 @router.post("/evaluate", response_model=EvaluateResponse)
-async def evaluate_draft(req: EvaluateRequest, db: Session = Depends(get_db)):
+def evaluate_draft(req: EvaluateRequest, db: Session = Depends(get_db)):
     """Evaluate a user-proposed lineup (cards in slot order)."""
     if len(req.slots) != 5:
         raise HTTPException(400, "Need exactly 5 cards in slot order")
 
-    cards = await _resolve_cards(req.slots, db, use_popularity=False)
+    cards = _resolve_cards(req.slots, db)
     if len(cards) < 5:
         missing = len(req.slots) - len(cards)
         raise HTTPException(404, f"{missing} players not found in database")
