@@ -35,14 +35,30 @@ async def lifespan(app: FastAPI):
 
     # Run pipeline in background so health checks respond immediately
     async def _startup_pipeline():
+        import traceback
+        from app.routers.filter_strategy import build_and_cache_lineups
+
         db = SessionLocal()
         try:
-            result = await run_full_pipeline(db, date.today())
-            logger.info("Startup pipeline complete: %s", result)
-        except Exception as exc:
-            import traceback
-            logger.error("Startup pipeline failed: %s", exc)
-            logger.error("Traceback: %s", traceback.format_exc())
+            # Stage 1: fetch schedule, rosters, stats, scores
+            pipeline_ok = False
+            try:
+                result = await run_full_pipeline(db, date.today())
+                logger.info("Startup pipeline complete: %s", result)
+                pipeline_ok = True
+            except Exception as exc:
+                logger.error("Startup pipeline failed: %s\n%s", exc, traceback.format_exc())
+
+            # Stage 2: pre-compute and cache lineups (only if pipeline succeeded)
+            if pipeline_ok:
+                try:
+                    cached = await build_and_cache_lineups(db)
+                    if cached:
+                        logger.info("Lineup cache ready — frontend requests will be instant")
+                    else:
+                        logger.warning("Lineup cache empty after startup (no slate data?)")
+                except Exception as exc:
+                    logger.error("Lineup cache warm failed: %s\n%s", exc, traceback.format_exc())
         finally:
             db.close()
 
