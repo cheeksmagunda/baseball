@@ -33,7 +33,11 @@ export function useLineupData(): UseLineupDataReturn {
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       if (err instanceof ApiError) {
-        setError({ status: err.status, message: err.message });
+        if (err.status === 404) {
+          setError({ status: 404, message: "No slate available for today. Check back later." });
+        } else {
+          setError({ status: err.status, message: err.message });
+        }
       } else {
         setError({ status: 0, message: "Network error. Please try again." });
       }
