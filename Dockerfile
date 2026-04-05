@@ -10,6 +10,4 @@ RUN pip install --no-cache-dir . && mkdir -p db && python -m app.seed
 
 EXPOSE 8000
 
-COPY start.sh .
-RUN chmod +x start.sh
-CMD ["sh", "start.sh"]
+CMD ["python", "run.py"]
