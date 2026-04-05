@@ -5,6 +5,7 @@ This is the primary draft optimization endpoint. It implements
 the full 5-filter pipeline from the Master Strategy Document.
 """
 
+import asyncio
 import logging
 from datetime import date
 
@@ -64,13 +65,13 @@ async def _resolve_candidates(
     Resolve cards into FilteredCandidates by:
     1. Looking up player in DB and scoring them
     2. Computing environmental score (Filter 2)
-    3. Fetching web-scraped popularity (Filter 3)
+    3. Fetching web-scraped popularity (Filter 3) — all players in parallel
     """
     game_by_id, team_to_game = _build_game_lookup(games)
-    candidates = []
 
+    # Stage 1: synchronous work (DB lookups, scoring, env score)
+    pre_candidates = []
     for card in cards:
-        # Score the player
         player = find_player_by_name(db, card.player_name, card.team)
         if not player:
             continue
@@ -119,37 +120,60 @@ async def _resolve_candidates(
             env_score = 0.5
             env_factors = ["No game environment data available"]
 
-        # Fetch web-scraped popularity (Filter 3)
-        pop_class = PopularityClass.NEUTRAL
-        sharp_score = 0.0
-        try:
-            profile = await get_popularity_profile(
-                card.player_name,
-                card.team,
-                score_result.total_score,
-                include_sharp=True,
-            )
-            pop_class = profile.classification
-            sharp_score = profile.sharp_score
-        except Exception as exc:
-            logger.warning("Popularity fetch failed for %s: %s", card.player_name, exc)
-
         game_id = card.game_id
         if game_id is None and game is not None:
             game_id = game.game_id
 
+        pre_candidates.append({
+            "card": card,
+            "player": player,
+            "is_pitcher": is_pitcher,
+            "score_result": score_result,
+            "env_score": env_score,
+            "env_factors": env_factors,
+            "game_id": game_id,
+        })
+
+    # Stage 2: fetch popularity for all players in parallel (Filter 3)
+    popularity_results = await asyncio.gather(
+        *[
+            get_popularity_profile(
+                p["card"].player_name,
+                p["card"].team,
+                p["score_result"].total_score,
+                include_sharp=True,
+            )
+            for p in pre_candidates
+        ],
+        return_exceptions=True,
+    )
+
+    # Stage 3: assemble FilteredCandidates
+    candidates = []
+    for pre, pop_result in zip(pre_candidates, popularity_results):
+        card = pre["card"]
+        score_result = pre["score_result"]
+
+        pop_class = PopularityClass.NEUTRAL
+        sharp_score = 0.0
+        if isinstance(pop_result, Exception):
+            logger.warning("Popularity fetch failed for %s: %s", card.player_name, pop_result)
+        else:
+            pop_class = pop_result.classification
+            sharp_score = pop_result.sharp_score
+
         candidates.append(FilteredCandidate(
             player_name=card.player_name,
             team=card.team,
-            position=player.position,
+            position=pre["player"].position,
             card_boost=card.card_boost,
             total_score=score_result.total_score,
-            env_score=env_score,
-            env_factors=env_factors,
+            env_score=pre["env_score"],
+            env_factors=pre["env_factors"],
             popularity=pop_class,
             is_debut_or_return=card.is_debut_or_return,
-            game_id=game_id,
-            is_pitcher=is_pitcher,
+            game_id=pre["game_id"],
+            is_pitcher=pre["is_pitcher"],
             sharp_score=sharp_score,
             drafts=card.drafts,
             traits=score_result.traits,
