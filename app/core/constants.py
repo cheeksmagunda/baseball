@@ -82,7 +82,7 @@ MIN_SCORE_PENALTY = 0.50  # 50% EV haircut for below-threshold players
 
 # Slate classification thresholds (Filter 1)
 TINY_SLATE_MAX_GAMES = 3
-PITCHER_DAY_MIN_QUALITY_SP = 4   # 4+ quality SP matchups → pitcher day
+PITCHER_DAY_MIN_QUALITY_SP = 5   # 5+ quality SP matchups → pitcher day (strategy §4.2 Filter 1)
 HITTER_DAY_MIN_HIGH_TOTAL = 5    # 5+ games with O/U >= 9.0 → hitter day
 HITTER_DAY_VEGAS_TOTAL_THRESHOLD = 9.0
 
