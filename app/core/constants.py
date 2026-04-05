@@ -94,14 +94,6 @@ SLATE_COMPOSITION = {
     "standard": {"min_pitchers": 2, "max_pitchers": 3},
 }
 
-# Ownership leverage thresholds (Filter 3 — §4.2 Filter 3)
-CHALK_DRAFT_THRESHOLD = 2000     # > 2000 drafts = "chalk" (avoid unless elite)
-LEVERAGE_DRAFT_THRESHOLD = 200   # < 200 drafts = "leverage play" (target)
-
-# Ownership EV adjustments
-CHALK_EV_PENALTY = 0.80          # 20% EV penalty for chalk players
-LEVERAGE_EV_BONUS = 1.20         # 20% EV bonus for leverage plays
-
 # Boost-environment gating (Filter 4 — §4.2 Filter 4)
 # A boost without environmental support is a trap (§3.5 "Boost Trap")
 BOOST_NO_ENV_PENALTY = 0.70      # 30% EV haircut when boost has no env support

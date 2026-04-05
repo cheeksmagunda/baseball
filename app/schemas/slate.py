@@ -51,7 +51,6 @@ class SlatePlayerOut(BaseModel):
     platoon_advantage: bool | None = None
     is_debut_or_return: bool = False
     player_status: str = "active"
-    ownership_tier: str | None = None
     env_score: float | None = None
 
     model_config = {"from_attributes": True}

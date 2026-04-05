@@ -339,35 +339,6 @@ def compute_batter_env_score(
     return env_score, factors
 
 
-# ---------------------------------------------------------------------------
-# Filter 3: Ownership Leverage (§4.2 Filter 3)
-# ---------------------------------------------------------------------------
-
-class OwnershipTier(str, Enum):
-    CHALK = "chalk"       # > 2000 drafts — avoid unless exceptional
-    MEDIUM = "medium"     # 200-2000 drafts
-    LEVERAGE = "leverage"  # < 200 drafts — the edge
-
-
-def classify_ownership(drafts: int | None) -> OwnershipTier:
-    """Classify player ownership tier from draft count."""
-    if drafts is None:
-        return OwnershipTier.MEDIUM  # unknown = neutral
-    if drafts > CHALK_DRAFT_THRESHOLD:
-        return OwnershipTier.CHALK
-    if drafts < LEVERAGE_DRAFT_THRESHOLD:
-        return OwnershipTier.LEVERAGE
-    return OwnershipTier.MEDIUM
-
-
-def ownership_ev_adjustment(tier: OwnershipTier) -> float:
-    """Return EV multiplier for ownership tier."""
-    if tier == OwnershipTier.CHALK:
-        return CHALK_EV_PENALTY
-    if tier == OwnershipTier.LEVERAGE:
-        return LEVERAGE_EV_BONUS
-    return 1.0
-
 
 # ---------------------------------------------------------------------------
 # Filter 4+5: Boost Optimization & Lineup Construction
