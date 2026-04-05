@@ -17,15 +17,30 @@ total_value = real_score × (2 + card_boost)
 
 **Never hardcode `(2 + card_boost)` or `(2.0 + card_boost)` anywhere.** Always import from `app/core/utils.py`.
 
+## ABSOLUTE RULE: No Fallbacks. Ever.
+
+**Never add fallback behavior to the pipeline.** If today's data isn't available, return an error. Do not:
+- Fall back to the most recent slate
+- Substitute probable pitchers when a boxscore returns no players
+- Use seed/historical data as a substitute for live data
+- Return stale cached results when fresh data fails
+
+The pipeline either works with real data or it fails loudly. Fallbacks mask bugs, corrupt optimization with wrong data, and violate the "Filter, Not Forecast" philosophy — you cannot filter on yesterday's environment.
+
 ## Architecture Overview
 
-### Three-Stage Pipeline
-1. **Collect** (`app/services/data_collection.py`) — Fetch MLB schedule + player stats
+### Active Pipeline
+
+The active optimization path is `filter_strategy` — **not** `draft_optimizer.py` (which is dead code kept only for `evaluate_lineup`).
+
+**Four-Stage Pipeline:**
+1. **Collect** (`app/services/data_collection.py`) — Fetch MLB schedule + boxscores + player stats
 2. **Score** (`app/services/scoring_engine.py`) — Rate players 0-100 via trait profiles
-3. **Optimize** (`app/services/draft_optimizer.py`) — Assign cards to slots via rearrangement inequality
+3. **Filter** (`app/services/filter_strategy.py`) — Apply five sequential filters (§4 strategy)
+4. **Optimize** (`app/routers/filter_strategy.py` → `run_dual_filter_strategy`) — Produce Starting 5 + Moonshot
 
 ### Philosophy
-Rule-based scoring engine (NOT ML) with a feedback loop. The goal is to **win drafts**, not predict Real Score. RS is opaque — we estimate it via player profiling and optimize around card boosts.
+Rule-based scoring + external-variables filtering (NOT ML). The goal is to **win drafts**, not predict Real Score. RS is opaque — we estimate via player profiling and filter on pre-game conditions.
 
 ## Data Files (`/data/`)
 
@@ -44,8 +59,8 @@ Rule-based scoring engine (NOT ML) with a feedback loop. The goal is to **win dr
 | `PlayerStats` | player_stats | Season aggregates (batting + pitching) |
 | `PlayerGameLog` | player_game_log | Per-game records (H, HR, RBI, IP, K, ER, etc.) |
 | `Slate` | slates | date, game_count, status |
-| `SlateGame` | slate_games | home_team, away_team, scores |
-| `SlatePlayer` | slate_players | card_boost, real_score, total_value, leaderboard flags |
+| `SlateGame` | slate_games | home_team, away_team, scores, Vegas lines, starter ERA/K9, weather |
+| `SlatePlayer` | slate_players | card_boost, real_score, total_value, batting_order, env_score, leaderboard flags |
 | `PlayerScore` | player_scores | total_score (0-100), estimated RS range |
 | `ScoreBreakdown` | score_breakdowns | Per-trait scores |
 | `DraftLineup` | draft_lineups | source, expected/actual values |
@@ -86,20 +101,25 @@ Web-scraping signal aggregator that estimates which players the crowd will over-
 - Low attention + mid performance → **TARGET** (value pick)
 - Otherwise → **NEUTRAL**
 
-**Optimizer integration:** FADE players get 25% EV penalty, TARGET players get 15% EV bonus. Constants in `draft_optimizer.py:POPULARITY_ADJUSTMENTS`. Boost math still dominates — a FADE with +3.0x boost still beats a TARGET with no boost.
+**Optimizer integration:** FADE players get 25% EV penalty, TARGET players get 15% EV bonus. Constants in `app/core/constants.py`. Boost math still dominates — a FADE with +3.0x boost still beats a TARGET with no boost.
 
 **Key distinction:** "Trending" ≠ "popular." A breakout rookie trending upward (TARGET) is different from a slumping star trending on ESPN (FADE). The aggregator distinguishes by cross-referencing attention volume against performance score.
 
 **Sharp signal (underground):** A 5th source scraped from Reddit (r/fantasybaseball, r/baseball), FanGraphs community blogs, and Prospects Live. Used exclusively by the Moonshot lineup. If niche smart accounts are on a player but mainstream isn't, that's a Moonshot BUY. `sharp_score` is 0-100, separate from the composite score.
 
-## Dual-Lineup Optimizer (`app/services/draft_optimizer.py`)
+## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-The optimizer produces **two lineups** from the same candidate pool — not two pipelines.
+The active optimizer produces **two lineups** from the same candidate pool via `run_dual_filter_strategy`.
 
-**Starting 5** — Best EV, standard anti-popularity adjustments (FADE=0.75, TARGET=1.15).
+**Starting 5** — Best filter EV. Standard anti-popularity adjustments (FADE=0.75, TARGET=1.15). Five filters applied:
+1. Slate classification (tiny/pitcher_day/hitter_day/standard)
+2. Environmental advantage (Vegas lines, ERA, platoon, park, weather)
+3. Ownership leverage (web-scraped FADE/TARGET/NEUTRAL)
+4. Boost-environment gating (boosted card with env_score < 0.5 gets 30% haircut)
+5. Smart slot assignment (unboosted → top slots; boosted → slot-flexible)
 
 **Moonshot** — Completely different 5 players. Heavier anti-crowd lean:
-- `MOONSHOT_POPULARITY_ADJUSTMENTS`: FADE=0.60, NEUTRAL=0.95, TARGET=1.30
+- FADE=0.60, NEUTRAL=0.95, TARGET=1.30
 - Sharp signal bonus: up to +25% EV from underground buzz
 - Explosive bonus: up to +10% EV from power_profile (batters) or k_rate (pitchers)
 - Game diversification: 0.85x soft penalty for same-team overlap with Starting 5
@@ -110,23 +130,27 @@ The optimizer produces **two lineups** from the same candidate pool — not two 
 moonshot_ev = raw_ev × pop_adj × sharp_bonus × explosive_bonus × game_diversification
 ```
 
-**Low-score floor:** Players scoring below `MIN_SCORE_THRESHOLD` (15/100) get a 50% EV haircut regardless of boost. Prevents the "huge boost on a terrible player" trap (e.g. Shane Smith RS -3.5 with +3.0x). Constants in `app/core/constants.py`.
+**Low-score floor:** Players scoring below `MIN_SCORE_THRESHOLD` (15/100) get a 50% EV haircut regardless of boost. Prevents the "huge boost on a terrible player" trap (e.g. Shane Smith RS -3.5 with +3.0x = -17.5). Constants in `app/core/constants.py`.
 
-**Key functions:**
-- `optimize_lineup()` — Starting 5 (or floor strategy)
-- `optimize_moonshot()` — Moonshot with exclusions
-- `optimize_dual()` — One call, two lineups
-- `_compute_moonshot_ev()` — Moonshot-specific EV with all bonuses
-- `evaluate_lineup()` — Score a user-proposed slot order
+**Key functions (filter_strategy.py):**
+- `run_filter_strategy()` — Starting 5
+- `run_dual_filter_strategy()` — One call, two lineups
+- `_compute_filter_ev()` — Starting 5 EV with all filters
+- `_compute_moonshot_filter_ev()` — Moonshot-specific EV
+- `_smart_slot_assignment()` — Slot sequencing (unboosted first)
+- `_enforce_composition()` — Pitcher/hitter count by slate type
 
-## API Structure (7 routers under `/api/`)
+**Dead code:** `app/services/draft_optimizer.py` — functions are not wired to any router except `evaluate_lineup`. The filter_strategy path supersedes it entirely.
+
+## API Structure (8 routers under `/api/`)
 
 | Router | Prefix | Purpose |
 |---|---|---|
+| filter-strategy | `/api/filter-strategy` | PRIMARY: Dual-lineup optimization (Starting 5 + Moonshot) |
 | players | `/api/players` | Player CRUD + search |
 | slates | `/api/slates` | Slate management + draft cards + results |
 | scoring | `/api/score` | On-demand scoring + rankings |
-| draft | `/api/draft` | Dual-lineup optimization (Starting 5 + Moonshot) + evaluation |
+| draft | `/api/draft` | Lineup evaluation only (no optimize endpoint) |
 | calibration | `/api/calibration` | Scoring weight configuration |
 | pipeline | `/api/pipeline` | Orchestrated fetch → score → rank |
 | popularity | `/api/popularity` | Player/slate popularity analysis |
@@ -134,18 +158,77 @@ moonshot_ev = raw_ev × pop_adj × sharp_bonus × explosive_bonus × game_divers
 ## Core Rules & Business Logic
 
 1. **Sport-Specific:** This is MLB only. Do NOT add NBA/NFL/etc. logic.
-2. **total_value is absolute:** Always `real_score * (2 + card_boost)`. Never null.
-3. **Enrichment:** Real Sports data does NOT provide Team or Position. The seed script and AI must append standard 3-letter MLB team abbreviations and positions.
-4. **Volume:** Ownership volume uses `drafts` column with boolean flags (`is_most_popular`, `is_highest_value`, `is_most_drafted_3x`).
-5. **DRY:** The total_value formula, player lookups, score queries, and game log sorting are centralized in `app/core/utils.py`.
+2. **No fallbacks ever.** See "ABSOLUTE RULE" section above.
+3. **total_value is absolute:** Always `real_score * (2 + card_boost)`. Never null.
+4. **Enrichment:** Real Sports data does NOT provide Team or Position. The seed script and AI must append standard 3-letter MLB team abbreviations and positions.
+5. **Volume:** Ownership volume uses `drafts` column with boolean flags (`is_most_popular`, `is_highest_value`, `is_most_drafted_3x`).
+6. **DRY:** The total_value formula, player lookups, score queries, and game log sorting are centralized in `app/core/utils.py`.
+7. **is_highest_value / is_most_popular flags are retrospective labels.** Never use them as inputs to prediction or optimization — that is a data leak. They reflect post-hoc outcomes only.
 
-## Strategy (Key Insights from Historical Analysis)
+## Strategy: "Filter, Not Forecast" (Master Strategy Document)
 
-- **Winning formula**: All 5 RS ≥ 1.0 with 2+ RS ≥ 3.0
-- **Anti-popularity edge**: Low-ownership players consistently outperform. Popularity is estimated via web signals (social, news, DFS ownership, search), NOT historical draft counts
-- **Card boost leverage**: +3.0x boosted player with RS 2.4 = unboosted ace with RS 6.0
-- **Pitcher profile**: Aces with high K rates in favorable matchups
-- **Batter profile**: Power hitters batting 2-4 in hitter-friendly parks
+Full document is the authoritative reference. Key mechanics for any AI working on this codebase:
+
+### The Formula is Additive (Proven)
+```
+Player Slot Value = RS × (slot_multiplier + card_boost)
+```
+Not multiplicative. Proven from historical data. This means:
+- Unboosted player: Slot 1 → Slot 5 = **67% value loss** (2.0x → 1.2x)
+- 3.0x boosted player: Slot 1 → Slot 5 = **16% value loss** (5.0x → 4.2x)
+- Implication: unboosted players MUST go in Slot 1. Boosted players are slot-flexible.
+
+### The Five Filters (Sequential)
+
+**Filter 1 — Slate Classification**
+- Tiny (1-3 games): heavy team-stack, 1-2 pitchers
+- Pitcher Day (4+ quality SP matchups): 4-5 pitchers
+- Hitter Day (5+ games with O/U ≥ 9.0): 4-5 hitters
+- Standard (10+ games, mixed): 2-3 pitchers + 2-3 hitters
+- Classify BEFORE looking at any individual player. Constants in `app/core/constants.py`.
+
+**Filter 2 — Environmental Advantage** (pre-game data only)
+- Pitchers: weak opponent (OPS < .700), high K/9 (≥ 8.0), pitcher-friendly park, home field
+- Batters: high Vegas total (O/U ≥ 8.5), weak opposing starter (ERA ≥ 4.5), platoon advantage, batting 1-4, hitter-friendly park
+- env_score > 0.5 = passes. Stored on SlatePlayer. SlateGame holds the raw data (vegas_total, home/away_starter_era, etc.)
+- If a field is NULL (data not yet available), scoring defaults to neutral — not fabricated
+
+**Filter 3 — Ownership Leverage**
+- FADE = crowd has found this player. 25% EV penalty (Moonshot: 40%).
+- TARGET = crowd is ignoring this player. 15% EV bonus (Moonshot: 30%).
+- Ghost players (< 100 drafts) who pass environmental filters are the highest-EV pool.
+- Historical: most-drafted players chronically underperform. The crowd chases names.
+
+**Filter 4 — Boost Optimization**
+- Boost is a multiplier on an unknown outcome — it amplifies downside equally.
+- card_boost ≥ 1.0 with env_score < 0.5 → 30% EV haircut ("boost trap")
+- Never assign a boost without environmental support.
+
+**Filter 5 — Slot Sequencing**
+- Unboosted players → highest available slots (67% loss if misplaced)
+- Boosted players → fill remaining slots (only 16% loss at max boost)
+- Slot 1 Differentiator: when the field converges on an obvious Slot 1 (high-ownership player), the winning move is to put the contrarian play in Slot 1.
+
+### Pitchers Are the Default
+On 5 of 10 historical days, pitcher-heavy (3+ pitchers) was the winning strategy. Hitter-only was optimal on only 1 day. **Default to 2-3 pitchers unless the slate explicitly classifies as hitter_day.**
+
+### The Ghost Player Edge
+The single most consistent edge: players with < 100 drafts who pass environmental filters. Historical examples: Miguel Vargas (1 draft, RS 6.2), Colson Montgomery (5 drafts, RS 6.3), Oneil Cruz (2 drafts, RS 5.7). The crowd chases Ohtani/Judge/Soto regardless of conditions — those three are chronically over-drafted.
+
+### Debut/Return Premium
+First MLB game or return from 30+ day absence = near-zero ownership + historically elite RS. Always flag `is_debut_or_return = True` when known. 15% EV bonus applied.
+
+### The Boost Trap (Historical Disasters)
+| Date | Player | Boost | Drafts | RS | total_value |
+|---|---|---|---|---|---|
+| 4/3 | Michael Lorenzen | 3.0 | 674 | -6.4 | **-32.0** |
+| 4/1 | Shane Smith | 3.0 | 1,300 | -3.5 | **-17.5** |
+| 3/30 | Shohei Ohtani | 3.0 | 4,400 | 0.0 | 0.0 |
+
+Boost amplifies negative RS just as aggressively as positive RS. Never boost without environmental support.
+
+### Team Stacking (Condition E)
+When one hitter on a team has a big game, teammates follow (runs require baserunners). Historical winning lineups exploit this (MIL stack 3/28, ATL stack 4/2, NYY stack 3/25). The optimizer does NOT explicitly enforce team stacking — this is intentional (the environmental filter naturally surfaces the best team). Do not add stacking as a hard constraint.
 
 ## Deployment
 
@@ -153,3 +236,5 @@ moonshot_ev = raw_ev × pop_adj × sharp_bonus × explosive_bonus × game_divers
 - Environment vars use `DFS_` prefix (see `.env.example`)
 - SQLite by default, swap `DFS_DATABASE_URL` for Postgres in production
 - Database seeds automatically on startup via FastAPI lifespan
+- Startup runs `run_full_pipeline(db, date.today())` as a background task
+- If pipeline fails, the app returns a 404 from `/api/filter-strategy/optimize` — **this is correct behavior, not a bug to work around**
