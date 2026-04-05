@@ -90,4 +90,30 @@
     "source": "screenshot_ingest",
     "saved_at": "2026-04-04T00:00:00Z"
   }
+  },
+  {
+    "date": "2026-04-04",
+    "game_count": 15,
+    "games": [
+      {"home": "DET", "away": "STL", "home_score": 11, "away_score": 6, "winner": "DET", "loser": "STL", "winner_score": 11, "loser_score": 6},
+      {"home": "CWS", "away": "TOR", "home_score": 6, "away_score": 3, "winner": "CWS", "loser": "TOR", "winner_score": 6, "loser_score": 3},
+      {"home": "KC", "away": "MIL", "home_score": 2, "away_score": 5, "winner": "MIL", "loser": "KC", "winner_score": 5, "loser_score": 2},
+      {"home": "KC", "away": "MIL", "home_score": 8, "away_score": 2, "winner": "KC", "loser": "MIL", "winner_score": 8, "loser_score": 2},
+      {"home": "WSH", "away": "LAD", "home_score": 5, "away_score": 10, "winner": "LAD", "loser": "WSH", "winner_score": 10, "loser_score": 5},
+      {"home": "OAK", "away": "HOU", "home_score": 0, "away_score": 11, "winner": "HOU", "loser": "OAK", "winner_score": 11, "loser_score": 0},
+      {"home": "PIT", "away": "BAL", "home_score": 3, "away_score": 2, "winner": "PIT", "loser": "BAL", "winner_score": 3, "loser_score": 2},
+      {"home": "BOS", "away": "SD", "home_score": 2, "away_score": 3, "winner": "SD", "loser": "BOS", "winner_score": 3, "loser_score": 2},
+      {"home": "TEX", "away": "CIN", "home_score": 0, "away_score": 2, "winner": "CIN", "loser": "TEX", "winner_score": 2, "loser_score": 0},
+      {"home": "NYY", "away": "MIA", "home_score": 9, "away_score": 7, "winner": "NYY", "loser": "MIA", "winner_score": 9, "loser_score": 7},
+      {"home": "MIN", "away": "TB", "home_score": 1, "away_score": 7, "winner": "TB", "loser": "MIN", "winner_score": 7, "loser_score": 1},
+      {"home": "ARI", "away": "ATL", "home_score": 2, "away_score": 1, "winner": "ARI", "loser": "ATL", "winner_score": 2, "loser_score": 1},
+      {"home": "COL", "away": "PHI", "home_score": 1, "away_score": 2, "winner": "PHI", "loser": "COL", "winner_score": 2, "loser_score": 1},
+      {"home": "SF", "away": "NYM", "home_score": 0, "away_score": 9, "winner": "NYM", "loser": "SF", "winner_score": 9, "loser_score": 0},
+      {"home": "LAA", "away": "SEA", "home_score": 1, "away_score": 0, "winner": "LAA", "loser": "SEA", "winner_score": 1, "loser_score": 0}
+    ],
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-05T00:00:00Z",
+    "notes": "Saturday slate with 15 games (14 complete, 1 doubleheader). Top 8 winning lineups captured. Cubs-Guardians postponed. Jesús Luzardo dominated top lineups (most popular, highest value combination). Three shutouts: HOU 11-0 over OAK, CIN 2-0 over TEX, NYM 9-0 over SF."
+  }
 ]
