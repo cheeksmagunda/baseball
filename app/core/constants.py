@@ -127,13 +127,21 @@ BATTER_ENV_TOP_LINEUP = 4             # batting 1-4 = top of lineup
 DEBUT_RETURN_EV_BONUS = 1.15          # 15% EV bonus for debut/return players
 
 # ---------------------------------------------------------------------------
+# Popularity-based EV adjustments (web-scraped FADE/TARGET/NEUTRAL)
+# ---------------------------------------------------------------------------
+
+# Starting 5: standard adjustments (same as draft_optimizer)
+POPULARITY_FADE_PENALTY = 0.75        # 25% EV penalty — crowd is already here
+POPULARITY_TARGET_BONUS = 1.15        # 15% EV bonus — under the radar edge
+
+# ---------------------------------------------------------------------------
 # Moonshot constants (dual-lineup optimizer)
 # ---------------------------------------------------------------------------
 
-# Moonshot ownership adjustments (heavier anti-crowd lean)
-MOONSHOT_CHALK_EV_PENALTY = 0.60      # 40% penalty (vs 20% for Starting 5)
-MOONSHOT_MEDIUM_EV_PENALTY = 0.95     # 5% penalty (neutral gets slight haircut)
-MOONSHOT_LEVERAGE_EV_BONUS = 1.30     # 30% bonus (vs 20% for Starting 5)
+# Moonshot popularity adjustments (heavier anti-crowd lean)
+MOONSHOT_FADE_PENALTY = 0.60          # 40% penalty (vs 25% for Starting 5)
+MOONSHOT_NEUTRAL_PENALTY = 0.95       # 5% penalty (if you're not a TARGET, step aside)
+MOONSHOT_TARGET_BONUS = 1.30          # 30% bonus (vs 15% for Starting 5)
 
 # Sharp signal bonus: underground buzz → up to +25% EV
 MOONSHOT_SHARP_BONUS_MAX = 0.25
