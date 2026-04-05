@@ -125,14 +125,17 @@ def test_evaluate_preserves_order():
 
 
 def test_real_world_montgomery_scenario():
-    """Colson Montgomery: score 90, +3.0x boost → EV = 90 * 5 = 450."""
+    """Colson Montgomery: score 90, +3.0x boost.
+    ranking EV = 90 * (2+3) = 450.
+    Slot 1 (mult=2.0): slot_value = 90 * (2.0 + 3.0) = 450 (additive formula)."""
     sr = _make_score("Colson Montgomery", total_score=90.0)
     ev = compute_expected_value(sr, 3.0)
-    assert ev == 450.0  # 90 * (2 + 3)
+    assert ev == 450.0  # 90 * (2 + 3) — ranking signal unchanged
 
     cards = [CardWithScore("Montgomery", 3.0, sr)]
     result = optimize_lineup(cards)
-    assert result.slots[0].expected_slot_value == 900.0  # 450 * 2.0 slot mult
+    # Additive formula: RS × (slot_mult + card_boost) = 90 × (2.0 + 3.0) = 450
+    assert result.slots[0].expected_slot_value == 450.0
 
 
 def test_fade_penalizes_popular_player():

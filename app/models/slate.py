@@ -27,6 +27,7 @@ class SlateGame(Base):
     slate_id: Mapped[int] = mapped_column(Integer, ForeignKey("slates.id"), nullable=False)
     home_team: Mapped[str] = mapped_column(String, nullable=False)
     away_team: Mapped[str] = mapped_column(String, nullable=False)
+    mlb_game_pk: Mapped[int | None] = mapped_column(Integer, nullable=True)  # MLB Stats API game PK
     home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

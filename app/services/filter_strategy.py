@@ -52,7 +52,7 @@ from app.core.constants import (
     BATTER_ENV_TOP_LINEUP,
     DEBUT_RETURN_EV_BONUS,
 )
-from app.core.utils import compute_total_value
+from app.core.utils import BASE_MULTIPLIER, compute_total_value
 
 logger = logging.getLogger(__name__)
 
@@ -590,7 +590,10 @@ def _smart_slot_assignment(
         if not available_slots:
             break
         slot_idx, slot_mult = available_slots.pop(0)  # take highest available
-        slot_value = slot_mult * player.filter_ev
+        # Additive formula: total_value = RS × (slot_mult + card_boost)
+        # filter_ev = intrinsic × (BASE_MULTIPLIER + card_boost), reverse to get intrinsic
+        intrinsic = player.filter_ev / (BASE_MULTIPLIER + player.card_boost)
+        slot_value = intrinsic * (slot_mult + player.card_boost)
         assignments.append(FilterSlotAssignment(
             slot_index=slot_idx,
             slot_mult=slot_mult,
@@ -604,7 +607,8 @@ def _smart_slot_assignment(
         if not available_slots:
             break
         slot_idx, slot_mult = available_slots.pop(0)
-        slot_value = slot_mult * player.filter_ev
+        intrinsic = player.filter_ev / (BASE_MULTIPLIER + player.card_boost)
+        slot_value = intrinsic * (slot_mult + player.card_boost)
         assignments.append(FilterSlotAssignment(
             slot_index=slot_idx,
             slot_mult=slot_mult,
