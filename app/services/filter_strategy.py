@@ -55,6 +55,17 @@ from app.core.constants import (
     MOONSHOT_SHARP_BONUS_MAX,
     MOONSHOT_EXPLOSIVE_BONUS_MAX,
     MOONSHOT_SAME_TEAM_PENALTY,
+    GHOST_DRAFT_THRESHOLD,
+    GHOST_ENV_BONUS,
+    GHOST_MOONSHOT_ENV_BONUS,
+    LOW_DRAFT_THRESHOLD,
+    LOW_DRAFT_BONUS,
+    CHALK_DRAFT_THRESHOLD,
+    CHALK_PENALTY,
+    CHALK_EXEMPT_MIN_BOOST,
+    BOOST_CONCENTRATION_THRESHOLD,
+    BOOST_CONCENTRATION_PENALTY,
+    SLOT1_DIFFERENTIATOR_EV_THRESHOLD,
 )
 from app.core.utils import BASE_MULTIPLIER, compute_total_value, get_trait_score
 from app.services.popularity import PopularityClass
@@ -419,6 +430,17 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     pop_adj = _popularity_ev_adjustment(candidate.popularity)
     base_ev *= pop_adj
 
+    # Filter 3b: Draft-count ownership leverage (§2.2, §4.2 Filter 3)
+    # Distinct from web-scraped popularity — this is actual contest ownership.
+    if candidate.drafts is not None:
+        if candidate.drafts < GHOST_DRAFT_THRESHOLD and candidate.env_score >= ENV_PASS_THRESHOLD:
+            base_ev *= GHOST_ENV_BONUS
+        elif candidate.drafts < LOW_DRAFT_THRESHOLD:
+            base_ev *= LOW_DRAFT_BONUS
+        elif candidate.drafts >= CHALK_DRAFT_THRESHOLD:
+            if not (candidate.env_score >= ENV_PASS_THRESHOLD and candidate.card_boost >= CHALK_EXEMPT_MIN_BOOST):
+                base_ev *= CHALK_PENALTY
+
     # Debut/return premium (§2.3 Condition C)
     if candidate.is_debut_or_return:
         base_ev *= DEBUT_RETURN_EV_BONUS
@@ -535,6 +557,40 @@ def _apply_game_diversification(
     return warnings
 
 
+def _apply_boost_diversification(
+    lineup: list[FilteredCandidate],
+) -> list[str]:
+    """
+    Check boost concentration across games (§4.2 Filter 4).
+
+    "Don't put all boosted players in the same game. If that game is
+    a 1-0 pitcher's duel, all your boosts become dead weight."
+
+    If 3+ boosted players share the same game, apply a penalty
+    to the 3rd+ boosted player (sorted by EV desc, top 2 untouched).
+    """
+    warnings = []
+    if not lineup:
+        return warnings
+
+    boosted_by_game: dict[str | int | None, list[FilteredCandidate]] = {}
+    for c in lineup:
+        if c.card_boost >= 1.0 and c.game_id is not None:
+            boosted_by_game.setdefault(c.game_id, []).append(c)
+
+    for gid, players in boosted_by_game.items():
+        if len(players) >= BOOST_CONCENTRATION_THRESHOLD:
+            warnings.append(
+                f"Game {gid} has {len(players)} boosted players. "
+                f"Spread boosts across 2-3 favorable games."
+            )
+            players.sort(key=lambda c: c.filter_ev, reverse=True)
+            for p in players[BOOST_CONCENTRATION_THRESHOLD - 1:]:
+                p.filter_ev *= BOOST_CONCENTRATION_PENALTY
+
+    return warnings
+
+
 def _smart_slot_assignment(
     candidates: list[FilteredCandidate],
 ) -> list[FilterSlotAssignment]:
@@ -600,6 +656,39 @@ def _smart_slot_assignment(
             expected_slot_value=round(slot_value, 2),
         ))
 
+    # Slot 1 Differentiator Principle (§3.4):
+    # If Slot 1 is a high-ownership consensus pick, swap with a contrarian
+    # in a lower slot — but only if the EV sacrifice is small.
+    if len(assignments) >= 2:
+        slot1_assign = next((a for a in assignments if a.slot_index == 1), None)
+        if slot1_assign is not None:
+            s1 = slot1_assign.candidate
+            is_consensus = (
+                s1.popularity == PopularityClass.FADE
+                or (s1.drafts is not None and s1.drafts >= CHALK_DRAFT_THRESHOLD)
+            )
+            if is_consensus:
+                best_swap = None
+                for a in assignments:
+                    if a.slot_index == 1:
+                        continue
+                    c = a.candidate
+                    is_contrarian = (
+                        c.popularity == PopularityClass.TARGET
+                        or (c.drafts is not None and c.drafts < LOW_DRAFT_THRESHOLD)
+                    )
+                    if is_contrarian and c.card_boost < 1.0:
+                        if c.filter_ev >= s1.filter_ev * SLOT1_DIFFERENTIATOR_EV_THRESHOLD:
+                            if best_swap is None or c.filter_ev > best_swap.candidate.filter_ev:
+                                best_swap = a
+
+                if best_swap is not None:
+                    slot1_assign.slot_index, best_swap.slot_index = best_swap.slot_index, slot1_assign.slot_index
+                    slot1_assign.slot_mult, best_swap.slot_mult = best_swap.slot_mult, slot1_assign.slot_mult
+                    for a in [slot1_assign, best_swap]:
+                        intrinsic = a.candidate.filter_ev / (BASE_MULTIPLIER + a.candidate.card_boost)
+                        a.expected_slot_value = round(intrinsic * (a.slot_mult + a.candidate.card_boost), 2)
+
     # Sort by slot index for display
     assignments.sort(key=lambda a: a.slot_index)
     return assignments
@@ -642,6 +731,10 @@ def run_filter_strategy(
 
     # Step 3: Game diversification check
     warnings = _apply_game_diversification(lineup)
+
+    # Step 3b: Boost diversification check (§4.2 Filter 4)
+    boost_warnings = _apply_boost_diversification(lineup)
+    warnings.extend(boost_warnings)
 
     # Step 4: Smart slot assignment
     slots = _smart_slot_assignment(lineup)
@@ -693,6 +786,16 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     # Moonshot popularity adjustment (heavier than Starting 5)
     pop_adj = _moonshot_popularity_adj(candidate.popularity)
     base_ev *= pop_adj
+
+    # Draft-count ownership leverage (heavier ghost bonus for Moonshot)
+    if candidate.drafts is not None:
+        if candidate.drafts < GHOST_DRAFT_THRESHOLD and candidate.env_score >= ENV_PASS_THRESHOLD:
+            base_ev *= GHOST_MOONSHOT_ENV_BONUS
+        elif candidate.drafts < LOW_DRAFT_THRESHOLD:
+            base_ev *= LOW_DRAFT_BONUS
+        elif candidate.drafts >= CHALK_DRAFT_THRESHOLD:
+            if not (candidate.env_score >= ENV_PASS_THRESHOLD and candidate.card_boost >= CHALK_EXEMPT_MIN_BOOST):
+                base_ev *= CHALK_PENALTY
 
     # Debut/return premium
     if candidate.is_debut_or_return:
@@ -759,6 +862,8 @@ def run_dual_filter_strategy(
     # Enforce composition and build moonshot lineup
     moonshot_lineup = _enforce_composition(moonshot_pool, slate_classification)
     moonshot_warnings = _apply_game_diversification(moonshot_lineup)
+    moonshot_boost_warnings = _apply_boost_diversification(moonshot_lineup)
+    moonshot_warnings.extend(moonshot_boost_warnings)
     moonshot_slots = _smart_slot_assignment(moonshot_lineup)
 
     moonshot_total_ev = sum(s.expected_slot_value for s in moonshot_slots)
