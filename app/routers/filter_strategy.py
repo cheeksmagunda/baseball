@@ -159,7 +159,7 @@ async def _resolve_candidates(
 
 
 def _load_today_slate(db: Session) -> tuple[list[FilterCard], list[GameEnvironment]]:
-    """Load today's slate players and games from the database."""
+    """Load today's slate players and games from the database. Falls back to most recent slate if today has no data."""
     today = date.today()
     slate = (
         db.query(Slate)
@@ -170,6 +170,19 @@ def _load_today_slate(db: Session) -> tuple[list[FilterCard], list[GameEnvironme
         .filter_by(date=today)
         .first()
     )
+
+    # Fallback to most recent date if today has no data
+    if not slate:
+        slate = (
+            db.query(Slate)
+            .options(
+                selectinload(Slate.players).selectinload(SlatePlayer.player),
+                selectinload(Slate.games),
+            )
+            .order_by(Slate.date.desc())
+            .first()
+        )
+
     if not slate:
         return [], []
 

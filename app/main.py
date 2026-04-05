@@ -16,11 +16,22 @@ async def lifespan(app: FastAPI):
     from pathlib import Path
     from app.database import SessionLocal
     from app.services.pipeline import run_full_pipeline
+    from app.models.player import Player
+    from app.seed import run_seed
 
     logger = logging.getLogger(__name__)
 
     Path(settings.database_url.replace("sqlite:///", "")).parent.mkdir(parents=True, exist_ok=True)
     init_db()
+
+    # Seed database if empty
+    db = SessionLocal()
+    try:
+        if db.query(Player).count() == 0:
+            logger.info("Database empty, loading seed data...")
+            run_seed()
+    finally:
+        db.close()
 
     # Run pipeline in background so health checks respond immediately
     async def _startup_pipeline():
