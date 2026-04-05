@@ -9,11 +9,12 @@ import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.core.constants import PITCHER_POSITIONS
 from app.core.utils import find_player_by_name, get_trait_score
+from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.schemas.scoring import TraitBreakdown
 from app.schemas.filter_strategy import (
     FilterCard,
@@ -156,12 +157,69 @@ async def _resolve_candidates(
     return candidates
 
 
+def _load_today_slate(db: Session) -> tuple[list[FilterCard], list[GameEnvironment]]:
+    """Load today's slate players and games from the database."""
+    today = date.today()
+    slate = (
+        db.query(Slate)
+        .options(
+            selectinload(Slate.players).selectinload(SlatePlayer.player),
+            selectinload(Slate.games),
+        )
+        .filter_by(date=today)
+        .first()
+    )
+    if not slate:
+        return [], []
+
+    games: list[GameEnvironment] = [
+        GameEnvironment(
+            game_id=g.id,
+            home_team=g.home_team,
+            away_team=g.away_team,
+            vegas_total=g.vegas_total,
+            home_moneyline=g.home_moneyline,
+            away_moneyline=g.away_moneyline,
+            home_starter=g.home_starter,
+            away_starter=g.away_starter,
+            home_starter_era=g.home_starter_era,
+            away_starter_era=g.away_starter_era,
+            home_starter_k_per_9=g.home_starter_k_per_9,
+            away_starter_k_per_9=g.away_starter_k_per_9,
+            wind_speed_mph=g.wind_speed_mph,
+            wind_direction=g.wind_direction,
+            temperature_f=g.temperature_f,
+        )
+        for g in slate.games
+    ]
+
+    cards: list[FilterCard] = []
+    for sp in slate.players:
+        player = sp.player
+        if not player or sp.player_status in ("DNP", "scratched"):
+            continue
+        cards.append(FilterCard(
+            player_name=player.name,
+            team=player.team,
+            position=player.position,
+            card_boost=sp.card_boost,
+            game_id=sp.game_id,
+            batting_order=sp.batting_order,
+            platoon_advantage=bool(sp.platoon_advantage),
+            is_debut_or_return=sp.is_debut_or_return,
+            drafts=sp.drafts,
+        ))
+
+    return cards, games
+
+
 @router.post("/optimize", response_model=FilterOptimizeResponse)
 async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_db)):
     """
     Run the full "Filter, Not Forecast" dual-lineup pipeline.
 
     Returns both Starting 5 and Moonshot lineups from a single call.
+    When no cards are provided, auto-loads today's slate from the database.
 
     Starting 5: Best filter EV with web-scraped popularity adjustments.
     Moonshot: Completely different 5 players — heavier anti-crowd lean,
@@ -176,15 +234,21 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
     6. Assigns players to slots with smart sequencing
     7. Builds Moonshot from remaining pool with stronger filters
     """
-    if len(req.cards) < 1:
-        raise HTTPException(400, "Need at least 1 card")
+    cards = req.cards
+    games = req.games
+
+    if not cards:
+        cards, games = _load_today_slate(db)
+
+    if len(cards) < 1:
+        raise HTTPException(404, "No slate data available for today")
 
     # Step 1: Classify slate (Filter 1)
-    game_dicts = [g.model_dump() for g in req.games]
-    slate_class = classify_slate(len(req.games), game_dicts)
+    game_dicts = [g.model_dump() for g in games]
+    slate_class = classify_slate(len(games), game_dicts)
 
     # Steps 2-3: Resolve candidates (scoring + env + popularity)
-    candidates = await _resolve_candidates(req.cards, req.games, db)
+    candidates = await _resolve_candidates(cards, games, db)
     if not candidates:
         raise HTTPException(404, "No matching players found in database")
 
