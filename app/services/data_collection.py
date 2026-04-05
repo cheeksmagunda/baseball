@@ -11,6 +11,7 @@ from app.config import settings
 from app.core.constants import canonicalize_team
 from app.core.mlb_api import (
     get_schedule,
+    get_game_boxscore,
     get_player_stats,
     search_player,
     TEAM_MLB_IDS,
@@ -46,16 +47,68 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
         if not home or not away:
             continue
 
+        game_pk = game.get("gamePk")
+
         existing = (
             db.query(SlateGame)
             .filter_by(slate_id=slate.id, home_team=home, away_team=away)
             .first()
         )
         if not existing:
-            db.add(SlateGame(slate_id=slate.id, home_team=home, away_team=away))
+            db.add(SlateGame(slate_id=slate.id, home_team=home, away_team=away, mlb_game_pk=game_pk))
+        elif game_pk and not existing.mlb_game_pk:
+            existing.mlb_game_pk = game_pk
 
     db.commit()
     return slate
+
+
+async def fetch_boxscore_results(db: Session, slate: Slate) -> int:
+    """
+    Fetch post-game box scores for all games in a slate and update final scores.
+
+    Calls get_game_boxscore() for each SlateGame that has an mlb_game_pk and
+    whose scores are not yet recorded. Updates home_score / away_score on each
+    game and marks the slate as "completed" once every game has a final score.
+
+    Returns the number of games updated.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+    updated = 0
+
+    for game in games:
+        if game.mlb_game_pk is None:
+            logger.warning("SlateGame %s (%s @ %s) has no mlb_game_pk — skipping", game.id, game.away_team, game.home_team)
+            continue
+
+        # Skip if already populated
+        if game.home_score is not None and game.away_score is not None:
+            continue
+
+        try:
+            boxscore = await get_game_boxscore(game.mlb_game_pk)
+        except Exception as exc:
+            logger.warning("Failed to fetch boxscore for game_pk=%s: %s", game.mlb_game_pk, exc)
+            continue
+
+        teams = boxscore.get("teams", {})
+        home_runs = teams.get("home", {}).get("teamStats", {}).get("batting", {}).get("runs")
+        away_runs = teams.get("away", {}).get("teamStats", {}).get("batting", {}).get("runs")
+
+        if home_runs is not None and away_runs is not None:
+            game.home_score = int(home_runs)
+            game.away_score = int(away_runs)
+            updated += 1
+
+    # Mark slate completed if all games now have scores
+    if games and all(g.home_score is not None and g.away_score is not None for g in games):
+        slate.status = "completed"
+
+    db.commit()
+    return updated
 
 
 async def resolve_mlb_id(db: Session, player: Player) -> int | None:
