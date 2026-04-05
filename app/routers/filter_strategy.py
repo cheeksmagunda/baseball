@@ -36,6 +36,7 @@ from app.services.filter_strategy import (
     run_dual_filter_strategy,
 )
 from app.services.popularity import PopularityClass, get_popularity_profile
+from app.services.pipeline import run_full_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +240,15 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
 
     if not cards:
         cards, games = _load_today_slate(db)
+
+    # If no slate data, trigger pipeline on-demand (handles mid-slate redeploys)
+    if len(cards) < 1:
+        logger.info("No slate data found — triggering on-demand pipeline")
+        try:
+            await run_full_pipeline(db, date.today())
+            cards, games = _load_today_slate(db)
+        except Exception as exc:
+            logger.warning("On-demand pipeline failed: %s", exc)
 
     if len(cards) < 1:
         raise HTTPException(404, "No slate data available for today")

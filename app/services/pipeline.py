@@ -17,7 +17,7 @@ from app.models.player import Player
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.models.scoring import PlayerScore, ScoreBreakdown
 from app.services.scoring_engine import score_player, PlayerScoreResult
-from app.services.data_collection import fetch_schedule_for_date, fetch_player_season_stats
+from app.services.data_collection import fetch_schedule_for_date, fetch_player_season_stats, populate_slate_players
 from app.services.filter_strategy import (
     FilteredCandidate,
     classify_slate,
@@ -249,14 +249,22 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
 
 
 async def run_full_pipeline(db: Session, game_date: date) -> dict:
-    """Full pipeline: fetch schedule → fetch stats → score → rank."""
+    """Full pipeline: fetch schedule → populate rosters → fetch stats → score → rank."""
     fetch_result = await run_fetch(db, game_date)
+
+    # Auto-populate SlatePlayer records from MLB API boxscores
+    slate = db.query(Slate).filter_by(date=game_date).first()
+    roster_result = {"added": 0, "skipped": 0}
+    if slate:
+        roster_result = await populate_slate_players(db, slate)
+
     stats_result = await run_fetch_player_stats(db, game_date)
     scores = run_score_slate(db, game_date)
 
     return {
         "date": game_date.isoformat(),
         "schedule": fetch_result,
+        "rosters": roster_result,
         "stats": stats_result,
         "scored_players": len(scores),
         "top_5": [
