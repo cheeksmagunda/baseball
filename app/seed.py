@@ -235,10 +235,14 @@ def seed_default_weights(db: Session):
         save_weights(db, ScoringWeights(), notes="Initial defaults from HV trait analysis")
 
 
-def run_seed():
+def run_seed(db: Session = None):
     """Run all seed functions."""
-    init_db()
-    db = SessionLocal()
+    close_session = False
+    if db is None:
+        init_db()
+        db = SessionLocal()
+        close_session = True
+
     try:
         # Only seed if DB is empty
         if db.query(Player).count() == 0:
@@ -253,7 +257,8 @@ def run_seed():
         else:
             print(f"Database already seeded ({db.query(Player).count()} players).")
     finally:
-        db.close()
+        if close_session:
+            db.close()
 
 
 if __name__ == "__main__":
