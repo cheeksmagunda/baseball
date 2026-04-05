@@ -10,6 +10,7 @@ from app.routers import players, slates, scoring, draft, calibration, pipeline, 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
     import logging
     from datetime import date
     from pathlib import Path
@@ -21,17 +22,26 @@ async def lifespan(app: FastAPI):
     Path(settings.database_url.replace("sqlite:///", "")).parent.mkdir(parents=True, exist_ok=True)
     init_db()
 
-    # Auto-run pipeline for today's slate on startup
-    db = SessionLocal()
-    try:
-        result = await run_full_pipeline(db, date.today())
-        logger.info("Startup pipeline complete: %s", result)
-    except Exception as exc:
-        logger.warning("Startup pipeline failed (non-fatal): %s", exc)
-    finally:
-        db.close()
+    # Run pipeline in background so health checks respond immediately
+    async def _startup_pipeline():
+        db = SessionLocal()
+        try:
+            result = await run_full_pipeline(db, date.today())
+            logger.info("Startup pipeline complete: %s", result)
+        except Exception as exc:
+            logger.warning("Startup pipeline failed (non-fatal): %s", exc)
+        finally:
+            db.close()
+
+    task = asyncio.create_task(_startup_pipeline())
 
     yield
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(

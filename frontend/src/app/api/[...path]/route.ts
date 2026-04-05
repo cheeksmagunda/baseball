@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 function getBackendUrl(): string {
-  const raw = process.env.API_URL ?? "http://localhost:8000";
+  const raw = process.env.API_URL ?? process.env.BACKEND_URL ?? "http://localhost:8000";
   const url = raw.startsWith("http") ? raw : `http://${raw}`;
   return url.replace(/\/+$/, "");
 }
