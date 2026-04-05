@@ -11,6 +11,10 @@ produces two lineups from the same ranked pool:
 
 Both use the same scoring engine, same popularity model, same
 rearrangement inequality for slot assignment.
+
+For the full "Filter, Not Forecast" pipeline, use the filter_strategy
+service (app/services/filter_strategy.py) which implements all 5 filters
+from the Master Strategy Document.
 """
 
 from dataclasses import dataclass, field

@@ -97,6 +97,10 @@ def add_slate_players(
             slate_id=slate.id,
             player_id=player.id,
             card_boost=card.card_boost,
+            batting_order=card.batting_order,
+            platoon_advantage=card.platoon_advantage,
+            is_debut_or_return=card.is_debut_or_return,
+            drafts=card.drafts,
         )
         db.add(sp)
         db.flush()

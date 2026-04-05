@@ -7,6 +7,12 @@ class SlateGameOut(BaseModel):
     away_team: str
     home_score: int | None = None
     away_score: int | None = None
+    vegas_total: float | None = None
+    home_moneyline: int | None = None
+    away_moneyline: int | None = None
+    home_starter: str | None = None
+    away_starter: str | None = None
+    temperature_f: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -16,6 +22,10 @@ class SlatePlayerIn(BaseModel):
     team: str | None = None
     position: str | None = None
     card_boost: float = 0.0
+    batting_order: int | None = None
+    platoon_advantage: bool | None = None
+    is_debut_or_return: bool = False
+    drafts: int | None = None
 
 
 class SlatePlayerOut(BaseModel):
