@@ -1,0 +1,100 @@
+"""Schemas for the Filter Strategy API endpoints."""
+
+from pydantic import BaseModel
+
+
+# ---------------------------------------------------------------------------
+# Request schemas
+# ---------------------------------------------------------------------------
+
+class GameEnvironment(BaseModel):
+    """Pre-game environmental data for a single game."""
+    game_id: int | str | None = None
+    home_team: str
+    away_team: str
+    vegas_total: float | None = None
+    home_moneyline: int | None = None
+    away_moneyline: int | None = None
+    home_starter: str | None = None
+    away_starter: str | None = None
+    home_starter_era: float | None = None
+    away_starter_era: float | None = None
+    home_starter_k_per_9: float | None = None
+    away_starter_k_per_9: float | None = None
+    home_team_ops: float | None = None
+    away_team_ops: float | None = None
+    wind_speed_mph: float | None = None
+    wind_direction: str | None = None
+    temperature_f: int | None = None
+
+
+class FilterCard(BaseModel):
+    """A player card with all pre-game context for the filter pipeline."""
+    player_name: str
+    team: str
+    position: str
+    card_boost: float = 0.0
+    game_id: int | str | None = None
+    batting_order: int | None = None
+    platoon_advantage: bool = False
+    is_debut_or_return: bool = False
+    drafts: int | None = None  # ownership data
+
+
+class FilterOptimizeRequest(BaseModel):
+    """Request for the full filter strategy pipeline."""
+    cards: list[FilterCard]
+    games: list[GameEnvironment] = []
+
+
+# ---------------------------------------------------------------------------
+# Response schemas
+# ---------------------------------------------------------------------------
+
+class SlateClassificationOut(BaseModel):
+    slate_type: str
+    game_count: int
+    quality_sp_matchups: int = 0
+    high_total_games: int = 0
+    reason: str = ""
+
+
+class FilterCandidateOut(BaseModel):
+    player_name: str
+    team: str
+    position: str
+    card_boost: float
+    total_score: float
+    env_score: float
+    env_factors: list[str] = []
+    ownership_tier: str
+    is_debut_or_return: bool = False
+    filter_ev: float
+    game_id: int | str | None = None
+
+
+class FilterSlotOut(BaseModel):
+    slot_index: int
+    slot_mult: float
+    player_name: str
+    team: str
+    position: str
+    card_boost: float
+    total_score: float
+    env_score: float
+    env_factors: list[str] = []
+    ownership_tier: str
+    is_debut_or_return: bool = False
+    filter_ev: float
+    expected_slot_value: float
+    game_id: int | str | None = None
+
+
+class FilterOptimizeResponse(BaseModel):
+    slate_classification: SlateClassificationOut
+    lineup: list[FilterSlotOut]
+    total_expected_value: float
+    strategy: str
+    composition: dict = {}
+    warnings: list[str] = []
+    all_candidates: list[FilterCandidateOut] = []

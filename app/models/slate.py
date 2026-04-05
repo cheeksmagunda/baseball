@@ -30,6 +30,22 @@ class SlateGame(Base):
     home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Pre-game environmental data (Filter 2 — §4.2)
+    # Populated before draft time from external sources (Vegas, weather APIs)
+    vegas_total: Mapped[float | None] = mapped_column(Float, nullable=True)
+    home_moneyline: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    away_moneyline: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    home_starter: Mapped[str | None] = mapped_column(String, nullable=True)
+    away_starter: Mapped[str | None] = mapped_column(String, nullable=True)
+    home_starter_era: Mapped[float | None] = mapped_column(Float, nullable=True)
+    away_starter_era: Mapped[float | None] = mapped_column(Float, nullable=True)
+    home_starter_k_per_9: Mapped[float | None] = mapped_column(Float, nullable=True)
+    away_starter_k_per_9: Mapped[float | None] = mapped_column(Float, nullable=True)
+    wind_speed_mph: Mapped[float | None] = mapped_column(Float, nullable=True)
+    wind_direction: Mapped[str | None] = mapped_column(String, nullable=True)
+    temperature_f: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    park_team: Mapped[str | None] = mapped_column(String, nullable=True)
+
     slate: Mapped["Slate"] = relationship(back_populates="games")
 
 
@@ -47,6 +63,15 @@ class SlatePlayer(Base):
     is_highest_value: Mapped[bool] = mapped_column(Boolean, default=False)
     is_most_popular: Mapped[bool] = mapped_column(Boolean, default=False)
     is_most_drafted_3x: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Pre-game filter fields (§4.2 Filters 2-4, §5.2)
+    batting_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    platoon_advantage: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    is_debut_or_return: Mapped[bool] = mapped_column(Boolean, default=False)
+    player_status: Mapped[str] = mapped_column(String, default="active")  # active, DNP, scratched, data_missing
+    game_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("slate_games.id"), nullable=True)
+    ownership_tier: Mapped[str | None] = mapped_column(String, nullable=True)  # chalk, medium, leverage
+    env_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0-1.0, computed by env filter
 
     slate: Mapped["Slate"] = relationship(back_populates="players")
     player: Mapped["Player"] = relationship(foreign_keys=[player_id])

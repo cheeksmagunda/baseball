@@ -8,6 +8,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.constants import canonicalize_team
 from app.core.mlb_api import (
     get_schedule,
     get_player_stats,
@@ -36,8 +37,12 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
     slate.game_count = len(games)
 
     for game in games:
-        home = game.get("teams", {}).get("home", {}).get("team", {}).get("abbreviation", "")
-        away = game.get("teams", {}).get("away", {}).get("team", {}).get("abbreviation", "")
+        home = canonicalize_team(
+            game.get("teams", {}).get("home", {}).get("team", {}).get("abbreviation", "")
+        )
+        away = canonicalize_team(
+            game.get("teams", {}).get("away", {}).get("team", {}).get("abbreviation", "")
+        )
         if not home or not away:
             continue
 

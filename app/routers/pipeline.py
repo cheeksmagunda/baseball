@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas.pipeline import FetchResult, ScoreResult, PlayerSummary, PipelineResult
-from app.services.pipeline import run_fetch, run_full_pipeline, run_score_slate
+from app.services.pipeline import run_fetch, run_full_pipeline, run_score_slate, run_filter_strategy_from_slate
 
 router = APIRouter()
 
@@ -34,3 +34,26 @@ def score_data(game_date: date, db: Session = Depends(get_db)):
 async def run_pipeline(game_date: date, db: Session = Depends(get_db)):
     """Full pipeline: fetch schedule → fetch stats → score → rank."""
     return await run_full_pipeline(db, game_date)
+
+
+@router.post("/filter-strategy/{game_date}")
+def run_filter_strategy_pipeline(game_date: date, db: Session = Depends(get_db)):
+    """
+    Run the "Filter, Not Forecast" strategy on an existing scored slate.
+
+    Prerequisites: slate must exist with players and (ideally) game
+    environment data populated. Run /pipeline/run/{date} first to
+    create the slate and score players.
+
+    This implements the full 5-filter pipeline from the Master Strategy Doc:
+    1. Slate classification (tiny/pitcher_day/hitter_day/standard)
+    2. Environmental advantage scoring
+    3. Ownership leverage adjustment
+    4. Boost-environment gating
+    5. Smart slot assignment with composition enforcement
+    """
+    result = run_filter_strategy_from_slate(db, game_date)
+    if "error" in result:
+        from fastapi import HTTPException
+        raise HTTPException(404, result["error"])
+    return result

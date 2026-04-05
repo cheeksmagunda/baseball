@@ -3,6 +3,27 @@
 # Draft slot multipliers (slot 1 = highest)
 SLOT_MULTIPLIERS = {1: 2.0, 2: 1.8, 3: 1.6, 4: 1.4, 5: 1.2}
 
+# ---------------------------------------------------------------------------
+# Team abbreviation canonicalization
+# Maps variant abbreviations to the canonical form used in PARK_HR_FACTORS.
+# Strategy doc §1.3 Issue 2: KC/KCR and CWS/CHW inconsistencies.
+# ---------------------------------------------------------------------------
+TEAM_ABBR_ALIASES = {
+    "KCR": "KC",
+    "CHW": "CWS",
+    "AZ": "ARI",
+    "WSN": "WSH",
+    "TBR": "TB",
+    "SDP": "SD",
+    "SFG": "SF",
+}
+
+
+def canonicalize_team(abbr: str) -> str:
+    """Normalize a team abbreviation to the canonical form."""
+    upper = abbr.strip().upper()
+    return TEAM_ABBR_ALIASES.get(upper, upper)
+
 # Ballpark HR factors (relative to league average = 1.0)
 # Values > 1.0 favor hitters; < 1.0 favor pitchers
 PARK_HR_FACTORS = {
@@ -54,3 +75,53 @@ SUBOPTIMAL_THRESHOLD = 1.05  # 5% EV variance
 # A low-scoring player with a huge boost is often a trap
 MIN_SCORE_THRESHOLD = 15  # out of 100
 MIN_SCORE_PENALTY = 0.50  # 50% EV haircut for below-threshold players
+
+# ---------------------------------------------------------------------------
+# Filter Strategy constants (§4 "Filter, Not Forecast")
+# ---------------------------------------------------------------------------
+
+# Slate classification thresholds (Filter 1)
+TINY_SLATE_MAX_GAMES = 3
+PITCHER_DAY_MIN_QUALITY_SP = 4   # 4+ quality SP matchups → pitcher day
+HITTER_DAY_MIN_HIGH_TOTAL = 5    # 5+ games with O/U >= 9.0 → hitter day
+HITTER_DAY_VEGAS_TOTAL_THRESHOLD = 9.0
+
+# Composition targets by slate type (pitcher count out of 5)
+SLATE_COMPOSITION = {
+    "tiny": {"min_pitchers": 1, "max_pitchers": 2},
+    "pitcher_day": {"min_pitchers": 4, "max_pitchers": 5},
+    "hitter_day": {"min_pitchers": 0, "max_pitchers": 1},
+    "standard": {"min_pitchers": 2, "max_pitchers": 3},
+}
+
+# Ownership leverage thresholds (Filter 3 — §4.2 Filter 3)
+CHALK_DRAFT_THRESHOLD = 2000     # > 2000 drafts = "chalk" (avoid unless elite)
+LEVERAGE_DRAFT_THRESHOLD = 200   # < 200 drafts = "leverage play" (target)
+
+# Ownership EV adjustments
+CHALK_EV_PENALTY = 0.80          # 20% EV penalty for chalk players
+LEVERAGE_EV_BONUS = 1.20         # 20% EV bonus for leverage plays
+
+# Boost-environment gating (Filter 4 — §4.2 Filter 4)
+# A boost without environmental support is a trap (§3.5 "Boost Trap")
+BOOST_NO_ENV_PENALTY = 0.70      # 30% EV haircut when boost has no env support
+ENV_PASS_THRESHOLD = 0.5         # env_score must be > 0.5 (out of 1.0) to "pass"
+
+# Game diversification (Filter 5 — §4.2 Filter 5 + Commandment 10)
+MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup
+SAME_GAME_EXCESS_PENALTY = 0.80  # 20% penalty for 4th+ player from same game
+
+# Environmental filter thresholds (Filter 2)
+# Pitcher environmental pass conditions
+PITCHER_ENV_WEAK_OPP_OPS = 0.700      # bottom-10 offense OPS threshold
+PITCHER_ENV_WEAK_OPP_K_PCT = 0.24     # high-K% offense threshold
+PITCHER_ENV_MIN_K_PER_9 = 8.0         # min K/9 for "K upside"
+PITCHER_ENV_FRIENDLY_PARK = 1.00      # park factor below this = pitcher-friendly
+
+# Batter environmental pass conditions
+BATTER_ENV_HIGH_VEGAS_TOTAL = 8.5     # O/U >= this = high-run environment
+BATTER_ENV_WEAK_PITCHER_ERA = 4.5     # opposing starter ERA above this = weak
+BATTER_ENV_TOP_LINEUP = 4             # batting 1-4 = top of lineup
+
+# Debut/return premium (§2.3 Condition C)
+DEBUT_RETURN_EV_BONUS = 1.15          # 15% EV bonus for debut/return players
