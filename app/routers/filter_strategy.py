@@ -193,14 +193,14 @@ def _get_active_slate_date(db: Session) -> date:
     Determine the correct slate date to serve.
 
     Returns today if today has an active slate with unfinished games.
-    Returns tomorrow if today's slate is empty/nonexistent/complete and
-    tomorrow has games.  Falls back to tomorrow when today has no games
-    (so the pipeline fetches the next useful date).
+    Returns tomorrow if today's slate is empty/nonexistent/complete.
     """
     today = date.today()
     tomorrow = today + timedelta(days=1)
 
     today_slate = db.query(Slate).filter_by(date=today).first()
+
+    # Today has games — check if any are still in progress
     if today_slate and today_slate.game_count and today_slate.game_count > 0:
         games = db.query(SlateGame).filter_by(slate_id=today_slate.id).all()
         all_final = games and all(
@@ -209,18 +209,10 @@ def _get_active_slate_date(db: Session) -> date:
         )
         if not all_final:
             return today
+        # All games final — fall through to serve tomorrow
 
-    # Today is empty or complete — check tomorrow
-    tomorrow_slate = db.query(Slate).filter_by(date=tomorrow).first()
-    if tomorrow_slate and tomorrow_slate.game_count and tomorrow_slate.game_count > 0:
-        return tomorrow
-
-    # No slate with games exists yet for either day.
-    # If today had no games at all, target tomorrow so pipeline fetches it.
-    if not today_slate or not today_slate.game_count or today_slate.game_count == 0:
-        return tomorrow
-
-    return today
+    # Today is empty, nonexistent, or complete — serve tomorrow
+    return tomorrow
 
 
 def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[list[FilterCard], list[GameEnvironment]]:

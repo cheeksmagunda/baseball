@@ -60,6 +60,11 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
         home_starter_mlb_id = home_prob.get("id") if home_prob else None
         away_starter_mlb_id = away_prob.get("id") if away_prob else None
 
+        # Capture scores from schedule response for completed games
+        game_status = game.get("status", {}).get("abstractGameState", "")
+        home_score = game.get("teams", {}).get("home", {}).get("score")
+        away_score = game.get("teams", {}).get("away", {}).get("score")
+
         existing = (
             db.query(SlateGame)
             .filter_by(slate_id=slate.id, home_team=home, away_team=away)
@@ -74,6 +79,10 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
                 home_starter=home_starter_name,
                 away_starter=away_starter_name,
             )
+            # Set scores if game is Final
+            if game_status == "Final" and home_score is not None:
+                existing.home_score = home_score
+                existing.away_score = away_score
             db.add(existing)
         else:
             if game_pk and not existing.mlb_game_pk:
@@ -82,6 +91,10 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
                 existing.home_starter = home_starter_name
             if away_starter_name and not existing.away_starter:
                 existing.away_starter = away_starter_name
+            # Update scores if game is now Final
+            if game_status == "Final" and home_score is not None and existing.home_score is None:
+                existing.home_score = home_score
+                existing.away_score = away_score
 
     db.commit()
     return slate
