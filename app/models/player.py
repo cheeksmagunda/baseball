@@ -24,6 +24,8 @@ class Player(Base):
     team: Mapped[str] = mapped_column(String, nullable=False, index=True)
     position: Mapped[str] = mapped_column(String, nullable=False, index=True)
     mlb_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bat_side: Mapped[str | None] = mapped_column(String, nullable=True)   # L, R, or S
+    pitch_hand: Mapped[str | None] = mapped_column(String, nullable=True)  # L or R
 
     stats: Mapped[list["PlayerStats"]] = relationship(back_populates="player", cascade="all")
     game_logs: Mapped[list["PlayerGameLog"]] = relationship(

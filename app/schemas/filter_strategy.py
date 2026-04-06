@@ -25,6 +25,8 @@ class GameEnvironment(BaseModel):
     away_starter_k_per_9: float | None = None
     home_team_ops: float | None = None
     away_team_ops: float | None = None
+    home_team_k_pct: float | None = None
+    away_team_k_pct: float | None = None
     wind_speed_mph: float | None = None
     wind_direction: str | None = None
     temperature_f: int | None = None

@@ -14,6 +14,7 @@ from app.core.mlb_api import (
     get_schedule,
     get_game_boxscore,
     get_player_stats,
+    get_team_stats,
     search_player,
     TEAM_MLB_IDS,
 )
@@ -272,6 +273,15 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
         return None
 
     person = people[0]
+
+    # Store handedness — used for platoon advantage computation
+    bat_side = person.get("batSide", {}).get("code")    # L, R, or S
+    pitch_hand = person.get("pitchHand", {}).get("code")  # L or R
+    if bat_side and player.bat_side != bat_side:
+        player.bat_side = bat_side
+    if pitch_hand and player.pitch_hand != pitch_hand:
+        player.pitch_hand = pitch_hand
+
     stats_groups = person.get("stats", [])
 
     ps = (
@@ -356,3 +366,62 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
 
     db.commit()
     return ps
+
+
+async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -> int:
+    """
+    Fetch team-level batting OPS and K% for every game in the slate and store on SlateGame.
+
+    Used by Filter 2 pitcher env scoring: weak opponent OPS (Factor 1) and
+    high-K opponent (Factor 2). Both were previously always None because no
+    code populated the team-level stats.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+    teams = {g.home_team for g in games} | {g.away_team for g in games}
+
+    async def _fetch(team: str) -> tuple[str, dict | None]:
+        team_id = TEAM_MLB_IDS.get(team)
+        if not team_id:
+            return team, None
+        try:
+            return team, await get_team_stats(team_id, season)
+        except Exception as exc:
+            logger.warning("Team stats fetch failed for %s: %s", team, exc)
+            return team, None
+
+    results = await asyncio.gather(*[_fetch(t) for t in teams])
+
+    team_stats: dict[str, dict] = {}
+    for team, data in results:
+        if data is None:
+            continue
+        splits = (data.get("stats") or [{}])[0].get("splits", [])
+        if not splits:
+            continue
+        s = splits[0].get("stat", {})
+        ops_str = s.get("ops", "")
+        ops = float(ops_str) if ops_str else None
+        pa = s.get("plateAppearances", 0)
+        so = s.get("strikeOuts", 0)
+        k_pct = (so / pa) if pa > 0 else None
+        team_stats[team] = {"ops": ops, "k_pct": k_pct}
+
+    updated = 0
+    for game in games:
+        home = team_stats.get(game.home_team, {})
+        away = team_stats.get(game.away_team, {})
+        if home.get("ops") is not None:
+            game.home_team_ops = home["ops"]
+        if home.get("k_pct") is not None:
+            game.home_team_k_pct = home["k_pct"]
+        if away.get("ops") is not None:
+            game.away_team_ops = away["ops"]
+        if away.get("k_pct") is not None:
+            game.away_team_k_pct = away["k_pct"]
+        updated += 1
+
+    db.commit()
+    return updated

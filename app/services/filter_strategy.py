@@ -288,6 +288,9 @@ def compute_batter_env_score(
     batting_order: int | None = None,
     park_team: str | None = None,
     is_debut_or_return: bool = False,
+    wind_speed_mph: float | None = None,
+    wind_direction: str | None = None,
+    temperature_f: int | None = None,
 ) -> tuple[float, list[str]]:
     """
     Compute environmental score for a batter (0-1.0).
@@ -297,7 +300,7 @@ def compute_batter_env_score(
     - Facing a weak opposing starter (high ERA)
     - Having a platoon advantage
     - Batting in top 4 of lineup
-    - Hitter-friendly park or favorable weather
+    - Hitter-friendly park or favorable weather (wind out, warm temp)
     """
     score = 0.0
     factors = []
@@ -332,14 +335,27 @@ def compute_batter_env_score(
         elif batting_order <= 6:
             score += 0.5
 
-    # 5. Hitter-friendly park
+    # 5. Hitter-friendly park + favorable weather (combined, capped at 1.0)
+    f5 = 0.0
     if park_team:
         pf = PARK_HR_FACTORS.get(park_team, 1.0)
         if pf >= 1.05:
-            score += 1.0
+            f5 = 1.0
             factors.append(f"Hitter-friendly park ({park_team}, factor={pf:.2f})")
         elif pf >= 1.0:
-            score += 0.5
+            f5 = 0.5
+
+    if wind_speed_mph is not None and wind_speed_mph >= 10 and wind_direction:
+        direction_upper = wind_direction.upper()
+        if any(d in direction_upper for d in ("OUT", "L TO R", "R TO L", "OUT TO CF")):
+            f5 = min(1.0, f5 + 0.5)
+            factors.append(f"Wind blowing out ({wind_speed_mph:.0f} mph)")
+
+    if temperature_f is not None and temperature_f >= 80:
+        f5 = min(1.0, f5 + 0.2)
+        factors.append(f"Warm conditions ({temperature_f}°F)")
+
+    score += f5
 
     # Debut/return bonus
     if is_debut_or_return:
