@@ -1,9 +1,19 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String, ForeignKey, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+
+class CachedLineup(Base):
+    """Persisted lineup cache so picks survive app restarts."""
+    __tablename__ = "cached_lineups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    cache_date: Mapped[date] = mapped_column(Date, unique=True, nullable=False)
+    response_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Slate(Base):
