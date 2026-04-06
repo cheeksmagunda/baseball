@@ -134,9 +134,13 @@
   },
   {
     "date": "2026-04-02",
-    "game_count": null,
-    "games": [],
-    "notes": "Thursday slate. Teams represented: ATL, KCR, SF, ARI, DET, NYM, TB, MIN, PHI, CLE, CHW. Cole Ragans (KCR) RS 5.3 appeared in all 8 top lineups at slot 1 or 2. Matt Olson (ATL) RS 5.6 highest individual RS. Taj Bradley (TB) RS 4.8 with no boost, 334 drafts. Juan Soto (NYM) most popular at 5.6k drafts but RS only 0.4. Willy Adames (SF) RS -0.8 with +3.0x boost drafted 2.6k times — notable bust. Bobby Witt Jr. (KCR) RS 0 with +3.0x boost drafted 2k times. Winner (military) used Matt Olson in slot 1 — key differentiator from ranks 2-8 who put Ragans in slot 1. Heavy ATL stack dominated top lineups (Olson + Riley + Harris II + Acuña Jr. + Albies).",
+    "game_count": 3,
+    "games": [
+      {"home": "KC", "away": "MIN", "home_score": 1, "away_score": 5, "winner": "MIN", "loser": "KC", "winner_score": 5, "loser_score": 1},
+      {"home": "ARI", "away": "ATL", "home_score": 2, "away_score": 17, "winner": "ATL", "loser": "ARI", "winner_score": 17, "loser_score": 2},
+      {"home": "SF", "away": "NYM", "home_score": 7, "away_score": 2, "winner": "SF", "loser": "NYM", "winner_score": 7, "loser_score": 2}
+    ],
+    "notes": "Thursday travel day — only 3 games played. CWS vs TOR postponed (rain). Cole Ragans (KCR) 6 IP 8K but took L. Matt Olson (ATL) RS 5.6 highest individual RS (HR + 2 doubles in 17-2 blowout). Taj Bradley (MIN) 7 IP 1ER 9K earned W. Jordan Lawlar first career HR (126 PA). Twins broke game open with 3 HR in 9th (Wallner, Clemens, Bell). Juan Soto (NYM) most popular at 5.6k drafts but RS only 0.4. Willy Adames (SF) RS -0.8 with +3.0x boost drafted 2.6k times — notable bust. Winner (military) used Matt Olson in slot 1 — key differentiator from ranks 2-8 who put Ragans in slot 1. Heavy ATL stack dominated top lineups.",
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-04T00:00:00Z"

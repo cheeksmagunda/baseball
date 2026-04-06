@@ -97,20 +97,20 @@ date,player_name,team_actual,position,real_score,card_boost,game_result,ab,r,h,h
 2026-03-31,Carlos Correa,HOU,SS,3.0,3.0,HOU 9 BOS 2,,,2,0,2,,,,,,,2 hits 2 RBI
 2026-03-31,Max Muncy,LAD,3B,2.9,3.0,LAD 4 CLE 1,3,2,2,1,1,1,0,,,,,,Solo HR 410ft
 2026-03-31,Jacob Wilson,OAK,SS,2.9,3.0,OAK 5 ATL 2,4,,2,0,2,,,,,,,2B + hit 2 RBI
-2026-04-02,Matt Olson,ATL,1B,5.6,3.0,,4,2,3,1,3,1,0,,,,, HR + 2B + RBI single
-2026-04-02,Cole Ragans,KCR,P,5.3,3.0,,,,,,,,,,6,8,W,6+ IP dominant start
-2026-04-02,Luis Arraez,SF,2B,2.8,3.0,,4,1,3,0,2,0,0,,,,,3-for-4 2 RBI
-2026-04-02,Casey Schmitt,SF,3B,2.5,3.0,,4,1,2,0,2,0,1,,,,,2 hits 2 RBI
-2026-04-02,Kody Clemens,PHI,2B,2.6,3.0,,4,1,2,0,2,0,1,,,,,2 hits 2 RBI
-2026-04-02,Austin Riley,ATL,3B,2.2,3.0,,4,1,2,0,2,0,1,,,,,2 hits 2 RBI
-2026-04-02,Jordan Lawlar,ARI,SS,2.1,3.0,,4,1,2,0,2,0,1,,,,,2 hits 2 RBI
-2026-04-02,Mauricio Dubón,ATL,OF,2.3,2.5,,5,1,2,0,2,0,1,,,,,2 hits 2 RBI
-2026-04-02,Matt Chapman,SF,3B,2.0,3.0,,4,1,2,0,1,1,1,,,,,HR + walk
-2026-04-02,Taj Bradley,TB,P,4.8,,,,,,,,,,,,7,9,W,7 IP 1ER 9K quality start
-2026-04-02,Rafael Devers,SF,3B,1.9,3.0,,4,1,2,0,1,0,1,,,,,2 hits 1 RBI
-2026-04-02,Michael Harris II,ATL,OF,1.8,3.0,,4,1,1,0,2,1,1,,,,,RBI single + BB
-2026-04-02,Josh Bell,CLE,1B,2.0,2.4,,4,1,2,0,2,0,1,,,,,2 hits 2 RBI
-2026-04-02,Matt Wallner,MIN,OF,1.7,3.0,,4,1,2,0,1,0,1,,,,,2 hits 1 RBI
+2026-04-02,Matt Olson,ATL,1B,5.6,3.0,ATL 17 ARI 2,4,2,3,1,3,1,0,,,,,"HR + 2 doubles + RBI single; 8-run 5th inning"
+2026-04-02,Cole Ragans,KCR,P,5.3,3.0,MIN 5 KC 1,,,,,,,,,1,8,L,"6 IP 4H 1ER 1BB 8K - outdueled by Bradley despite strong outing"
+2026-04-02,Luis Arraez,SF,2B,2.8,3.0,SF 7 NYM 2,4,1,3,0,2,0,0,,,,,3-for-4 2 RBI
+2026-04-02,Casey Schmitt,SF,3B,2.5,3.0,SF 7 NYM 2,4,1,2,0,2,0,1,,,,,2 hits 2 RBI
+2026-04-02,Kody Clemens,PHI,2B,2.6,3.0,MIN 5 KC 1,4,1,2,0,2,0,1,,,,,2 hits 2 RBI + HR in 9th
+2026-04-02,Austin Riley,ATL,3B,2.2,3.0,ATL 17 ARI 2,4,1,2,0,2,0,1,,,,,2-run double in 8-run 5th
+2026-04-02,Jordan Lawlar,ARI,SS,2.1,3.0,ATL 17 ARI 2,4,1,2,0,2,0,1,,,,,Solo HR in 3rd - first career HR in 126 PA
+2026-04-02,Mauricio Dubón,ATL,OF,2.3,2.5,ATL 17 ARI 2,5,1,2,0,2,0,1,,,,,Solo HR + hit
+2026-04-02,Matt Chapman,SF,3B,2.0,3.0,SF 7 NYM 2,4,1,2,0,1,1,1,,,,,HR + walk
+2026-04-02,Taj Bradley,TB,P,4.8,,MIN 5 KC 1,,,,,,,,,1,9,W,"7 IP 1ER 9K quality start - outdueled Ragans"
+2026-04-02,Rafael Devers,SF,3B,1.9,3.0,SF 7 NYM 2,4,1,2,0,1,0,1,,,,,2 hits 1 RBI
+2026-04-02,Michael Harris II,ATL,OF,1.8,3.0,ATL 17 ARI 2,4,1,1,0,2,1,1,,,,,2-run double in 5th + BB
+2026-04-02,Josh Bell,CLE,1B,2.0,2.4,MIN 5 KC 1,4,1,2,0,2,0,1,,,,,Back-to-back HR with Clemens in 9th
+2026-04-02,Matt Wallner,MIN,OF,1.7,3.0,MIN 5 KC 1,4,1,2,0,1,0,1,,,,,HR in 9th to break game open
 2026-04-03,Aaron Judge,NYY,OF,5.6,3.0,NYY 8 MIA 2,4,2,3,2,4,1,0,,,,,"2 HR (solo 430ft + 3-run 445ft) 3-for-4 1BB - 4 RBI"
 2026-04-03,Lawrence Butler,OAK,OF,5.3,3.0,OAK 6 HOU 4,4,2,3,1,4,0,0,,,,,"Grand slam 415ft in 5th + single + double; only 2 drafts"
 2026-04-03,Sean Burke,CWS,P,5.4,2.9,CWS 5 TOR 1,,,,,,,,,0,8,W,"7 IP 2H 0ER 1BB 8K - dominant; only 6 drafts"
