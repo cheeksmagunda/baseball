@@ -23,13 +23,17 @@ Sharp signal (Moonshot only):
 """
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
 
 import httpx
 
-TIMEOUT = 5.0
+logger = logging.getLogger(__name__)
+
+TIMEOUT = 8.0
+_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 
 # ---------------------------------------------------------------------------
@@ -82,28 +86,37 @@ async def fetch_social_signal(player_name: str, team: str) -> SignalResult:
     Estimate social media buzz via Google Trends.
 
     Presence in Google autocomplete or daily trends = mainstream attention.
-    Both endpoints are fetched in parallel.
+    Both endpoints are fetched in parallel; each handles its own errors
+    so a single 429 doesn't kill the entire signal.
     """
     query = f"{player_name} MLB"
     last_name = player_name.split()[-1].lower()
 
     async def _autocomplete(client: httpx.AsyncClient) -> bool:
-        r = await client.get(
-            "https://trends.google.com/trends/api/autocomplete",
-            params={"hl": "en-US", "tz": "300", "q": query},
-        )
-        r.raise_for_status()
-        return last_name in r.text.lower()
+        try:
+            r = await client.get(
+                "https://trends.google.com/trends/api/autocomplete",
+                params={"hl": "en-US", "tz": "300", "q": query},
+            )
+            r.raise_for_status()
+            return last_name in r.text.lower()
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.debug("Google autocomplete failed for %s: %s", player_name, exc)
+            return False
 
     async def _dailytrends(client: httpx.AsyncClient) -> bool:
-        r = await client.get(
-            "https://trends.google.com/trends/api/dailytrends",
-            params={"hl": "en-US", "tz": "300", "geo": "US", "ns": "15"},
-        )
-        r.raise_for_status()
-        return last_name in r.text.lower()
+        try:
+            r = await client.get(
+                "https://trends.google.com/trends/api/dailytrends",
+                params={"hl": "en-US", "tz": "300", "geo": "US", "ns": "15"},
+            )
+            r.raise_for_status()
+            return last_name in r.text.lower()
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.debug("Google daily trends failed for %s: %s", player_name, exc)
+            return False
 
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT}) as client:
         in_autocomplete, in_daily = await asyncio.gather(
             _autocomplete(client), _dailytrends(client)
         )
@@ -118,16 +131,21 @@ async def fetch_news_signal(player_name: str, team: str) -> SignalResult:
     """
     Check sports news for recent headlines mentioning the player.
 
-    Uses ESPN and MLB.com RSS feeds — free, no auth. Both fetched in parallel.
+    Uses ESPN and MLB.com RSS feeds — free, no auth. Each feed handles
+    its own errors so one broken feed doesn't kill the signal.
     """
     last_name = player_name.split()[-1].lower()
 
     async def _feed(client: httpx.AsyncClient, name: str, url: str) -> str | None:
-        r = await client.get(url)
-        r.raise_for_status()
-        return name if last_name in r.text.lower() else None
+        try:
+            r = await client.get(url)
+            r.raise_for_status()
+            return name if last_name in r.text.lower() else None
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.debug("%s RSS feed failed for %s: %s", name, player_name, exc)
+            return None
 
-    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": _USER_AGENT}) as client:
         results = await asyncio.gather(
             _feed(client, "ESPN", "https://www.espn.com/espn/rss/mlb/news"),
             _feed(client, "MLB", "https://www.mlb.com/feeds/news/rss.xml"),
@@ -142,24 +160,32 @@ async def fetch_dfs_ownership_signal(player_name: str, team: str) -> SignalResul
     """
     Estimate cross-platform DFS ownership.
 
-    Scrapes publicly visible ownership data from major DFS platforms. Both fetched in parallel.
+    Scrapes publicly visible ownership data from major DFS platforms.
+    Each platform handles its own errors independently.
     """
     last_name = player_name.split()[-1].lower()
 
     async def _rotogrinders(client: httpx.AsyncClient) -> bool:
-        r = await client.get("https://rotogrinders.com/resultsdb/mlb", headers={"User-Agent": "Mozilla/5.0"})
-        r.raise_for_status()
-        return last_name in r.text.lower()
+        try:
+            r = await client.get("https://rotogrinders.com/resultsdb/mlb")
+            r.raise_for_status()
+            return last_name in r.text.lower()
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.debug("RotoGrinders failed for %s: %s", player_name, exc)
+            return False
 
     async def _numberfire(client: httpx.AsyncClient) -> bool:
-        r = await client.get(
-            "https://www.numberfire.com/mlb/daily-fantasy/daily-baseball-projections",
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        r.raise_for_status()
-        return last_name in r.text.lower()
+        try:
+            r = await client.get(
+                "https://www.numberfire.com/mlb/daily-fantasy/daily-baseball-projections",
+            )
+            r.raise_for_status()
+            return last_name in r.text.lower()
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.debug("NumberFire failed for %s: %s", player_name, exc)
+            return False
 
-    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": _USER_AGENT}) as client:
         roto, nfire = await asyncio.gather(_rotogrinders(client), _numberfire(client))
     if roto:
         return SignalResult("dfs_ownership", 60.0, "Found on RotoGrinders results")
@@ -174,13 +200,18 @@ async def fetch_search_signal(player_name: str, team: str) -> SignalResult:
 
     High casual search interest = the crowd knows about this player.
     """
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        resp = await client.get(
-            "https://suggestqueries.google.com/complete/search",
-            params={"client": "firefox", "q": f"{player_name} "},
-        )
-    resp.raise_for_status()
-    suggestions = resp.text.lower()
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT}) as client:
+            resp = await client.get(
+                "https://suggestqueries.google.com/complete/search",
+                params={"client": "firefox", "q": f"{player_name} "},
+            )
+        resp.raise_for_status()
+        suggestions = resp.text.lower()
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        logger.debug("Google suggest failed for %s: %s", player_name, exc)
+        return SignalResult("search", 0.0, f"Search signal unavailable: {exc}")
+
     hot_terms = ["stats", "today", "home run", "injury", "lineup", "dfs"]
     matches = sum(1 for term in hot_terms if term in suggestions)
     if matches >= 3:
@@ -207,26 +238,30 @@ async def fetch_sharp_signal(player_name: str, team: str) -> SignalResult:
       - Reddit r/baseball (rising posts)
       - Prospect/analytics blogs (FanGraphs community, Prospects Live)
 
-    All sources fetched in parallel.
+    Each source handles its own errors so one down site doesn't zero the signal.
     """
     last_name = player_name.split()[-1].lower()
 
     SOURCES = [
         ("r/fantasybaseball", "https://www.reddit.com/r/fantasybaseball/hot.json", 35.0,
-         {"limit": "50"}, {"User-Agent": "BaseballDFS/1.0"}),
+         {"limit": "50", "raw_json": "1"}, {"User-Agent": "BaseballDFS/1.0 (by /u/baseballdfs)"}),
         ("r/baseball", "https://www.reddit.com/r/baseball/hot.json", 25.0,
-         {"limit": "50"}, {"User-Agent": "BaseballDFS/1.0"}),
+         {"limit": "50", "raw_json": "1"}, {"User-Agent": "BaseballDFS/1.0 (by /u/baseballdfs)"}),
         ("FanGraphs community", "https://community.fangraphs.com/feed/", 30.0,
-         {}, {"User-Agent": "Mozilla/5.0"}),
+         {}, {"User-Agent": _USER_AGENT}),
         ("Prospects Live", "https://www.prospectslive.com/feed", 25.0,
-         {}, {"User-Agent": "Mozilla/5.0"}),
+         {}, {"User-Agent": _USER_AGENT}),
     ]
 
     async def _fetch(client: httpx.AsyncClient, name: str, url: str, pts: float,
                      params: dict, headers: dict) -> tuple[str, float]:
-        r = await client.get(url, params=params or None, headers=headers)
-        r.raise_for_status()
-        return (name, pts) if last_name in r.text.lower() else (name, 0.0)
+        try:
+            r = await client.get(url, params=params or None, headers=headers)
+            r.raise_for_status()
+            return (name, pts) if last_name in r.text.lower() else (name, 0.0)
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.debug("Sharp source %s failed for %s: %s", name, player_name, exc)
+            return (name, 0.0)
 
     async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
         results = await asyncio.gather(
