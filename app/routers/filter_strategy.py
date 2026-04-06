@@ -7,7 +7,7 @@ the full 5-filter pipeline from the Master Strategy Document.
 
 import asyncio
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
@@ -188,16 +188,52 @@ async def _resolve_candidates(
     return candidates
 
 
-def _load_today_slate(db: Session) -> tuple[list[FilterCard], list[GameEnvironment]]:
-    """Load today's slate players and games from the database."""
+def _get_active_slate_date(db: Session) -> date:
+    """
+    Determine the correct slate date to serve.
+
+    Returns today if today has an active slate with unfinished games.
+    Returns tomorrow if today's slate is empty/nonexistent/complete and
+    tomorrow has games.  Falls back to tomorrow when today has no games
+    (so the pipeline fetches the next useful date).
+    """
     today = date.today()
+    tomorrow = today + timedelta(days=1)
+
+    today_slate = db.query(Slate).filter_by(date=today).first()
+    if today_slate and today_slate.game_count and today_slate.game_count > 0:
+        games = db.query(SlateGame).filter_by(slate_id=today_slate.id).all()
+        all_final = games and all(
+            g.home_score is not None and g.away_score is not None
+            for g in games
+        )
+        if not all_final:
+            return today
+
+    # Today is empty or complete — check tomorrow
+    tomorrow_slate = db.query(Slate).filter_by(date=tomorrow).first()
+    if tomorrow_slate and tomorrow_slate.game_count and tomorrow_slate.game_count > 0:
+        return tomorrow
+
+    # No slate with games exists yet for either day.
+    # If today had no games at all, target tomorrow so pipeline fetches it.
+    if not today_slate or not today_slate.game_count or today_slate.game_count == 0:
+        return tomorrow
+
+    return today
+
+
+def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[list[FilterCard], list[GameEnvironment]]:
+    """Load the active slate's players and games from the database."""
+    if slate_date is None:
+        slate_date = _get_active_slate_date(db)
     slate = (
         db.query(Slate)
         .options(
             selectinload(Slate.players).selectinload(SlatePlayer.player),
             selectinload(Slate.games),
         )
-        .filter_by(date=today)
+        .filter_by(date=slate_date)
         .first()
     )
     if not slate:
@@ -327,7 +363,8 @@ async def build_and_cache_lineups(db: Session) -> FilterOptimizeResponse | None:
     Called by the startup pipeline so the first frontend request is instant.
     Returns the response object, or None if no slate data is available.
     """
-    cards, games = _load_today_slate(db)
+    active_date = _get_active_slate_date(db)
+    cards, games = _load_active_slate(db, active_date)
     if not cards:
         logger.warning("build_and_cache_lineups: no slate data available, skipping cache warm")
         return None
@@ -342,7 +379,7 @@ async def build_and_cache_lineups(db: Session) -> FilterOptimizeResponse | None:
 
     dual = run_dual_filter_strategy(candidates, slate_class)
     response = _build_response(dual, candidates)
-    lineup_cache.store(response, slate_date=date.today())
+    lineup_cache.store(response, slate_date=active_date)
     logger.info(
         "Lineup cache warmed: %d candidates, slate=%s",
         len(candidates),
@@ -374,14 +411,16 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
             return cached
 
     if not cards:
-        cards, games = _load_today_slate(db)
+        active_date = _get_active_slate_date(db)
+        cards, games = _load_active_slate(db, active_date)
 
     # If no slate data, trigger pipeline on-demand (handles mid-slate redeploys)
     if len(cards) < 1:
-        logger.info("No slate data found — triggering on-demand pipeline")
+        active_date = _get_active_slate_date(db)
+        logger.info("No slate data found — triggering on-demand pipeline for %s", active_date)
         try:
-            await run_full_pipeline(db, date.today())
-            cards, games = _load_today_slate(db)
+            await run_full_pipeline(db, active_date)
+            cards, games = _load_active_slate(db, active_date)
         except Exception as exc:
             logger.warning("On-demand pipeline failed: %s", exc)
 
@@ -403,7 +442,7 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
 
     # Cache the result for subsequent frontend requests
     if not req.cards:
-        lineup_cache.store(response, slate_date=date.today())
+        lineup_cache.store(response, slate_date=_get_active_slate_date(db))
 
     return response
 
