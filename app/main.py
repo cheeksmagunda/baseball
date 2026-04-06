@@ -16,6 +16,7 @@ async def lifespan(app: FastAPI):
     from pathlib import Path
     from app.database import SessionLocal
     from app.services.pipeline import run_full_pipeline
+    from app.services.slate_monitor import monitor_slate_completion
     from app.models.player import Player
     from app.seed import run_seed
 
@@ -67,15 +68,18 @@ async def lifespan(app: FastAPI):
         finally:
             db.close()
 
-    task = asyncio.create_task(_startup_pipeline())
+    startup_task = asyncio.create_task(_startup_pipeline())
+    monitor_task = asyncio.create_task(monitor_slate_completion(check_interval=30))
 
     yield
 
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    startup_task.cancel()
+    monitor_task.cancel()
+    for task in [startup_task, monitor_task]:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(
