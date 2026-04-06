@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["*"]
     log_level: str = "INFO"
     current_season: int = 2026
+    redis_url: str | None = None
 
 
 settings = Settings()
