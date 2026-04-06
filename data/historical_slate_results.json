@@ -194,5 +194,30 @@
     "source": "screenshot_ingest",
     "saved_at": "2026-04-05T00:00:00Z",
     "notes": "Saturday slate with 15 games (14 complete, 1 doubleheader). Top 8 winning lineups captured. Cubs-Guardians postponed. Jesús Luzardo dominated top lineups (most popular, highest value combination). Three shutouts: HOU 11-0 over OAK, CIN 2-0 over TEX, NYM 9-0 over SF."
+  },
+  {
+    "date": "2026-04-05",
+    "game_count": 15,
+    "games": [
+      {"home": "OAK", "away": null, "home_score": null, "away_score": null, "winner": "OAK", "loser": null, "winner_score": null, "loser_score": null, "notes": "Brent Rooker RS 9.8 monster game; Soderstrom RS 5.5, Kurtz RS 2.3"},
+      {"home": null, "away": "CLE", "home_score": null, "away_score": null, "winner": "CLE", "loser": null, "winner_score": null, "loser_score": null, "notes": "Slade Cecconi RS 6.3 dominant start"},
+      {"home": "DET", "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "Drake Baldwin RS 6.0"},
+      {"home": null, "away": "CWS", "home_score": null, "away_score": null, "winner": "CWS", "loser": null, "winner_score": null, "loser_score": null, "notes": "Davis Martin RS 5.5 quality start"},
+      {"home": "SF", "away": null, "home_score": null, "away_score": null, "winner": "SF", "loser": null, "winner_score": null, "loser_score": null, "notes": "Logan Webb RS 5.2"},
+      {"home": "NYY", "away": null, "home_score": null, "away_score": null, "winner": "NYY", "loser": null, "winner_score": null, "loser_score": null, "notes": "Max Fried RS 4.0 start; Ben Rice RS 4.8; Corbin Burns RS 4.5 (possible doubleheader)"},
+      {"home": null, "away": "BAL", "home_score": null, "away_score": null, "winner": null, "loser": "BAL", "winner_score": null, "loser_score": null, "notes": "Chris Bassitt RS -4.0 disaster start, 1.4k drafts"},
+      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "ARI: Corbin Carroll RS 4.6, Ketel Marte RS 3.3"},
+      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "CHC: Shota Imanaga RS 3.6"},
+      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "LAD: Shohei Ohtani RS 3.7"},
+      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "SD: Manny Machado RS 5.2, Jackson Merrill RS 4.7; Walker Buehler RS -0.7"},
+      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "BOS: Masataka Yoshida RS 5.2, Wilyer Abreu RS 3.9"},
+      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "TOR: Tomoyuki Sugano RS 3.8; Bo Bichette RS -0.3"},
+      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "MIL: Christian Yelich RS 3.3"},
+      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "HOU: Yordan Alvarez RS 3.1; SEA: Cole Young RS 5.0, Julio Rodriguez RS 1.2; WSH: James Wood RS 4.0"}
+    ],
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-06T00:00:00Z",
+    "notes": "Sunday slate (~15 games). Brent Rooker (OAK) RS 9.8 dominated HV leaderboard — nearly 50 total value at +3.0x boost with only 2 drafts. Top-2 finishes (jainam1 84.19, xxl_ 82.95) used full OAK stack (Rooker, Kurtz, Soderstrom, Langeliers + Wilson/Butler). OAK ghost player sweep: 5 OAK players combined for ghost-tier ownership. Slade Cecconi (CLE) RS 6.3 best pitcher — appeared in ranks 3, 5, 10. Drake Baldwin (DET) RS 6.0 at 50 drafts — underowned HV winner. Chris Bassitt (BAL) RS -4.0 most-drafted-3x bust (1.4k drafts, -20 total value). Max Fried most popular at 3.8k drafts but only RS 4.0. Most popular list chronically underperformed — Judge (RS 1.3), Ohtani (RS 3.7), Alvarez (RS 3.1) all well below Rooker/Cecconi/Baldwin."
   }
 ]

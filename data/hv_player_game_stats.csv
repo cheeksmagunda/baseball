@@ -125,3 +125,16 @@ date,player_name,team_actual,position,real_score,card_boost,game_result,ab,r,h,h
 2026-04-03,Sonny Gray,BOS,P,4.1,3.0,BOS 4 SD 1,,,,,,,,,1,7,W,"6 IP 4H 1ER 2BB 7K - most drafted 3x at 1.9k"
 2026-04-03,Tyler Stephenson,CIN,C,4.1,3.0,TEX 9 CIN 5,4,~1,2,1,2,0,1,,,,,"2-run HR in 3rd + single; only 2 drafts"
 2026-04-03,Chase DeLauter,CLE,OF,5.1,1.9,CLE 7 CHC 3,4,~2,3,1,3,0,0,,,,,"3-for-4 w/HR + double + SB; continued hot streak from debut"
+2026-04-05,Brent Rooker,OAK,OF,9.8,3.0,OAK win,~4,~2,~3,2,~5,1,~1,,,,,multi-HR monster game — highest RS of season at 2 drafts ghost; possible 2 HR 5 RBI
+2026-04-05,Slade Cecconi,CLE,P,6.3,3.0,CLE win,,,,,,,,~7,~1,~8,W,~7 IP 1ER 8K dominant start; top pitcher April 5
+2026-04-05,Drake Baldwin,DET,C,6.0,2.2,DET game,~4,~1,~2,1,~3,1,~1,,,,,HR + 3 RBI — ghost player at 50 drafts
+2026-04-05,Tyler Soderstrom,OAK,C,5.5,3.0,OAK win,~4,~1,~2,1,~2,0,~1,,,,,solid multi-hit game part of OAK ghost stack
+2026-04-05,Davis Martin,CWS,P,5.5,2.5,CWS win,,,,,,,,~6,~1,~7,W,quality start ~6 IP 1ER 7K
+2026-04-05,Manny Machado,SD,3B,5.2,3.0,SD game,~4,~1,~2,1,~2,1,~1,,,,,multi-hit game with HR
+2026-04-05,Masataka Yoshida,BOS,DH,5.2,3.0,BOS game,~4,~1,~3,0,~2,1,~1,,,,,multi-hit multi-RBI game at 1 draft
+2026-04-05,Cole Young,SEA,SS,5.0,2.5,SEA game,~4,~1,~2,0,~2,1,0,,,,,strong day for SEA prospect at 6 drafts
+2026-04-05,Ryan O'Hearn,PIT,1B,5.0,1.9,PIT game,~4,~1,~2,1,~3,0,~1,,,,,productive day at low ownership
+2026-04-05,Logan Webb,SF,P,5.2,0.3,SF win,,,,,,,,~7,~1,~6,W,~7 IP 1ER 6K efficient start
+2026-04-05,Jackson Merrill,SD,OF,4.7,3.0,SD game,~4,~1,~2,1,~2,0,~1,,,,,solid multi-hit game at 1 draft
+2026-04-05,Corbin Carroll,ARI,OF,4.6,2.1,ARI game,~4,~1,~2,1,~2,1,~1,,,,,strong day; most popular HV performer 1.6k drafts
+2026-04-05,Chris Bassitt,BAL,P,-4.0,3.0,BAL loss,,,,,,,,,,~5,~6,,L,~2.1 IP 6ER disaster start — 1.4k drafts -20 total_value bust
