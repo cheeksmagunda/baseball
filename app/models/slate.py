@@ -57,6 +57,10 @@ class SlateGame(Base):
     temperature_f: Mapped[int | None] = mapped_column(Integer, nullable=True)
     park_team: Mapped[str | None] = mapped_column(String, nullable=True)
     scheduled_game_time: Mapped[str | None] = mapped_column(String, nullable=True)  # e.g. "7:05 PM ET"
+    home_team_ops: Mapped[float | None] = mapped_column(Float, nullable=True)
+    away_team_ops: Mapped[float | None] = mapped_column(Float, nullable=True)
+    home_team_k_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    away_team_k_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     slate: Mapped["Slate"] = relationship(back_populates="games")
 

@@ -91,6 +91,7 @@ async def _resolve_candidates(
         if is_pitcher and game:
             is_home = game.home_team.upper() == card.team.upper()
             opp_ops = game.away_team_ops if is_home else game.home_team_ops
+            opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
             park_team = game.home_team.upper()
 
             k_rate_score = get_trait_score(score_result.traits, "k_rate")
@@ -99,6 +100,7 @@ async def _resolve_candidates(
 
             env_score, env_factors = compute_pitcher_env_score(
                 opp_team_ops=opp_ops,
+                opp_team_k_pct=opp_k_pct,
                 pitcher_k_per_9=pitcher_k9,
                 park_team=park_team,
                 is_home=is_home,
@@ -116,6 +118,9 @@ async def _resolve_candidates(
                 batting_order=card.batting_order,
                 park_team=park_team,
                 is_debut_or_return=card.is_debut_or_return,
+                wind_speed_mph=game.wind_speed_mph,
+                wind_direction=game.wind_direction,
+                temperature_f=game.temperature_f,
             )
         else:
             env_score = 0.5
@@ -155,13 +160,12 @@ async def _resolve_candidates(
         card = pre["card"]
         score_result = pre["score_result"]
 
-        pop_class = PopularityClass.NEUTRAL
-        sharp_score = 0.0
         if isinstance(pop_result, Exception):
-            logger.warning("Popularity fetch failed for %s: %s", card.player_name, pop_result)
-        else:
-            pop_class = pop_result.classification
-            sharp_score = pop_result.sharp_score
+            raise RuntimeError(
+                f"Popularity fetch failed for {card.player_name}: {pop_result}"
+            ) from pop_result
+        pop_class = pop_result.classification
+        sharp_score = pop_result.sharp_score
 
         candidates.append(FilteredCandidate(
             player_name=card.player_name,
@@ -212,6 +216,10 @@ def _load_today_slate(db: Session) -> tuple[list[FilterCard], list[GameEnvironme
             away_starter_era=g.away_starter_era,
             home_starter_k_per_9=g.home_starter_k_per_9,
             away_starter_k_per_9=g.away_starter_k_per_9,
+            home_team_ops=g.home_team_ops,
+            away_team_ops=g.away_team_ops,
+            home_team_k_pct=g.home_team_k_pct,
+            away_team_k_pct=g.away_team_k_pct,
             wind_speed_mph=g.wind_speed_mph,
             wind_direction=g.wind_direction,
             temperature_f=g.temperature_f,

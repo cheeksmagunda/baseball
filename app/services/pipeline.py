@@ -18,7 +18,12 @@ from app.models.player import Player
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.models.scoring import PlayerScore, ScoreBreakdown
 from app.services.scoring_engine import score_player, PlayerScoreResult
-from app.services.data_collection import fetch_schedule_for_date, fetch_player_season_stats, populate_slate_players
+from app.services.data_collection import (
+    fetch_schedule_for_date,
+    fetch_player_season_stats,
+    populate_slate_players,
+    enrich_slate_game_team_stats,
+)
 from app.services.filter_strategy import (
     FilteredCandidate,
     classify_slate,
@@ -106,6 +111,42 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
                 setattr(game, era_field, ps.era)
             if ps.k_per_9 is not None:
                 setattr(game, k9_field, ps.k_per_9)
+
+    # Fetch team batting stats (OPS, K%) for all teams on the slate.
+    # This feeds Filter 2 pitcher env scoring: opponent OPS (Factor 1) and K% (Factor 2).
+    if slate:
+        await enrich_slate_game_team_stats(db, slate, game_date.year)
+
+    # Compute platoon_advantage for each batter SlatePlayer now that bat_side
+    # and pitch_hand have been written to Player records above.
+    if slate:
+        from app.models.player import normalize_name
+        games_by_id: dict[int, SlateGame] = {
+            g.id: g for g in db.query(SlateGame).filter_by(slate_id=slate.id).all()
+        }
+        for sp in slate_players:
+            player = sp.player
+            if not player or player.position in PITCHER_POSITIONS:
+                continue
+            if not sp.game_id or sp.game_id not in games_by_id:
+                continue
+            game = games_by_id[sp.game_id]
+            is_home = game.home_team == player.team
+            opp_starter_name = game.away_starter if is_home else game.home_starter
+            opp_starter_team = game.away_team if is_home else game.home_team
+            if not opp_starter_name:
+                continue
+            norm = normalize_name(opp_starter_name)
+            opp_pitcher = db.query(Player).filter_by(
+                name_normalized=norm, team=opp_starter_team
+            ).first()
+            if not opp_pitcher or not opp_pitcher.pitch_hand or not player.bat_side:
+                continue
+            sp.platoon_advantage = (
+                (player.bat_side == "L" and opp_pitcher.pitch_hand == "R")
+                or (player.bat_side == "R" and opp_pitcher.pitch_hand == "L")
+            )
+        db.commit()
 
     db.commit()
     return {"fetched": fetched, "failed": failed}
@@ -219,10 +260,12 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
         # Compute environmental score
         if is_pitcher and game:
             is_home = game.home_team == player.team
-            # Get pitcher K/9 from game environment data if available
             pitcher_k9 = game.home_starter_k_per_9 if is_home else game.away_starter_k_per_9
+            opp_ops = game.away_team_ops if is_home else game.home_team_ops
+            opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
             env_score, env_factors = compute_pitcher_env_score(
-                opp_team_ops=None,  # would need team stats
+                opp_team_ops=opp_ops,
+                opp_team_k_pct=opp_k_pct,
                 pitcher_k_per_9=pitcher_k9,
                 park_team=game.home_team,
                 is_home=is_home,
@@ -238,6 +281,9 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 batting_order=sp.batting_order,
                 park_team=game.home_team,
                 is_debut_or_return=sp.is_debut_or_return,
+                wind_speed_mph=game.wind_speed_mph,
+                wind_direction=game.wind_direction,
+                temperature_f=game.temperature_f,
             )
         else:
             env_score = 0.5
