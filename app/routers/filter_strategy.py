@@ -333,7 +333,7 @@ async def build_and_cache_lineups(db: Session) -> FilterOptimizeResponse | None:
 
     dual = run_dual_filter_strategy(candidates, slate_class)
     response = _build_response(dual, candidates)
-    lineup_cache.store(response)
+    lineup_cache.store(response, slate_date=date.today())
     logger.info(
         "Lineup cache warmed: %d candidates, slate=%s",
         len(candidates),
@@ -394,7 +394,7 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
 
     # Cache the result for subsequent frontend requests
     if not req.cards:
-        lineup_cache.store(response)
+        lineup_cache.store(response, slate_date=date.today())
 
     return response
 
