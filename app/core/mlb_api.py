@@ -42,11 +42,6 @@ async def get_team_roster(team_id: int) -> dict:
     return await _get(f"/teams/{team_id}/roster", {"rosterType": "active"})
 
 
-async def get_game_feed(game_pk: int) -> dict:
-    """Get live game feed — includes lineups for games with posted lineups."""
-    return await _get(f"/game/{game_pk}/feed/live")
-
-
 async def get_team_stats(team_id: int, season: int) -> dict:
     """Get team aggregate stats."""
     return await _get(f"/teams/{team_id}/stats", {
