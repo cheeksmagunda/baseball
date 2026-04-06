@@ -1,9 +1,13 @@
 """
 Persistent lineup cache.
 
-Stores the most recent dual-lineup result both in-process (fast) and in
-the database (survives restarts).  On startup the most recent DB row is
-loaded so the first frontend request is instant.
+Stores the most recent dual-lineup result in three tiers:
+  1. In-process memory  — fastest, zero latency
+  2. Redis              — survives restarts, shared across replicas (if configured)
+  3. SQLite DB          — durable fallback when Redis is unavailable
+
+On startup the cache is warm-loaded from Redis (or DB if Redis is absent)
+so the first frontend request after a redeploy is always instant.
 
 Turnover logic:
   - Before midnight → always serve (current slate is live).
@@ -18,19 +22,64 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+_REDIS_KEY_PREFIX = "lineup"
+_REDIS_TTL = 86400  # 24 hours
+
 
 class _LineupCache:
     def __init__(self) -> None:
-        self._data: Optional[Any] = None  # FilterOptimizeResponse (Pydantic model)
-        self._slate_date: Optional[date] = None  # date the cached slate belongs to
+        self._data: Optional[Any] = None          # FilterOptimizeResponse (Pydantic model)
+        self._slate_date: Optional[date] = None   # date the cached slate belongs to
+        self._redis: Optional[Any] = None         # redis.Redis instance, or None
+        self._redis_checked: bool = False          # avoid re-attempting a failed connection
 
-    # ---------- in-process (fast path) ----------
+    # ---------- Redis helpers ----------
+
+    def _get_redis(self) -> Optional[Any]:
+        """Return a live Redis client, or None if Redis is not configured / reachable."""
+        if self._redis is not None:
+            return self._redis
+        if self._redis_checked:
+            return None  # already tried and failed — don't retry on every call
+
+        self._redis_checked = True
+        from app.config import settings
+        if not settings.redis_url:
+            return None
+
+        try:
+            import redis as redis_lib
+            client = redis_lib.from_url(settings.redis_url, decode_responses=True)
+            client.ping()
+            self._redis = client
+            logger.info("Redis connected: %s", settings.redis_url)
+        except Exception as exc:
+            logger.warning("Redis unavailable — using DB cache only: %s", exc)
+
+        return self._redis
+
+    def _redis_key(self, slate_date: date) -> str:
+        return f"{_REDIS_KEY_PREFIX}:{slate_date.isoformat()}"
+
+    # ---------- public API ----------
 
     def store(self, response: Any, slate_date: date | None = None) -> None:
-        """Cache in memory and persist to DB."""
+        """Cache in memory, Redis, and SQLite DB."""
         self._data = response
         self._slate_date = slate_date or date.today()
-        self._persist(response, self._slate_date)
+        payload = response.model_dump_json()
+
+        # Tier 2 — Redis
+        rc = self._get_redis()
+        if rc is not None:
+            try:
+                rc.setex(self._redis_key(self._slate_date), _REDIS_TTL, payload)
+                logger.info("Lineup cached in Redis for %s", self._slate_date)
+            except Exception as exc:
+                logger.warning("Redis write failed: %s", exc)
+
+        # Tier 3 — SQLite (always write for durability)
+        self._persist(payload, self._slate_date)
 
     def get(self) -> Optional[Any]:
         """
@@ -71,13 +120,9 @@ class _LineupCache:
     # ---------- slate completion check ----------
 
     def _slate_is_complete(self) -> bool:
-        """
-        Check if every game on the cached slate has a final score.
-
-        Only called after midnight, so the extra DB hit is rare.
-        """
+        """Check if every game on the cached slate has a final score."""
         if self._slate_date is None:
-            return True  # no slate info → treat as stale
+            return True
 
         from app.database import SessionLocal
         from app.models.slate import Slate, SlateGame
@@ -86,13 +131,12 @@ class _LineupCache:
         try:
             slate = db.query(Slate).filter_by(date=self._slate_date).first()
             if slate is None:
-                return True  # slate gone → stale
+                return True
 
             games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
             if not games:
-                return True  # no games → stale
+                return True
 
-            # A game is final when both scores are populated
             return all(
                 g.home_score is not None and g.away_score is not None
                 for g in games
@@ -103,15 +147,30 @@ class _LineupCache:
         finally:
             db.close()
 
-    # ---------- DB persistence ----------
+    # ---------- startup warm-load ----------
 
     def load_from_db(self) -> bool:
         """
-        Load the most recent cached response from the database.
+        Warm-load cached response on startup — Redis first, then SQLite.
 
-        Called once at startup so the frontend gets instant picks
-        even after a redeploy.  Returns True if the cache was loaded.
+        Returns True if the cache was successfully populated.
         """
+        from app.schemas.filter_strategy import FilterOptimizeResponse
+
+        # Tier 2 — Redis (today's lineup)
+        rc = self._get_redis()
+        if rc is not None:
+            try:
+                data = rc.get(self._redis_key(date.today()))
+                if data:
+                    self._data = FilterOptimizeResponse.model_validate_json(data)
+                    self._slate_date = date.today()
+                    logger.info("Lineup cache loaded from Redis for %s", date.today())
+                    return True
+            except Exception as exc:
+                logger.warning("Redis read failed on startup: %s", exc)
+
+        # Tier 3 — SQLite
         from app.database import SessionLocal
         from app.models.slate import CachedLineup
 
@@ -125,10 +184,18 @@ class _LineupCache:
             if row is None:
                 return False
 
-            from app.schemas.filter_strategy import FilterOptimizeResponse
             self._data = FilterOptimizeResponse.model_validate_json(row.response_json)
             self._slate_date = row.cache_date
             logger.info("Lineup cache loaded from DB (slate date: %s)", row.cache_date)
+
+            # Backfill Redis so subsequent restarts are faster
+            if rc is not None:
+                try:
+                    rc.setex(self._redis_key(row.cache_date), _REDIS_TTL, row.response_json)
+                    logger.info("Redis backfilled from DB for %s", row.cache_date)
+                except Exception as exc:
+                    logger.warning("Redis backfill failed: %s", exc)
+
             return True
         except Exception as exc:
             logger.warning("Failed to load lineup cache from DB: %s", exc)
@@ -136,15 +203,16 @@ class _LineupCache:
         finally:
             db.close()
 
-    def _persist(self, response: Any, slate_date: date) -> None:
-        """Write the response to the database so it survives restarts."""
+    # ---------- SQLite persistence ----------
+
+    def _persist(self, payload: str, slate_date: date) -> None:
+        """Write the serialized response to SQLite so it survives full restarts."""
         from app.database import SessionLocal
         from app.models.slate import CachedLineup
 
         db = SessionLocal()
         try:
             row = db.query(CachedLineup).filter_by(cache_date=slate_date).first()
-            payload = response.model_dump_json()
             if row:
                 row.response_json = payload
             else:
