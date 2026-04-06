@@ -155,13 +155,12 @@ async def _resolve_candidates(
         card = pre["card"]
         score_result = pre["score_result"]
 
-        pop_class = PopularityClass.NEUTRAL
-        sharp_score = 0.0
         if isinstance(pop_result, Exception):
-            logger.warning("Popularity fetch failed for %s: %s", card.player_name, pop_result)
-        else:
-            pop_class = pop_result.classification
-            sharp_score = pop_result.sharp_score
+            raise RuntimeError(
+                f"Popularity fetch failed for {card.player_name}: {pop_result}"
+            ) from pop_result
+        pop_class = pop_result.classification
+        sharp_score = pop_result.sharp_score
 
         candidates.append(FilteredCandidate(
             player_name=card.player_name,
