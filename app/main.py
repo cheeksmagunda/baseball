@@ -43,24 +43,20 @@ async def lifespan(app: FastAPI):
             # Stage 1: fetch schedule, rosters, stats, scores
             pipeline_ok = False
             try:
-                result = await asyncio.wait_for(run_full_pipeline(db, date.today()), timeout=120.0)
+                result = await run_full_pipeline(db, date.today())
                 logger.info("Startup pipeline complete: %s", result)
                 pipeline_ok = True
-            except asyncio.TimeoutError:
-                logger.error("Startup pipeline timed out after 120s")
             except Exception as exc:
                 logger.error("Startup pipeline failed: %s\n%s", exc, traceback.format_exc())
 
             # Stage 2: pre-compute and cache lineups (only if pipeline succeeded)
             if pipeline_ok:
                 try:
-                    cached = await asyncio.wait_for(build_and_cache_lineups(db), timeout=90.0)
+                    cached = await build_and_cache_lineups(db)
                     if cached:
                         logger.info("Lineup cache ready — frontend requests will be instant")
                     else:
                         logger.warning("Lineup cache empty after startup (no slate data?)")
-                except asyncio.TimeoutError:
-                    logger.error("Lineup cache warm timed out after 90s")
                 except Exception as exc:
                     logger.error("Lineup cache warm failed: %s\n%s", exc, traceback.format_exc())
         finally:

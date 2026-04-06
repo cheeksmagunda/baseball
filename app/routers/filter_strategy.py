@@ -136,26 +136,18 @@ async def _resolve_candidates(
         })
 
     # Stage 2: fetch popularity for all players in parallel (Filter 3)
-    # Overall timeout prevents the endpoint from hanging if external APIs stall.
-    try:
-        popularity_results = await asyncio.wait_for(
-            asyncio.gather(
-                *[
-                    get_popularity_profile(
-                        p["card"].player_name,
-                        p["card"].team,
-                        p["score_result"].total_score,
-                        include_sharp=True,
-                    )
-                    for p in pre_candidates
-                ],
-                return_exceptions=True,
-            ),
-            timeout=15.0,
-        )
-    except asyncio.TimeoutError:
-        logger.warning("Popularity fetch timed out — defaulting all to NEUTRAL")
-        popularity_results = [Exception("timeout")] * len(pre_candidates)
+    popularity_results = await asyncio.gather(
+        *[
+            get_popularity_profile(
+                p["card"].player_name,
+                p["card"].team,
+                p["score_result"].total_score,
+                include_sharp=True,
+            )
+            for p in pre_candidates
+        ],
+        return_exceptions=True,
+    )
 
     # Stage 3: assemble FilteredCandidates
     candidates = []
@@ -379,10 +371,8 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
     if len(cards) < 1:
         logger.info("No slate data found — triggering on-demand pipeline")
         try:
-            await asyncio.wait_for(run_full_pipeline(db, date.today()), timeout=60.0)
+            await run_full_pipeline(db, date.today())
             cards, games = _load_today_slate(db)
-        except asyncio.TimeoutError:
-            logger.warning("On-demand pipeline timed out after 60s")
         except Exception as exc:
             logger.warning("On-demand pipeline failed: %s", exc)
 
