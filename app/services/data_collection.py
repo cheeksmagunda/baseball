@@ -15,6 +15,7 @@ from app.core.mlb_api import (
     get_game_boxscore,
     get_player_stats,
     get_team_stats,
+    get_team_roster,
     search_player,
     TEAM_MLB_IDS,
 )
@@ -185,9 +186,107 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict:
                 db.add(sp)
                 added += 1
 
+    # If boxscores returned no players (pre-game), fall back to team active rosters.
+    # This is not a "fallback to stale data" — active rosters are real-time pre-game data.
+    if added == 0 and skipped == 0 and games:
+        logger.info("Boxscores returned no players (games likely haven't started) — using team rosters")
+        added, skipped = await _populate_from_rosters(db, slate, games, logger)
+
     db.commit()
     logger.info("Populated %d slate players (%d skipped/existing)", added, skipped)
     return {"added": added, "skipped": skipped}
+
+
+async def _populate_from_rosters(db: Session, slate: Slate, games: list, logger) -> tuple[int, int]:
+    """
+    Populate SlatePlayer records from team active rosters (pre-game path).
+
+    When boxscores are empty (games haven't started), this fetches each team's
+    active roster to create Player + SlatePlayer records. This ensures the
+    pipeline can score and optimize lineups before first pitch.
+    """
+    # Collect unique teams and their game associations
+    team_games: dict[str, "SlateGame"] = {}
+    for game in games:
+        team_games[game.home_team] = game
+        team_games[game.away_team] = game
+
+    # Fetch all rosters in parallel
+    async def _fetch_roster(team: str):
+        team_id = TEAM_MLB_IDS.get(team)
+        if not team_id:
+            logger.warning("No MLB team ID for %s — skipping roster fetch", team)
+            return team, None
+        try:
+            return team, await get_team_roster(team_id)
+        except Exception as exc:
+            logger.warning("Failed to fetch roster for %s: %s", team, exc)
+            return team, None
+
+    roster_results = await asyncio.gather(*[_fetch_roster(t) for t in team_games])
+
+    added = 0
+    skipped = 0
+    for team, roster_data in roster_results:
+        if roster_data is None:
+            continue
+
+        game = team_games[team]
+        roster = roster_data.get("roster", [])
+        for entry in roster:
+            person = entry.get("person", {})
+            full_name = person.get("fullName", "")
+            mlb_id = person.get("id")
+            pos_info = entry.get("position", {})
+            position = pos_info.get("abbreviation", "DH")
+            status = entry.get("status", {}).get("code", "A")
+
+            if not full_name or not mlb_id:
+                continue
+
+            # Skip inactive players (IL, minors, etc.)
+            if status not in ("A", "RL"):
+                continue
+
+            # Get or create Player
+            norm = normalize_name(full_name)
+            player = db.query(Player).filter_by(name_normalized=norm, team=team).first()
+            if not player:
+                player = Player(
+                    name=full_name,
+                    name_normalized=norm,
+                    team=team,
+                    position=position,
+                    mlb_id=mlb_id,
+                )
+                db.add(player)
+                db.flush()
+            elif not player.mlb_id:
+                player.mlb_id = mlb_id
+
+            # Skip if SlatePlayer already exists
+            existing = (
+                db.query(SlatePlayer)
+                .filter_by(slate_id=slate.id, player_id=player.id)
+                .first()
+            )
+            if existing:
+                skipped += 1
+                continue
+
+            sp = SlatePlayer(
+                slate_id=slate.id,
+                player_id=player.id,
+                card_boost=0.0,
+                game_id=game.id,
+                batting_order=None,  # not available pre-game
+                player_status="active",
+            )
+            db.add(sp)
+            added += 1
+
+    db.commit()
+    return added, skipped
 
 
 async def fetch_boxscore_results(db: Session, slate: Slate) -> int:
