@@ -11,18 +11,18 @@ interface UseLineupDataReturn {
   refetch: () => void;
 }
 
-export function useLineupData(): UseLineupDataReturn {
-  const [data, setData] = useState<FilterOptimizeResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+export function useLineupData(initialData: FilterOptimizeResponse | null = null): UseLineupDataReturn {
+  const [data, setData] = useState<FilterOptimizeResponse | null>(initialData);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<{ status: number; message: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isBackgroundRefresh = false) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setLoading(true);
+    if (!isBackgroundRefresh) setLoading(true);
     setError(null);
 
     try {
@@ -49,9 +49,13 @@ export function useLineupData(): UseLineupDataReturn {
   }, []);
 
   useEffect(() => {
-    load();
+    if (!initialData) {
+      load(false);
+    }
     return () => abortRef.current?.abort();
-  }, [load]);
+  }, [load, initialData]);
 
-  return { data, loading, error, refetch: load };
+  const refetch = useCallback(() => load(true), [load]);
+
+  return { data, loading, error, refetch };
 }
