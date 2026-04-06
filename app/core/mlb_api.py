@@ -21,7 +21,7 @@ async def get_schedule(game_date: str) -> dict:
     return await _get("/schedule", {
         "date": game_date,
         "sportId": 1,
-        "hydrate": "probablePitcher,team",
+        "hydrate": "probablePitcher,team,linescore",
     })
 
 
