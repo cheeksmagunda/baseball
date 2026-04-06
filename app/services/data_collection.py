@@ -15,6 +15,7 @@ from app.core.mlb_api import (
     get_game_boxscore,
     get_player_stats,
     get_team_stats,
+    get_team_roster,
     search_player,
     TEAM_MLB_IDS,
 )
@@ -88,12 +89,11 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
 
 async def populate_slate_players(db: Session, slate: Slate) -> dict:
     """
-    Auto-populate SlatePlayer records from MLB API boxscores/rosters.
+    Populate SlatePlayer records from team active rosters.
 
-    For each SlateGame in the slate, fetches the boxscore to get lineups
-    (with batting order and position). Creates Player + SlatePlayer records
-    for every player in the game. Works for games that are scheduled,
-    in-progress, or completed.
+    This is a pre-game pipeline — it fetches each team's active roster
+    from the MLB API and creates Player + SlatePlayer records. Batting
+    order is enriched from boxscores when lineups have been posted.
 
     Returns counts of players added and skipped.
     """
@@ -104,18 +104,110 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict:
     added = 0
     skipped = 0
 
-    # Fetch all boxscores in parallel, then process DB writes sequentially.
+    # Map teams to their SlateGame
+    team_games: dict[str, SlateGame] = {}
+    for game in games:
+        team_games[game.home_team] = game
+        team_games[game.away_team] = game
+
+    # Fetch all team rosters in parallel
+    async def _fetch_roster(team: str):
+        team_id = TEAM_MLB_IDS.get(team)
+        if not team_id:
+            logger.warning("No MLB team ID for %s — skipping roster fetch", team)
+            return team, None
+        try:
+            return team, await get_team_roster(team_id)
+        except Exception as exc:
+            logger.warning("Failed to fetch roster for %s: %s", team, exc)
+            return team, None
+
+    roster_results = await asyncio.gather(*[_fetch_roster(t) for t in team_games])
+
+    for team, roster_data in roster_results:
+        if roster_data is None:
+            continue
+
+        game = team_games[team]
+        roster = roster_data.get("roster", [])
+        for entry in roster:
+            person = entry.get("person", {})
+            full_name = person.get("fullName", "")
+            mlb_id = person.get("id")
+            pos_info = entry.get("position", {})
+            position = pos_info.get("abbreviation", "DH")
+            status = entry.get("status", {}).get("code", "A")
+
+            if not full_name or not mlb_id:
+                continue
+
+            # Skip inactive players (IL, minors, etc.)
+            if status not in ("A", "RL"):
+                continue
+
+            # Get or create Player
+            norm = normalize_name(full_name)
+            player = db.query(Player).filter_by(name_normalized=norm, team=team).first()
+            if not player:
+                player = Player(
+                    name=full_name,
+                    name_normalized=norm,
+                    team=team,
+                    position=position,
+                    mlb_id=mlb_id,
+                )
+                db.add(player)
+                db.flush()
+            elif not player.mlb_id:
+                player.mlb_id = mlb_id
+
+            # Skip if SlatePlayer already exists
+            existing = (
+                db.query(SlatePlayer)
+                .filter_by(slate_id=slate.id, player_id=player.id)
+                .first()
+            )
+            if existing:
+                skipped += 1
+                continue
+
+            sp = SlatePlayer(
+                slate_id=slate.id,
+                player_id=player.id,
+                card_boost=0.0,
+                game_id=game.id,
+                player_status="active",
+            )
+            db.add(sp)
+            added += 1
+
+    db.commit()
+
+    # Enrich with batting order from boxscores (if lineups have been posted)
+    enriched = await _enrich_batting_order(db, slate, games, logger)
+
+    logger.info("Populated %d slate players (%d skipped/existing, %d batting orders enriched)", added, skipped, enriched)
+    return {"added": added, "skipped": skipped}
+
+
+async def _enrich_batting_order(db: Session, slate: Slate, games: list, logger) -> int:
+    """
+    Enrich SlatePlayer batting_order from boxscores when lineups are posted.
+
+    This is optional enrichment — the pipeline works without it. When lineups
+    are available (typically 30-60 min before first pitch), boxscores contain
+    batting order data that feeds the lineup_position scoring trait.
+    """
     async def _fetch_boxscore(game):
         if game.mlb_game_pk is None:
-            logger.warning("SlateGame %s has no mlb_game_pk — skipping roster populate", game.id)
             return game, None
         try:
             return game, await get_game_boxscore(game.mlb_game_pk)
-        except Exception as exc:
-            logger.warning("Failed to fetch boxscore for game_pk=%s: %s", game.mlb_game_pk, exc)
+        except Exception:
             return game, None
 
     game_boxscores = await asyncio.gather(*[_fetch_boxscore(g) for g in games])
+    enriched = 0
 
     for game, boxscore in game_boxscores:
         if boxscore is None:
@@ -124,70 +216,45 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict:
         teams_data = boxscore.get("teams", {})
         for side in ("home", "away"):
             side_data = teams_data.get(side, {})
-            team_info = side_data.get("team", {})
-            team_abbr = canonicalize_team(team_info.get("abbreviation", ""))
+            team_abbr = canonicalize_team(
+                side_data.get("team", {}).get("abbreviation", "")
+            )
             if not team_abbr:
                 continue
 
             players_data = side_data.get("players", {})
             for player_key, pdata in players_data.items():
-                person = pdata.get("person", {})
-                full_name = person.get("fullName", "")
-                mlb_id = person.get("id")
-                pos_info = pdata.get("position", {})
-                position = pos_info.get("abbreviation", "DH")
                 batting_order_raw = pdata.get("battingOrder")
-
-                if not full_name or not mlb_id:
+                if batting_order_raw is None:
                     continue
 
-                # Parse batting order: 100=1st, 200=2nd, etc. Subs get 101, 201.
-                batting_order = None
-                if batting_order_raw is not None:
-                    bo_int = int(str(batting_order_raw))
-                    if bo_int <= 900 and str(batting_order_raw).endswith("00"):
-                        batting_order = bo_int // 100
+                bo_int = int(str(batting_order_raw))
+                if not (bo_int <= 900 and str(batting_order_raw).endswith("00")):
+                    continue
+                batting_order = bo_int // 100
 
-                # Get or create Player
-                norm = normalize_name(full_name)
-                player = db.query(Player).filter_by(name_normalized=norm, team=team_abbr).first()
+                person = pdata.get("person", {})
+                mlb_id = person.get("id")
+                if not mlb_id:
+                    continue
+
+                player = db.query(Player).filter_by(mlb_id=mlb_id).first()
                 if not player:
-                    player = Player(
-                        name=full_name,
-                        name_normalized=norm,
-                        team=team_abbr,
-                        position=position,
-                        mlb_id=mlb_id,
-                    )
-                    db.add(player)
-                    db.flush()
-                elif not player.mlb_id:
-                    player.mlb_id = mlb_id
+                    continue
 
-                # Skip if SlatePlayer already exists
-                existing = (
+                sp = (
                     db.query(SlatePlayer)
                     .filter_by(slate_id=slate.id, player_id=player.id)
                     .first()
                 )
-                if existing:
-                    skipped += 1
-                    continue
+                if sp and sp.batting_order is None:
+                    sp.batting_order = batting_order
+                    enriched += 1
 
-                sp = SlatePlayer(
-                    slate_id=slate.id,
-                    player_id=player.id,
-                    card_boost=0.0,
-                    game_id=game.id,
-                    batting_order=batting_order,
-                    player_status="active",
-                )
-                db.add(sp)
-                added += 1
+    if enriched:
+        db.commit()
 
-    db.commit()
-    logger.info("Populated %d slate players (%d skipped/existing)", added, skipped)
-    return {"added": added, "skipped": skipped}
+    return enriched
 
 
 async def fetch_boxscore_results(db: Session, slate: Slate) -> int:
