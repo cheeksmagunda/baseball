@@ -6,12 +6,12 @@
       {
         "home": "NYY",
         "away": "SF",
-        "home_score": null,
-        "away_score": null,
-        "winner": null,
-        "loser": null,
-        "winner_score": null,
-        "loser_score": null
+        "home_score": 7,
+        "away_score": 0,
+        "winner": "NYY",
+        "loser": "SF",
+        "winner_score": 7,
+        "loser_score": 0
       }
     ],
     "season_stage": "regular-season",
@@ -21,65 +21,116 @@
   {
     "date": "2026-03-26",
     "game_count": 15,
-    "games": [],
-    "notes": "Large Opening Day slate (~15 games). Teams represented in results: BOS, DET, LAA, PHI, MIN, BAL, HOU, MIL, CLE, LAD, PIT, STL, CIN, SEA, TEX. Box scores not captured \u2014 add when available.",
+    "games": [
+      {"home": "TEX", "away": "PHI", "home_score": 3, "away_score": 5, "winner": "PHI", "loser": "TEX", "winner_score": 5, "loser_score": 3},
+      {"home": "DET", "away": "SD", "home_score": 8, "away_score": 2, "winner": "DET", "loser": "SD", "winner_score": 8, "loser_score": 2},
+      {"home": "BAL", "away": "MIN", "home_score": 2, "away_score": 1, "winner": "BAL", "loser": "MIN", "winner_score": 2, "loser_score": 1},
+      {"home": "BOS", "away": "CIN", "home_score": 3, "away_score": 0, "winner": "BOS", "loser": "CIN", "winner_score": 3, "loser_score": 0},
+      {"home": "LAA", "away": "HOU", "home_score": 3, "away_score": 0, "winner": "LAA", "loser": "HOU", "winner_score": 3, "loser_score": 0},
+      {"home": "LAD", "away": "ARI", "home_score": 8, "away_score": 2, "winner": "LAD", "loser": "ARI", "winner_score": 8, "loser_score": 2},
+      {"home": "CLE", "away": "SEA", "home_score": 6, "away_score": 4, "winner": "CLE", "loser": "SEA", "winner_score": 6, "loser_score": 4},
+      {"home": "PIT", "away": "NYM", "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null},
+      {"home": "STL", "away": "TB", "home_score": 9, "away_score": 7, "winner": "STL", "loser": "TB", "winner_score": 9, "loser_score": 7},
+      {"home": "MIL", "away": "CWS", "home_score": 14, "away_score": 2, "winner": "MIL", "loser": "CWS", "winner_score": 14, "loser_score": 2}
+    ],
+    "notes": "Large Opening Day slate (~15 games). 10 of 15 games captured from box score data. Teams represented in results: BOS, DET, LAA, PHI, MIN, BAL, HOU, MIL, CLE, LAD, PIT, STL, CIN, SEA, TEX. Jacob Misiorowski (MIL) 11K franchise record. Chase DeLauter (CLE) 2 HR in MLB debut.",
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-01T00:00:00Z"
   },
   {
     "date": "2026-03-27",
-    "game_count": null,
-    "games": [],
-    "notes": "Friday slate. Teams represented in leaderboards: LAD, ATL, TOR, NYY, HOU, SEA, SF, MIA, SD, LAA, CLE, ARI, OAK. Top 8 winning lineups captured.",
+    "game_count": 8,
+    "games": [
+      {"home": "TOR", "away": "OAK", "home_score": 3, "away_score": 2, "winner": "TOR", "loser": "OAK", "winner_score": 3, "loser_score": 2},
+      {"home": "NYY", "away": "SF", "home_score": 3, "away_score": 0, "winner": "NYY", "loser": "SF", "winner_score": 3, "loser_score": 0},
+      {"home": "MIA", "away": "COL", "home_score": 2, "away_score": 1, "winner": "MIA", "loser": "COL", "winner_score": 2, "loser_score": 1},
+      {"home": "ATL", "away": "KC", "home_score": 6, "away_score": 0, "winner": "ATL", "loser": "KC", "winner_score": 6, "loser_score": 0},
+      {"home": "SEA", "away": "CLE", "home_score": 5, "away_score": 1, "winner": "SEA", "loser": "CLE", "winner_score": 5, "loser_score": 1},
+      {"home": "LAD", "away": "ARI", "home_score": 5, "away_score": 4, "winner": "LAD", "loser": "ARI", "winner_score": 5, "loser_score": 4},
+      {"home": "DET", "away": "SD", "home_score": 5, "away_score": 2, "winner": "DET", "loser": "SD", "winner_score": 5, "loser_score": 2},
+      {"home": "LAA", "away": "HOU", "home_score": 6, "away_score": 2, "winner": "LAA", "loser": "HOU", "winner_score": 6, "loser_score": 2}
+    ],
+    "notes": "Friday slate. Cam Schlittler (NYY) MLB debut 5.1 IP 1H 0ER 8K. Sandy Alcantara (MIA) 6th opening day start. Mookie Betts 3-run HR. Shea Langeliers 2 HR off different pitchers.",
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-01T00:00:00Z"
   },
   {
     "date": "2026-03-28",
-    "game_count": 1,
-    "games": [],
-    "notes": "Saturday regular season slate with top 8 winning lineups captured.",
-    "season_stage": "regular-season",
-    "source": "screenshot_ingest",
-    "saved_at": "2026-04-01T00:00:00Z"
-  },
-  {
-    "date": "2026-03-30",
-    "game_count": null,
-    "games": [],
-    "notes": "Monday slate. Teams represented in leaderboards: HOU, ATL, ARI, CIN, LAD, NYM, CLE, KC, TOR, BAL, TEX, DET, CWS, COL, MIL, SD, LAA, NYY, MIA, BOS, STL, PHI, PIT, SEA. Top 4 winning lineups captured.",
-    "season_stage": "regular-season",
-    "source": "screenshot_ingest",
-    "saved_at": "2026-04-01T00:00:00Z"
-  },
-  {
-    "date": "2026-03-31",
-    "game_count": null,
-    "games": [],
-    "notes": "Tuesday slate. Teams represented in leaderboards: LAD, PIT, SF, MIN, LAA, HOU, TEX, NYY, MIL, OAK, CLE, PHI, TOR, STL, NYM. Top 4 winning lineups captured. First day with widespread card_boost data.",
+    "game_count": 9,
+    "games": [
+      {"home": "TOR", "away": "OAK", "home_score": 8, "away_score": 7, "winner": "TOR", "loser": "OAK", "winner_score": 8, "loser_score": 7, "extras": 11},
+      {"home": "PIT", "away": "NYM", "home_score": 2, "away_score": 4, "winner": "NYM", "loser": "PIT", "winner_score": 4, "loser_score": 2, "extras": 11},
+      {"home": "STL", "away": "TB", "home_score": 6, "away_score": 5, "winner": "STL", "loser": "TB", "winner_score": 6, "loser_score": 5, "extras": 10},
+      {"home": "MIA", "away": "COL", "home_score": 4, "away_score": 3, "winner": "MIA", "loser": "COL", "winner_score": 4, "loser_score": 3},
+      {"home": "LAD", "away": "ARI", "home_score": 3, "away_score": 2, "winner": "LAD", "loser": "ARI", "winner_score": 3, "loser_score": 2},
+      {"home": "MIL", "away": "CWS", "home_score": 6, "away_score": 1, "winner": "MIL", "loser": "CWS", "winner_score": 6, "loser_score": 1},
+      {"home": "HOU", "away": "LAA", "home_score": 11, "away_score": 9, "winner": "HOU", "loser": "LAA", "winner_score": 11, "loser_score": 9},
+      {"home": "CIN", "away": "BOS", "home_score": 6, "away_score": 5, "winner": "CIN", "loser": "BOS", "winner_score": 6, "loser_score": 5, "extras": 11},
+      {"home": "BAL", "away": "MIN", "home_score": 1, "away_score": 4, "winner": "MIN", "loser": "BAL", "winner_score": 4, "loser_score": 1}
+    ],
+    "notes": "Saturday slate with 4 extra-inning games. Shea Langeliers grand slam 420ft (3rd HR in 2 games). Luis Robert Jr. walk-off 3-run HR in 11th. JJ Wetherholt walk-off 2-run single in 10th. Royce Lewis 2-run HR + SB.",
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-01T00:00:00Z"
   },
   {
     "date": "2026-03-29",
-    "game_count": null,
-    "games": [],
-    "notes": "Sunday slate. Teams represented in leaderboards: HOU, SF, ARI, CHC, LAA, SEA, STL, BOS, TB, NYM, CLE, MIL, PHI, TOR, ATL, OAK, KC, CWS, MIN. Top 4 winning lineups captured.",
+    "game_count": 11,
+    "games": [
+      {"home": "STL", "away": "TB", "home_score": 7, "away_score": 11, "winner": "TB", "loser": "STL", "winner_score": 11, "loser_score": 7},
+      {"home": "MIL", "away": "CWS", "home_score": 9, "away_score": 7, "winner": "MIL", "loser": "CWS", "winner_score": 9, "loser_score": 7},
+      {"home": "BOS", "away": "CIN", "home_score": 2, "away_score": 3, "winner": "CIN", "loser": "BOS", "winner_score": 3, "loser_score": 2},
+      {"home": "SEA", "away": "CLE", "home_score": 8, "away_score": 0, "winner": "SEA", "loser": "CLE", "winner_score": 8, "loser_score": 0},
+      {"home": "MIA", "away": "COL", "home_score": 4, "away_score": 3, "winner": "MIA", "loser": "COL", "winner_score": 4, "loser_score": 3},
+      {"home": "PHI", "away": "TEX", "home_score": 3, "away_score": 8, "winner": "TEX", "loser": "PHI", "winner_score": 8, "loser_score": 3},
+      {"home": "WSH", "away": "CHC", "home_score": 6, "away_score": 3, "winner": "WSH", "loser": "CHC", "winner_score": 6, "loser_score": 3},
+      {"home": "BAL", "away": "MIN", "home_score": 8, "away_score": 6, "winner": "BAL", "loser": "MIN", "winner_score": 8, "loser_score": 6},
+      {"home": "HOU", "away": "LAA", "home_score": 9, "away_score": 7, "winner": "HOU", "loser": "LAA", "winner_score": 9, "loser_score": 7}
+    ],
+    "notes": "Sunday slate. Yandy Diaz 5-for-6 career-high. Colson Montgomery grand slam in CWS loss. Christian Yelich pinch-hit 3-run HR (first career PH HR). Owen Caissie pinch-hit walk-off 2-run HR. Alex Bregman 2 solo HRs as a Cub.",
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-01T00:00:00Z"
   },
   {
-    "date": "2026-04-03",
-    "game_count": null,
-    "games": [],
-    "notes": "Friday slate. Teams represented in leaderboards: LAD, NYY, PHI, BOS, CIN, SEA, PIT, BAL, HOU, OAK, CWS, ARI, CLE, DET, NYM, TEX, WSH, TB, TOR, MIN. Top 8 winning lineups captured (ranks 3-4 tied at 86.88 with identical lineups). Bryan Woo (SEA) RS 7.3 highest individual RS. Sonny Gray (BOS) most drafted 3x at 1.9k. Michael Lorenzen RS -6.4 notable bust.",
+    "date": "2026-03-30",
+    "game_count": 10,
+    "games": [
+      {"home": "MIA", "away": "CWS", "home_score": 4, "away_score": 9, "winner": "CWS", "loser": "MIA", "winner_score": 9, "loser_score": 4},
+      {"home": "DET", "away": "ARI", "home_score": 6, "away_score": 9, "winner": "ARI", "loser": "DET", "winner_score": 9, "loser_score": 6},
+      {"home": "BOS", "away": "HOU", "home_score": 1, "away_score": 8, "winner": "HOU", "loser": "BOS", "winner_score": 8, "loser_score": 1},
+      {"home": "MIN", "away": "KC", "home_score": 1, "away_score": 3, "winner": "KC", "loser": "MIN", "winner_score": 3, "loser_score": 1},
+      {"home": "TOR", "away": "COL", "home_score": 5, "away_score": 14, "winner": "COL", "loser": "TOR", "winner_score": 14, "loser_score": 5},
+      {"home": "MIL", "away": "TB", "home_score": 2, "away_score": 3, "winner": "TB", "loser": "MIL", "winner_score": 3, "loser_score": 2},
+      {"home": "LAD", "away": "CLE", "home_score": 2, "away_score": 4, "winner": "CLE", "loser": "LAD", "winner_score": 4, "loser_score": 2},
+      {"home": "OAK", "away": "ATL", "home_score": 0, "away_score": 4, "winner": "ATL", "loser": "OAK", "winner_score": 4, "loser_score": 0},
+      {"home": "BAL", "away": "TEX", "home_score": 2, "away_score": 5, "winner": "TEX", "loser": "BAL", "winner_score": 5, "loser_score": 2},
+      {"home": "SD", "away": "SF", "home_score": 2, "away_score": 3, "winner": "SF", "loser": "SD", "winner_score": 3, "loser_score": 2}
+    ],
+    "notes": "Monday slate. Miguel Vargas 6 RBI (grand slam + sac fly + RBI single). Corbin Carroll 3-run HR + triple. Jose Altuve 4-for-? w/2 HR (15th career multi-HR game). COL 14 TOR 5 blowout.",
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
-    "saved_at": "2026-04-04T00:00:00Z"
+    "saved_at": "2026-04-01T00:00:00Z"
+  },
+  {
+    "date": "2026-03-31",
+    "game_count": 8,
+    "games": [
+      {"home": "CLE", "away": "LAD", "home_score": 1, "away_score": 4, "winner": "LAD", "loser": "CLE", "winner_score": 4, "loser_score": 1},
+      {"home": "CIN", "away": "PIT", "home_score": 3, "away_score": 8, "winner": "PIT", "loser": "CIN", "winner_score": 8, "loser_score": 3},
+      {"home": "SD", "away": "SF", "home_score": 3, "away_score": 9, "winner": "SF", "loser": "SD", "winner_score": 9, "loser_score": 3},
+      {"home": "BAL", "away": "TEX", "home_score": 5, "away_score": 8, "winner": "TEX", "loser": "BAL", "winner_score": 8, "loser_score": 5},
+      {"home": "BOS", "away": "HOU", "home_score": 2, "away_score": 9, "winner": "HOU", "loser": "BOS", "winner_score": 9, "loser_score": 2},
+      {"home": "TB", "away": "MIL", "home_score": 2, "away_score": 6, "winner": "MIL", "loser": "TB", "winner_score": 6, "loser_score": 2},
+      {"home": "SEA", "away": "NYY", "home_score": 0, "away_score": 5, "winner": "NYY", "loser": "SEA", "winner_score": 5, "loser_score": 0},
+      {"home": "ATL", "away": "OAK", "home_score": 2, "away_score": 5, "winner": "OAK", "loser": "ATL", "winner_score": 5, "loser_score": 2}
+    ],
+    "notes": "Tuesday slate. Shohei Ohtani two-way: 6 IP 1H 0ER 6K pitching + 1-for-3 2BB batting. Oneil Cruz 2 HR (444ft + 403ft). Willy Adames 4-for-5 near cycle. Logan Webb got run support (SF 9 SD 3). First day with widespread card_boost data.",
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-01T00:00:00Z"
   },
   {
     "date": "2026-04-02",
@@ -89,6 +140,31 @@
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-04T00:00:00Z"
+  },
+  {
+    "date": "2026-04-03",
+    "game_count": 15,
+    "games": [
+      {"home": "NYY", "away": "MIA", "home_score": 8, "away_score": 2, "winner": "NYY", "loser": "MIA", "winner_score": 8, "loser_score": 2},
+      {"home": "WSH", "away": "LAD", "home_score": 3, "away_score": 9, "winner": "LAD", "loser": "WSH", "winner_score": 9, "loser_score": 3},
+      {"home": "CWS", "away": "TOR", "home_score": 5, "away_score": 1, "winner": "CWS", "loser": "TOR", "winner_score": 5, "loser_score": 1},
+      {"home": "OAK", "away": "HOU", "home_score": 6, "away_score": 4, "winner": "OAK", "loser": "HOU", "winner_score": 6, "loser_score": 4},
+      {"home": "TEX", "away": "CIN", "home_score": 9, "away_score": 5, "winner": "TEX", "loser": "CIN", "winner_score": 9, "loser_score": 5},
+      {"home": "PIT", "away": "BAL", "home_score": 3, "away_score": 6, "winner": "BAL", "loser": "PIT", "winner_score": 6, "loser_score": 3},
+      {"home": "BOS", "away": "SD", "home_score": 4, "away_score": 1, "winner": "BOS", "loser": "SD", "winner_score": 4, "loser_score": 1},
+      {"home": "MIN", "away": "TB", "home_score": 5, "away_score": 2, "winner": "MIN", "loser": "TB", "winner_score": 5, "loser_score": 2},
+      {"home": "COL", "away": "PHI", "home_score": 2, "away_score": 6, "winner": "PHI", "loser": "COL", "winner_score": 6, "loser_score": 2},
+      {"home": "LAA", "away": "SEA", "home_score": 0, "away_score": 3, "winner": "SEA", "loser": "LAA", "winner_score": 3, "loser_score": 0},
+      {"home": "CHC", "away": "CLE", "home_score": 3, "away_score": 7, "winner": "CLE", "loser": "CHC", "winner_score": 7, "loser_score": 3},
+      {"home": "DET", "away": "STL", "home_score": 4, "away_score": 3, "winner": "DET", "loser": "STL", "winner_score": 4, "loser_score": 3},
+      {"home": "SF", "away": "NYM", "home_score": 5, "away_score": 3, "winner": "SF", "loser": "NYM", "winner_score": 5, "loser_score": 3},
+      {"home": "ARI", "away": "ATL", "home_score": 4, "away_score": 2, "winner": "ARI", "loser": "ATL", "winner_score": 4, "loser_score": 2},
+      {"home": "KC", "away": "MIL", "home_score": 3, "away_score": 5, "winner": "MIL", "loser": "KC", "winner_score": 5, "loser_score": 3}
+    ],
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-04T00:00:00Z",
+    "notes": "Friday slate with 15 games. Bryan Woo (SEA) RS 7.3 highest individual RS with complete game shutout. Sonny Gray (BOS) most drafted 3x at 1.9k. Michael Lorenzen (CIN) RS -6.4 notable bust (-32.0 total_value with +3.0x boost). Aaron Judge 2 HR 4 RBI. Ghost players dominated HV leaderboard — 8 of top 14 had fewer than 10 drafts."
   },
   {
     "date": "2026-04-04",
