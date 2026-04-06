@@ -62,11 +62,16 @@ async def monitor_slate_completion(check_interval: int = 30) -> None:
                     )
                     lineup_cache.clear()
 
-                    # Trigger pipeline for tomorrow's slate (optional, non-blocking)
+                    # Trigger pipeline for tomorrow's slate and warm the cache
                     tomorrow = today + timedelta(days=1)
                     try:
                         logger.info("Triggering pipeline for tomorrow (%s)", tomorrow)
                         await run_full_pipeline(db, tomorrow)
+
+                        from app.routers.filter_strategy import build_and_cache_lineups
+                        cached = await build_and_cache_lineups(db)
+                        if cached:
+                            logger.info("Cache warmed for %s after slate turnover", tomorrow)
                     except Exception as exc:
                         logger.warning("Tomorrow's pipeline failed (non-blocking): %s", exc)
 

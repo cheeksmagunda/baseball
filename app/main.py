@@ -42,7 +42,8 @@ async def lifespan(app: FastAPI):
     # Run pipeline in background so health checks respond immediately
     async def _startup_pipeline():
         import traceback
-        from app.routers.filter_strategy import build_and_cache_lineups
+        from datetime import timedelta
+        from app.routers.filter_strategy import build_and_cache_lineups, _get_active_slate_date
 
         db = SessionLocal()
         try:
@@ -54,6 +55,16 @@ async def lifespan(app: FastAPI):
                 pipeline_ok = True
             except Exception as exc:
                 logger.error("Startup pipeline failed: %s\n%s", exc, traceback.format_exc())
+
+            # If today has no games, also fetch the next day's slate
+            active_date = _get_active_slate_date(db)
+            if active_date != date.today():
+                try:
+                    result = await run_full_pipeline(db, active_date)
+                    logger.info("Next-day pipeline complete (%s): %s", active_date, result)
+                    pipeline_ok = True
+                except Exception as exc:
+                    logger.error("Next-day pipeline failed: %s\n%s", exc, traceback.format_exc())
 
             # Stage 2: pre-compute and cache lineups (only if pipeline succeeded)
             if pipeline_ok:
