@@ -28,9 +28,6 @@ from datetime import date
 from enum import Enum
 
 import httpx
-import logging
-
-logger = logging.getLogger(__name__)
 
 TIMEOUT = 5.0
 
@@ -91,37 +88,29 @@ async def fetch_social_signal(player_name: str, team: str) -> SignalResult:
     last_name = player_name.split()[-1].lower()
 
     async def _autocomplete(client: httpx.AsyncClient) -> bool:
-        try:
-            r = await client.get(
-                "https://trends.google.com/trends/api/autocomplete",
-                params={"hl": "en-US", "tz": "300", "q": query},
-            )
-            return r.status_code == 200 and last_name in r.text.lower()
-        except Exception:
-            return False
+        r = await client.get(
+            "https://trends.google.com/trends/api/autocomplete",
+            params={"hl": "en-US", "tz": "300", "q": query},
+        )
+        r.raise_for_status()
+        return last_name in r.text.lower()
 
     async def _dailytrends(client: httpx.AsyncClient) -> bool:
-        try:
-            r = await client.get(
-                "https://trends.google.com/trends/api/dailytrends",
-                params={"hl": "en-US", "tz": "300", "geo": "US", "ns": "15"},
-            )
-            return r.status_code == 200 and last_name in r.text.lower()
-        except Exception:
-            return False
+        r = await client.get(
+            "https://trends.google.com/trends/api/dailytrends",
+            params={"hl": "en-US", "tz": "300", "geo": "US", "ns": "15"},
+        )
+        r.raise_for_status()
+        return last_name in r.text.lower()
 
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            in_autocomplete, in_daily = await asyncio.gather(
-                _autocomplete(client), _dailytrends(client)
-            )
-        if in_daily:
-            return SignalResult("social", 85.0, f"In Google daily trends: '{player_name}'")
-        if in_autocomplete:
-            return SignalResult("social", 70.0, f"Trending on Google: '{query}'")
-    except Exception as e:
-        logger.debug(f"Social signal fetch failed for {player_name}: {e}")
-
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        in_autocomplete, in_daily = await asyncio.gather(
+            _autocomplete(client), _dailytrends(client)
+        )
+    if in_daily:
+        return SignalResult("social", 85.0, f"In Google daily trends: '{player_name}'")
+    if in_autocomplete:
+        return SignalResult("social", 70.0, f"Trending on Google: '{query}'")
     return SignalResult("social", 0.0, "No social signal detected")
 
 
@@ -134,23 +123,16 @@ async def fetch_news_signal(player_name: str, team: str) -> SignalResult:
     last_name = player_name.split()[-1].lower()
 
     async def _feed(client: httpx.AsyncClient, name: str, url: str) -> str | None:
-        try:
-            r = await client.get(url)
-            return name if r.status_code == 200 and last_name in r.text.lower() else None
-        except Exception:
-            return None
+        r = await client.get(url)
+        r.raise_for_status()
+        return name if last_name in r.text.lower() else None
 
-    sources_found = []
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
-            results = await asyncio.gather(
-                _feed(client, "ESPN", "https://www.espn.com/espn/rss/mlb/news"),
-                _feed(client, "MLB", "https://www.mlb.com/feeds/news/rss.xml"),
-            )
-        sources_found = [s for s in results if s]
-    except Exception as e:
-        logger.debug(f"News signal fetch failed for {player_name}: {e}")
-
+    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
+        results = await asyncio.gather(
+            _feed(client, "ESPN", "https://www.espn.com/espn/rss/mlb/news"),
+            _feed(client, "MLB", "https://www.mlb.com/feeds/news/rss.xml"),
+        )
+    sources_found = [s for s in results if s]
     score = min(len(sources_found) * 40.0, 100.0)
     context = f"Found in: {', '.join(sources_found)}" if sources_found else "No news mentions"
     return SignalResult("news", score, context)
@@ -165,32 +147,24 @@ async def fetch_dfs_ownership_signal(player_name: str, team: str) -> SignalResul
     last_name = player_name.split()[-1].lower()
 
     async def _rotogrinders(client: httpx.AsyncClient) -> bool:
-        try:
-            r = await client.get("https://rotogrinders.com/resultsdb/mlb", headers={"User-Agent": "Mozilla/5.0"})
-            return r.status_code == 200 and last_name in r.text.lower()
-        except Exception:
-            return False
+        r = await client.get("https://rotogrinders.com/resultsdb/mlb", headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        return last_name in r.text.lower()
 
     async def _numberfire(client: httpx.AsyncClient) -> bool:
-        try:
-            r = await client.get(
-                "https://www.numberfire.com/mlb/daily-fantasy/daily-baseball-projections",
-                headers={"User-Agent": "Mozilla/5.0"},
-            )
-            return r.status_code == 200 and last_name in r.text.lower()
-        except Exception:
-            return False
+        r = await client.get(
+            "https://www.numberfire.com/mlb/daily-fantasy/daily-baseball-projections",
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        r.raise_for_status()
+        return last_name in r.text.lower()
 
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
-            roto, nfire = await asyncio.gather(_rotogrinders(client), _numberfire(client))
-        if roto:
-            return SignalResult("dfs_ownership", 60.0, "Found on RotoGrinders results")
-        if nfire:
-            return SignalResult("dfs_ownership", 45.0, "Found on NumberFire projections")
-    except Exception as e:
-        logger.debug(f"DFS ownership signal fetch failed for {player_name}: {e}")
-
+    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
+        roto, nfire = await asyncio.gather(_rotogrinders(client), _numberfire(client))
+    if roto:
+        return SignalResult("dfs_ownership", 60.0, "Found on RotoGrinders results")
+    if nfire:
+        return SignalResult("dfs_ownership", 45.0, "Found on NumberFire projections")
     return SignalResult("dfs_ownership", 0.0, "No DFS ownership signal")
 
 
@@ -200,25 +174,19 @@ async def fetch_search_signal(player_name: str, team: str) -> SignalResult:
 
     High casual search interest = the crowd knows about this player.
     """
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            resp = await client.get(
-                "https://suggestqueries.google.com/complete/search",
-                params={"client": "firefox", "q": f"{player_name} "},
-            )
-            if resp.status_code == 200:
-                suggestions = resp.text.lower()
-                hot_terms = ["stats", "today", "home run", "injury", "lineup", "dfs"]
-                matches = sum(1 for term in hot_terms if term in suggestions)
-
-                if matches >= 3:
-                    return SignalResult("search", 80.0, f"High search interest ({matches} context terms)")
-                elif matches >= 1:
-                    return SignalResult("search", 45.0, f"Moderate search interest ({matches} context terms)")
-
-    except Exception as e:
-        logger.debug(f"Search signal fetch failed for {player_name}: {e}")
-
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        resp = await client.get(
+            "https://suggestqueries.google.com/complete/search",
+            params={"client": "firefox", "q": f"{player_name} "},
+        )
+    resp.raise_for_status()
+    suggestions = resp.text.lower()
+    hot_terms = ["stats", "today", "home run", "injury", "lineup", "dfs"]
+    matches = sum(1 for term in hot_terms if term in suggestions)
+    if matches >= 3:
+        return SignalResult("search", 80.0, f"High search interest ({matches} context terms)")
+    if matches >= 1:
+        return SignalResult("search", 45.0, f"Moderate search interest ({matches} context terms)")
     return SignalResult("search", 0.0, "Low search volume")
 
 
@@ -256,28 +224,20 @@ async def fetch_sharp_signal(player_name: str, team: str) -> SignalResult:
 
     async def _fetch(client: httpx.AsyncClient, name: str, url: str, pts: float,
                      params: dict, headers: dict) -> tuple[str, float]:
-        try:
-            r = await client.get(url, params=params or None, headers=headers)
-            if r.status_code == 200 and last_name in r.text.lower():
-                return name, pts
-        except Exception:
-            pass
-        return name, 0.0
+        r = await client.get(url, params=params or None, headers=headers)
+        r.raise_for_status()
+        return (name, pts) if last_name in r.text.lower() else (name, 0.0)
 
+    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
+        results = await asyncio.gather(
+            *[_fetch(client, name, url, pts, params, hdrs) for name, url, pts, params, hdrs in SOURCES]
+        )
     score = 0.0
     sources_found = []
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
-            results = await asyncio.gather(
-                *[_fetch(client, name, url, pts, params, hdrs) for name, url, pts, params, hdrs in SOURCES]
-            )
-        for name, pts in results:
-            if pts > 0:
-                score += pts
-                sources_found.append(name)
-    except Exception as e:
-        logger.debug(f"Sharp signal fetch failed for {player_name}: {e}")
-
+    for name, pts in results:
+        if pts > 0:
+            score += pts
+            sources_found.append(name)
     context = f"Underground buzz: {', '.join(sources_found)}" if sources_found else "No underground signal"
     return SignalResult("sharp", min(score, 100.0), context)
 
