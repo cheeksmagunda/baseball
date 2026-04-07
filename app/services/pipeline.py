@@ -154,6 +154,8 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
 
 def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
     """Stage 2: Score all players for a slate and store results."""
+    from app.models.player import PlayerStats, normalize_name
+
     slate = db.query(Slate).filter_by(date=game_date).first()
     if not slate:
         return []
@@ -164,6 +166,39 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
         .filter_by(slate_id=slate.id)
         .all()
     )
+
+    # Build game lookup and pre-cache opposing starter ERA/WHIP for batter scoring.
+    games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+    game_lookup: dict[str, SlateGame] = {}
+    for g in games:
+        game_lookup[g.home_team] = g
+        game_lookup[g.away_team] = g
+
+    starter_stats_cache: dict[str, dict] = {}  # starter_name -> {era, whip}
+    for g in games:
+        for starter_name, team in [
+            (g.home_starter, g.home_team),
+            (g.away_starter, g.away_team),
+        ]:
+            if not starter_name or starter_name in starter_stats_cache:
+                continue
+            norm = normalize_name(starter_name)
+            starter_player = db.query(Player).filter_by(
+                name_normalized=norm, team=team
+            ).first()
+            if starter_player:
+                ps = (
+                    db.query(PlayerStats)
+                    .filter_by(player_id=starter_player.id, season=game_date.year)
+                    .first()
+                )
+                starter_stats_cache[starter_name] = {
+                    "era": ps.era if ps else None,
+                    "whip": ps.whip if ps else None,
+                }
+            else:
+                starter_stats_cache[starter_name] = {}
+
     results = []
 
     for sp in slate_players:
@@ -171,7 +206,26 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
         if not player:
             continue
 
-        result = score_player(db, player, game_date=game_date)
+        is_pitcher = player.position in PITCHER_POSITIONS
+        game = game_lookup.get(player.team)
+
+        opp_pitcher_stats = None
+        park_team = None
+        if game:
+            is_home = game.home_team == player.team
+            park_team = game.home_team
+            if not is_pitcher:
+                opp_starter_name = game.away_starter if is_home else game.home_starter
+                if opp_starter_name:
+                    opp_pitcher_stats = starter_stats_cache.get(opp_starter_name)
+
+        result = score_player(
+            db, player,
+            game_date=game_date,
+            opp_pitcher_stats=opp_pitcher_stats,
+            batting_order=sp.batting_order,
+            park_team=park_team,
+        )
 
         # Store in DB
         ps = PlayerScore(
@@ -233,6 +287,33 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
     # Classify the slate (Filter 1)
     slate_class = classify_slate(len(games), game_dicts)
 
+    # Pre-cache opposing starter ERA/WHIP so batter matchup trait is populated.
+    from app.models.player import PlayerStats, normalize_name
+    starter_stats_cache: dict[str, dict] = {}
+    for g in games:
+        for starter_name, team in [
+            (g.home_starter, g.home_team),
+            (g.away_starter, g.away_team),
+        ]:
+            if not starter_name or starter_name in starter_stats_cache:
+                continue
+            norm = normalize_name(starter_name)
+            starter_player = db.query(Player).filter_by(
+                name_normalized=norm, team=team
+            ).first()
+            if starter_player:
+                ps = (
+                    db.query(PlayerStats)
+                    .filter_by(player_id=starter_player.id, season=game_date.year)
+                    .first()
+                )
+                starter_stats_cache[starter_name] = {
+                    "era": ps.era if ps else None,
+                    "whip": ps.whip if ps else None,
+                }
+            else:
+                starter_stats_cache[starter_name] = {}
+
     # Build candidates from slate players
     slate_players = (
         db.query(SlatePlayer)
@@ -250,11 +331,28 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
         if not player:
             continue
 
-        result = score_player(db, player, game_date=game_date)
         is_pitcher = player.position in PITCHER_POSITIONS
 
         # Find associated game
         game = game_lookup.get(player.team)
+
+        opp_pitcher_stats = None
+        park_team = None
+        if game:
+            is_home_p = game.home_team == player.team
+            park_team = game.home_team
+            if not is_pitcher:
+                opp_starter_name = game.away_starter if is_home_p else game.home_starter
+                if opp_starter_name:
+                    opp_pitcher_stats = starter_stats_cache.get(opp_starter_name)
+
+        result = score_player(
+            db, player,
+            game_date=game_date,
+            opp_pitcher_stats=opp_pitcher_stats,
+            batting_order=sp.batting_order,
+            park_team=park_team,
+        )
         game_id = sp.game_id or (game.id if game else None)
 
         # Compute environmental score
