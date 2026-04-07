@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.core.constants import PITCHER_POSITIONS, POPULARITY_FETCH_TIMEOUT_SECONDS
+from app.core.constants import PITCHER_POSITIONS
 from app.core.utils import find_player_by_name, get_trait_score
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.schemas.scoring import TraitBreakdown
@@ -163,32 +163,18 @@ async def _resolve_candidates(
         })
 
     # Stage 2: fetch popularity for all players in parallel (Filter 3)
-    # Hard timeout so a stalled external scraper doesn't block cache warmup
-    # or on-demand requests. Timed-out players default to NEUTRAL (same as
-    # a fetch exception — not a fallback, just missing signal).
-    try:
-        popularity_results = await asyncio.wait_for(
-            asyncio.gather(
-                *[
-                    get_popularity_profile(
-                        p["card"].player_name,
-                        p["card"].team,
-                        p["score_result"].total_score,
-                        include_sharp=True,
-                    )
-                    for p in pre_candidates
-                ],
-                return_exceptions=True,
-            ),
-            timeout=POPULARITY_FETCH_TIMEOUT_SECONDS,
-        )
-    except asyncio.TimeoutError:
-        logger.warning(
-            "Popularity fetch timed out after %ds — defaulting all %d players to NEUTRAL",
-            POPULARITY_FETCH_TIMEOUT_SECONDS,
-            len(pre_candidates),
-        )
-        popularity_results = [Exception("popularity timeout")] * len(pre_candidates)
+    popularity_results = await asyncio.gather(
+        *[
+            get_popularity_profile(
+                p["card"].player_name,
+                p["card"].team,
+                p["score_result"].total_score,
+                include_sharp=True,
+            )
+            for p in pre_candidates
+        ],
+        return_exceptions=True,
+    )
 
     # Stage 3: assemble FilteredCandidates
     candidates = []

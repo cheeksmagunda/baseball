@@ -229,10 +229,3 @@ SLOT1_DIFFERENTIATOR_EV_THRESHOLD = 0.90  # Only swap if contrarian within 10% E
 # still loses to a ghost-boosted batter with RS 2.5 + boost 3.0.
 # ---------------------------------------------------------------------------
 UNBOOSTED_PITCHER_RICH_POOL_PENALTY = 0.65  # 35% EV haircut
-
-# ---------------------------------------------------------------------------
-# Popularity fetch timeout
-# Web scrapers (Google Trends, ESPN RSS, RotoGrinders) can stall on network
-# issues. Cap the entire parallel gather so cache warmup completes quickly.
-# ---------------------------------------------------------------------------
-POPULARITY_FETCH_TIMEOUT_SECONDS = 15
