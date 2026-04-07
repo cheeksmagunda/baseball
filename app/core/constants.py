@@ -92,15 +92,11 @@ HITTER_DAY_VEGAS_TOTAL_THRESHOLD = 9.0
 BLOWOUT_MONEYLINE_THRESHOLD = -200  # e.g. -210 means heavy favorite
 BLOWOUT_MIN_GAMES_FOR_STACK_DAY = 1  # 1+ blowout game → stack day eligible
 
-# Composition targets by slate type (pitcher count out of 5)
-# Used as soft guidance only when the boosted card pool is thin.
-# When enough quality boosted cards are available, pure EV drives composition.
-SLATE_COMPOSITION = {
-    "tiny": {"min_pitchers": 1, "max_pitchers": 2},
-    "pitcher_day": {"min_pitchers": 4, "max_pitchers": 5},
-    "hitter_day": {"min_pitchers": 0, "max_pitchers": 1},
-    "standard": {"min_pitchers": 2, "max_pitchers": 3},
-}
+# SLATE_COMPOSITION removed in V2.1 — historical data (13 days) proves
+# composition is driven purely by EV, not by "day type."
+# Average winning lineup: 2.15 pitchers. Range: 0 to 5.
+# Forcing min/max pitchers by slate type was the #1 source of bad lineups.
+# The optimizer now uses pure EV ranking with no position constraints.
 
 # ---------------------------------------------------------------------------
 # Dynamic composition: boost-aware lineup building
