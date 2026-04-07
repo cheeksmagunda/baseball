@@ -113,6 +113,43 @@ class _LineupCache:
         self._data = None
         self._slate_date = None
 
+    def purge(self) -> None:
+        """
+        Wipe all three cache tiers (memory + Redis + SQLite DB).
+
+        Called on startup so every redeploy starts from a clean state and
+        the pipeline always regenerates fresh lineups rather than serving
+        a cached result that may have been built with stale roster data.
+        """
+        self.clear()
+
+        # Redis
+        rc = self._get_redis()
+        if rc is not None:
+            try:
+                # Delete today's key plus the previous day's key to be safe
+                from datetime import timedelta
+                for d in [date.today(), date.today() - timedelta(days=1)]:
+                    rc.delete(self._redis_key(d))
+                logger.info("Redis lineup cache purged")
+            except Exception as exc:
+                logger.warning("Redis purge failed: %s", exc)
+
+        # SQLite
+        from app.database import SessionLocal
+        from app.models.slate import CachedLineup
+
+        db = SessionLocal()
+        try:
+            db.query(CachedLineup).delete()
+            db.commit()
+            logger.info("DB lineup cache purged")
+        except Exception as exc:
+            logger.warning("DB purge failed: %s", exc)
+            db.rollback()
+        finally:
+            db.close()
+
     @property
     def is_warm(self) -> bool:
         return self._data is not None
