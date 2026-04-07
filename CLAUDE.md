@@ -138,7 +138,7 @@ moonshot_ev = raw_ev × pop_adj × sharp_bonus × explosive_bonus × game_divers
 - `_compute_filter_ev()` — Starting 5 EV with all filters
 - `_compute_moonshot_filter_ev()` — Moonshot-specific EV
 - `_smart_slot_assignment()` — Slot sequencing (unboosted first)
-- `_enforce_composition()` — Pitcher/hitter count by slate type
+- `_enforce_composition()` — Dynamic composition: EV-driven when boost pool is rich, slate-guided when thin
 
 **Dead code:** `app/services/draft_optimizer.py` — functions are not wired to any router except `evaluate_lineup`. The filter_strategy path supersedes it entirely.
 
@@ -209,8 +209,14 @@ Not multiplicative. Proven from historical data. This means:
 - Boosted players → fill remaining slots (only 16% loss at max boost)
 - Slot 1 Differentiator: when the field converges on an obvious Slot 1 (high-ownership player), the winning move is to put the contrarian play in Slot 1.
 
-### Pitchers Are the Default
-On 5 of 10 historical days, pitcher-heavy (3+ pitchers) was the winning strategy. Hitter-only was optimal on only 1 day. **Default to 2-3 pitchers unless the slate explicitly classifies as hitter_day.**
+### Dynamic Composition: Boost Drives Position Mix
+Starting pitchers typically receive 0.0 card_boost (the app doesn't boost them because they get more plays). This means composition should be driven by **boost availability**, not fixed position counts:
+
+- **Rich boosted pool** (5+ quality boosted cards with env support): Pure EV ranking determines composition. No positional constraints. Historical data from 4/2 onward shows zero unboosted pitchers in rank-1 lineups when quality boosted alternatives existed.
+- **Thin boosted pool** (< 5 quality boosted cards): Slate-type composition guides backfill. Unboosted pitchers have the highest RS floor (93% positive, avg RS 5.4 in winning lineups) and are the best unboosted option.
+- **Boosted pitchers are elite**: When pitchers DO get boosts, they combine high RS floor with boost amplification (e.g., Cole Ragans +3.0 → TV 26.5, Slade Cecconi +3.0 → TV 31.5). Treat them like any other boosted card.
+
+Key constants: `BOOST_QUALITY_THRESHOLD` (1.0) and `BOOSTED_POOL_FULL_THRESHOLD` (5) in `app/core/constants.py`.
 
 ### The Ghost Player Edge
 The single most consistent edge: players with < 100 drafts who pass environmental filters. Historical examples: Miguel Vargas (1 draft, RS 6.2), Colson Montgomery (5 drafts, RS 6.3), Oneil Cruz (2 drafts, RS 5.7). The crowd chases Ohtani/Judge/Soto regardless of conditions — those three are chronically over-drafted.

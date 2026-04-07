@@ -66,6 +66,8 @@ from app.core.constants import (
     BOOST_CONCENTRATION_THRESHOLD,
     BOOST_CONCENTRATION_PENALTY,
     SLOT1_DIFFERENTIATOR_EV_THRESHOLD,
+    BOOST_QUALITY_THRESHOLD,
+    BOOSTED_POOL_FULL_THRESHOLD,
 )
 from app.core.utils import BASE_MULTIPLIER, compute_total_value, get_trait_score
 from app.services.popularity import PopularityClass
@@ -469,57 +471,86 @@ def _enforce_composition(
     slate_class: SlateClassification,
 ) -> list[FilteredCandidate]:
     """
-    Enforce composition targets from the slate classification.
+    Build lineup composition dynamically based on boost availability and EV.
 
-    Strategy doc §4.4 Day-Type Playbook:
-    - Ace Day: 4-5 pitchers
-    - Bash Day: 4-5 hitters
-    - Standard: 2-3 pitchers + 2-3 hitters
-    - Tiny: 1-2 pitchers
+    Historical winning data (12 days) shows composition varies widely
+    (0P/5H to 5P/0H) and is driven by boost availability, not slate type:
 
-    Selects the top candidates by filter_ev while respecting
-    min/max pitcher counts.
+    - Rich boost pool (5+ quality boosted cards): winning lineups from
+      4/2 onward had zero unboosted pitchers when boosted alternatives
+      existed. Pure EV ranking produces the correct position mix.
+    - Thin boost pool (< 5 quality boosted): unboosted pitchers have
+      the highest RS floor (93% positive) and ceiling (avg RS 5.4 in
+      winning lineups). Slate-type composition guides backfill.
+
+    A "quality boosted" card has boost >= BOOST_QUALITY_THRESHOLD and
+    env_score >= ENV_PASS_THRESHOLD (not a boost trap).
     """
+    quality_boosted_count = sum(
+        1 for c in candidates
+        if c.card_boost >= BOOST_QUALITY_THRESHOLD
+        and c.env_score >= ENV_PASS_THRESHOLD
+    )
+
+    all_sorted = sorted(candidates, key=lambda c: c.filter_ev, reverse=True)
+
+    if quality_boosted_count >= BOOSTED_POOL_FULL_THRESHOLD:
+        # Rich boosted pool: pure EV ranking, position-agnostic.
+        # The filter EV already incorporates boost, environment,
+        # ownership leverage, and score quality.
+        lineup = all_sorted[:5]
+        pitcher_count = sum(1 for c in lineup if c.is_pitcher)
+        logger.info(
+            "Rich boosted pool (%d quality cards). "
+            "EV-driven composition: %dP/%dH (slate: %s)",
+            quality_boosted_count,
+            pitcher_count, 5 - pitcher_count,
+            slate_class.slate_type.value,
+        )
+        return lineup
+
+    # Thin boosted pool: use slate-type composition as soft guidance.
+    # Take quality boosted cards first (they earned their spot on EV),
+    # then backfill remaining spots respecting slate min/max pitchers
+    # since unboosted pitchers' higher RS ceiling matters more when
+    # boosts are scarce.
+    logger.info(
+        "Thin boosted pool (%d quality cards). "
+        "Slate-guided backfill (slate: %s)",
+        quality_boosted_count,
+        slate_class.slate_type.value,
+    )
+
     comp = SLATE_COMPOSITION.get(slate_class.slate_type.value, SLATE_COMPOSITION["standard"])
     min_p = comp["min_pitchers"]
     max_p = comp["max_pitchers"]
 
     pitchers = [c for c in candidates if c.is_pitcher]
     hitters = [c for c in candidates if not c.is_pitcher]
-
-    # Sort each group by filter_ev descending
     pitchers.sort(key=lambda c: c.filter_ev, reverse=True)
     hitters.sort(key=lambda c: c.filter_ev, reverse=True)
 
-    # Build lineup respecting composition
+    # Build lineup: take minimum pitchers, then fill by EV
     selected_pitchers = pitchers[:max_p]
     selected_hitters = hitters[:(5 - min_p)]
 
-    # Ensure minimum pitchers
     if len(selected_pitchers) < min_p:
-        # Not enough pitchers; take what we have
         selected_pitchers = pitchers[:]
 
-    # Fill to 5
     lineup = []
-    # First, take minimum pitchers
     lineup.extend(selected_pitchers[:min_p])
-    # Then fill remaining from combined pool sorted by EV
     remaining_pitchers = selected_pitchers[min_p:]
     remaining = remaining_pitchers + selected_hitters
     remaining.sort(key=lambda c: c.filter_ev, reverse=True)
     spots_left = 5 - len(lineup)
     lineup.extend(remaining[:spots_left])
 
-    # Enforce max pitchers: if we have too many, swap worst pitcher for best hitter
     pitcher_count = sum(1 for c in lineup if c.is_pitcher)
     while pitcher_count > max_p and hitters:
-        # Find the worst pitcher in lineup
         lineup_pitchers = [(i, c) for i, c in enumerate(lineup) if c.is_pitcher]
         if not lineup_pitchers:
             break
         worst_idx, worst_p = min(lineup_pitchers, key=lambda x: x[1].filter_ev)
-        # Find best hitter not in lineup
         lineup_names = {c.player_name for c in lineup}
         available_hitters = [h for h in hitters if h.player_name not in lineup_names]
         if not available_hitters:
