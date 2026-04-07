@@ -219,5 +219,28 @@
     "source": "screenshot_ingest",
     "saved_at": "2026-04-06T00:00:00Z",
     "notes": "Sunday slate (~15 games). Brent Rooker (OAK) RS 9.8 dominated HV leaderboard — nearly 50 total value at +3.0x boost with only 2 drafts. Top-2 finishes (jainam1 84.19, xxl_ 82.95) used full OAK stack (Rooker, Kurtz, Soderstrom, Langeliers + Wilson/Butler). OAK ghost player sweep: 5 OAK players combined for ghost-tier ownership. Slade Cecconi (CLE) RS 6.3 best pitcher — appeared in ranks 3, 5, 10. Drake Baldwin (DET) RS 6.0 at 50 drafts — underowned HV winner. Chris Bassitt (BAL) RS -4.0 most-drafted-3x bust (1.4k drafts, -20 total value). Max Fried most popular at 3.8k drafts but only RS 4.0. Most popular list chronically underperformed — Judge (RS 1.3), Ohtani (RS 3.7), Alvarez (RS 3.1) all well below Rooker/Cecconi/Baldwin."
+  },
+  {
+    "date": "2026-04-06",
+    "game_count": 13,
+    "games": [
+      {"home": "TB", "away": "CHC", "home_score": 6, "away_score": 4, "winner": "TB", "loser": "CHC", "winner_score": 6, "loser_score": 4},
+      {"home": "CLE", "away": "KC", "home_score": 2, "away_score": 4, "winner": "KC", "loser": "CLE", "winner_score": 4, "loser_score": 2},
+      {"home": "PIT", "away": "SD", "home_score": 0, "away_score": 5, "winner": "SD", "loser": "PIT", "winner_score": 5, "loser_score": 0},
+      {"home": "MIA", "away": "CIN", "home_score": 0, "away_score": 2, "winner": "CIN", "loser": "MIA", "winner_score": 2, "loser_score": 0},
+      {"home": "WSH", "away": "STL", "home_score": 9, "away_score": 6, "winner": "WSH", "loser": "STL", "winner_score": 9, "loser_score": 6},
+      {"home": "BOS", "away": "MIL", "home_score": 6, "away_score": 8, "winner": "MIL", "loser": "BOS", "winner_score": 8, "loser_score": 6},
+      {"home": "TOR", "away": "LAD", "home_score": 2, "away_score": 14, "winner": "LAD", "loser": "TOR", "winner_score": 14, "loser_score": 2},
+      {"home": "MIN", "away": "DET", "home_score": 7, "away_score": 3, "winner": "MIN", "loser": "DET", "winner_score": 7, "loser_score": 3},
+      {"home": "CWS", "away": "BAL", "home_score": 1, "away_score": 2, "winner": "BAL", "loser": "CWS", "winner_score": 2, "loser_score": 1},
+      {"home": "TEX", "away": "SEA", "home_score": 2, "away_score": 1, "winner": "TEX", "loser": "SEA", "winner_score": 2, "loser_score": 1},
+      {"home": "COL", "away": "HOU", "home_score": 9, "away_score": 7, "winner": "COL", "loser": "HOU", "winner_score": 9, "loser_score": 7},
+      {"home": "LAA", "away": "ATL", "home_score": 6, "away_score": 2, "winner": "LAA", "loser": "ATL", "winner_score": 6, "loser_score": 2},
+      {"home": "SF", "away": "PHI", "home_score": 4, "away_score": 6, "winner": "PHI", "loser": "SF", "winner_score": 6, "loser_score": 4}
+    ],
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-07T00:00:00Z",
+    "notes": "Monday slate (13 games). LAD dominated TOR 14-2 — Dodgers stack swept the leaderboard: Ohtani (RS 2.0, 4.9k drafts), Freeman (RS 4.0, 53 drafts), Hernandez (RS 5.2, 3 drafts), Pages (RS 2.2, 1.7k drafts), Rushing (RS 4.7, 1 draft), Wrobleski (RS 3.9). Rank 1 (killacam31, 71.76) used Ohtani/Freeman/Tucker/Hernandez/Rushing — pure LAD+HOU stack. WSH beat STL 9-6: ghost player sweep from James Wood (RS 5.5, 3 drafts), Brady House (RS 4.9, 2 drafts), Luis Garcia Jr. (RS 0.1, minimal drafts) — rank 2 (jcurns, 71.19) ran full WSH stack + Littell. José Soriano (LAA) RS 8.2 — best pitcher of the day, 142 drafts, LAA beat ATL 6-2. Boost traps: Brayan Bello (BOS) RS 0.3 at +3.0x (2.1k drafts) — MIL beat BOS 8-6; Vlad Guerrero Jr (TOR) RS -0.3 at +3.0x — LAD crushed TOR; Ronald Acuña Jr (ATL) RS -0.4 at +3.0x — LAA won 6-2. Most popular: Ohtani 4.9k drafts appeared in every top-12 lineup but slotted lower as Hernandez was the true HV stud. Ghost edge: Hernandez (3 drafts, RS 5.2), Wood (3 drafts, RS 5.5), Rushing (1 draft, RS 4.7), Contreras (1 draft, RS 5.0) all HV at near-zero ownership."
   }
 ]

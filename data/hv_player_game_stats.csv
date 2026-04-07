@@ -138,3 +138,16 @@ date,player_name,team_actual,position,real_score,card_boost,game_result,ab,r,h,h
 2026-04-05,Jackson Merrill,SD,OF,4.7,3.0,SD game,~4,~1,~2,1,~2,0,~1,,,,,solid multi-hit game at 1 draft
 2026-04-05,Corbin Carroll,ARI,OF,4.6,2.1,ARI game,~4,~1,~2,1,~2,1,~1,,,,,strong day; most popular HV performer 1.6k drafts
 2026-04-05,Chris Bassitt,BAL,P,-4.0,3.0,BAL loss,,,,,,,,,,~5,~6,,L,~2.1 IP 6ER disaster start — 1.4k drafts -20 total_value bust
+2026-04-06,James Wood,WSH,OF,5.5,3.0,WSH 9 STL 6,~4,~2,~3,1,~3,1,~1,,,,, ghost player (3 drafts) multi-hit game with HR; WSH big win
+2026-04-06,Teoscar Hernández,LAD,OF,5.2,3.0,LAD 14 TOR 2,~4,~2,~3,1,~3,0,~1,,,,,LAD blowout winner; only 3 drafts at +3.0x — pure ghost HV
+2026-04-06,Willson Contreras,BOS,1B,5.0,3.0,MIL 8 BOS 6,~4,~1,~2,1,~3,1,~1,,,,,strong individual game in BOS loss; 1 draft
+2026-04-06,Bryce Harper,PHI,1B,5.0,3.0,PHI 6 SF 4,~4,~2,~3,1,~3,1,~1,,,,,multi-hit in PHI road win; 13 drafts
+2026-04-06,Brady House,WSH,3B,4.9,3.0,WSH 9 STL 6,~4,~2,~2,1,~3,0,~1,,,,,part of WSH big inning; 2 drafts; rank 2 lineup stacked WSH
+2026-04-06,Dalton Rushing,LAD,C,4.7,2.2,LAD 14 TOR 2,~3,~2,~2,1,~2,1,0,,,,,LAD blowout; backup catcher 1 draft; slotted slot 5 in rank 1
+2026-04-06,Jonathan India,KC,2B,4.3,2.9,KC 4 CLE 2,~4,~1,~2,1,~2,1,~1,,,,,productive in KC road win; 1 draft
+2026-04-06,Troy Johnston,COL,1B,4.5,3.0,COL 9 HOU 7,~4,~2,~2,1,~3,0,~1,,,,,COL high-scoring win vs HOU; 4 drafts
+2026-04-06,José Soriano,LAA,P,8.2,0.0,LAA 6 ATL 2,,,,,,,,,~7,~1,~9,W,dominant start in LAA win; 142 drafts but no boost — best pitcher RS of the day
+2026-04-06,Justin Wrobleski,LAD,P,3.9,0.4,LAD 14 TOR 2,,,,,,,,,~6,~1,~6,W,quality start in blowout win; appeared in ranks 3 and 9
+2026-04-06,Zack Littell,WSH,P,3.7,3.0,WSH 9 STL 6,,,,,,,,,~6,~1,~7,W,quality start; 1.5k drafts at +3.0x but env supported (WSH home win)
+2026-04-06,Freddie Freeman,LAD,1B,4.0,2.3,LAD 14 TOR 2,~4,~2,~2,1,~3,1,0,,,,,multi-hit in LAD blowout; appeared in 8 of 12 top lineups
+2026-04-06,Brayan Bello,BOS,P,0.3,3.0,MIL 8 BOS 6,,,,,,,,,~4,~4,~4,ND,struggled as BOS lost 8-6; boost trap — 2.1k drafts at +3.0x = RS 0.3 disaster
