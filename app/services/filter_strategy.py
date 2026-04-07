@@ -34,7 +34,6 @@ from app.core.constants import (
     HITTER_DAY_VEGAS_TOTAL_THRESHOLD,
     BLOWOUT_MONEYLINE_THRESHOLD,
     BLOWOUT_MIN_GAMES_FOR_STACK_DAY,
-    SLATE_COMPOSITION,
     BOOST_NO_ENV_PENALTY,
     ENV_PASS_THRESHOLD,
     MIN_GAMES_REPRESENTED,
@@ -633,41 +632,26 @@ def _enforce_composition(
     slate_class: SlateClassification,
 ) -> list[FilteredCandidate]:
     """
-    V2 "Anchor, Differentiate, Stack" lineup construction.
+    Pure EV-driven lineup construction. No position forcing. No "day types."
 
-    Three construction paths based on slate type:
+    Historical data (13 rank-1 winners) proves composition varies wildly:
+    0P/5H, 1P/4H, 2P/3H, 3P/2H, 4P/1H, 5P/0H — all won on different days.
+    Average: 2.15 pitchers. The ONLY constant: the 5 highest-EV players win.
 
-    1. Hitter/Stack Day (38% of slates — most common winning type):
-       - Try to build a team stack first (3-4 from favored team)
-       - Fill remaining 1-2 slots with diversifiers from other games
-       - Stack from the ghost pool for maximum differentiation
+    Construction logic:
+    1. If stackable blowout game exists → try team stack + diversifiers
+    2. Otherwise → take top 5 by filter_ev, position-agnostic
+    3. Validate: max 1 mega-chalk, try for ≥1 ghost
 
-    2. Rich boosted pool (5+ quality boosted cards):
-       - Pure EV ranking, position-agnostic
-       - The filter EV already bakes in ghost+boost synergy
-
-    3. Thin boosted pool + Pitcher Day/Standard/Mixed:
-       - Slate-type composition guides backfill
-       - Unboosted pitchers fill high-value slots
-
-    V2 §5 Lineup Validation (all paths):
-    - Max 1 mega-chalk (2000+ drafts) player
-    - Min 1 ghost (< 100 drafts) player when possible
+    Position is NEVER forced. If 5 pitchers have the best EV, take them.
+    If 0 pitchers have competitive EV, take none. EV decides everything.
     """
-    quality_boosted_count = sum(
-        1 for c in candidates
-        if c.card_boost >= BOOST_QUALITY_THRESHOLD
-        and c.env_score >= ENV_PASS_THRESHOLD
-    )
-
     all_sorted = sorted(candidates, key=lambda c: c.filter_ev, reverse=True)
 
-    # --- Path 1: Hitter/Stack Day — try team stacking first ---
-    if (slate_class.slate_type in (SlateType.HITTER_DAY, SlateType.TINY)
-            and slate_class.stackable_games):
+    # --- Try team stacking when a blowout game exists ---
+    if slate_class.stackable_games:
         stack = _build_team_stack(candidates, slate_class.stackable_games)
         if stack and len(stack) >= STACK_MIN_PLAYERS:
-            # Fill remaining slots with diversifiers from OTHER games
             stack_names = {c.player_name for c in stack}
             stack_game_ids = {c.game_id for c in stack}
             diversifiers = [
@@ -680,76 +664,21 @@ def _enforce_composition(
             lineup = _validate_lineup_structure(lineup, all_sorted)
             pitcher_count = sum(1 for c in lineup if c.is_pitcher)
             logger.info(
-                "Stack-day construction: %d stack + %d diversifiers = %dP/%dH",
+                "Stack construction: %d stack + %d diversifiers = %dP/%dH",
                 len(stack), len(lineup) - len(stack),
                 pitcher_count, 5 - pitcher_count,
             )
             return lineup[:5]
 
-    # --- Path 2: Rich boosted pool — pure EV ranking ---
-    if quality_boosted_count >= BOOSTED_POOL_FULL_THRESHOLD:
-        lineup = all_sorted[:5]
-        lineup = _validate_lineup_structure(lineup, all_sorted)
-        pitcher_count = sum(1 for c in lineup if c.is_pitcher)
-        logger.info(
-            "Rich boosted pool (%d quality cards). "
-            "EV-driven composition: %dP/%dH (slate: %s)",
-            quality_boosted_count,
-            pitcher_count, 5 - pitcher_count,
-            slate_class.slate_type.value,
-        )
-        return lineup
-
-    # --- Path 3: Thin boosted pool — slate-guided backfill ---
-    # V2 key insight: "SPs typically receive 0.0 boost." An unboosted pitcher
-    # should NOT displace a boosted hitter just because the slate composition
-    # says "min 2 pitchers." Pitchers only earn their slots by EV.
-    logger.info(
-        "Thin boosted pool (%d quality cards). "
-        "Slate-guided backfill (slate: %s)",
-        quality_boosted_count,
-        slate_class.slate_type.value,
-    )
-
-    comp = SLATE_COMPOSITION.get(slate_class.slate_type.value, SLATE_COMPOSITION["standard"])
-    min_p = comp["min_pitchers"]
-    max_p = comp["max_pitchers"]
-
-    pitchers = [c for c in candidates if c.is_pitcher]
-    hitters = [c for c in candidates if not c.is_pitcher]
-    pitchers.sort(key=lambda c: c.filter_ev, reverse=True)
-    hitters.sort(key=lambda c: c.filter_ev, reverse=True)
-
-    # Only force pitchers that actually compete on EV with available hitters.
-    # An unboosted pitcher with lower EV than a boosted hitter should NOT be
-    # forced into the lineup just to meet a position minimum.
-    hitter_ev_floor = hitters[min(4, len(hitters) - 1)].filter_ev if len(hitters) > 4 else 0.0
-    competitive_pitchers = [p for p in pitchers if p.filter_ev >= hitter_ev_floor * 0.8]
-    forced_pitcher_count = min(min_p, len(competitive_pitchers))
-
-    lineup = []
-    lineup.extend(competitive_pitchers[:forced_pitcher_count])
-    remaining_pitchers = [p for p in pitchers if p not in lineup][:max_p - forced_pitcher_count]
-    remaining = remaining_pitchers + hitters
-    remaining.sort(key=lambda c: c.filter_ev, reverse=True)
-    spots_left = 5 - len(lineup)
-    lineup.extend(remaining[:spots_left])
-
+    # --- Pure EV ranking — no position constraints ---
+    lineup = all_sorted[:5]
+    lineup = _validate_lineup_structure(lineup, all_sorted)
     pitcher_count = sum(1 for c in lineup if c.is_pitcher)
-    while pitcher_count > max_p and hitters:
-        lineup_pitchers = [(i, c) for i, c in enumerate(lineup) if c.is_pitcher]
-        if not lineup_pitchers:
-            break
-        worst_idx, worst_p = min(lineup_pitchers, key=lambda x: x[1].filter_ev)
-        lineup_names = {c.player_name for c in lineup}
-        available_hitters = [h for h in hitters if h.player_name not in lineup_names]
-        if not available_hitters:
-            break
-        lineup[worst_idx] = available_hitters[0]
-        pitcher_count -= 1
-
-    lineup = _validate_lineup_structure(lineup[:5], all_sorted)
-    return lineup[:5]
+    logger.info(
+        "EV-driven composition: %dP/%dH (candidates: %d)",
+        pitcher_count, 5 - pitcher_count, len(candidates),
+    )
+    return lineup
 
 
 def _validate_lineup_structure(

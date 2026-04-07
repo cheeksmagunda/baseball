@@ -131,20 +131,21 @@ base_ev = total_score × (2 + card_boost)
   × debut_return_bonus (1.15 if flagged)
 ```
 
-### Lineup Construction (V2 — three paths)
-1. **Hitter/Stack Day** (38% of slates): Build team stack from ghost pool on favored team → fill 1-2 diversifiers from other games
-2. **Rich boosted pool** (5+ quality boosted cards): Pure EV ranking, position-agnostic
-3. **Thin pool + Pitcher/Standard**: Slate-guided composition backfill
+### Lineup Construction (Pure EV — no position forcing)
+Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. Composition varies wildly — the only constant is that the 5 highest-EV players win. **No "day types" force positions.** `SLATE_COMPOSITION` was removed entirely.
+
+1. **Blowout game detected** (moneyline ≥ -200): Try team stack from ghost pool → fill 1-2 diversifiers from other games
+2. **All other slates**: Pure EV ranking, position-agnostic. If 0 pitchers have competitive EV, take none. If 4 do, take 4. EV decides everything.
 
 ### Lineup Validation (V2)
 - Max 1 mega-chalk (2000+ drafts) player
 - Min 1 ghost (<100 drafts) player when available
 - Slot 1 Differentiator: swap consensus Slot 1 for contrarian if EV loss <10%
 
-### Slate Classification (V2)
-- **Hitter/Stack Day** triggers on 4+ high O/U games OR 1+ blowout game (moneyline ≥ -200). Checked BEFORE pitcher day.
-- **Pitcher Day**: 4+ quality SP matchups (was 5 in V1)
-- Blowout detection uses `home_moneyline`/`away_moneyline` from SlateGame
+### Slate Classification (informational only — does NOT force composition)
+- Classification exists for display and stacking decisions only
+- Blowout detection (moneyline ≥ -200) triggers stack-building logic
+- **No slate type forces pitcher/hitter counts.** `SLATE_COMPOSITION` dict was removed.
 
 **Moonshot** — Completely different 5 players. Heavier anti-crowd lean:
 - FADE=0.60, NEUTRAL=0.95, TARGET=1.30
