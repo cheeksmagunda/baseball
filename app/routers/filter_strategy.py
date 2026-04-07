@@ -26,11 +26,13 @@ from app.schemas.filter_strategy import (
     FilterCandidateOut,
     GameEnvironment,
     SlateClassificationOut,
+    StackableGameOut,
 )
 from app.services.scoring_engine import score_player
 from app.services.filter_strategy import (
     FilteredCandidate,
     SlateClassification,
+    StackableGame,
     classify_slate,
     compute_pitcher_env_score,
     compute_batter_env_score,
@@ -127,6 +129,8 @@ async def _resolve_candidates(
             is_home = game.home_team.upper() == card.team.upper()
             opp_era = game.away_starter_era if is_home else game.home_starter_era
             park_team = game.home_team.upper()
+            # V2: pass team's moneyline for favorite detection
+            team_ml = game.home_moneyline if is_home else game.away_moneyline
 
             env_score, env_factors = compute_batter_env_score(
                 vegas_total=game.vegas_total,
@@ -138,6 +142,7 @@ async def _resolve_candidates(
                 wind_speed_mph=game.wind_speed_mph,
                 wind_direction=game.wind_direction,
                 temperature_f=game.temperature_f,
+                team_moneyline=team_ml,
             )
         else:
             env_score = 0.5
@@ -199,6 +204,7 @@ async def _resolve_candidates(
             is_pitcher=pre["is_pitcher"],
             sharp_score=sharp_score,
             drafts=card.drafts,
+            is_most_drafted_3x=card.is_most_drafted_3x,
             traits=score_result.traits,
         ))
 
@@ -248,6 +254,23 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
     if not slate:
         return [], []
 
+    # Filter out games that have already started (Live) or finished (Final).
+    # On mid-slate redeploy, only include games that haven't started yet
+    # so the optimizer picks from draftable players only.
+    STARTED_STATUSES = {"Live", "Final"}
+    remaining_games = [
+        g for g in slate.games
+        if g.game_status not in STARTED_STATUSES
+    ]
+    # If ALL games are filtered out (e.g. game_status wasn't populated),
+    # fall back to games without final scores to avoid returning nothing.
+    if not remaining_games:
+        remaining_games = [
+            g for g in slate.games
+            if g.home_score is None or g.away_score is None
+        ]
+    remaining_game_ids = {g.id for g in remaining_games}
+
     games: list[GameEnvironment] = [
         GameEnvironment(
             game_id=g.id,
@@ -272,13 +295,16 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             wind_direction=g.wind_direction,
             temperature_f=g.temperature_f,
         )
-        for g in slate.games
+        for g in remaining_games
     ]
 
     cards: list[FilterCard] = []
     for sp in slate.players:
         player = sp.player
         if not player or sp.player_status in ("DNP", "scratched"):
+            continue
+        # Skip players from games that have already started
+        if sp.game_id is not None and sp.game_id not in remaining_game_ids:
             continue
         cards.append(FilterCard(
             player_name=player.name,
@@ -290,6 +316,7 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             platoon_advantage=bool(sp.platoon_advantage),
             is_debut_or_return=sp.is_debut_or_return,
             drafts=sp.drafts,
+            is_most_drafted_3x=sp.is_most_drafted_3x,
         ))
 
     return cards, games
@@ -353,13 +380,26 @@ def _build_response(dual, candidates) -> FilterOptimizeResponse:
         )
         for c in candidates
     ]
+    sc = dual.starting_5.slate_classification
+    stackable_out = [
+        StackableGameOut(
+            game_id=sg.game_id,
+            favored_team=sg.favored_team,
+            moneyline=sg.moneyline,
+            vegas_total=sg.vegas_total,
+            opp_starter_era=sg.opp_starter_era,
+        )
+        for sg in sc.stackable_games
+    ]
     return FilterOptimizeResponse(
         slate_classification=SlateClassificationOut(
-            slate_type=dual.starting_5.slate_classification.slate_type.value,
-            game_count=dual.starting_5.slate_classification.game_count,
-            quality_sp_matchups=dual.starting_5.slate_classification.quality_sp_matchups,
-            high_total_games=dual.starting_5.slate_classification.high_total_games,
-            reason=dual.starting_5.slate_classification.reason,
+            slate_type=sc.slate_type.value,
+            game_count=sc.game_count,
+            quality_sp_matchups=sc.quality_sp_matchups,
+            high_total_games=sc.high_total_games,
+            blowout_games=sc.blowout_games,
+            stackable_games=stackable_out,
+            reason=sc.reason,
         ),
         starting_5=_build_lineup_out(dual.starting_5),
         moonshot=_build_lineup_out(dual.moonshot),
@@ -468,10 +508,22 @@ def classify_slate_endpoint(games: list[GameEnvironment] = []):
     """
     game_dicts = [g.model_dump() for g in games]
     result = classify_slate(len(games), game_dicts)
+    stackable_out = [
+        StackableGameOut(
+            game_id=sg.game_id,
+            favored_team=sg.favored_team,
+            moneyline=sg.moneyline,
+            vegas_total=sg.vegas_total,
+            opp_starter_era=sg.opp_starter_era,
+        )
+        for sg in result.stackable_games
+    ]
     return SlateClassificationOut(
         slate_type=result.slate_type.value,
         game_count=result.game_count,
         quality_sp_matchups=result.quality_sp_matchups,
         high_total_games=result.high_total_games,
+        blowout_games=result.blowout_games,
+        stackable_games=stackable_out,
         reason=result.reason,
     )

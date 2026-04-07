@@ -109,14 +109,42 @@ Web-scraping signal aggregator that estimates which players the crowd will over-
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
+**Strategy Version: V2 "Anchor, Differentiate, Stack"** — based on 13 days of historical data.
+
 The active optimizer produces **two lineups** from the same candidate pool via `run_dual_filter_strategy`.
 
-**Starting 5** — Best filter EV. Standard anti-popularity adjustments (FADE=0.75, TARGET=1.15). Five filters applied:
-1. Slate classification (tiny/pitcher_day/hitter_day/standard)
-2. Environmental advantage (Vegas lines, ERA, platoon, park, weather)
-3. Ownership leverage (web-scraped FADE/TARGET/NEUTRAL)
-4. Boost-environment gating (boosted card with env_score < 0.5 gets 30% haircut)
-5. Smart slot assignment (unboosted → top slots; boosted → slot-flexible)
+### Three Pillars (V2)
+
+1. **Ghost Ownership (#1 edge):** 12/13 rank-1 lineups had ≥1 ghost player (<100 drafts). Ghost+boost (≥2.5 boost + <200 drafts) is the "holy grail" combo. Mega-ghost+boost (<50 drafts + 3.0 boost + env pass) gets auto-include-level EV bonus.
+2. **Team Stacking:** Dominant winning pattern on 62% of days. On hitter/stack days, stack 3-4 from the favored team's ghost pool + 1-2 diversifiers.
+3. **Boost Leverage:** "Most drafted at 3x boost" busts 57% of the time — it's a SELL signal. Ghost+boost is the buy signal.
+
+### Starting 5 EV formula (V2)
+```
+base_ev = total_score × (2 + card_boost)
+  × low_score_penalty (if score < 15)
+  × boost_trap_penalty (if boost ≥ 1.0 and env < 0.5)
+  × popularity_adj (FADE=0.75, TARGET=1.15)
+  × most_drafted_3x_penalty (0.60 if flagged)
+  × ownership_adj (ghost=1.25, low=1.10, chalk=0.80, mega_chalk=0.70)
+  × ghost_boost_synergy (mega_ghost+boost=1.50, ghost+boost=1.30)
+  × debut_return_bonus (1.15 if flagged)
+```
+
+### Lineup Construction (V2 — three paths)
+1. **Hitter/Stack Day** (38% of slates): Build team stack from ghost pool on favored team → fill 1-2 diversifiers from other games
+2. **Rich boosted pool** (5+ quality boosted cards): Pure EV ranking, position-agnostic
+3. **Thin pool + Pitcher/Standard**: Slate-guided composition backfill
+
+### Lineup Validation (V2)
+- Max 1 mega-chalk (2000+ drafts) player
+- Min 1 ghost (<100 drafts) player when available
+- Slot 1 Differentiator: swap consensus Slot 1 for contrarian if EV loss <10%
+
+### Slate Classification (V2)
+- **Hitter/Stack Day** triggers on 4+ high O/U games OR 1+ blowout game (moneyline ≥ -200). Checked BEFORE pitcher day.
+- **Pitcher Day**: 4+ quality SP matchups (was 5 in V1)
+- Blowout detection uses `home_moneyline`/`away_moneyline` from SlateGame
 
 **Moonshot** — Completely different 5 players. Heavier anti-crowd lean:
 - FADE=0.60, NEUTRAL=0.95, TARGET=1.30
@@ -124,21 +152,17 @@ The active optimizer produces **two lineups** from the same candidate pool via `
 - Explosive bonus: up to +10% EV from power_profile (batters) or k_rate (pitchers)
 - Game diversification: 0.85x soft penalty for same-team overlap with Starting 5
 - Zero player overlap with Starting 5
-
-**Moonshot EV formula:**
-```
-moonshot_ev = raw_ev × pop_adj × sharp_bonus × explosive_bonus × game_diversification
-```
-
-**Low-score floor:** Players scoring below `MIN_SCORE_THRESHOLD` (15/100) get a 50% EV haircut regardless of boost. Prevents the "huge boost on a terrible player" trap (e.g. Shane Smith RS -3.5 with +3.0x = -17.5). Constants in `app/core/constants.py`.
+- All V2 penalties (most_drafted_3x, mega-chalk, ghost+boost synergy) apply
 
 **Key functions (filter_strategy.py):**
 - `run_filter_strategy()` — Starting 5
 - `run_dual_filter_strategy()` — One call, two lineups
-- `_compute_filter_ev()` — Starting 5 EV with all filters
+- `_compute_filter_ev()` — Starting 5 EV with all V2 filters
 - `_compute_moonshot_filter_ev()` — Moonshot-specific EV
+- `_build_team_stack()` — Ghost-pool team stacking for hitter/stack days
+- `_enforce_composition()` — V2 three-path construction (stack / EV / backfill)
+- `_validate_lineup_structure()` — Max 1 mega-chalk, min 1 ghost
 - `_smart_slot_assignment()` — Slot sequencing (unboosted first)
-- `_enforce_composition()` — Dynamic composition: EV-driven when boost pool is rich, slate-guided when thin
 
 **Dead code:** `app/services/draft_optimizer.py` — functions are not wired to any router except `evaluate_lineup`. The filter_strategy path supersedes it entirely.
 
@@ -165,9 +189,9 @@ moonshot_ev = raw_ev × pop_adj × sharp_bonus × explosive_bonus × game_divers
 6. **DRY:** The total_value formula, player lookups, score queries, and game log sorting are centralized in `app/core/utils.py`.
 7. **is_highest_value / is_most_popular flags are retrospective labels.** Never use them as inputs to prediction or optimization — that is a data leak. They reflect post-hoc outcomes only.
 
-## Strategy: "Filter, Not Forecast" (Master Strategy Document)
+## Strategy: V2 "Anchor, Differentiate, Stack" (Master Strategy Document)
 
-Full document is the authoritative reference. Key mechanics for any AI working on this codebase:
+Full document (V2) is the authoritative reference. Key mechanics for any AI working on this codebase:
 
 ### The Formula is Additive (Proven)
 ```

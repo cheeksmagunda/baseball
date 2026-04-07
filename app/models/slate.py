@@ -38,6 +38,7 @@ class SlateGame(Base):
     home_team: Mapped[str] = mapped_column(String, nullable=False)
     away_team: Mapped[str] = mapped_column(String, nullable=False)
     mlb_game_pk: Mapped[int | None] = mapped_column(Integer, nullable=True)  # MLB Stats API game PK
+    game_status: Mapped[str | None] = mapped_column(String, nullable=True)  # MLB abstractGameState: Preview, Live, Final
     home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
