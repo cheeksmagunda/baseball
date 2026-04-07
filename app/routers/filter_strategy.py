@@ -192,27 +192,34 @@ def _get_active_slate_date(db: Session) -> date:
     """
     Determine the correct slate date to serve.
 
-    Returns today if today has an active slate with unfinished games.
-    Returns tomorrow if today's slate is empty/nonexistent/complete.
+    Returns today in all cases EXCEPT when it is past midnight and every
+    game on today's slate has a final score.  This prevents the pipeline
+    from fetching tomorrow's probable starters during the day when today's
+    schedule data hasn't been published yet — which would produce a lineup
+    of players whose games aren't until the following day.
     """
+    from datetime import datetime
     today = date.today()
-    tomorrow = today + timedelta(days=1)
 
     today_slate = db.query(Slate).filter_by(date=today).first()
 
-    # Today has games — check if any are still in progress
-    if today_slate and today_slate.game_count and today_slate.game_count > 0:
+    # Only consider rolling over to tomorrow if we're past midnight
+    # (i.e., the current time is between 00:00 and ~06:00 the next calendar day).
+    # During the day, a missing or empty slate means the schedule hasn't published
+    # yet — that is a pipeline data problem, not a "serve tomorrow" signal.
+    now_hour = datetime.now().hour
+    past_midnight = now_hour < 6  # 00:00–05:59 local time
+
+    if past_midnight and today_slate and today_slate.game_count and today_slate.game_count > 0:
         games = db.query(SlateGame).filter_by(slate_id=today_slate.id).all()
         all_final = games and all(
             g.home_score is not None and g.away_score is not None
             for g in games
         )
-        if not all_final:
-            return today
-        # All games final — fall through to serve tomorrow
+        if all_final:
+            return today + timedelta(days=1)
 
-    # Today is empty, nonexistent, or complete — serve tomorrow
-    return tomorrow
+    return today
 
 
 def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[list[FilterCard], list[GameEnvironment]]:
