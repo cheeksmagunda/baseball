@@ -358,6 +358,19 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
         # Compute environmental score
         if is_pitcher and game:
             is_home = game.home_team == player.team
+
+            # Only include the confirmed probable starter — same guard as the router.
+            starter_mlb_id = game.home_starter_mlb_id if is_home else game.away_starter_mlb_id
+            starter_name = game.home_starter if is_home else game.away_starter
+            if starter_mlb_id is not None:
+                if player.mlb_id != starter_mlb_id:
+                    continue
+            elif starter_name is not None:
+                p_name = player.name.lower().strip()
+                s_name = starter_name.lower().strip()
+                if p_name not in s_name and s_name not in p_name:
+                    continue
+
             pitcher_k9 = game.home_starter_k_per_9 if is_home else game.away_starter_k_per_9
             opp_ops = game.away_team_ops if is_home else game.home_team_ops
             opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
