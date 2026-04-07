@@ -34,10 +34,11 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # Load persisted lineup cache from DB so the frontend gets instant
-    # picks even after a redeploy — before the background pipeline runs.
+    # Purge all cache tiers on startup so every redeploy triggers a full
+    # pipeline regeneration. Stale lineups (wrong starters, old scores)
+    # must never survive a restart.
     from app.services.lineup_cache import lineup_cache
-    lineup_cache.load_from_db()
+    lineup_cache.purge()
 
     # Run pipeline in background so health checks respond immediately
     async def _startup_pipeline():
