@@ -219,3 +219,13 @@ BOOST_CONCENTRATION_PENALTY = 0.85    # 15% penalty for 3rd+ boosted in same gam
 # When the field converges on an obvious Slot 1, put the contrarian there.
 # ---------------------------------------------------------------------------
 SLOT1_DIFFERENTIATOR_EV_THRESHOLD = 0.90  # Only swap if contrarian within 10% EV
+
+# ---------------------------------------------------------------------------
+# Rich-pool pitcher correction (V2 §4.3 dynamic composition rule)
+# When the boosted pool is full (≥ BOOSTED_POOL_FULL_THRESHOLD quality cards),
+# unboosted pitchers get de-prioritized. Historical data (4/2 onward): zero
+# unboosted pitchers appeared in rank-1 lineups when quality boosted
+# alternatives existed. Boost amplifies RS — an unboosted pitcher at RS 5.5
+# still loses to a ghost-boosted batter with RS 2.5 + boost 3.0.
+# ---------------------------------------------------------------------------
+UNBOOSTED_PITCHER_RICH_POOL_PENALTY = 0.65  # 35% EV haircut
