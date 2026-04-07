@@ -77,7 +77,9 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
                 away_team=away,
                 mlb_game_pk=game_pk,
                 home_starter=home_starter_name,
+                home_starter_mlb_id=home_starter_mlb_id,
                 away_starter=away_starter_name,
+                away_starter_mlb_id=away_starter_mlb_id,
             )
             # Set scores if game is Final
             if game_status == "Final" and home_score is not None:
@@ -89,8 +91,12 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
                 existing.mlb_game_pk = game_pk
             if home_starter_name and not existing.home_starter:
                 existing.home_starter = home_starter_name
+            if home_starter_mlb_id and not existing.home_starter_mlb_id:
+                existing.home_starter_mlb_id = home_starter_mlb_id
             if away_starter_name and not existing.away_starter:
                 existing.away_starter = away_starter_name
+            if away_starter_mlb_id and not existing.away_starter_mlb_id:
+                existing.away_starter_mlb_id = away_starter_mlb_id
             # Update scores if game is now Final
             if game_status == "Final" and home_score is not None and existing.home_score is None:
                 existing.home_score = home_score

@@ -90,6 +90,23 @@ async def _resolve_candidates(
         # Compute environmental score (Filter 2)
         if is_pitcher and game:
             is_home = game.home_team.upper() == card.team.upper()
+
+            # Only include the confirmed probable starter for this game.
+            # Pitchers on rest from the previous day are still on the active
+            # roster and score well — they must be excluded here.
+            # Primary check: MLB ID match (authoritative, no name ambiguity).
+            # Fallback to name only when the ID wasn't returned by the API.
+            starter_mlb_id = game.home_starter_mlb_id if is_home else game.away_starter_mlb_id
+            starter_name = game.home_starter if is_home else game.away_starter
+            if starter_mlb_id is not None:
+                if player.mlb_id != starter_mlb_id:
+                    continue
+            elif starter_name is not None:
+                card_name = card.player_name.lower().strip()
+                prob_name = starter_name.lower().strip()
+                if card_name not in prob_name and prob_name not in card_name:
+                    continue
+
             opp_ops = game.away_team_ops if is_home else game.home_team_ops
             opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
             park_team = game.home_team.upper()
@@ -240,7 +257,9 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             home_moneyline=g.home_moneyline,
             away_moneyline=g.away_moneyline,
             home_starter=g.home_starter,
+            home_starter_mlb_id=g.home_starter_mlb_id,
             away_starter=g.away_starter,
+            away_starter_mlb_id=g.away_starter_mlb_id,
             home_starter_era=g.home_starter_era,
             away_starter_era=g.away_starter_era,
             home_starter_k_per_9=g.home_starter_k_per_9,
