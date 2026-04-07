@@ -701,6 +701,9 @@ def _enforce_composition(
         return lineup
 
     # --- Path 3: Thin boosted pool — slate-guided backfill ---
+    # V2 key insight: "SPs typically receive 0.0 boost." An unboosted pitcher
+    # should NOT displace a boosted hitter just because the slate composition
+    # says "min 2 pitchers." Pitchers only earn their slots by EV.
     logger.info(
         "Thin boosted pool (%d quality cards). "
         "Slate-guided backfill (slate: %s)",
@@ -717,16 +720,17 @@ def _enforce_composition(
     pitchers.sort(key=lambda c: c.filter_ev, reverse=True)
     hitters.sort(key=lambda c: c.filter_ev, reverse=True)
 
-    selected_pitchers = pitchers[:max_p]
-    selected_hitters = hitters[:(5 - min_p)]
-
-    if len(selected_pitchers) < min_p:
-        selected_pitchers = pitchers[:]
+    # Only force pitchers that actually compete on EV with available hitters.
+    # An unboosted pitcher with lower EV than a boosted hitter should NOT be
+    # forced into the lineup just to meet a position minimum.
+    hitter_ev_floor = hitters[min(4, len(hitters) - 1)].filter_ev if len(hitters) > 4 else 0.0
+    competitive_pitchers = [p for p in pitchers if p.filter_ev >= hitter_ev_floor * 0.8]
+    forced_pitcher_count = min(min_p, len(competitive_pitchers))
 
     lineup = []
-    lineup.extend(selected_pitchers[:min_p])
-    remaining_pitchers = selected_pitchers[min_p:]
-    remaining = remaining_pitchers + selected_hitters
+    lineup.extend(competitive_pitchers[:forced_pitcher_count])
+    remaining_pitchers = [p for p in pitchers if p not in lineup][:max_p - forced_pitcher_count]
+    remaining = remaining_pitchers + hitters
     remaining.sort(key=lambda c: c.filter_ev, reverse=True)
     spots_left = 5 - len(lineup)
     lineup.extend(remaining[:spots_left])

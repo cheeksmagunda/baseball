@@ -76,6 +76,7 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
                 home_team=home,
                 away_team=away,
                 mlb_game_pk=game_pk,
+                game_status=game_status or None,
                 home_starter=home_starter_name,
                 home_starter_mlb_id=home_starter_mlb_id,
                 away_starter=away_starter_name,
@@ -89,6 +90,9 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
         else:
             if game_pk and not existing.mlb_game_pk:
                 existing.mlb_game_pk = game_pk
+            # Always update game_status — it progresses Preview → Live → Final
+            if game_status:
+                existing.game_status = game_status
             if home_starter_name and not existing.home_starter:
                 existing.home_starter = home_starter_name
             if home_starter_mlb_id and not existing.home_starter_mlb_id:

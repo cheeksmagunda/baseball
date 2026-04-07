@@ -254,6 +254,23 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
     if not slate:
         return [], []
 
+    # Filter out games that have already started (Live) or finished (Final).
+    # On mid-slate redeploy, only include games that haven't started yet
+    # so the optimizer picks from draftable players only.
+    STARTED_STATUSES = {"Live", "Final"}
+    remaining_games = [
+        g for g in slate.games
+        if g.game_status not in STARTED_STATUSES
+    ]
+    # If ALL games are filtered out (e.g. game_status wasn't populated),
+    # fall back to games without final scores to avoid returning nothing.
+    if not remaining_games:
+        remaining_games = [
+            g for g in slate.games
+            if g.home_score is None or g.away_score is None
+        ]
+    remaining_game_ids = {g.id for g in remaining_games}
+
     games: list[GameEnvironment] = [
         GameEnvironment(
             game_id=g.id,
@@ -278,13 +295,16 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             wind_direction=g.wind_direction,
             temperature_f=g.temperature_f,
         )
-        for g in slate.games
+        for g in remaining_games
     ]
 
     cards: list[FilterCard] = []
     for sp in slate.players:
         player = sp.player
         if not player or sp.player_status in ("DNP", "scratched"):
+            continue
+        # Skip players from games that have already started
+        if sp.game_id is not None and sp.game_id not in remaining_game_ids:
             continue
         cards.append(FilterCard(
             player_name=player.name,
