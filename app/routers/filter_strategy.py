@@ -79,7 +79,6 @@ async def _resolve_candidates(
         if not player:
             continue
 
-        score_result = score_player(db, player)
         is_pitcher = player.position in PITCHER_POSITIONS
 
         # Find game context
@@ -88,6 +87,30 @@ async def _resolve_candidates(
             game = game_by_id.get(card.game_id)
         if game is None:
             game = team_to_game.get(card.team.upper())
+
+        # Build game-aware scoring context. Without this, batters default to
+        # neutral scores on lineup_position, matchup_quality, and ballpark_factor,
+        # causing unboosted pitchers (whose ERA/K-rate come from season stats) to
+        # systematically outscore boosted batters regardless of matchup or order.
+        score_kwargs: dict = {}
+        if game:
+            _is_home = game.home_team.upper() == card.team.upper()
+            if is_pitcher:
+                _opp_ops = game.away_team_ops if _is_home else game.home_team_ops
+                _opp_k_pct = game.away_team_k_pct if _is_home else game.home_team_k_pct
+                if _opp_ops is not None or _opp_k_pct is not None:
+                    score_kwargs["opp_team_stats"] = {
+                        "ops": _opp_ops if _opp_ops is not None else 0.730,
+                        "k_pct": _opp_k_pct if _opp_k_pct is not None else 0.22,
+                    }
+            else:
+                _opp_era = game.away_starter_era if _is_home else game.home_starter_era
+                if _opp_era is not None:
+                    score_kwargs["opp_pitcher_stats"] = {"era": _opp_era}
+                score_kwargs["batting_order"] = card.batting_order
+                score_kwargs["park_team"] = game.home_team.upper()
+
+        score_result = score_player(db, player, **score_kwargs)
 
         # Compute environmental score (Filter 2)
         if is_pitcher and game:
