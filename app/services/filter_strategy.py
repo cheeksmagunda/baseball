@@ -32,11 +32,15 @@ from app.core.constants import (
     PITCHER_DAY_MIN_QUALITY_SP,
     HITTER_DAY_MIN_HIGH_TOTAL,
     HITTER_DAY_VEGAS_TOTAL_THRESHOLD,
+    BLOWOUT_MONEYLINE_THRESHOLD,
+    BLOWOUT_MIN_GAMES_FOR_STACK_DAY,
     SLATE_COMPOSITION,
     BOOST_NO_ENV_PENALTY,
     ENV_PASS_THRESHOLD,
     MIN_GAMES_REPRESENTED,
     SAME_GAME_EXCESS_PENALTY,
+    STACK_MIN_PLAYERS,
+    STACK_MAX_PLAYERS,
     MIN_SCORE_THRESHOLD,
     MIN_SCORE_PENALTY,
     PITCHER_ENV_WEAK_OPP_OPS,
@@ -63,6 +67,15 @@ from app.core.constants import (
     CHALK_DRAFT_THRESHOLD,
     CHALK_PENALTY,
     CHALK_EXEMPT_MIN_BOOST,
+    MEGA_CHALK_DRAFT_THRESHOLD,
+    MEGA_CHALK_PENALTY,
+    MOST_DRAFTED_3X_PENALTY,
+    GHOST_BOOST_SYNERGY_MIN_BOOST,
+    GHOST_BOOST_SYNERGY_BONUS,
+    MEGA_GHOST_BOOST_MAX_DRAFTS,
+    MEGA_GHOST_BOOST_BONUS,
+    MAX_MEGA_CHALK_IN_LINEUP,
+    MIN_GHOST_IN_LINEUP,
     BOOST_CONCENTRATION_THRESHOLD,
     BOOST_CONCENTRATION_PENALTY,
     SLOT1_DIFFERENTIATOR_EV_THRESHOLD,
@@ -87,11 +100,23 @@ class SlateType(str, Enum):
 
 
 @dataclass
+class StackableGame:
+    """A game identified as a blowout/stacking candidate."""
+    game_id: int | str | None = None
+    favored_team: str = ""
+    moneyline: int | None = None
+    vegas_total: float | None = None
+    opp_starter_era: float | None = None
+
+
+@dataclass
 class SlateClassification:
     slate_type: SlateType
     game_count: int
     quality_sp_matchups: int = 0
     high_total_games: int = 0
+    blowout_games: int = 0
+    stackable_games: list[StackableGame] = field(default_factory=list)
     reason: str = ""
 
 
@@ -102,28 +127,49 @@ def classify_slate(
     """
     Classify the slate BEFORE looking at any individual player.
 
-    Strategy doc §4.2 Filter 1:
+    V2 §3 Slate Classification (revised):
     - Tiny (1-3 games): limited pool, heavy team-stack
-    - Pitcher Day (5+ quality SP matchups): go 4-5 pitchers
-    - Hitter Day (5+ games with O/U >= 9.0): go 4-5 hitters
-    - Standard (10+ games, mixed): 2-3P + 2-3 hitters
+    - Pitcher Day (4+ quality SP matchups): go 4-5 pitchers
+    - Hitter/Stack Day (4+ high O/U OR 1+ blowout game): stack the favorite
+    - Standard: 2-3P + 2-3 hitters
 
-    Args:
-        game_count: Number of games on the slate.
-        games: List of game dicts with optional keys:
-            vegas_total, home_starter_era, away_starter_era,
-            home_starter_k_per_9, away_starter_k_per_9,
-            home_team_ops, away_team_ops
+    V2 key insight: "Read the slate, don't default to pitchers."
+    Hitter/stack days are 38% of slates (most common winning type).
+    Blowout games (moneyline ≥ -200) are prime stacking candidates.
     """
     games = games or []
 
-    # Count quality SP matchups: ace (ERA < 3.5) facing a team with OPS < .700
     quality_sp = 0
     high_total = 0
+    blowout_games = 0
+    stackable: list[StackableGame] = []
+
     for g in games:
         vt = g.get("vegas_total")
         if vt is not None and vt >= HITTER_DAY_VEGAS_TOTAL_THRESHOLD:
             high_total += 1
+
+        # Blowout detection (V2 §2 Pillar 2): moneyline ≥ -200 = projected blowout
+        home_ml = g.get("home_moneyline")
+        away_ml = g.get("away_moneyline")
+        if home_ml is not None and home_ml <= BLOWOUT_MONEYLINE_THRESHOLD:
+            blowout_games += 1
+            stackable.append(StackableGame(
+                game_id=g.get("game_id"),
+                favored_team=g.get("home_team", ""),
+                moneyline=home_ml,
+                vegas_total=vt,
+                opp_starter_era=g.get("away_starter_era"),
+            ))
+        elif away_ml is not None and away_ml <= BLOWOUT_MONEYLINE_THRESHOLD:
+            blowout_games += 1
+            stackable.append(StackableGame(
+                game_id=g.get("game_id"),
+                favored_team=g.get("away_team", ""),
+                moneyline=away_ml,
+                vegas_total=vt,
+                opp_starter_era=g.get("home_starter_era"),
+            ))
 
         # Check home starter as quality matchup
         h_era = g.get("home_starter_era")
@@ -145,14 +191,39 @@ def classify_slate(
             elif a_k9 is not None and a_k9 >= PITCHER_ENV_MIN_K_PER_9:
                 quality_sp += 1
 
-    # Classification logic
+    # Sort stackable games by moneyline strength (most negative = biggest favorite)
+    stackable.sort(key=lambda s: s.moneyline if s.moneyline is not None else 0)
+
+    # Classification logic — V2: check hitter/stack BEFORE pitcher day
+    # because hitter/stack days are 38% vs pitcher days 23%
     if game_count <= TINY_SLATE_MAX_GAMES:
         return SlateClassification(
             slate_type=SlateType.TINY,
             game_count=game_count,
             quality_sp_matchups=quality_sp,
             high_total_games=high_total,
+            blowout_games=blowout_games,
+            stackable_games=stackable,
             reason=f"Tiny slate ({game_count} games). Stack the favorite.",
+        )
+
+    # V2: Blowout games trigger hitter/stack day even without high O/U counts
+    if (high_total >= HITTER_DAY_MIN_HIGH_TOTAL
+            or blowout_games >= BLOWOUT_MIN_GAMES_FOR_STACK_DAY):
+        stack_reason = []
+        if high_total >= HITTER_DAY_MIN_HIGH_TOTAL:
+            stack_reason.append(f"{high_total} high O/U games")
+        if blowout_games > 0:
+            teams = [s.favored_team for s in stackable]
+            stack_reason.append(f"{blowout_games} blowout game(s): {', '.join(teams)}")
+        return SlateClassification(
+            slate_type=SlateType.HITTER_DAY,
+            game_count=game_count,
+            quality_sp_matchups=quality_sp,
+            high_total_games=high_total,
+            blowout_games=blowout_games,
+            stackable_games=stackable,
+            reason=f"Hitter/Stack day: {'; '.join(stack_reason)}. Stack 3-4 from favorite + 1-2 diversifiers.",
         )
 
     if quality_sp >= PITCHER_DAY_MIN_QUALITY_SP:
@@ -161,16 +232,9 @@ def classify_slate(
             game_count=game_count,
             quality_sp_matchups=quality_sp,
             high_total_games=high_total,
+            blowout_games=blowout_games,
+            stackable_games=stackable,
             reason=f"Pitcher day: {quality_sp} quality SP matchups. Go 4-5 pitchers.",
-        )
-
-    if high_total >= HITTER_DAY_MIN_HIGH_TOTAL:
-        return SlateClassification(
-            slate_type=SlateType.HITTER_DAY,
-            game_count=game_count,
-            quality_sp_matchups=quality_sp,
-            high_total_games=high_total,
-            reason=f"Hitter day: {high_total} games with O/U >= {HITTER_DAY_VEGAS_TOTAL_THRESHOLD}. Go 4-5 hitters.",
         )
 
     return SlateClassification(
@@ -178,6 +242,8 @@ def classify_slate(
         game_count=game_count,
         quality_sp_matchups=quality_sp,
         high_total_games=high_total,
+        blowout_games=blowout_games,
+        stackable_games=stackable,
         reason=f"Standard slate ({game_count} games). 2-3 pitchers + 2-3 hitters.",
     )
 
@@ -293,20 +359,22 @@ def compute_batter_env_score(
     wind_speed_mph: float | None = None,
     wind_direction: str | None = None,
     temperature_f: int | None = None,
+    team_moneyline: int | None = None,
 ) -> tuple[float, list[str]]:
     """
     Compute environmental score for a batter (0-1.0).
 
-    Strategy doc §4.2 Filter 2 batter conditions:
+    V2 §4 batter filters:
     - Playing in high Vegas total game (O/U >= 8.5)
     - Facing a weak opposing starter (high ERA)
     - Having a platoon advantage
-    - Batting in top 4 of lineup
-    - Hitter-friendly park or favorable weather (wind out, warm temp)
+    - Batting in top 5 of lineup (V2 says top 5, not top 4)
+    - Hitter-friendly park or favorable weather
+    - Team is moneyline favorite (V2 addition)
     """
     score = 0.0
     factors = []
-    max_score = 5.0
+    max_score = 6.0  # 6 factors now (added moneyline)
 
     # 1. High Vegas total (run environment)
     if vegas_total is not None:
@@ -329,7 +397,7 @@ def compute_batter_env_score(
         score += 1.0
         factors.append("Platoon advantage")
 
-    # 4. Top of lineup
+    # 4. Top of lineup (V2 says top 5)
     if batting_order is not None:
         if batting_order <= BATTER_ENV_TOP_LINEUP:
             score += 1.0
@@ -358,6 +426,15 @@ def compute_batter_env_score(
         factors.append(f"Warm conditions ({temperature_f}°F)")
 
     score += f5
+
+    # 6. Team is moneyline favorite (V2 §4 batter filter addition)
+    if team_moneyline is not None:
+        if team_moneyline <= BLOWOUT_MONEYLINE_THRESHOLD:
+            score += 1.0
+            factors.append(f"Heavy favorite (ML={team_moneyline})")
+        elif team_moneyline < -120:
+            score += 0.5
+            factors.append(f"Moneyline favorite (ML={team_moneyline})")
 
     # Debut/return bonus
     if is_debut_or_return:
@@ -390,6 +467,7 @@ class FilteredCandidate:
     is_pitcher: bool = False
     sharp_score: float = 0.0
     drafts: int | None = None
+    is_most_drafted_3x: bool = False  # V2: 57% bust rate trap signal
     traits: list = field(default_factory=list)  # TraitScore list from scoring engine
 
     # Computed by the optimizer
@@ -427,20 +505,23 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     """
     Compute EV through the full filter pipeline (Filters 2-4).
 
-    Strategy doc §4.2 Filters 2-4 combined:
+    V2 "Anchor, Differentiate, Stack" EV formula:
     1. Base EV = total_score × (2 + card_boost)
-    2. Low-score penalty (same as existing)
-    3. Environmental gating: boost without env support = trap (§3.5)
-    4. Web-scraped popularity adjustment (FADE/TARGET/NEUTRAL)
-    5. Debut/return premium (§2.3 Condition C)
+    2. Low-score penalty
+    3. Boost-environment gating (boost trap detection)
+    4. Web-scraped popularity (FADE/TARGET)
+    5. Draft-count ownership leverage (ghost/chalk/mega-chalk)
+    6. "Most drafted 3x" trap penalty (V2 §9 Finding 2)
+    7. Ghost + Boost synergy bonus (V2 §2 Pillar 3)
+    8. Debut/return premium
     """
     base_ev = compute_total_value(candidate.total_score, candidate.card_boost)
 
-    # Low-score penalty (existing behavior)
+    # Low-score penalty
     if candidate.total_score < MIN_SCORE_THRESHOLD:
         base_ev *= MIN_SCORE_PENALTY
 
-    # Filter 4: Boost-environment gating (§3.5 "Boost Trap")
+    # Filter 4: Boost-environment gating ("Boost Trap")
     if candidate.card_boost >= 1.0 and candidate.env_score < ENV_PASS_THRESHOLD:
         base_ev *= BOOST_NO_ENV_PENALTY
 
@@ -448,22 +529,103 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     pop_adj = _popularity_ev_adjustment(candidate.popularity)
     base_ev *= pop_adj
 
-    # Filter 3b: Draft-count ownership leverage (§2.2, §4.2 Filter 3)
-    # Distinct from web-scraped popularity — this is actual contest ownership.
+    # V2: "Most drafted at 3x boost" trap (57% bust rate, avg RS 0.72)
+    # Applied BEFORE draft-count leverage — this is the strongest sell signal.
+    if candidate.is_most_drafted_3x:
+        base_ev *= MOST_DRAFTED_3X_PENALTY
+
+    # Filter 3b: Draft-count ownership leverage
+    # V2 adds mega-chalk tier and graduated penalties.
     if candidate.drafts is not None:
         if candidate.drafts < GHOST_DRAFT_THRESHOLD and candidate.env_score >= ENV_PASS_THRESHOLD:
             base_ev *= GHOST_ENV_BONUS
         elif candidate.drafts < LOW_DRAFT_THRESHOLD:
             base_ev *= LOW_DRAFT_BONUS
+        elif candidate.drafts >= MEGA_CHALK_DRAFT_THRESHOLD:
+            # Mega-chalk (2000+): 55% bust rate, avg RS 1.5
+            if not (candidate.env_score >= ENV_PASS_THRESHOLD and candidate.card_boost >= CHALK_EXEMPT_MIN_BOOST):
+                base_ev *= MEGA_CHALK_PENALTY
         elif candidate.drafts >= CHALK_DRAFT_THRESHOLD:
+            # Chalk (1500-2000): 45% bust rate
             if not (candidate.env_score >= ENV_PASS_THRESHOLD and candidate.card_boost >= CHALK_EXEMPT_MIN_BOOST):
                 base_ev *= CHALK_PENALTY
 
-    # Debut/return premium (§2.3 Condition C)
+    # V2 §2 Pillar 3: Ghost + Boost synergy ("the holy grail")
+    # boost ≥ 2.5 + < 200 drafts = avg ~28 total_value on HV list
+    # boost 3.0 + < 50 drafts + env pass = auto-include tier
+    if candidate.drafts is not None and candidate.card_boost >= GHOST_BOOST_SYNERGY_MIN_BOOST:
+        if (candidate.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS
+                and candidate.card_boost >= 3.0
+                and candidate.env_score >= ENV_PASS_THRESHOLD):
+            base_ev *= MEGA_GHOST_BOOST_BONUS
+        elif candidate.drafts < LOW_DRAFT_THRESHOLD and candidate.env_score >= ENV_PASS_THRESHOLD:
+            base_ev *= GHOST_BOOST_SYNERGY_BONUS
+
+    # Debut/return premium
     if candidate.is_debut_or_return:
         base_ev *= DEBUT_RETURN_EV_BONUS
 
     return base_ev
+
+
+def _build_team_stack(
+    candidates: list[FilteredCandidate],
+    stackable_games: list[StackableGame],
+) -> list[FilteredCandidate] | None:
+    """
+    Build a team stack from ghost-ownership players on the favored team.
+
+    V2 §2 Pillar 2: "Stack FROM THE GHOST POOL."
+    The winning OAK stack on 4/5 worked because the entire lineup was ghost-tier.
+    The winning LAD stack on 4/6 worked because ghosts (Hernández 3, Rushing 1)
+    were the differentiators — Ohtani (4900) was just the anchor everyone had.
+
+    Returns 3-4 players from the best stackable team, or None if no viable stack.
+    """
+    if not stackable_games:
+        return None
+
+    for sg in stackable_games:
+        team = sg.favored_team.upper()
+        game_id = sg.game_id
+
+        # Find all candidates from the favored team in this game
+        team_candidates = [
+            c for c in candidates
+            if c.team.upper() == team
+            and not c.is_pitcher  # stack hitters, not pitchers
+        ]
+
+        if len(team_candidates) < STACK_MIN_PLAYERS:
+            continue
+
+        # Sort by filter_ev but prioritize ghost+boost players (V2 ghost-stack principle)
+        def stack_sort_key(c: FilteredCandidate) -> tuple:
+            is_ghost = c.drafts is not None and c.drafts < LOW_DRAFT_THRESHOLD
+            has_boost = c.card_boost >= GHOST_BOOST_SYNERGY_MIN_BOOST
+            # Primary: ghost+boost combo, Secondary: ghost, Tertiary: filter_ev
+            priority = 0
+            if is_ghost and has_boost:
+                priority = 2
+            elif is_ghost:
+                priority = 1
+            return (priority, c.filter_ev)
+
+        team_candidates.sort(key=stack_sort_key, reverse=True)
+        stack = team_candidates[:STACK_MAX_PLAYERS]
+
+        if len(stack) >= STACK_MIN_PLAYERS:
+            ghost_count = sum(
+                1 for c in stack
+                if c.drafts is not None and c.drafts < GHOST_DRAFT_THRESHOLD
+            )
+            logger.info(
+                "Team stack: %d %s players (ghosts: %d, game_id: %s, ML: %s)",
+                len(stack), team, ghost_count, game_id, sg.moneyline,
+            )
+            return stack
+
+    return None
 
 
 def _enforce_composition(
@@ -471,20 +633,26 @@ def _enforce_composition(
     slate_class: SlateClassification,
 ) -> list[FilteredCandidate]:
     """
-    Build lineup composition dynamically based on boost availability and EV.
+    V2 "Anchor, Differentiate, Stack" lineup construction.
 
-    Historical winning data (12 days) shows composition varies widely
-    (0P/5H to 5P/0H) and is driven by boost availability, not slate type:
+    Three construction paths based on slate type:
 
-    - Rich boost pool (5+ quality boosted cards): winning lineups from
-      4/2 onward had zero unboosted pitchers when boosted alternatives
-      existed. Pure EV ranking produces the correct position mix.
-    - Thin boost pool (< 5 quality boosted): unboosted pitchers have
-      the highest RS floor (93% positive) and ceiling (avg RS 5.4 in
-      winning lineups). Slate-type composition guides backfill.
+    1. Hitter/Stack Day (38% of slates — most common winning type):
+       - Try to build a team stack first (3-4 from favored team)
+       - Fill remaining 1-2 slots with diversifiers from other games
+       - Stack from the ghost pool for maximum differentiation
 
-    A "quality boosted" card has boost >= BOOST_QUALITY_THRESHOLD and
-    env_score >= ENV_PASS_THRESHOLD (not a boost trap).
+    2. Rich boosted pool (5+ quality boosted cards):
+       - Pure EV ranking, position-agnostic
+       - The filter EV already bakes in ghost+boost synergy
+
+    3. Thin boosted pool + Pitcher Day/Standard/Mixed:
+       - Slate-type composition guides backfill
+       - Unboosted pitchers fill high-value slots
+
+    V2 §5 Lineup Validation (all paths):
+    - Max 1 mega-chalk (2000+ drafts) player
+    - Min 1 ghost (< 100 drafts) player when possible
     """
     quality_boosted_count = sum(
         1 for c in candidates
@@ -494,11 +662,34 @@ def _enforce_composition(
 
     all_sorted = sorted(candidates, key=lambda c: c.filter_ev, reverse=True)
 
+    # --- Path 1: Hitter/Stack Day — try team stacking first ---
+    if (slate_class.slate_type in (SlateType.HITTER_DAY, SlateType.TINY)
+            and slate_class.stackable_games):
+        stack = _build_team_stack(candidates, slate_class.stackable_games)
+        if stack and len(stack) >= STACK_MIN_PLAYERS:
+            # Fill remaining slots with diversifiers from OTHER games
+            stack_names = {c.player_name for c in stack}
+            stack_game_ids = {c.game_id for c in stack}
+            diversifiers = [
+                c for c in all_sorted
+                if c.player_name not in stack_names
+                and c.game_id not in stack_game_ids
+            ]
+            spots_left = 5 - len(stack)
+            lineup = list(stack) + diversifiers[:spots_left]
+            lineup = _validate_lineup_structure(lineup, all_sorted)
+            pitcher_count = sum(1 for c in lineup if c.is_pitcher)
+            logger.info(
+                "Stack-day construction: %d stack + %d diversifiers = %dP/%dH",
+                len(stack), len(lineup) - len(stack),
+                pitcher_count, 5 - pitcher_count,
+            )
+            return lineup[:5]
+
+    # --- Path 2: Rich boosted pool — pure EV ranking ---
     if quality_boosted_count >= BOOSTED_POOL_FULL_THRESHOLD:
-        # Rich boosted pool: pure EV ranking, position-agnostic.
-        # The filter EV already incorporates boost, environment,
-        # ownership leverage, and score quality.
         lineup = all_sorted[:5]
+        lineup = _validate_lineup_structure(lineup, all_sorted)
         pitcher_count = sum(1 for c in lineup if c.is_pitcher)
         logger.info(
             "Rich boosted pool (%d quality cards). "
@@ -509,11 +700,7 @@ def _enforce_composition(
         )
         return lineup
 
-    # Thin boosted pool: use slate-type composition as soft guidance.
-    # Take quality boosted cards first (they earned their spot on EV),
-    # then backfill remaining spots respecting slate min/max pitchers
-    # since unboosted pitchers' higher RS ceiling matters more when
-    # boosts are scarce.
+    # --- Path 3: Thin boosted pool — slate-guided backfill ---
     logger.info(
         "Thin boosted pool (%d quality cards). "
         "Slate-guided backfill (slate: %s)",
@@ -530,7 +717,6 @@ def _enforce_composition(
     pitchers.sort(key=lambda c: c.filter_ev, reverse=True)
     hitters.sort(key=lambda c: c.filter_ev, reverse=True)
 
-    # Build lineup: take minimum pitchers, then fill by EV
     selected_pitchers = pitchers[:max_p]
     selected_hitters = hitters[:(5 - min_p)]
 
@@ -558,23 +744,91 @@ def _enforce_composition(
         lineup[worst_idx] = available_hitters[0]
         pitcher_count -= 1
 
+    lineup = _validate_lineup_structure(lineup[:5], all_sorted)
     return lineup[:5]
+
+
+def _validate_lineup_structure(
+    lineup: list[FilteredCandidate],
+    all_candidates_sorted: list[FilteredCandidate],
+) -> list[FilteredCandidate]:
+    """
+    V2 §5 Step 6 Final Check — enforce anchor/ghost structure.
+
+    Every rank-1 lineup across 13 days followed this pattern:
+    - 1 anchor (consensus play providing a floor)
+    - 2-3 differentiators (ghost players ranks 2-8 don't have)
+    - 1 flex
+
+    Validation rules:
+    - Max 1 mega-chalk (2000+ drafts) player
+    - Try to include at least 1 ghost (< 100 drafts) player
+    """
+    if len(lineup) < 5:
+        return lineup
+
+    # Rule 1: Max 1 mega-chalk player
+    mega_chalk_indices = [
+        i for i, c in enumerate(lineup)
+        if c.drafts is not None and c.drafts >= MEGA_CHALK_DRAFT_THRESHOLD
+    ]
+    if len(mega_chalk_indices) > MAX_MEGA_CHALK_IN_LINEUP:
+        # Keep the highest-EV mega-chalk, replace the rest
+        mega_chalk_sorted = sorted(mega_chalk_indices, key=lambda i: lineup[i].filter_ev, reverse=True)
+        lineup_names = {c.player_name for c in lineup}
+        for idx in mega_chalk_sorted[MAX_MEGA_CHALK_IN_LINEUP:]:
+            replacement = next(
+                (c for c in all_candidates_sorted
+                 if c.player_name not in lineup_names
+                 and (c.drafts is None or c.drafts < MEGA_CHALK_DRAFT_THRESHOLD)),
+                None,
+            )
+            if replacement:
+                lineup_names.discard(lineup[idx].player_name)
+                lineup[idx] = replacement
+                lineup_names.add(replacement.player_name)
+
+    # Rule 2: Try to include at least 1 ghost player
+    ghost_count = sum(
+        1 for c in lineup
+        if c.drafts is not None and c.drafts < GHOST_DRAFT_THRESHOLD
+    )
+    if ghost_count < MIN_GHOST_IN_LINEUP:
+        lineup_names = {c.player_name for c in lineup}
+        best_ghost = next(
+            (c for c in all_candidates_sorted
+             if c.player_name not in lineup_names
+             and c.drafts is not None
+             and c.drafts < GHOST_DRAFT_THRESHOLD
+             and c.env_score >= ENV_PASS_THRESHOLD),
+            None,
+        )
+        if best_ghost:
+            # Replace the lowest-EV non-ghost in the lineup
+            worst_idx = min(
+                range(len(lineup)),
+                key=lambda i: lineup[i].filter_ev,
+            )
+            if best_ghost.filter_ev >= lineup[worst_idx].filter_ev * 0.7:
+                lineup[worst_idx] = best_ghost
+
+    return lineup
 
 
 def _apply_game_diversification(
     lineup: list[FilteredCandidate],
 ) -> list[str]:
     """
-    Check game diversification (Commandment 10).
+    Check game diversification (V2 Law 9).
 
-    Returns warnings if all 5 players are in the same game.
-    Applies soft penalty for 4th+ player from same game.
+    V2 endorses stacking 3-4 players from the same team/game.
+    Only apply soft penalty for 5th player from same game (full concentration).
+    Warn if all 5 are in 1 game.
     """
     warnings = []
     if not lineup:
         return warnings
 
-    # Count players per game
     game_counts: dict[str | int | None, int] = {}
     for c in lineup:
         gid = c.game_id
@@ -586,20 +840,21 @@ def _apply_game_diversification(
     if games_represented < MIN_GAMES_REPRESENTED and len(lineup) >= 5:
         warnings.append(
             f"Only {games_represented} game(s) represented. "
-            f"Strategy recommends at least {MIN_GAMES_REPRESENTED}. "
-            f"A pitcher's duel kills concentrated lineups."
+            f"Strategy recommends at least {MIN_GAMES_REPRESENTED}."
         )
 
-    # Apply soft penalty for 4th+ player from same game
+    # V2: Only penalize 5th player from same game — stacking 3-4 is correct
     for gid, count in game_counts.items():
-        if count >= 4:
+        if count >= 5:
             warnings.append(
-                f"Game {gid} has {count} players. "
-                f"Consider diversifying across 2-3 favorable games."
+                f"All 5 players from game {gid}. Consider 1-2 diversifiers."
             )
-            for c in lineup:
-                if c.game_id == gid:
-                    c.filter_ev *= SAME_GAME_EXCESS_PENALTY
+            # Soft penalty only on the lowest-EV player from the concentrated game
+            game_players = sorted(
+                [c for c in lineup if c.game_id == gid],
+                key=lambda c: c.filter_ev,
+            )
+            game_players[0].filter_ev *= SAME_GAME_EXCESS_PENALTY
 
     return warnings
 
@@ -817,8 +1072,9 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     """
     Moonshot EV through the filter pipeline. Same base as Starting 5 but:
     1. Heavier anti-popularity lean (FADE=0.60, TARGET=1.30)
-    2. Sharp signal bonus (underground buzz -> up to +25% EV)
-    3. Explosive bonus (power_profile or k_rate trait -> up to +10% EV)
+    2. V2 ghost+boost synergy and most-drafted-3x penalties
+    3. Sharp signal bonus (underground buzz -> up to +25% EV)
+    4. Explosive bonus (power_profile or k_rate trait -> up to +10% EV)
     """
     base_ev = compute_total_value(candidate.total_score, candidate.card_boost)
 
@@ -834,15 +1090,31 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     pop_adj = _moonshot_popularity_adj(candidate.popularity)
     base_ev *= pop_adj
 
+    # V2: "Most drafted at 3x boost" trap — even heavier fade for Moonshot
+    if candidate.is_most_drafted_3x:
+        base_ev *= MOST_DRAFTED_3X_PENALTY
+
     # Draft-count ownership leverage (heavier ghost bonus for Moonshot)
     if candidate.drafts is not None:
         if candidate.drafts < GHOST_DRAFT_THRESHOLD and candidate.env_score >= ENV_PASS_THRESHOLD:
             base_ev *= GHOST_MOONSHOT_ENV_BONUS
         elif candidate.drafts < LOW_DRAFT_THRESHOLD:
             base_ev *= LOW_DRAFT_BONUS
+        elif candidate.drafts >= MEGA_CHALK_DRAFT_THRESHOLD:
+            if not (candidate.env_score >= ENV_PASS_THRESHOLD and candidate.card_boost >= CHALK_EXEMPT_MIN_BOOST):
+                base_ev *= MEGA_CHALK_PENALTY
         elif candidate.drafts >= CHALK_DRAFT_THRESHOLD:
             if not (candidate.env_score >= ENV_PASS_THRESHOLD and candidate.card_boost >= CHALK_EXEMPT_MIN_BOOST):
                 base_ev *= CHALK_PENALTY
+
+    # V2: Ghost + Boost synergy (even more valuable for Moonshot differentiation)
+    if candidate.drafts is not None and candidate.card_boost >= GHOST_BOOST_SYNERGY_MIN_BOOST:
+        if (candidate.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS
+                and candidate.card_boost >= 3.0
+                and candidate.env_score >= ENV_PASS_THRESHOLD):
+            base_ev *= MEGA_GHOST_BOOST_BONUS
+        elif candidate.drafts < LOW_DRAFT_THRESHOLD and candidate.env_score >= ENV_PASS_THRESHOLD:
+            base_ev *= GHOST_BOOST_SYNERGY_BONUS
 
     # Debut/return premium
     if candidate.is_debut_or_return:

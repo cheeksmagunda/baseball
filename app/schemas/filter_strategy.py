@@ -45,6 +45,7 @@ class FilterCard(BaseModel):
     platoon_advantage: bool = False
     is_debut_or_return: bool = False
     drafts: int | None = None  # ownership data
+    is_most_drafted_3x: bool = False  # V2: 57% bust rate trap signal
 
 
 class FilterOptimizeRequest(BaseModel):
@@ -57,11 +58,21 @@ class FilterOptimizeRequest(BaseModel):
 # Response schemas
 # ---------------------------------------------------------------------------
 
+class StackableGameOut(BaseModel):
+    game_id: int | str | None = None
+    favored_team: str = ""
+    moneyline: int | None = None
+    vegas_total: float | None = None
+    opp_starter_era: float | None = None
+
+
 class SlateClassificationOut(BaseModel):
     slate_type: str
     game_count: int
     quality_sp_matchups: int = 0
     high_total_games: int = 0
+    blowout_games: int = 0
+    stackable_games: list[StackableGameOut] = []
     reason: str = ""
 
 

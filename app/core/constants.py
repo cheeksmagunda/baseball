@@ -81,10 +81,16 @@ MIN_SCORE_PENALTY = 0.50  # 50% EV haircut for below-threshold players
 # ---------------------------------------------------------------------------
 
 # Slate classification thresholds (Filter 1)
+# V2: Pitcher Day = 23% of slates (not the default), Hitter/Stack Day = 38%
 TINY_SLATE_MAX_GAMES = 3
-PITCHER_DAY_MIN_QUALITY_SP = 5   # 5+ quality SP matchups → pitcher day (strategy §4.2 Filter 1)
-HITTER_DAY_MIN_HIGH_TOTAL = 5    # 5+ games with O/U >= 9.0 → hitter day
+PITCHER_DAY_MIN_QUALITY_SP = 4   # 4+ quality SP matchups → pitcher day (V2 §3)
+HITTER_DAY_MIN_HIGH_TOTAL = 4    # 4+ games with O/U >= 9.0 → hitter day (V2 §3)
 HITTER_DAY_VEGAS_TOTAL_THRESHOLD = 9.0
+
+# Blowout detection (V2 §2 Pillar 2 + §3 checklist)
+# Moneyline ≥ -200 for one side = projected blowout → stack candidate
+BLOWOUT_MONEYLINE_THRESHOLD = -200  # e.g. -210 means heavy favorite
+BLOWOUT_MIN_GAMES_FOR_STACK_DAY = 1  # 1+ blowout game → stack day eligible
 
 # Composition targets by slate type (pitcher count out of 5)
 # Used as soft guidance only when the boosted card pool is thin.
@@ -115,9 +121,16 @@ BOOSTED_POOL_FULL_THRESHOLD = 5
 BOOST_NO_ENV_PENALTY = 0.70      # 30% EV haircut when boost has no env support
 ENV_PASS_THRESHOLD = 0.5         # env_score must be > 0.5 (out of 1.0) to "pass"
 
-# Game diversification (Filter 5 — §4.2 Filter 5 + Commandment 10)
+# Game diversification (Filter 5 — V2 Law 9)
 MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup
-SAME_GAME_EXCESS_PENALTY = 0.80  # 20% penalty for 4th+ player from same game
+SAME_GAME_EXCESS_PENALTY = 0.90  # 10% penalty for 5th player from same game (softened for stacking)
+
+# ---------------------------------------------------------------------------
+# Team stacking constants (V2 §2 Pillar 2 — dominant on 62% of winning days)
+# ---------------------------------------------------------------------------
+STACK_MIN_PLAYERS = 3             # minimum players from same team to form a stack
+STACK_MAX_PLAYERS = 4             # typical stack size (1-2 diversifiers from other games)
+STACK_GHOST_BOOST_PRIORITY = True # prefer ghost-ownership players when stacking
 
 # Environmental filter thresholds (Filter 2)
 # Pitcher environmental pass conditions
@@ -129,7 +142,7 @@ PITCHER_ENV_FRIENDLY_PARK = 1.00      # park factor below this = pitcher-friendl
 # Batter environmental pass conditions
 BATTER_ENV_HIGH_VEGAS_TOTAL = 8.5     # O/U >= this = high-run environment
 BATTER_ENV_WEAK_PITCHER_ERA = 4.5     # opposing starter ERA above this = weak
-BATTER_ENV_TOP_LINEUP = 4             # batting 1-4 = top of lineup
+BATTER_ENV_TOP_LINEUP = 5             # batting 1-5 = top of lineup (V2 §4)
 
 # Debut/return premium (§2.3 Condition C)
 DEBUT_RETURN_EV_BONUS = 1.15          # 15% EV bonus for debut/return players
@@ -161,18 +174,42 @@ MOONSHOT_EXPLOSIVE_BONUS_MAX = 0.10
 MOONSHOT_SAME_TEAM_PENALTY = 0.85
 
 # ---------------------------------------------------------------------------
-# Draft-count ownership leverage (§2.2, §4.2 Filter 3, Commandment 5)
-# Based on actual draft counts, NOT web-scraped popularity.
-# Ghost players with env support are the highest-EV pool historically.
+# Draft-count ownership leverage (V2 §2 Pillar 1 + §9 Finding 1)
+# Ghost ownership is THE #1 edge separating rank 1 from the field.
+# 12/13 rank-1 lineups had at least 1 ghost player.
 # ---------------------------------------------------------------------------
 GHOST_DRAFT_THRESHOLD = 100           # < 100 drafts = ghost player
-GHOST_ENV_BONUS = 1.20                # 20% EV bonus for ghosts with env support
-GHOST_MOONSHOT_ENV_BONUS = 1.30       # 30% EV bonus for ghosts in Moonshot
+GHOST_ENV_BONUS = 1.25                # 25% EV bonus for ghosts with env support (up from 20%)
+GHOST_MOONSHOT_ENV_BONUS = 1.35       # 35% EV bonus for ghosts in Moonshot (up from 30%)
 LOW_DRAFT_THRESHOLD = 200             # < 200 drafts = low-ownership differentiator
 LOW_DRAFT_BONUS = 1.10                # 10% EV bonus
-CHALK_DRAFT_THRESHOLD = 2000          # >= 2000 drafts = chalk (over-drafted)
-CHALK_PENALTY = 0.85                  # 15% EV penalty for chalk
+CHALK_DRAFT_THRESHOLD = 1500          # >= 1500 drafts = chalk (V2: 1500+ bust 45%)
+CHALK_PENALTY = 0.80                  # 20% EV penalty for chalk (up from 15%)
 CHALK_EXEMPT_MIN_BOOST = 3.0          # Chalk exemption requires 3.0 boost + env pass
+MEGA_CHALK_DRAFT_THRESHOLD = 2000     # >= 2000 drafts = mega-chalk (V2: bust 55%, avg RS 1.5)
+MEGA_CHALK_PENALTY = 0.70             # 30% EV penalty for mega-chalk
+
+# "Most drafted at 3x boost" trap (V2 §9 Finding 2)
+# These players bust 57% of the time with avg RS 0.72.
+# The crowd sees "3.0x boost on star name" and piles in.
+MOST_DRAFTED_3X_PENALTY = 0.60        # 40% EV penalty (57% bust rate)
+
+# ---------------------------------------------------------------------------
+# Ghost + Boost synergy (V2 §2 Pillar 3 — the "holy grail")
+# Players with boost ≥ 2.5 AND < 200 drafts avg ~28 total_value on HV list.
+# Players with boost 3.0 AND < 50 drafts who pass env = auto-include tier.
+# ---------------------------------------------------------------------------
+GHOST_BOOST_SYNERGY_MIN_BOOST = 2.5   # minimum boost for ghost+boost synergy
+GHOST_BOOST_SYNERGY_BONUS = 1.30      # 30% EV bonus for ghost + high boost
+MEGA_GHOST_BOOST_MAX_DRAFTS = 50      # < 50 drafts + 3.0 boost + env pass = auto-include
+MEGA_GHOST_BOOST_BONUS = 1.50         # 50% EV bonus for mega-ghost + max boost
+
+# ---------------------------------------------------------------------------
+# Lineup structure validation (V2 §5 + §9 Finding 4)
+# Every rank-1 lineup: 1 anchor + 2-3 differentiators + 1 flex
+# ---------------------------------------------------------------------------
+MAX_MEGA_CHALK_IN_LINEUP = 1          # max 1 player with 2000+ drafts
+MIN_GHOST_IN_LINEUP = 1              # min 1 ghost player (< 100 drafts)
 
 # ---------------------------------------------------------------------------
 # Boost concentration penalty (§4.2 Filter 4)
