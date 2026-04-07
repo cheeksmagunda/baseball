@@ -90,6 +90,19 @@ async def _resolve_candidates(
         # Compute environmental score (Filter 2)
         if is_pitcher and game:
             is_home = game.home_team.upper() == card.team.upper()
+
+            # Only score pitchers who are the probable/confirmed starter.
+            # Pitchers on rest from a previous day will be on the active roster
+            # but must not enter the candidate pool — they won't pitch.
+            # If the probable starter field is null (schedule not yet hydrated),
+            # allow through so early-morning requests don't silently drop everyone.
+            probable = game.home_starter if is_home else game.away_starter
+            if probable:
+                card_name = card.player_name.lower().strip()
+                prob_name = probable.lower().strip()
+                if card_name not in prob_name and prob_name not in card_name:
+                    continue
+
             opp_ops = game.away_team_ops if is_home else game.home_team_ops
             opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
             park_team = game.home_team.upper()
@@ -192,34 +205,27 @@ def _get_active_slate_date(db: Session) -> date:
     """
     Determine the correct slate date to serve.
 
-    Returns today in all cases EXCEPT when it is past midnight and every
-    game on today's slate has a final score.  This prevents the pipeline
-    from fetching tomorrow's probable starters during the day when today's
-    schedule data hasn't been published yet — which would produce a lineup
-    of players whose games aren't until the following day.
+    Returns today if today has an active slate with unfinished games.
+    Returns tomorrow if today's slate is empty/nonexistent/complete.
     """
-    from datetime import datetime
     today = date.today()
+    tomorrow = today + timedelta(days=1)
 
     today_slate = db.query(Slate).filter_by(date=today).first()
 
-    # Only consider rolling over to tomorrow if we're past midnight
-    # (i.e., the current time is between 00:00 and ~06:00 the next calendar day).
-    # During the day, a missing or empty slate means the schedule hasn't published
-    # yet — that is a pipeline data problem, not a "serve tomorrow" signal.
-    now_hour = datetime.now().hour
-    past_midnight = now_hour < 6  # 00:00–05:59 local time
-
-    if past_midnight and today_slate and today_slate.game_count and today_slate.game_count > 0:
+    # Today has games — check if any are still in progress
+    if today_slate and today_slate.game_count and today_slate.game_count > 0:
         games = db.query(SlateGame).filter_by(slate_id=today_slate.id).all()
         all_final = games and all(
             g.home_score is not None and g.away_score is not None
             for g in games
         )
-        if all_final:
-            return today + timedelta(days=1)
+        if not all_final:
+            return today
+        # All games final — fall through to serve tomorrow
 
-    return today
+    # Today is empty, nonexistent, or complete — serve tomorrow
+    return tomorrow
 
 
 def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[list[FilterCard], list[GameEnvironment]]:
