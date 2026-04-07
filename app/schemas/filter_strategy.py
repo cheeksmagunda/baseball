@@ -18,7 +18,9 @@ class GameEnvironment(BaseModel):
     home_moneyline: int | None = None
     away_moneyline: int | None = None
     home_starter: str | None = None
+    home_starter_mlb_id: int | None = None
     away_starter: str | None = None
+    away_starter_mlb_id: int | None = None
     home_starter_era: float | None = None
     away_starter_era: float | None = None
     home_starter_k_per_9: float | None = None

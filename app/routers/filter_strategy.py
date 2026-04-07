@@ -91,15 +91,19 @@ async def _resolve_candidates(
         if is_pitcher and game:
             is_home = game.home_team.upper() == card.team.upper()
 
-            # Only score pitchers who are the probable/confirmed starter.
-            # Pitchers on rest from a previous day will be on the active roster
-            # but must not enter the candidate pool — they won't pitch.
-            # If the probable starter field is null (schedule not yet hydrated),
-            # allow through so early-morning requests don't silently drop everyone.
-            probable = game.home_starter if is_home else game.away_starter
-            if probable:
+            # Only include the confirmed probable starter for this game.
+            # Pitchers on rest from the previous day are still on the active
+            # roster and score well — they must be excluded here.
+            # Primary check: MLB ID match (authoritative, no name ambiguity).
+            # Fallback to name only when the ID wasn't returned by the API.
+            starter_mlb_id = game.home_starter_mlb_id if is_home else game.away_starter_mlb_id
+            starter_name = game.home_starter if is_home else game.away_starter
+            if starter_mlb_id is not None:
+                if player.mlb_id != starter_mlb_id:
+                    continue
+            elif starter_name is not None:
                 card_name = card.player_name.lower().strip()
-                prob_name = probable.lower().strip()
+                prob_name = starter_name.lower().strip()
                 if card_name not in prob_name and prob_name not in card_name:
                     continue
 
@@ -253,7 +257,9 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             home_moneyline=g.home_moneyline,
             away_moneyline=g.away_moneyline,
             home_starter=g.home_starter,
+            home_starter_mlb_id=g.home_starter_mlb_id,
             away_starter=g.away_starter,
+            away_starter_mlb_id=g.away_starter_mlb_id,
             home_starter_era=g.home_starter_era,
             away_starter_era=g.away_starter_era,
             home_starter_k_per_9=g.home_starter_k_per_9,
