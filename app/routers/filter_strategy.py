@@ -255,20 +255,13 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
         return [], []
 
     # Filter out games that have already started (Live) or finished (Final).
-    # On mid-slate redeploy, only include games that haven't started yet
-    # so the optimizer picks from draftable players only.
+    # Games with NULL game_status are treated as not-yet-started (safe default).
+    # None is not in STARTED_STATUSES, so null-status games pass through.
     STARTED_STATUSES = {"Live", "Final"}
     remaining_games = [
         g for g in slate.games
         if g.game_status not in STARTED_STATUSES
     ]
-    # If ALL games are filtered out (e.g. game_status wasn't populated),
-    # fall back to games without final scores to avoid returning nothing.
-    if not remaining_games:
-        remaining_games = [
-            g for g in slate.games
-            if g.home_score is None or g.away_score is None
-        ]
     remaining_game_ids = {g.id for g in remaining_games}
 
     games: list[GameEnvironment] = [
@@ -437,6 +430,12 @@ async def build_and_cache_lineups(db: Session) -> FilterOptimizeResponse | None:
         slate_class.slate_type.value,
     )
     return response
+
+
+@router.get("/status")
+def optimize_status():
+    """Returns whether the lineup cache is warm (startup pipeline complete)."""
+    return {"ready": lineup_cache.is_warm}
 
 
 @router.post("/optimize", response_model=FilterOptimizeResponse)
