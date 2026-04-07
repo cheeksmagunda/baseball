@@ -87,12 +87,28 @@ HITTER_DAY_MIN_HIGH_TOTAL = 5    # 5+ games with O/U >= 9.0 → hitter day
 HITTER_DAY_VEGAS_TOTAL_THRESHOLD = 9.0
 
 # Composition targets by slate type (pitcher count out of 5)
+# Used as soft guidance only when the boosted card pool is thin.
+# When enough quality boosted cards are available, pure EV drives composition.
 SLATE_COMPOSITION = {
     "tiny": {"min_pitchers": 1, "max_pitchers": 2},
     "pitcher_day": {"min_pitchers": 4, "max_pitchers": 5},
     "hitter_day": {"min_pitchers": 0, "max_pitchers": 1},
     "standard": {"min_pitchers": 2, "max_pitchers": 3},
 }
+
+# ---------------------------------------------------------------------------
+# Dynamic composition: boost-aware lineup building
+# Historical data shows winning composition is driven by boost availability,
+# not fixed position counts. From 4/2 onward, zero unboosted pitchers
+# appeared in rank-1 lineups when quality boosted alternatives existed.
+# ---------------------------------------------------------------------------
+# A card is "quality boosted" if it has meaningful boost AND env support.
+# boost >= 1.0 with env_score >= ENV_PASS_THRESHOLD.
+BOOST_QUALITY_THRESHOLD = 1.0
+
+# When this many quality boosted cards are available, let pure EV drive
+# composition with no positional constraints.
+BOOSTED_POOL_FULL_THRESHOLD = 5
 
 # Boost-environment gating (Filter 4 — §4.2 Filter 4)
 # A boost without environmental support is a trap (§3.5 "Boost Trap")
