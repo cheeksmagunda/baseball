@@ -80,6 +80,7 @@ from app.core.constants import (
     SLOT1_DIFFERENTIATOR_EV_THRESHOLD,
     BOOST_QUALITY_THRESHOLD,
     BOOSTED_POOL_FULL_THRESHOLD,
+    UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
 )
 from app.core.utils import BASE_MULTIPLIER, compute_total_value, get_trait_score
 from app.services.popularity import PopularityClass
@@ -930,6 +931,46 @@ def _smart_slot_assignment(
 
 
 # ---------------------------------------------------------------------------
+# Rich-pool pitcher correction (V2 §4.3 dynamic composition rule)
+# ---------------------------------------------------------------------------
+
+def _apply_rich_pool_pitcher_correction(candidates: list[FilteredCandidate]) -> None:
+    """
+    When the boosted pool is full, penalize unboosted pitchers.
+
+    Historical data (4/2 onward): every pitcher in a rank-1 lineup had
+    card_boost > 0 whenever 5+ quality boosted alternatives existed.
+    Unboosted pitchers are only the right play on thin-boosted slates.
+
+    "Quality boosted" = boost >= 1.0 AND total_score >= MIN_SCORE_THRESHOLD
+    AND env_score >= ENV_PASS_THRESHOLD.
+
+    Mutates candidates in-place (adjusts filter_ev).
+    """
+    quality_boosted_count = sum(
+        1 for c in candidates
+        if c.card_boost >= BOOST_QUALITY_THRESHOLD
+        and c.total_score >= MIN_SCORE_THRESHOLD
+        and c.env_score >= ENV_PASS_THRESHOLD
+    )
+    if quality_boosted_count < BOOSTED_POOL_FULL_THRESHOLD:
+        return
+
+    penalized = []
+    for c in candidates:
+        if c.is_pitcher and c.card_boost < BOOST_QUALITY_THRESHOLD:
+            c.filter_ev *= UNBOOSTED_PITCHER_RICH_POOL_PENALTY
+            penalized.append(c.player_name)
+
+    if penalized:
+        logger.info(
+            "Rich boosted pool (%d quality cards): unboosted pitcher penalty applied to %s",
+            quality_boosted_count,
+            ", ".join(penalized),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Main filter pipeline
 # ---------------------------------------------------------------------------
 
@@ -960,6 +1001,10 @@ def run_filter_strategy(
     # Step 1: Compute filter-adjusted EV
     for c in candidates:
         c.filter_ev = _compute_filter_ev(c)
+
+    # Step 1b: Rich-pool correction — penalize unboosted pitchers when
+    # 5+ quality boosted alternatives exist (V2 §4.3, 4/2-onward pattern)
+    _apply_rich_pool_pitcher_correction(candidates)
 
     # Step 2: Enforce composition (pitcher/hitter counts)
     lineup = _enforce_composition(candidates, slate_classification)
@@ -1110,6 +1155,9 @@ def run_dual_filter_strategy(
         # Game diversification: soft penalty for same-team overlap with Starting 5
         if c.team in s5_teams:
             c.filter_ev *= MOONSHOT_SAME_TEAM_PENALTY
+
+    # Rich-pool correction for Moonshot pool as well
+    _apply_rich_pool_pitcher_correction(moonshot_pool)
 
     # Enforce composition and build moonshot lineup
     moonshot_lineup = _enforce_composition(moonshot_pool, slate_classification)
