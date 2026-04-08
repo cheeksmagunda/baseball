@@ -43,7 +43,7 @@ export function TabBar({ activeTab, onTabChange }: TabBarProps) {
   }, [measurePill]);
 
   return (
-    <div className="sticky top-[56px] z-40 pb-2">
+    <div className="pb-2">
       <div className="mx-auto max-w-md px-4">
         <div
           ref={wrapRef}

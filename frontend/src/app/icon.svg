@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Radial burst behind the ball -->
+    <radialGradient id="burst" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff6b35" stop-opacity="0.9"/>
+      <stop offset="40%" stop-color="#ff4500" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#0a0b0f" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Ball gradient -->
+    <radialGradient id="ball" cx="40%" cy="35%" r="55%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="60%" stop-color="#e8e8e8"/>
+      <stop offset="100%" stop-color="#c0c0c0"/>
+    </radialGradient>
+    <!-- Fire glow -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="bigGlow">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Dark background -->
+  <rect width="512" height="512" rx="96" fill="#0a0b0f"/>
+
+  <!-- Explosion burst -->
+  <circle cx="256" cy="220" r="180" fill="url(#burst)" filter="url(#bigGlow)"/>
+
+  <!-- Speed lines trailing behind the ball (going down-left = ball launched up-right) -->
+  <g stroke="#ff6b35" stroke-linecap="round" opacity="0.7" filter="url(#glow)">
+    <line x1="80" y1="420" x2="180" y2="310" stroke-width="6"/>
+    <line x1="60" y1="380" x2="170" y2="290" stroke-width="4"/>
+    <line x1="100" y1="440" x2="195" y2="325" stroke-width="5"/>
+    <line x1="130" y1="450" x2="210" y2="340" stroke-width="3"/>
+    <line x1="50" y1="350" x2="155" y2="270" stroke-width="3"/>
+  </g>
+
+  <!-- Arc trail -->
+  <path d="M 100 430 Q 160 200 256 180" fill="none" stroke="#ff6b35" stroke-width="4" stroke-dasharray="12 8" opacity="0.5" filter="url(#glow)"/>
+
+  <!-- Small spark particles -->
+  <g fill="#ffaa00" filter="url(#glow)">
+    <circle cx="190" cy="280" r="4" opacity="0.8"/>
+    <circle cx="160" cy="320" r="3" opacity="0.6"/>
+    <circle cx="210" cy="250" r="3.5" opacity="0.7"/>
+    <circle cx="175" cy="345" r="2.5" opacity="0.5"/>
+    <circle cx="230" cy="270" r="2" opacity="0.6"/>
+    <circle cx="300" cy="200" r="3" opacity="0.4"/>
+    <circle cx="320" cy="240" r="2" opacity="0.3"/>
+  </g>
+
+  <!-- The baseball -->
+  <circle cx="256" cy="190" r="72" fill="url(#ball)" filter="url(#glow)"/>
+
+  <!-- Baseball seam stitching (red curved lines) -->
+  <g fill="none" stroke="#cc0000" stroke-width="3.5" stroke-linecap="round">
+    <!-- Left seam curve -->
+    <path d="M 218 148 Q 200 175 210 200 Q 220 230 212 250"/>
+    <!-- Right seam curve -->
+    <path d="M 294 130 Q 312 160 302 190 Q 290 220 300 248"/>
+    <!-- Stitch marks on left seam -->
+    <g stroke-width="2.5">
+      <line x1="213" y1="152" x2="223" y2="148"/>
+      <line x1="206" y1="165" x2="216" y2="160"/>
+      <line x1="204" y1="178" x2="214" y2="174"/>
+      <line x1="205" y1="192" x2="215" y2="190"/>
+      <line x1="210" y1="206" x2="220" y2="205"/>
+      <line x1="216" y1="220" x2="226" y2="220"/>
+      <line x1="215" y1="234" x2="225" y2="236"/>
+      <line x1="212" y1="246" x2="222" y2="250"/>
+    </g>
+    <!-- Stitch marks on right seam -->
+    <g stroke-width="2.5">
+      <line x1="296" y1="135" x2="286" y2="134"/>
+      <line x1="303" y1="148" x2="293" y2="146"/>
+      <line x1="307" y1="162" x2="297" y2="160"/>
+      <line x1="308" y1="176" x2="298" y2="176"/>
+      <line x1="305" y1="190" x2="295" y2="192"/>
+      <line x1="298" y1="205" x2="288" y2="208"/>
+      <line x1="294" y1="220" x2="284" y2="224"/>
+      <line x1="296" y1="234" x2="286" y2="238"/>
+    </g>
+  </g>
+
+  <!-- "BEN ORACLE" text at bottom -->
+  <text x="256" y="400" text-anchor="middle" font-family="sans-serif" font-weight="900" font-size="52" fill="#ffffff" letter-spacing="4">BEN ORACLE</text>
+  <text x="256" y="435" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="20" fill="#a0a0a0" letter-spacing="6">ABSOLUTE BOMB</text>
+</svg>

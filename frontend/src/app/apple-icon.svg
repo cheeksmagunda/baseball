@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+  <defs>
+    <radialGradient id="burst" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#ff6b35" stop-opacity="0.8"/>
+      <stop offset="50%" stop-color="#ff4500" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#0a0b0f" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ball" cx="40%" cy="35%" r="55%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="60%" stop-color="#e8e8e8"/>
+      <stop offset="100%" stop-color="#c0c0c0"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="180" height="180" rx="36" fill="#0a0b0f"/>
+
+  <!-- Burst -->
+  <circle cx="90" cy="72" r="65" fill="url(#burst)"/>
+
+  <!-- Speed lines -->
+  <g stroke="#ff6b35" stroke-linecap="round" opacity="0.6" filter="url(#glow)">
+    <line x1="28" y1="148" x2="60" y2="108" stroke-width="2.5"/>
+    <line x1="22" y1="132" x2="58" y2="100" stroke-width="1.8"/>
+    <line x1="38" y1="155" x2="68" y2="114" stroke-width="2"/>
+    <line x1="18" y1="120" x2="52" y2="92" stroke-width="1.5"/>
+  </g>
+
+  <!-- Arc trail -->
+  <path d="M 35 150 Q 55 70 90 62" fill="none" stroke="#ff6b35" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.45"/>
+
+  <!-- Sparks -->
+  <g fill="#ffaa00" filter="url(#glow)">
+    <circle cx="65" cy="96" r="1.5" opacity="0.7"/>
+    <circle cx="55" cy="112" r="1.2" opacity="0.5"/>
+    <circle cx="72" cy="86" r="1.3" opacity="0.6"/>
+    <circle cx="110" cy="72" r="1" opacity="0.4"/>
+  </g>
+
+  <!-- Baseball -->
+  <circle cx="90" cy="65" r="28" fill="url(#ball)" filter="url(#glow)"/>
+
+  <!-- Seams -->
+  <g fill="none" stroke="#cc0000" stroke-width="1.5" stroke-linecap="round">
+    <path d="M 75 49 Q 70 60 73 72 Q 76 82 74 90"/>
+    <path d="M 105 43 Q 110 55 107 67 Q 103 78 106 88"/>
+    <g stroke-width="1">
+      <line x1="74" y1="52" x2="78" y2="50"/>
+      <line x1="71" y1="60" x2="75" y2="58"/>
+      <line x1="71" y1="68" x2="75" y2="67"/>
+      <line x1="72" y1="76" x2="76" y2="76"/>
+      <line x1="74" y1="84" x2="78" y2="85"/>
+      <line x1="106" y1="47" x2="102" y2="46"/>
+      <line x1="109" y1="55" x2="105" y2="54"/>
+      <line x1="109" y1="63" x2="105" y2="63"/>
+      <line x1="107" y1="72" x2="103" y2="73"/>
+      <line x1="105" y1="80" x2="101" y2="82"/>
+    </g>
+  </g>
+
+  <!-- Text -->
+  <text x="90" y="130" text-anchor="middle" font-family="sans-serif" font-weight="900" font-size="18" fill="#ffffff" letter-spacing="2">BEN ORACLE</text>
+  <text x="90" y="148" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="8" fill="#a0a0a0" letter-spacing="3">ABSOLUTE BOMB</text>
+</svg>
