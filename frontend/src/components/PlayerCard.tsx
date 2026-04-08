@@ -5,7 +5,7 @@ import type { FilterSlotOut } from "@/lib/types";
 import { useTeamColors } from "@/hooks/useTeamColors";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { SlotBadge } from "./SlotBadge";
-import { BoostIndicator } from "./BoostIndicator";
+
 import { PopularityBadge } from "./PopularityBadge";
 import { EnvFactorChip } from "./EnvFactorChip";
 import { NumberTicker } from "./NumberTicker";
@@ -44,10 +44,9 @@ export function PlayerCard({ slot, index, isMoonshot = false }: PlayerCardProps)
       />
 
       <div className="relative p-4 pl-5">
-        {/* Top row: slot badge + boost */}
-        <div className="flex items-center justify-between">
+        {/* Top row: slot badge */}
+        <div className="flex items-center">
           <SlotBadge slotIndex={slot.slot_index} slotMult={slot.slot_mult} />
-          <BoostIndicator boost={slot.card_boost} />
         </div>
 
         {/* Player info */}
