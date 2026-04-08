@@ -22,16 +22,106 @@
     "date": "2026-03-26",
     "game_count": 15,
     "games": [
-      {"home": "TEX", "away": "PHI", "home_score": 3, "away_score": 5, "winner": "PHI", "loser": "TEX", "winner_score": 5, "loser_score": 3},
-      {"home": "DET", "away": "SD", "home_score": 8, "away_score": 2, "winner": "DET", "loser": "SD", "winner_score": 8, "loser_score": 2},
-      {"home": "BAL", "away": "MIN", "home_score": 2, "away_score": 1, "winner": "BAL", "loser": "MIN", "winner_score": 2, "loser_score": 1},
-      {"home": "BOS", "away": "CIN", "home_score": 3, "away_score": 0, "winner": "BOS", "loser": "CIN", "winner_score": 3, "loser_score": 0},
-      {"home": "LAA", "away": "HOU", "home_score": 3, "away_score": 0, "winner": "LAA", "loser": "HOU", "winner_score": 3, "loser_score": 0},
-      {"home": "LAD", "away": "ARI", "home_score": 8, "away_score": 2, "winner": "LAD", "loser": "ARI", "winner_score": 8, "loser_score": 2},
-      {"home": "CLE", "away": "SEA", "home_score": 6, "away_score": 4, "winner": "CLE", "loser": "SEA", "winner_score": 6, "loser_score": 4},
-      {"home": "PIT", "away": "NYM", "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null},
-      {"home": "STL", "away": "TB", "home_score": 9, "away_score": 7, "winner": "STL", "loser": "TB", "winner_score": 9, "loser_score": 7},
-      {"home": "MIL", "away": "CWS", "home_score": 14, "away_score": 2, "winner": "MIL", "loser": "CWS", "winner_score": 14, "loser_score": 2}
+      {
+        "home": "TEX",
+        "away": "PHI",
+        "home_score": 3,
+        "away_score": 5,
+        "winner": "PHI",
+        "loser": "TEX",
+        "winner_score": 5,
+        "loser_score": 3
+      },
+      {
+        "home": "DET",
+        "away": "SD",
+        "home_score": 8,
+        "away_score": 2,
+        "winner": "DET",
+        "loser": "SD",
+        "winner_score": 8,
+        "loser_score": 2
+      },
+      {
+        "home": "BAL",
+        "away": "MIN",
+        "home_score": 2,
+        "away_score": 1,
+        "winner": "BAL",
+        "loser": "MIN",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "BOS",
+        "away": "CIN",
+        "home_score": 3,
+        "away_score": 0,
+        "winner": "BOS",
+        "loser": "CIN",
+        "winner_score": 3,
+        "loser_score": 0
+      },
+      {
+        "home": "LAA",
+        "away": "HOU",
+        "home_score": 3,
+        "away_score": 0,
+        "winner": "LAA",
+        "loser": "HOU",
+        "winner_score": 3,
+        "loser_score": 0
+      },
+      {
+        "home": "LAD",
+        "away": "ARI",
+        "home_score": 8,
+        "away_score": 2,
+        "winner": "LAD",
+        "loser": "ARI",
+        "winner_score": 8,
+        "loser_score": 2
+      },
+      {
+        "home": "CLE",
+        "away": "SEA",
+        "home_score": 6,
+        "away_score": 4,
+        "winner": "CLE",
+        "loser": "SEA",
+        "winner_score": 6,
+        "loser_score": 4
+      },
+      {
+        "home": "PIT",
+        "away": "NYM",
+        "home_score": null,
+        "away_score": null,
+        "winner": null,
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null
+      },
+      {
+        "home": "STL",
+        "away": "TB",
+        "home_score": 9,
+        "away_score": 7,
+        "winner": "STL",
+        "loser": "TB",
+        "winner_score": 9,
+        "loser_score": 7
+      },
+      {
+        "home": "MIL",
+        "away": "CWS",
+        "home_score": 14,
+        "away_score": 2,
+        "winner": "MIL",
+        "loser": "CWS",
+        "winner_score": 14,
+        "loser_score": 2
+      }
     ],
     "notes": "Large Opening Day slate (~15 games). 10 of 15 games captured from box score data. Teams represented in results: BOS, DET, LAA, PHI, MIN, BAL, HOU, MIL, CLE, LAD, PIT, STL, CIN, SEA, TEX. Jacob Misiorowski (MIL) 11K franchise record. Chase DeLauter (CLE) 2 HR in MLB debut.",
     "season_stage": "regular-season",
@@ -42,14 +132,86 @@
     "date": "2026-03-27",
     "game_count": 8,
     "games": [
-      {"home": "TOR", "away": "OAK", "home_score": 3, "away_score": 2, "winner": "TOR", "loser": "OAK", "winner_score": 3, "loser_score": 2},
-      {"home": "NYY", "away": "SF", "home_score": 3, "away_score": 0, "winner": "NYY", "loser": "SF", "winner_score": 3, "loser_score": 0},
-      {"home": "MIA", "away": "COL", "home_score": 2, "away_score": 1, "winner": "MIA", "loser": "COL", "winner_score": 2, "loser_score": 1},
-      {"home": "ATL", "away": "KC", "home_score": 6, "away_score": 0, "winner": "ATL", "loser": "KC", "winner_score": 6, "loser_score": 0},
-      {"home": "SEA", "away": "CLE", "home_score": 5, "away_score": 1, "winner": "SEA", "loser": "CLE", "winner_score": 5, "loser_score": 1},
-      {"home": "LAD", "away": "ARI", "home_score": 5, "away_score": 4, "winner": "LAD", "loser": "ARI", "winner_score": 5, "loser_score": 4},
-      {"home": "DET", "away": "SD", "home_score": 5, "away_score": 2, "winner": "DET", "loser": "SD", "winner_score": 5, "loser_score": 2},
-      {"home": "LAA", "away": "HOU", "home_score": 6, "away_score": 2, "winner": "LAA", "loser": "HOU", "winner_score": 6, "loser_score": 2}
+      {
+        "home": "TOR",
+        "away": "OAK",
+        "home_score": 3,
+        "away_score": 2,
+        "winner": "TOR",
+        "loser": "OAK",
+        "winner_score": 3,
+        "loser_score": 2
+      },
+      {
+        "home": "NYY",
+        "away": "SF",
+        "home_score": 3,
+        "away_score": 0,
+        "winner": "NYY",
+        "loser": "SF",
+        "winner_score": 3,
+        "loser_score": 0
+      },
+      {
+        "home": "MIA",
+        "away": "COL",
+        "home_score": 2,
+        "away_score": 1,
+        "winner": "MIA",
+        "loser": "COL",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "ATL",
+        "away": "KC",
+        "home_score": 6,
+        "away_score": 0,
+        "winner": "ATL",
+        "loser": "KC",
+        "winner_score": 6,
+        "loser_score": 0
+      },
+      {
+        "home": "SEA",
+        "away": "CLE",
+        "home_score": 5,
+        "away_score": 1,
+        "winner": "SEA",
+        "loser": "CLE",
+        "winner_score": 5,
+        "loser_score": 1
+      },
+      {
+        "home": "LAD",
+        "away": "ARI",
+        "home_score": 5,
+        "away_score": 4,
+        "winner": "LAD",
+        "loser": "ARI",
+        "winner_score": 5,
+        "loser_score": 4
+      },
+      {
+        "home": "DET",
+        "away": "SD",
+        "home_score": 5,
+        "away_score": 2,
+        "winner": "DET",
+        "loser": "SD",
+        "winner_score": 5,
+        "loser_score": 2
+      },
+      {
+        "home": "LAA",
+        "away": "HOU",
+        "home_score": 6,
+        "away_score": 2,
+        "winner": "LAA",
+        "loser": "HOU",
+        "winner_score": 6,
+        "loser_score": 2
+      }
     ],
     "notes": "Friday slate. Cam Schlittler (NYY) MLB debut 5.1 IP 1H 0ER 8K. Sandy Alcantara (MIA) 6th opening day start. Mookie Betts 3-run HR. Shea Langeliers 2 HR off different pitchers.",
     "season_stage": "regular-season",
@@ -60,15 +222,100 @@
     "date": "2026-03-28",
     "game_count": 9,
     "games": [
-      {"home": "TOR", "away": "OAK", "home_score": 8, "away_score": 7, "winner": "TOR", "loser": "OAK", "winner_score": 8, "loser_score": 7, "extras": 11},
-      {"home": "PIT", "away": "NYM", "home_score": 2, "away_score": 4, "winner": "NYM", "loser": "PIT", "winner_score": 4, "loser_score": 2, "extras": 11},
-      {"home": "STL", "away": "TB", "home_score": 6, "away_score": 5, "winner": "STL", "loser": "TB", "winner_score": 6, "loser_score": 5, "extras": 10},
-      {"home": "MIA", "away": "COL", "home_score": 4, "away_score": 3, "winner": "MIA", "loser": "COL", "winner_score": 4, "loser_score": 3},
-      {"home": "LAD", "away": "ARI", "home_score": 3, "away_score": 2, "winner": "LAD", "loser": "ARI", "winner_score": 3, "loser_score": 2},
-      {"home": "MIL", "away": "CWS", "home_score": 6, "away_score": 1, "winner": "MIL", "loser": "CWS", "winner_score": 6, "loser_score": 1},
-      {"home": "HOU", "away": "LAA", "home_score": 11, "away_score": 9, "winner": "HOU", "loser": "LAA", "winner_score": 11, "loser_score": 9},
-      {"home": "CIN", "away": "BOS", "home_score": 6, "away_score": 5, "winner": "CIN", "loser": "BOS", "winner_score": 6, "loser_score": 5, "extras": 11},
-      {"home": "BAL", "away": "MIN", "home_score": 1, "away_score": 4, "winner": "MIN", "loser": "BAL", "winner_score": 4, "loser_score": 1}
+      {
+        "home": "TOR",
+        "away": "OAK",
+        "home_score": 8,
+        "away_score": 7,
+        "winner": "TOR",
+        "loser": "OAK",
+        "winner_score": 8,
+        "loser_score": 7,
+        "extras": 11
+      },
+      {
+        "home": "PIT",
+        "away": "NYM",
+        "home_score": 2,
+        "away_score": 4,
+        "winner": "NYM",
+        "loser": "PIT",
+        "winner_score": 4,
+        "loser_score": 2,
+        "extras": 11
+      },
+      {
+        "home": "STL",
+        "away": "TB",
+        "home_score": 6,
+        "away_score": 5,
+        "winner": "STL",
+        "loser": "TB",
+        "winner_score": 6,
+        "loser_score": 5,
+        "extras": 10
+      },
+      {
+        "home": "MIA",
+        "away": "COL",
+        "home_score": 4,
+        "away_score": 3,
+        "winner": "MIA",
+        "loser": "COL",
+        "winner_score": 4,
+        "loser_score": 3
+      },
+      {
+        "home": "LAD",
+        "away": "ARI",
+        "home_score": 3,
+        "away_score": 2,
+        "winner": "LAD",
+        "loser": "ARI",
+        "winner_score": 3,
+        "loser_score": 2
+      },
+      {
+        "home": "MIL",
+        "away": "CWS",
+        "home_score": 6,
+        "away_score": 1,
+        "winner": "MIL",
+        "loser": "CWS",
+        "winner_score": 6,
+        "loser_score": 1
+      },
+      {
+        "home": "HOU",
+        "away": "LAA",
+        "home_score": 11,
+        "away_score": 9,
+        "winner": "HOU",
+        "loser": "LAA",
+        "winner_score": 11,
+        "loser_score": 9
+      },
+      {
+        "home": "CIN",
+        "away": "BOS",
+        "home_score": 6,
+        "away_score": 5,
+        "winner": "CIN",
+        "loser": "BOS",
+        "winner_score": 6,
+        "loser_score": 5,
+        "extras": 11
+      },
+      {
+        "home": "BAL",
+        "away": "MIN",
+        "home_score": 1,
+        "away_score": 4,
+        "winner": "MIN",
+        "loser": "BAL",
+        "winner_score": 4,
+        "loser_score": 1
+      }
     ],
     "notes": "Saturday slate with 4 extra-inning games. Shea Langeliers grand slam 420ft (3rd HR in 2 games). Luis Robert Jr. walk-off 3-run HR in 11th. JJ Wetherholt walk-off 2-run single in 10th. Royce Lewis 2-run HR + SB.",
     "season_stage": "regular-season",
@@ -79,15 +326,96 @@
     "date": "2026-03-29",
     "game_count": 11,
     "games": [
-      {"home": "STL", "away": "TB", "home_score": 7, "away_score": 11, "winner": "TB", "loser": "STL", "winner_score": 11, "loser_score": 7},
-      {"home": "MIL", "away": "CWS", "home_score": 9, "away_score": 7, "winner": "MIL", "loser": "CWS", "winner_score": 9, "loser_score": 7},
-      {"home": "BOS", "away": "CIN", "home_score": 2, "away_score": 3, "winner": "CIN", "loser": "BOS", "winner_score": 3, "loser_score": 2},
-      {"home": "SEA", "away": "CLE", "home_score": 8, "away_score": 0, "winner": "SEA", "loser": "CLE", "winner_score": 8, "loser_score": 0},
-      {"home": "MIA", "away": "COL", "home_score": 4, "away_score": 3, "winner": "MIA", "loser": "COL", "winner_score": 4, "loser_score": 3},
-      {"home": "PHI", "away": "TEX", "home_score": 3, "away_score": 8, "winner": "TEX", "loser": "PHI", "winner_score": 8, "loser_score": 3},
-      {"home": "WSH", "away": "CHC", "home_score": 6, "away_score": 3, "winner": "WSH", "loser": "CHC", "winner_score": 6, "loser_score": 3},
-      {"home": "BAL", "away": "MIN", "home_score": 8, "away_score": 6, "winner": "BAL", "loser": "MIN", "winner_score": 8, "loser_score": 6},
-      {"home": "HOU", "away": "LAA", "home_score": 9, "away_score": 7, "winner": "HOU", "loser": "LAA", "winner_score": 9, "loser_score": 7}
+      {
+        "home": "STL",
+        "away": "TB",
+        "home_score": 7,
+        "away_score": 11,
+        "winner": "TB",
+        "loser": "STL",
+        "winner_score": 11,
+        "loser_score": 7
+      },
+      {
+        "home": "MIL",
+        "away": "CWS",
+        "home_score": 9,
+        "away_score": 7,
+        "winner": "MIL",
+        "loser": "CWS",
+        "winner_score": 9,
+        "loser_score": 7
+      },
+      {
+        "home": "BOS",
+        "away": "CIN",
+        "home_score": 2,
+        "away_score": 3,
+        "winner": "CIN",
+        "loser": "BOS",
+        "winner_score": 3,
+        "loser_score": 2
+      },
+      {
+        "home": "SEA",
+        "away": "CLE",
+        "home_score": 8,
+        "away_score": 0,
+        "winner": "SEA",
+        "loser": "CLE",
+        "winner_score": 8,
+        "loser_score": 0
+      },
+      {
+        "home": "MIA",
+        "away": "COL",
+        "home_score": 4,
+        "away_score": 3,
+        "winner": "MIA",
+        "loser": "COL",
+        "winner_score": 4,
+        "loser_score": 3
+      },
+      {
+        "home": "PHI",
+        "away": "TEX",
+        "home_score": 3,
+        "away_score": 8,
+        "winner": "TEX",
+        "loser": "PHI",
+        "winner_score": 8,
+        "loser_score": 3
+      },
+      {
+        "home": "WSH",
+        "away": "CHC",
+        "home_score": 6,
+        "away_score": 3,
+        "winner": "WSH",
+        "loser": "CHC",
+        "winner_score": 6,
+        "loser_score": 3
+      },
+      {
+        "home": "BAL",
+        "away": "MIN",
+        "home_score": 8,
+        "away_score": 6,
+        "winner": "BAL",
+        "loser": "MIN",
+        "winner_score": 8,
+        "loser_score": 6
+      },
+      {
+        "home": "HOU",
+        "away": "LAA",
+        "home_score": 9,
+        "away_score": 7,
+        "winner": "HOU",
+        "loser": "LAA",
+        "winner_score": 9,
+        "loser_score": 7
+      }
     ],
     "notes": "Sunday slate. Yandy Diaz 5-for-6 career-high. Colson Montgomery grand slam in CWS loss. Christian Yelich pinch-hit 3-run HR (first career PH HR). Owen Caissie pinch-hit walk-off 2-run HR. Alex Bregman 2 solo HRs as a Cub.",
     "season_stage": "regular-season",
@@ -98,16 +426,106 @@
     "date": "2026-03-30",
     "game_count": 10,
     "games": [
-      {"home": "MIA", "away": "CWS", "home_score": 4, "away_score": 9, "winner": "CWS", "loser": "MIA", "winner_score": 9, "loser_score": 4},
-      {"home": "DET", "away": "ARI", "home_score": 6, "away_score": 9, "winner": "ARI", "loser": "DET", "winner_score": 9, "loser_score": 6},
-      {"home": "BOS", "away": "HOU", "home_score": 1, "away_score": 8, "winner": "HOU", "loser": "BOS", "winner_score": 8, "loser_score": 1},
-      {"home": "MIN", "away": "KC", "home_score": 1, "away_score": 3, "winner": "KC", "loser": "MIN", "winner_score": 3, "loser_score": 1},
-      {"home": "TOR", "away": "COL", "home_score": 5, "away_score": 14, "winner": "COL", "loser": "TOR", "winner_score": 14, "loser_score": 5},
-      {"home": "MIL", "away": "TB", "home_score": 2, "away_score": 3, "winner": "TB", "loser": "MIL", "winner_score": 3, "loser_score": 2},
-      {"home": "LAD", "away": "CLE", "home_score": 2, "away_score": 4, "winner": "CLE", "loser": "LAD", "winner_score": 4, "loser_score": 2},
-      {"home": "OAK", "away": "ATL", "home_score": 0, "away_score": 4, "winner": "ATL", "loser": "OAK", "winner_score": 4, "loser_score": 0},
-      {"home": "BAL", "away": "TEX", "home_score": 2, "away_score": 5, "winner": "TEX", "loser": "BAL", "winner_score": 5, "loser_score": 2},
-      {"home": "SD", "away": "SF", "home_score": 2, "away_score": 3, "winner": "SF", "loser": "SD", "winner_score": 3, "loser_score": 2}
+      {
+        "home": "MIA",
+        "away": "CWS",
+        "home_score": 4,
+        "away_score": 9,
+        "winner": "CWS",
+        "loser": "MIA",
+        "winner_score": 9,
+        "loser_score": 4
+      },
+      {
+        "home": "DET",
+        "away": "ARI",
+        "home_score": 6,
+        "away_score": 9,
+        "winner": "ARI",
+        "loser": "DET",
+        "winner_score": 9,
+        "loser_score": 6
+      },
+      {
+        "home": "BOS",
+        "away": "HOU",
+        "home_score": 1,
+        "away_score": 8,
+        "winner": "HOU",
+        "loser": "BOS",
+        "winner_score": 8,
+        "loser_score": 1
+      },
+      {
+        "home": "MIN",
+        "away": "KC",
+        "home_score": 1,
+        "away_score": 3,
+        "winner": "KC",
+        "loser": "MIN",
+        "winner_score": 3,
+        "loser_score": 1
+      },
+      {
+        "home": "TOR",
+        "away": "COL",
+        "home_score": 5,
+        "away_score": 14,
+        "winner": "COL",
+        "loser": "TOR",
+        "winner_score": 14,
+        "loser_score": 5
+      },
+      {
+        "home": "MIL",
+        "away": "TB",
+        "home_score": 2,
+        "away_score": 3,
+        "winner": "TB",
+        "loser": "MIL",
+        "winner_score": 3,
+        "loser_score": 2
+      },
+      {
+        "home": "LAD",
+        "away": "CLE",
+        "home_score": 2,
+        "away_score": 4,
+        "winner": "CLE",
+        "loser": "LAD",
+        "winner_score": 4,
+        "loser_score": 2
+      },
+      {
+        "home": "OAK",
+        "away": "ATL",
+        "home_score": 0,
+        "away_score": 4,
+        "winner": "ATL",
+        "loser": "OAK",
+        "winner_score": 4,
+        "loser_score": 0
+      },
+      {
+        "home": "BAL",
+        "away": "TEX",
+        "home_score": 2,
+        "away_score": 5,
+        "winner": "TEX",
+        "loser": "BAL",
+        "winner_score": 5,
+        "loser_score": 2
+      },
+      {
+        "home": "SD",
+        "away": "SF",
+        "home_score": 2,
+        "away_score": 3,
+        "winner": "SF",
+        "loser": "SD",
+        "winner_score": 3,
+        "loser_score": 2
+      }
     ],
     "notes": "Monday slate. Miguel Vargas 6 RBI (grand slam + sac fly + RBI single). Corbin Carroll 3-run HR + triple. Jose Altuve 4-for-? w/2 HR (15th career multi-HR game). COL 14 TOR 5 blowout.",
     "season_stage": "regular-season",
@@ -118,14 +536,86 @@
     "date": "2026-03-31",
     "game_count": 8,
     "games": [
-      {"home": "CLE", "away": "LAD", "home_score": 1, "away_score": 4, "winner": "LAD", "loser": "CLE", "winner_score": 4, "loser_score": 1},
-      {"home": "CIN", "away": "PIT", "home_score": 3, "away_score": 8, "winner": "PIT", "loser": "CIN", "winner_score": 8, "loser_score": 3},
-      {"home": "SD", "away": "SF", "home_score": 3, "away_score": 9, "winner": "SF", "loser": "SD", "winner_score": 9, "loser_score": 3},
-      {"home": "BAL", "away": "TEX", "home_score": 5, "away_score": 8, "winner": "TEX", "loser": "BAL", "winner_score": 8, "loser_score": 5},
-      {"home": "BOS", "away": "HOU", "home_score": 2, "away_score": 9, "winner": "HOU", "loser": "BOS", "winner_score": 9, "loser_score": 2},
-      {"home": "TB", "away": "MIL", "home_score": 2, "away_score": 6, "winner": "MIL", "loser": "TB", "winner_score": 6, "loser_score": 2},
-      {"home": "SEA", "away": "NYY", "home_score": 0, "away_score": 5, "winner": "NYY", "loser": "SEA", "winner_score": 5, "loser_score": 0},
-      {"home": "ATL", "away": "OAK", "home_score": 2, "away_score": 5, "winner": "OAK", "loser": "ATL", "winner_score": 5, "loser_score": 2}
+      {
+        "home": "CLE",
+        "away": "LAD",
+        "home_score": 1,
+        "away_score": 4,
+        "winner": "LAD",
+        "loser": "CLE",
+        "winner_score": 4,
+        "loser_score": 1
+      },
+      {
+        "home": "CIN",
+        "away": "PIT",
+        "home_score": 3,
+        "away_score": 8,
+        "winner": "PIT",
+        "loser": "CIN",
+        "winner_score": 8,
+        "loser_score": 3
+      },
+      {
+        "home": "SD",
+        "away": "SF",
+        "home_score": 3,
+        "away_score": 9,
+        "winner": "SF",
+        "loser": "SD",
+        "winner_score": 9,
+        "loser_score": 3
+      },
+      {
+        "home": "BAL",
+        "away": "TEX",
+        "home_score": 5,
+        "away_score": 8,
+        "winner": "TEX",
+        "loser": "BAL",
+        "winner_score": 8,
+        "loser_score": 5
+      },
+      {
+        "home": "BOS",
+        "away": "HOU",
+        "home_score": 2,
+        "away_score": 9,
+        "winner": "HOU",
+        "loser": "BOS",
+        "winner_score": 9,
+        "loser_score": 2
+      },
+      {
+        "home": "TB",
+        "away": "MIL",
+        "home_score": 2,
+        "away_score": 6,
+        "winner": "MIL",
+        "loser": "TB",
+        "winner_score": 6,
+        "loser_score": 2
+      },
+      {
+        "home": "SEA",
+        "away": "NYY",
+        "home_score": 0,
+        "away_score": 5,
+        "winner": "NYY",
+        "loser": "SEA",
+        "winner_score": 5,
+        "loser_score": 0
+      },
+      {
+        "home": "ATL",
+        "away": "OAK",
+        "home_score": 2,
+        "away_score": 5,
+        "winner": "OAK",
+        "loser": "ATL",
+        "winner_score": 5,
+        "loser_score": 2
+      }
     ],
     "notes": "Tuesday slate. Shohei Ohtani two-way: 6 IP 1H 0ER 6K pitching + 1-for-3 2BB batting. Oneil Cruz 2 HR (444ft + 403ft). Willy Adames 4-for-5 near cycle. Logan Webb got run support (SF 9 SD 3). First day with widespread card_boost data.",
     "season_stage": "regular-season",
@@ -136,9 +626,36 @@
     "date": "2026-04-02",
     "game_count": 3,
     "games": [
-      {"home": "KC", "away": "MIN", "home_score": 1, "away_score": 5, "winner": "MIN", "loser": "KC", "winner_score": 5, "loser_score": 1},
-      {"home": "ARI", "away": "ATL", "home_score": 2, "away_score": 17, "winner": "ATL", "loser": "ARI", "winner_score": 17, "loser_score": 2},
-      {"home": "SF", "away": "NYM", "home_score": 7, "away_score": 2, "winner": "SF", "loser": "NYM", "winner_score": 7, "loser_score": 2}
+      {
+        "home": "KC",
+        "away": "MIN",
+        "home_score": 1,
+        "away_score": 5,
+        "winner": "MIN",
+        "loser": "KC",
+        "winner_score": 5,
+        "loser_score": 1
+      },
+      {
+        "home": "ARI",
+        "away": "ATL",
+        "home_score": 2,
+        "away_score": 17,
+        "winner": "ATL",
+        "loser": "ARI",
+        "winner_score": 17,
+        "loser_score": 2
+      },
+      {
+        "home": "SF",
+        "away": "NYM",
+        "home_score": 7,
+        "away_score": 2,
+        "winner": "SF",
+        "loser": "NYM",
+        "winner_score": 7,
+        "loser_score": 2
+      }
     ],
     "notes": "Thursday travel day — only 3 games played. CWS vs TOR postponed (rain). Cole Ragans (KCR) 6 IP 8K but took L. Matt Olson (ATL) RS 5.6 highest individual RS (HR + 2 doubles in 17-2 blowout). Taj Bradley (MIN) 7 IP 1ER 9K earned W. Jordan Lawlar first career HR (126 PA). Twins broke game open with 3 HR in 9th (Wallner, Clemens, Bell). Juan Soto (NYM) most popular at 5.6k drafts but RS only 0.4. Willy Adames (SF) RS -0.8 with +3.0x boost drafted 2.6k times — notable bust. Winner (military) used Matt Olson in slot 1 — key differentiator from ranks 2-8 who put Ragans in slot 1. Heavy ATL stack dominated top lineups.",
     "season_stage": "regular-season",
@@ -149,21 +666,156 @@
     "date": "2026-04-03",
     "game_count": 15,
     "games": [
-      {"home": "NYY", "away": "MIA", "home_score": 8, "away_score": 2, "winner": "NYY", "loser": "MIA", "winner_score": 8, "loser_score": 2},
-      {"home": "WSH", "away": "LAD", "home_score": 3, "away_score": 9, "winner": "LAD", "loser": "WSH", "winner_score": 9, "loser_score": 3},
-      {"home": "CWS", "away": "TOR", "home_score": 5, "away_score": 1, "winner": "CWS", "loser": "TOR", "winner_score": 5, "loser_score": 1},
-      {"home": "OAK", "away": "HOU", "home_score": 6, "away_score": 4, "winner": "OAK", "loser": "HOU", "winner_score": 6, "loser_score": 4},
-      {"home": "TEX", "away": "CIN", "home_score": 9, "away_score": 5, "winner": "TEX", "loser": "CIN", "winner_score": 9, "loser_score": 5},
-      {"home": "PIT", "away": "BAL", "home_score": 3, "away_score": 6, "winner": "BAL", "loser": "PIT", "winner_score": 6, "loser_score": 3},
-      {"home": "BOS", "away": "SD", "home_score": 4, "away_score": 1, "winner": "BOS", "loser": "SD", "winner_score": 4, "loser_score": 1},
-      {"home": "MIN", "away": "TB", "home_score": 5, "away_score": 2, "winner": "MIN", "loser": "TB", "winner_score": 5, "loser_score": 2},
-      {"home": "COL", "away": "PHI", "home_score": 2, "away_score": 6, "winner": "PHI", "loser": "COL", "winner_score": 6, "loser_score": 2},
-      {"home": "LAA", "away": "SEA", "home_score": 0, "away_score": 3, "winner": "SEA", "loser": "LAA", "winner_score": 3, "loser_score": 0},
-      {"home": "CHC", "away": "CLE", "home_score": 3, "away_score": 7, "winner": "CLE", "loser": "CHC", "winner_score": 7, "loser_score": 3},
-      {"home": "DET", "away": "STL", "home_score": 4, "away_score": 3, "winner": "DET", "loser": "STL", "winner_score": 4, "loser_score": 3},
-      {"home": "SF", "away": "NYM", "home_score": 5, "away_score": 3, "winner": "SF", "loser": "NYM", "winner_score": 5, "loser_score": 3},
-      {"home": "ARI", "away": "ATL", "home_score": 4, "away_score": 2, "winner": "ARI", "loser": "ATL", "winner_score": 4, "loser_score": 2},
-      {"home": "KC", "away": "MIL", "home_score": 3, "away_score": 5, "winner": "MIL", "loser": "KC", "winner_score": 5, "loser_score": 3}
+      {
+        "home": "NYY",
+        "away": "MIA",
+        "home_score": 8,
+        "away_score": 2,
+        "winner": "NYY",
+        "loser": "MIA",
+        "winner_score": 8,
+        "loser_score": 2
+      },
+      {
+        "home": "WSH",
+        "away": "LAD",
+        "home_score": 3,
+        "away_score": 9,
+        "winner": "LAD",
+        "loser": "WSH",
+        "winner_score": 9,
+        "loser_score": 3
+      },
+      {
+        "home": "CWS",
+        "away": "TOR",
+        "home_score": 5,
+        "away_score": 1,
+        "winner": "CWS",
+        "loser": "TOR",
+        "winner_score": 5,
+        "loser_score": 1
+      },
+      {
+        "home": "OAK",
+        "away": "HOU",
+        "home_score": 6,
+        "away_score": 4,
+        "winner": "OAK",
+        "loser": "HOU",
+        "winner_score": 6,
+        "loser_score": 4
+      },
+      {
+        "home": "TEX",
+        "away": "CIN",
+        "home_score": 9,
+        "away_score": 5,
+        "winner": "TEX",
+        "loser": "CIN",
+        "winner_score": 9,
+        "loser_score": 5
+      },
+      {
+        "home": "PIT",
+        "away": "BAL",
+        "home_score": 3,
+        "away_score": 6,
+        "winner": "BAL",
+        "loser": "PIT",
+        "winner_score": 6,
+        "loser_score": 3
+      },
+      {
+        "home": "BOS",
+        "away": "SD",
+        "home_score": 4,
+        "away_score": 1,
+        "winner": "BOS",
+        "loser": "SD",
+        "winner_score": 4,
+        "loser_score": 1
+      },
+      {
+        "home": "MIN",
+        "away": "TB",
+        "home_score": 5,
+        "away_score": 2,
+        "winner": "MIN",
+        "loser": "TB",
+        "winner_score": 5,
+        "loser_score": 2
+      },
+      {
+        "home": "COL",
+        "away": "PHI",
+        "home_score": 2,
+        "away_score": 6,
+        "winner": "PHI",
+        "loser": "COL",
+        "winner_score": 6,
+        "loser_score": 2
+      },
+      {
+        "home": "LAA",
+        "away": "SEA",
+        "home_score": 0,
+        "away_score": 3,
+        "winner": "SEA",
+        "loser": "LAA",
+        "winner_score": 3,
+        "loser_score": 0
+      },
+      {
+        "home": "CHC",
+        "away": "CLE",
+        "home_score": 3,
+        "away_score": 7,
+        "winner": "CLE",
+        "loser": "CHC",
+        "winner_score": 7,
+        "loser_score": 3
+      },
+      {
+        "home": "DET",
+        "away": "STL",
+        "home_score": 4,
+        "away_score": 3,
+        "winner": "DET",
+        "loser": "STL",
+        "winner_score": 4,
+        "loser_score": 3
+      },
+      {
+        "home": "SF",
+        "away": "NYM",
+        "home_score": 5,
+        "away_score": 3,
+        "winner": "SF",
+        "loser": "NYM",
+        "winner_score": 5,
+        "loser_score": 3
+      },
+      {
+        "home": "ARI",
+        "away": "ATL",
+        "home_score": 4,
+        "away_score": 2,
+        "winner": "ARI",
+        "loser": "ATL",
+        "winner_score": 4,
+        "loser_score": 2
+      },
+      {
+        "home": "KC",
+        "away": "MIL",
+        "home_score": 3,
+        "away_score": 5,
+        "winner": "MIL",
+        "loser": "KC",
+        "winner_score": 5,
+        "loser_score": 3
+      }
     ],
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
@@ -174,21 +826,156 @@
     "date": "2026-04-04",
     "game_count": 15,
     "games": [
-      {"home": "DET", "away": "STL", "home_score": 11, "away_score": 6, "winner": "DET", "loser": "STL", "winner_score": 11, "loser_score": 6},
-      {"home": "CWS", "away": "TOR", "home_score": 6, "away_score": 3, "winner": "CWS", "loser": "TOR", "winner_score": 6, "loser_score": 3},
-      {"home": "KC", "away": "MIL", "home_score": 2, "away_score": 5, "winner": "MIL", "loser": "KC", "winner_score": 5, "loser_score": 2},
-      {"home": "KC", "away": "MIL", "home_score": 8, "away_score": 2, "winner": "KC", "loser": "MIL", "winner_score": 8, "loser_score": 2},
-      {"home": "WSH", "away": "LAD", "home_score": 5, "away_score": 10, "winner": "LAD", "loser": "WSH", "winner_score": 10, "loser_score": 5},
-      {"home": "OAK", "away": "HOU", "home_score": 0, "away_score": 11, "winner": "HOU", "loser": "OAK", "winner_score": 11, "loser_score": 0},
-      {"home": "PIT", "away": "BAL", "home_score": 3, "away_score": 2, "winner": "PIT", "loser": "BAL", "winner_score": 3, "loser_score": 2},
-      {"home": "BOS", "away": "SD", "home_score": 2, "away_score": 3, "winner": "SD", "loser": "BOS", "winner_score": 3, "loser_score": 2},
-      {"home": "TEX", "away": "CIN", "home_score": 0, "away_score": 2, "winner": "CIN", "loser": "TEX", "winner_score": 2, "loser_score": 0},
-      {"home": "NYY", "away": "MIA", "home_score": 9, "away_score": 7, "winner": "NYY", "loser": "MIA", "winner_score": 9, "loser_score": 7},
-      {"home": "MIN", "away": "TB", "home_score": 1, "away_score": 7, "winner": "TB", "loser": "MIN", "winner_score": 7, "loser_score": 1},
-      {"home": "ARI", "away": "ATL", "home_score": 2, "away_score": 1, "winner": "ARI", "loser": "ATL", "winner_score": 2, "loser_score": 1},
-      {"home": "COL", "away": "PHI", "home_score": 1, "away_score": 2, "winner": "PHI", "loser": "COL", "winner_score": 2, "loser_score": 1},
-      {"home": "SF", "away": "NYM", "home_score": 0, "away_score": 9, "winner": "NYM", "loser": "SF", "winner_score": 9, "loser_score": 0},
-      {"home": "LAA", "away": "SEA", "home_score": 1, "away_score": 0, "winner": "LAA", "loser": "SEA", "winner_score": 1, "loser_score": 0}
+      {
+        "home": "DET",
+        "away": "STL",
+        "home_score": 11,
+        "away_score": 6,
+        "winner": "DET",
+        "loser": "STL",
+        "winner_score": 11,
+        "loser_score": 6
+      },
+      {
+        "home": "CWS",
+        "away": "TOR",
+        "home_score": 6,
+        "away_score": 3,
+        "winner": "CWS",
+        "loser": "TOR",
+        "winner_score": 6,
+        "loser_score": 3
+      },
+      {
+        "home": "KC",
+        "away": "MIL",
+        "home_score": 2,
+        "away_score": 5,
+        "winner": "MIL",
+        "loser": "KC",
+        "winner_score": 5,
+        "loser_score": 2
+      },
+      {
+        "home": "KC",
+        "away": "MIL",
+        "home_score": 8,
+        "away_score": 2,
+        "winner": "KC",
+        "loser": "MIL",
+        "winner_score": 8,
+        "loser_score": 2
+      },
+      {
+        "home": "WSH",
+        "away": "LAD",
+        "home_score": 5,
+        "away_score": 10,
+        "winner": "LAD",
+        "loser": "WSH",
+        "winner_score": 10,
+        "loser_score": 5
+      },
+      {
+        "home": "OAK",
+        "away": "HOU",
+        "home_score": 0,
+        "away_score": 11,
+        "winner": "HOU",
+        "loser": "OAK",
+        "winner_score": 11,
+        "loser_score": 0
+      },
+      {
+        "home": "PIT",
+        "away": "BAL",
+        "home_score": 3,
+        "away_score": 2,
+        "winner": "PIT",
+        "loser": "BAL",
+        "winner_score": 3,
+        "loser_score": 2
+      },
+      {
+        "home": "BOS",
+        "away": "SD",
+        "home_score": 2,
+        "away_score": 3,
+        "winner": "SD",
+        "loser": "BOS",
+        "winner_score": 3,
+        "loser_score": 2
+      },
+      {
+        "home": "TEX",
+        "away": "CIN",
+        "home_score": 0,
+        "away_score": 2,
+        "winner": "CIN",
+        "loser": "TEX",
+        "winner_score": 2,
+        "loser_score": 0
+      },
+      {
+        "home": "NYY",
+        "away": "MIA",
+        "home_score": 9,
+        "away_score": 7,
+        "winner": "NYY",
+        "loser": "MIA",
+        "winner_score": 9,
+        "loser_score": 7
+      },
+      {
+        "home": "MIN",
+        "away": "TB",
+        "home_score": 1,
+        "away_score": 7,
+        "winner": "TB",
+        "loser": "MIN",
+        "winner_score": 7,
+        "loser_score": 1
+      },
+      {
+        "home": "ARI",
+        "away": "ATL",
+        "home_score": 2,
+        "away_score": 1,
+        "winner": "ARI",
+        "loser": "ATL",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "COL",
+        "away": "PHI",
+        "home_score": 1,
+        "away_score": 2,
+        "winner": "PHI",
+        "loser": "COL",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "SF",
+        "away": "NYM",
+        "home_score": 0,
+        "away_score": 9,
+        "winner": "NYM",
+        "loser": "SF",
+        "winner_score": 9,
+        "loser_score": 0
+      },
+      {
+        "home": "LAA",
+        "away": "SEA",
+        "home_score": 1,
+        "away_score": 0,
+        "winner": "LAA",
+        "loser": "SEA",
+        "winner_score": 1,
+        "loser_score": 0
+      }
     ],
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
@@ -199,21 +986,171 @@
     "date": "2026-04-05",
     "game_count": 15,
     "games": [
-      {"home": "OAK", "away": null, "home_score": null, "away_score": null, "winner": "OAK", "loser": null, "winner_score": null, "loser_score": null, "notes": "Brent Rooker RS 9.8 monster game; Soderstrom RS 5.5, Kurtz RS 2.3"},
-      {"home": null, "away": "CLE", "home_score": null, "away_score": null, "winner": "CLE", "loser": null, "winner_score": null, "loser_score": null, "notes": "Slade Cecconi RS 6.3 dominant start"},
-      {"home": "DET", "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "Drake Baldwin RS 6.0"},
-      {"home": null, "away": "CWS", "home_score": null, "away_score": null, "winner": "CWS", "loser": null, "winner_score": null, "loser_score": null, "notes": "Davis Martin RS 5.5 quality start"},
-      {"home": "SF", "away": null, "home_score": null, "away_score": null, "winner": "SF", "loser": null, "winner_score": null, "loser_score": null, "notes": "Logan Webb RS 5.2"},
-      {"home": "NYY", "away": null, "home_score": null, "away_score": null, "winner": "NYY", "loser": null, "winner_score": null, "loser_score": null, "notes": "Max Fried RS 4.0 start; Ben Rice RS 4.8; Corbin Burns RS 4.5 (possible doubleheader)"},
-      {"home": null, "away": "BAL", "home_score": null, "away_score": null, "winner": null, "loser": "BAL", "winner_score": null, "loser_score": null, "notes": "Chris Bassitt RS -4.0 disaster start, 1.4k drafts"},
-      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "ARI: Corbin Carroll RS 4.6, Ketel Marte RS 3.3"},
-      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "CHC: Shota Imanaga RS 3.6"},
-      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "LAD: Shohei Ohtani RS 3.7"},
-      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "SD: Manny Machado RS 5.2, Jackson Merrill RS 4.7; Walker Buehler RS -0.7"},
-      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "BOS: Masataka Yoshida RS 5.2, Wilyer Abreu RS 3.9"},
-      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "TOR: Tomoyuki Sugano RS 3.8; Bo Bichette RS -0.3"},
-      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "MIL: Christian Yelich RS 3.3"},
-      {"home": null, "away": null, "home_score": null, "away_score": null, "winner": null, "loser": null, "winner_score": null, "loser_score": null, "notes": "HOU: Yordan Alvarez RS 3.1; SEA: Cole Young RS 5.0, Julio Rodriguez RS 1.2; WSH: James Wood RS 4.0"}
+      {
+        "home": "OAK",
+        "away": null,
+        "home_score": null,
+        "away_score": null,
+        "winner": "OAK",
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "Brent Rooker RS 9.8 monster game; Soderstrom RS 5.5, Kurtz RS 2.3"
+      },
+      {
+        "home": null,
+        "away": "CLE",
+        "home_score": null,
+        "away_score": null,
+        "winner": "CLE",
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "Slade Cecconi RS 6.3 dominant start"
+      },
+      {
+        "home": "DET",
+        "away": null,
+        "home_score": null,
+        "away_score": null,
+        "winner": null,
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "Drake Baldwin RS 6.0"
+      },
+      {
+        "home": null,
+        "away": "CWS",
+        "home_score": null,
+        "away_score": null,
+        "winner": "CWS",
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "Davis Martin RS 5.5 quality start"
+      },
+      {
+        "home": "SF",
+        "away": null,
+        "home_score": null,
+        "away_score": null,
+        "winner": "SF",
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "Logan Webb RS 5.2"
+      },
+      {
+        "home": "NYY",
+        "away": null,
+        "home_score": null,
+        "away_score": null,
+        "winner": "NYY",
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "Max Fried RS 4.0 start; Ben Rice RS 4.8; Corbin Burns RS 4.5 (possible doubleheader)"
+      },
+      {
+        "home": null,
+        "away": "BAL",
+        "home_score": null,
+        "away_score": null,
+        "winner": null,
+        "loser": "BAL",
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "Chris Bassitt RS -4.0 disaster start, 1.4k drafts"
+      },
+      {
+        "home": null,
+        "away": null,
+        "home_score": null,
+        "away_score": null,
+        "winner": null,
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "ARI: Corbin Carroll RS 4.6, Ketel Marte RS 3.3"
+      },
+      {
+        "home": null,
+        "away": null,
+        "home_score": null,
+        "away_score": null,
+        "winner": null,
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "CHC: Shota Imanaga RS 3.6"
+      },
+      {
+        "home": null,
+        "away": null,
+        "home_score": null,
+        "away_score": null,
+        "winner": null,
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "LAD: Shohei Ohtani RS 3.7"
+      },
+      {
+        "home": null,
+        "away": null,
+        "home_score": null,
+        "away_score": null,
+        "winner": null,
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "SD: Manny Machado RS 5.2, Jackson Merrill RS 4.7; Walker Buehler RS -0.7"
+      },
+      {
+        "home": null,
+        "away": null,
+        "home_score": null,
+        "away_score": null,
+        "winner": null,
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "BOS: Masataka Yoshida RS 5.2, Wilyer Abreu RS 3.9"
+      },
+      {
+        "home": null,
+        "away": null,
+        "home_score": null,
+        "away_score": null,
+        "winner": null,
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "TOR: Tomoyuki Sugano RS 3.8; Bo Bichette RS -0.3"
+      },
+      {
+        "home": null,
+        "away": null,
+        "home_score": null,
+        "away_score": null,
+        "winner": null,
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "MIL: Christian Yelich RS 3.3"
+      },
+      {
+        "home": null,
+        "away": null,
+        "home_score": null,
+        "away_score": null,
+        "winner": null,
+        "loser": null,
+        "winner_score": null,
+        "loser_score": null,
+        "notes": "HOU: Yordan Alvarez RS 3.1; SEA: Cole Young RS 5.0, Julio Rodriguez RS 1.2; WSH: James Wood RS 4.0"
+      }
     ],
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
@@ -224,23 +1161,280 @@
     "date": "2026-04-06",
     "game_count": 13,
     "games": [
-      {"home": "TB", "away": "CHC", "home_score": 6, "away_score": 4, "winner": "TB", "loser": "CHC", "winner_score": 6, "loser_score": 4},
-      {"home": "CLE", "away": "KC", "home_score": 2, "away_score": 4, "winner": "KC", "loser": "CLE", "winner_score": 4, "loser_score": 2},
-      {"home": "PIT", "away": "SD", "home_score": 0, "away_score": 5, "winner": "SD", "loser": "PIT", "winner_score": 5, "loser_score": 0},
-      {"home": "MIA", "away": "CIN", "home_score": 0, "away_score": 2, "winner": "CIN", "loser": "MIA", "winner_score": 2, "loser_score": 0},
-      {"home": "WSH", "away": "STL", "home_score": 9, "away_score": 6, "winner": "WSH", "loser": "STL", "winner_score": 9, "loser_score": 6},
-      {"home": "BOS", "away": "MIL", "home_score": 6, "away_score": 8, "winner": "MIL", "loser": "BOS", "winner_score": 8, "loser_score": 6},
-      {"home": "TOR", "away": "LAD", "home_score": 2, "away_score": 14, "winner": "LAD", "loser": "TOR", "winner_score": 14, "loser_score": 2},
-      {"home": "MIN", "away": "DET", "home_score": 7, "away_score": 3, "winner": "MIN", "loser": "DET", "winner_score": 7, "loser_score": 3},
-      {"home": "CWS", "away": "BAL", "home_score": 1, "away_score": 2, "winner": "BAL", "loser": "CWS", "winner_score": 2, "loser_score": 1},
-      {"home": "TEX", "away": "SEA", "home_score": 2, "away_score": 1, "winner": "TEX", "loser": "SEA", "winner_score": 2, "loser_score": 1},
-      {"home": "COL", "away": "HOU", "home_score": 9, "away_score": 7, "winner": "COL", "loser": "HOU", "winner_score": 9, "loser_score": 7},
-      {"home": "LAA", "away": "ATL", "home_score": 6, "away_score": 2, "winner": "LAA", "loser": "ATL", "winner_score": 6, "loser_score": 2},
-      {"home": "SF", "away": "PHI", "home_score": 4, "away_score": 6, "winner": "PHI", "loser": "SF", "winner_score": 6, "loser_score": 4}
+      {
+        "home": "TB",
+        "away": "CHC",
+        "home_score": 6,
+        "away_score": 4,
+        "winner": "TB",
+        "loser": "CHC",
+        "winner_score": 6,
+        "loser_score": 4
+      },
+      {
+        "home": "CLE",
+        "away": "KC",
+        "home_score": 2,
+        "away_score": 4,
+        "winner": "KC",
+        "loser": "CLE",
+        "winner_score": 4,
+        "loser_score": 2
+      },
+      {
+        "home": "PIT",
+        "away": "SD",
+        "home_score": 0,
+        "away_score": 5,
+        "winner": "SD",
+        "loser": "PIT",
+        "winner_score": 5,
+        "loser_score": 0
+      },
+      {
+        "home": "MIA",
+        "away": "CIN",
+        "home_score": 0,
+        "away_score": 2,
+        "winner": "CIN",
+        "loser": "MIA",
+        "winner_score": 2,
+        "loser_score": 0
+      },
+      {
+        "home": "WSH",
+        "away": "STL",
+        "home_score": 9,
+        "away_score": 6,
+        "winner": "WSH",
+        "loser": "STL",
+        "winner_score": 9,
+        "loser_score": 6
+      },
+      {
+        "home": "BOS",
+        "away": "MIL",
+        "home_score": 6,
+        "away_score": 8,
+        "winner": "MIL",
+        "loser": "BOS",
+        "winner_score": 8,
+        "loser_score": 6
+      },
+      {
+        "home": "TOR",
+        "away": "LAD",
+        "home_score": 2,
+        "away_score": 14,
+        "winner": "LAD",
+        "loser": "TOR",
+        "winner_score": 14,
+        "loser_score": 2
+      },
+      {
+        "home": "MIN",
+        "away": "DET",
+        "home_score": 7,
+        "away_score": 3,
+        "winner": "MIN",
+        "loser": "DET",
+        "winner_score": 7,
+        "loser_score": 3
+      },
+      {
+        "home": "CWS",
+        "away": "BAL",
+        "home_score": 1,
+        "away_score": 2,
+        "winner": "BAL",
+        "loser": "CWS",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "TEX",
+        "away": "SEA",
+        "home_score": 2,
+        "away_score": 1,
+        "winner": "TEX",
+        "loser": "SEA",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "COL",
+        "away": "HOU",
+        "home_score": 9,
+        "away_score": 7,
+        "winner": "COL",
+        "loser": "HOU",
+        "winner_score": 9,
+        "loser_score": 7
+      },
+      {
+        "home": "LAA",
+        "away": "ATL",
+        "home_score": 6,
+        "away_score": 2,
+        "winner": "LAA",
+        "loser": "ATL",
+        "winner_score": 6,
+        "loser_score": 2
+      },
+      {
+        "home": "SF",
+        "away": "PHI",
+        "home_score": 4,
+        "away_score": 6,
+        "winner": "PHI",
+        "loser": "SF",
+        "winner_score": 6,
+        "loser_score": 4
+      }
     ],
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-07T00:00:00Z",
     "notes": "Monday slate (13 games). LAD dominated TOR 14-2 — Dodgers stack swept the leaderboard: Ohtani (RS 2.0, 4.9k drafts), Freeman (RS 4.0, 53 drafts), Hernandez (RS 5.2, 3 drafts), Pages (RS 2.2, 1.7k drafts), Rushing (RS 4.7, 1 draft), Wrobleski (RS 3.9). Rank 1 (killacam31, 71.76) used Ohtani/Freeman/Tucker/Hernandez/Rushing — pure LAD+HOU stack. WSH beat STL 9-6: ghost player sweep from James Wood (RS 5.5, 3 drafts), Brady House (RS 4.9, 2 drafts), Luis Garcia Jr. (RS 0.1, minimal drafts) — rank 2 (jcurns, 71.19) ran full WSH stack + Littell. José Soriano (LAA) RS 8.2 — best pitcher of the day, 142 drafts, LAA beat ATL 6-2. Boost traps: Brayan Bello (BOS) RS 0.3 at +3.0x (2.1k drafts) — MIL beat BOS 8-6; Vlad Guerrero Jr (TOR) RS -0.3 at +3.0x — LAD crushed TOR; Ronald Acuña Jr (ATL) RS -0.4 at +3.0x — LAA won 6-2. Most popular: Ohtani 4.9k drafts appeared in every top-12 lineup but slotted lower as Hernandez was the true HV stud. Ghost edge: Hernandez (3 drafts, RS 5.2), Wood (3 drafts, RS 5.5), Rushing (1 draft, RS 4.7), Contreras (1 draft, RS 5.0) all HV at near-zero ownership."
+  },
+  {
+    "date": "2026-04-07",
+    "game_count": 13,
+    "games": [
+      {
+        "home": "MIA",
+        "away": "PHI",
+        "home_score": 5,
+        "away_score": 2,
+        "winner": "MIA",
+        "loser": "PHI",
+        "winner_score": 5,
+        "loser_score": 2
+      },
+      {
+        "home": "WSH",
+        "away": "STL",
+        "home_score": 6,
+        "away_score": 3,
+        "winner": "WSH",
+        "loser": "STL",
+        "winner_score": 6,
+        "loser_score": 3
+      },
+      {
+        "home": "CIN",
+        "away": "PIT",
+        "home_score": 2,
+        "away_score": 4,
+        "winner": "PIT",
+        "loser": "CIN",
+        "winner_score": 4,
+        "loser_score": 2
+      },
+      {
+        "home": "CHC",
+        "away": "MIL",
+        "home_score": 5,
+        "away_score": 7,
+        "winner": "MIL",
+        "loser": "CHC",
+        "winner_score": 7,
+        "loser_score": 5
+      },
+      {
+        "home": "SEA",
+        "away": "MIN",
+        "home_score": 3,
+        "away_score": 8,
+        "winner": "MIN",
+        "loser": "SEA",
+        "winner_score": 8,
+        "loser_score": 3
+      },
+      {
+        "home": "BAL",
+        "away": "CLE",
+        "home_score": 5,
+        "away_score": 2,
+        "winner": "BAL",
+        "loser": "CLE",
+        "winner_score": 5,
+        "loser_score": 2
+      },
+      {
+        "home": "TEX",
+        "away": "BOS",
+        "home_score": 4,
+        "away_score": 5,
+        "winner": "BOS",
+        "loser": "TEX",
+        "winner_score": 5,
+        "loser_score": 4
+      },
+      {
+        "home": "TOR",
+        "away": "NYY",
+        "home_score": 4,
+        "away_score": 3,
+        "winner": "TOR",
+        "loser": "NYY",
+        "winner_score": 4,
+        "loser_score": 3
+      },
+      {
+        "home": "DET",
+        "away": "ATL",
+        "home_score": 4,
+        "away_score": 6,
+        "winner": "ATL",
+        "loser": "DET",
+        "winner_score": 6,
+        "loser_score": 4
+      },
+      {
+        "home": "LAA",
+        "away": "HOU",
+        "home_score": 6,
+        "away_score": 4,
+        "winner": "LAA",
+        "loser": "HOU",
+        "winner_score": 6,
+        "loser_score": 4
+      },
+      {
+        "home": "OAK",
+        "away": "TB",
+        "home_score": 6,
+        "away_score": 4,
+        "winner": "OAK",
+        "loser": "TB",
+        "winner_score": 6,
+        "loser_score": 4
+      },
+      {
+        "home": "COL",
+        "away": "SF",
+        "home_score": 4,
+        "away_score": 7,
+        "winner": "SF",
+        "loser": "COL",
+        "winner_score": 7,
+        "loser_score": 4
+      },
+      {
+        "home": "LAD",
+        "away": "SD",
+        "home_score": 5,
+        "away_score": 2,
+        "winner": "LAD",
+        "loser": "SD",
+        "winner_score": 5,
+        "loser_score": 2
+      }
+    ],
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-08T00:00:00Z",
+    "notes": "Tuesday slate (13 games). Nathan Eovaldi (TEX, P) appeared in 11 of 12 top lineups — the essential anchor of the day with RS 3.4 and +3.0x boost. Shane Smith (SEA, OF) the biggest surprise: ghost +3.0x boost player in 8 of 12 top lineups, RS 2.8, only 1k drafts. Rank 1 (tyran_stokes, 71.08) ran Crochet/Eovaldi/Smith/Henderson/PCA — pure ghost+boost EV lineup. Sandy Alcantara (MIA, P) had best RS at 7.5 with zero boost (TV 15.0, 224 drafts); appeared in ranks 5, 9, 12. Ghost ghost sweep: Amed Rosario (MIL, SS, RS 7.3, 1 draft, TV 36.5) was highest-value player but nearly nobody had him — massive ghost win. Other ghost hits: Daniel Susac (OAK, 1 draft, RS 4.1), Matt McLain (CIN, 1 draft, RS 3.6), Jakob Marsee (OAK, 1 draft, RS 2.9), Nathan Church (WSH, 1 draft, RS 3.2), Alex Freeland (COL, 1 draft, RS 3.3). Willi Castro (MIN, 4 drafts, RS 5.4, TV 27.0) was the key ghost in rank 4 (foot_, 58.20) which ran a full BAL stack + Castro. Boost traps: Tarik Skubal (4.4k drafts, RS 0.7) worst crowd bust of the day; Shohei Ohtani (4.6k drafts, RS 1.4) underperformed; José Ramírez (RS -0.7, +3.0x, 362 drafts) destroyed lineups in rank 8; Aaron Judge (RS -0.2, +1.9x, 1.8k drafts); Yordan Alvarez (RS -0.4, +1.6x, 2.3k drafts). Robbie Ray (SF, P, RS 5.9, ghost, no boost) huge value play. Paul Skenes (PIT, RS 4.8, +0.3x) solid in 7 of 12 top lineups. Rank 4 (foot_) used a BAL stack (Henderson/Ward/Mullins) but Mullins (-0.4 RS) was a drag — however Willi Castro's 5.4 RS at 4.4x (ghost+boost) saved the lineup."
   }
 ]
