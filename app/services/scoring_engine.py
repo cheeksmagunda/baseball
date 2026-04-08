@@ -241,16 +241,16 @@ def score_batter_recent_form(
 ) -> TraitResult:
     """Score last 7 games with trajectory weighting.
 
-    Primary signal is last 3 games (who they are right now). A trajectory
+    Primary signal is last 2 games (who they are right now). A trajectory
     multiplier rewards players climbing toward their peak vs those already on
-    the way down. Ceiling raised to 0.65 so only genuinely hot stretches hit max.
+    the way down. Ceiling at 0.65 so only genuinely hot stretches hit max.
     """
     if not game_logs:
         return TraitResult("recent_form", max_pts * 0.4, max_pts, "no recent games")
 
     recent7 = get_recent_games(game_logs, 7)
-    window_new = recent7[:3]   # most recent 3 — primary signal
-    window_old = recent7[3:]   # prior 4 — trend baseline
+    window_new = recent7[:2]   # most recent 2 — primary signal
+    window_old = recent7[2:]   # prior 5 — trend baseline
 
     def _production(games: list) -> float:
         if not games:
