@@ -172,16 +172,18 @@ def test_fade_with_huge_boost_can_still_win():
 
 
 def test_low_score_penalty_prevents_boost_trap():
-    """A terrible player with a huge boost should lose to a decent unboosted player.
-    Shane Smith scenario: score 10/100 with +3.0x boost looks great on paper
-    but the penalty drops EV below a moderately scored player."""
-    trap = _make_card("Trap", boost=3.0, score=10.0)     # raw EV=50, penalized→25
+    """A truly terrible player with a huge boost should lose to a decent unboosted player.
+    V2.2: graduated penalty means score=10 with 3.0x boost is no longer automatically
+    a trap (that was over-penalizing ghost+boost players). But a near-zero score player
+    with boost should still lose to a decent alternative.
+    Trap: score=3, boost=3.0 → raw EV=15, graduated penalty ≈ 0.52 → EV ≈ 7.8
+    Decent: score=16, boost=0.5 → EV=40, no penalty."""
+    trap = _make_card("Trap", boost=3.0, score=3.0)       # raw EV=15, penalized→~7.8
     decent = _make_card("Decent", boost=0.5, score=16.0)  # EV=16*(2.5)=40, no penalty
 
     result = optimize_lineup([trap, decent])
 
     slot1 = next(s for s in result.slots if s.slot_index == 1)
-    # Without penalty, Trap (50) beats Decent (40). With penalty, Trap (25) loses.
     assert slot1.card.player_name == "Decent"
 
 

@@ -12,5 +12,10 @@ class Settings(BaseSettings):
     current_season: int = 2026
     redis_url: str | None = None
 
+    # How often (seconds) the slate monitor re-runs the full pipeline to pick up
+    # new starters, batting orders, boosts, and stats.  Data is always available,
+    # so this can be aggressive.  Default: 300s (5 min).
+    pipeline_refresh_interval: int = 300
+
 
 settings = Settings()

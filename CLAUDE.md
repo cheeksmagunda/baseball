@@ -109,7 +109,7 @@ Web-scraping signal aggregator that estimates which players the crowd will over-
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V2 "Anchor, Differentiate, Stack"** — based on 13 days of historical data.
+**Strategy Version: V2.2 "Anchor, Differentiate, Stack"** — based on 14 days of historical data (V2.2: April 8 post-mortem fixes).
 
 The active optimizer produces **two lineups** from the same candidate pool via `run_dual_filter_strategy`.
 
@@ -119,17 +119,32 @@ The active optimizer produces **two lineups** from the same candidate pool via `
 2. **Team Stacking:** Dominant winning pattern on 62% of days. On hitter/stack days, stack 3-4 from the favored team's ghost pool + 1-2 diversifiers.
 3. **Boost Leverage:** "Most drafted at 3x boost" busts 57% of the time — it's a SELL signal. Ghost+boost is the buy signal.
 
-### Starting 5 EV formula (V2)
+### Starting 5 EV formula (V2.2)
 ```
 base_ev = total_score × (2 + card_boost)
-  × low_score_penalty (if score < 15)
-  × boost_trap_penalty (if boost ≥ 1.0 and env < 0.5)
+  × graduated_score_penalty (linear: score 0→0.40x, score 15+→1.0x)
+  × graduated_env_penalty (if boost ≥ 1.0: linear env 0→0.60x, env 0.5+→1.0x)
+  → ghost_boost_ev_floor (if boost 3.0 + <50 drafts: floor at score=18 equivalent)
   × popularity_adj (FADE=0.75, TARGET=1.15)
   × most_drafted_3x_penalty (0.60 if flagged)
   × ownership_adj (ghost=1.25, low=1.10, chalk=0.80, mega_chalk=0.70)
   × ghost_boost_synergy (mega_ghost+boost=1.50, ghost+boost=1.30)
   × debut_return_bonus (1.15 if flagged)
 ```
+
+### V2.2 Changes (April 8 Post-Mortem)
+
+Three bugs were identified that caused the optimizer to systematically miss ghost+boost top performers:
+
+1. **Graduated score penalty** replaces the binary 50% cliff at score < 15. Now scales linearly from 0.40x (score=0) to 1.0x (score=15+). A player at score=14 now gets ~96% EV instead of 50%. See `_graduated_score_penalty()` in `filter_strategy.py`.
+
+2. **Graduated env penalty** replaces the binary 30% cliff at env < 0.5. Now scales linearly from 0.60x (env=0) to 1.0x (env=0.5+). A player at env=0.48 now gets ~96% EV instead of 70%. See `_graduated_env_penalty()` in `filter_strategy.py`.
+
+3. **Ghost-boost EV floor** ensures mega-ghost-boost players (3.0x boost, <50 drafts) have a minimum base EV equivalent to an 18-score player, regardless of actual trait score. This compensates for the scoring engine's inability to accurately evaluate data-scarce ghost players. See `_apply_ghost_boost_ev_floor()` in `filter_strategy.py`, `GHOST_BOOST_EV_FLOOR_SCORE` in `constants.py`.
+
+4. **K/9 reverse-engineering fix** in `app/routers/filter_strategy.py`. The old formula `(score/max × 12)` ignored the 6.0 K/9 floor in the scoring engine's linear scale, compressing a 10 K/9 pitcher to 8.0 K/9 for env scoring. Fixed to `6.0 + (score/max × 6.0)`.
+
+**Old constants removed:** `MIN_SCORE_PENALTY`, `BOOST_NO_ENV_PENALTY` (replaced by `MIN_SCORE_PENALTY_FLOOR`, `BOOST_NO_ENV_PENALTY_FLOOR`).
 
 ### Lineup Construction (Pure EV — no position forcing)
 Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. Composition varies wildly — the only constant is that the 5 highest-EV players win. **No "day types" force positions.** `SLATE_COMPOSITION` was removed entirely.
@@ -158,8 +173,11 @@ Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. Composition v
 **Key functions (filter_strategy.py):**
 - `run_filter_strategy()` — Starting 5
 - `run_dual_filter_strategy()` — One call, two lineups
-- `_compute_filter_ev()` — Starting 5 EV with all V2 filters
+- `_compute_filter_ev()` — Starting 5 EV with all V2.2 filters
 - `_compute_moonshot_filter_ev()` — Moonshot-specific EV
+- `_graduated_score_penalty()` — V2.2: linear score penalty (replaces binary cliff)
+- `_graduated_env_penalty()` — V2.2: linear env penalty (replaces binary cliff)
+- `_apply_ghost_boost_ev_floor()` — V2.2: minimum EV for mega-ghost-boost players
 - `_build_team_stack()` — Ghost-pool team stacking for hitter/stack days
 - `_enforce_composition()` — V2 three-path construction (stack / EV / backfill)
 - `_validate_lineup_structure()` — Max 1 mega-chalk, min 1 ghost
@@ -226,7 +244,8 @@ Not multiplicative. Proven from historical data. This means:
 
 **Filter 4 — Boost Optimization**
 - Boost is a multiplier on an unknown outcome — it amplifies downside equally.
-- card_boost ≥ 1.0 with env_score < 0.5 → 30% EV haircut ("boost trap")
+- card_boost ≥ 1.0 with env_score < 0.5 → **graduated** EV penalty (V2.2: 0% at env=0.5, up to 40% at env=0.0)
+- Mega-ghost-boost players (3.0x, <50 drafts) get an EV floor to prevent data-scarcity from destroying their ranking
 - Never assign a boost without environmental support.
 
 **Filter 5 — Slot Sequencing**

@@ -81,7 +81,10 @@ async def lifespan(app: FastAPI):
             db.close()
 
     startup_task = asyncio.create_task(_startup_pipeline())
-    monitor_task = asyncio.create_task(monitor_slate_completion(check_interval=30))
+    monitor_task = asyncio.create_task(monitor_slate_completion(
+        check_interval=30,
+        pipeline_refresh_interval=settings.pipeline_refresh_interval,
+    ))
 
     yield
 

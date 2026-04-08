@@ -138,7 +138,10 @@ async def _resolve_candidates(
 
             k_rate_score = get_trait_score(score_result.traits, "k_rate")
             k_rate_max = next((t.max_score for t in score_result.traits if t.name == "k_rate"), 25.0)
-            pitcher_k9 = (k_rate_score / k_rate_max * 12.0) if k_rate_max > 0 else None
+            # The scoring engine maps K/9 linearly: 6.0 K/9 → 0 pts, 12.0 K/9 → max pts.
+            # Reverse: K/9 = 6.0 + (score/max) * 6.0.  The old formula (score/max * 12)
+            # ignored the 6.0 floor, compressing a 10 K/9 pitcher down to 8.0 K/9.
+            pitcher_k9 = (6.0 + k_rate_score / k_rate_max * 6.0) if k_rate_max > 0 else None
 
             env_score, env_factors = compute_pitcher_env_score(
                 opp_team_ops=opp_ops,
