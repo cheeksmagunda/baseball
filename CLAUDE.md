@@ -126,13 +126,41 @@ base_ev = total_score × (2 + card_boost)
   × graduated_env_penalty (if boost ≥ 1.0: linear env 0→0.60x, env 0.5+→1.0x)
   → ghost_boost_ev_floor (if boost 3.0 + <50 drafts: floor at score=18 equivalent)
   × popularity_adj (FADE=0.75, TARGET=1.15)
-  × most_drafted_3x_penalty (0.60 if flagged)
+  × most_drafted_3x_penalty (0.80 if flagged + env passes; 0.60 if flagged + env fails)
   × ownership_adj (ghost=1.25, low=1.10, chalk=0.80, mega_chalk=0.70)
   × ghost_boost_synergy (mega_ghost+boost=1.50, ghost+boost=1.30)
   × debut_return_bonus (1.15 if flagged)
 ```
 
-### V2.2 Changes (April 8 Post-Mortem)
+### V2.3 Changes (April 8 Post-Mortem — April 7 slate)
+
+**April 7 results:** User scored 32.37 (2623rd of 14.8k, top 20%). Rank 1 scored 71.08. Gap analysis:
+
+**Root cause 1 — `MOST_DRAFTED_3X_PENALTY` was env-blind.** Nathan Eovaldi (TEX, P, +3.0x, 2.2k drafts) appeared in 11/12 top lineups with RS 3.4. The optimizer crushed his EV: `MOST_DRAFTED_3X_PENALTY (0.60) × POPULARITY_FADE (0.75) = 0.45x`. But the 57% bust rate is for players WITHOUT env support (Lorenzen, Ohtani, old Shane Smith). Eovaldi had a real matchup. **Fix:** Two-tier penalty — 40% when env fails, 20% when env passes. See `MOST_DRAFTED_3X_ENV_PASS_PENALTY` in `constants.py`.
+
+**Root cause 2 — Second pitcher was consuming a slot.** Ghost+boost batters (PCA 26 drafts +3.0x, Castro 4 drafts +3.0x, Henderson 52 drafts +2.5x) are the primary edge. A second pitcher slot that could hold a ghost+boost batter is EV-negative. **Fix:** `MAX_PITCHERS_IN_LINEUP = 1` enforced in `_validate_lineup_structure`. Applies to both Starting 5 and Moonshot.
+
+1. **Env-aware 3x trap penalty** — `_compute_filter_ev()` now applies `MOST_DRAFTED_3X_ENV_PASS_PENALTY = 0.80` (20% haircut) when env passes, vs `MOST_DRAFTED_3X_PENALTY = 0.60` (40% haircut) when it doesn't. Moonshot always applies the full 40% — its job is specifically to fade the chalk+boost play the field is on.
+
+2. **Max 1 pitcher per lineup** — `_validate_lineup_structure()` enforces `MAX_PITCHERS_IN_LINEUP = 1`. Excess pitchers are replaced by the highest-EV non-pitcher from the candidate pool. Applied to both Starting 5 and Moonshot via shared `_validate_lineup_structure`.
+
+**April 7 ghost+boost winners (confirmed edge):**
+| Player | Drafts | Boost | RS | TV |
+|---|---|---|---|---|
+| Amed Rosario (MIL,SS) | 1 | +3.0x | 7.3 | 36.5 |
+| Willi Castro (MIN,OF) | 4 | +3.0x | 5.4 | 27.0 |
+| Curtis Mead (TB,3B) | 4 | +3.0x | 4.8 | 24.0 |
+| Pete Crow-Armstrong (CHC,OF) | 26 | +3.0x | 4.0 | 20.0 |
+
+**Boost traps avoided by 3x-env rule:**
+| Player | Drafts | Boost | RS | Env |
+|---|---|---|---|---|
+| José Ramírez (CLE,3B) | 362 | +3.0x | -0.7 | fail |
+| Aaron Judge (NYY,OF) | 1800 | +1.9x | -0.2 | fail |
+| Yordan Alvarez (HOU,DH) | 2300 | +1.6x | -0.4 | fail |
+| Tarik Skubal (DET,P) | 4400 | none | 0.7 | fail |
+
+### V2.2 Changes (April 8 Post-Mortem — April 6 slate)
 
 Three bugs were identified that caused the optimizer to systematically miss ghost+boost top performers:
 
@@ -146,15 +174,16 @@ Three bugs were identified that caused the optimizer to systematically miss ghos
 
 **Old constants removed:** `MIN_SCORE_PENALTY`, `BOOST_NO_ENV_PENALTY` (replaced by `MIN_SCORE_PENALTY_FLOOR`, `BOOST_NO_ENV_PENALTY_FLOOR`).
 
-### Lineup Construction (Pure EV — no position forcing)
-Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. Composition varies wildly — the only constant is that the 5 highest-EV players win. **No "day types" force positions.** `SLATE_COMPOSITION` was removed entirely.
+### Lineup Construction (Pure EV — 1 pitcher cap)
+Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. But V2.3 caps at 1 SP: the ghost+boost batter edge outweighs a second pitcher slot. **No "day types" force composition.** `SLATE_COMPOSITION` was removed entirely.
 
 1. **Blowout game detected** (moneyline ≥ -200): Try team stack from ghost pool → fill 1-2 diversifiers from other games
-2. **All other slates**: Pure EV ranking, position-agnostic. If 0 pitchers have competitive EV, take none. If 4 do, take 4. EV decides everything.
+2. **All other slates**: Pure EV ranking. Take the best-EV SP + 4 highest-EV batters. EV decides everything within the 1-pitcher cap.
 
-### Lineup Validation (V2)
+### Lineup Validation (V2.3)
 - Max 1 mega-chalk (2000+ drafts) player
 - Min 1 ghost (<100 drafts) player when available
+- **Max 1 starting pitcher** — excess pitchers replaced by best non-pitcher from candidate pool
 - Slot 1 Differentiator: swap consensus Slot 1 for contrarian if EV loss <10%
 
 ### Slate Classification (informational only — does NOT force composition)

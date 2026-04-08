@@ -69,12 +69,14 @@ from app.core.constants import (
     MEGA_CHALK_DRAFT_THRESHOLD,
     MEGA_CHALK_PENALTY,
     MOST_DRAFTED_3X_PENALTY,
+    MOST_DRAFTED_3X_ENV_PASS_PENALTY,
     GHOST_BOOST_SYNERGY_MIN_BOOST,
     GHOST_BOOST_SYNERGY_BONUS,
     MEGA_GHOST_BOOST_MAX_DRAFTS,
     MEGA_GHOST_BOOST_BONUS,
     MAX_MEGA_CHALK_IN_LINEUP,
     MIN_GHOST_IN_LINEUP,
+    MAX_PITCHERS_IN_LINEUP,
     BOOST_CONCENTRATION_THRESHOLD,
     BOOST_CONCENTRATION_PENALTY,
     SLOT1_DIFFERENTIATOR_EV_THRESHOLD,
@@ -597,9 +599,14 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     base_ev *= pop_adj
 
     # V2: "Most drafted at 3x boost" trap (57% bust rate, avg RS 0.72)
-    # Applied BEFORE draft-count leverage — this is the strongest sell signal.
+    # V2.3: Penalty is env-aware. The 57% bust rate is for players WITHOUT env
+    # support. When env passes (e.g. Eovaldi April 7: strong matchup, RS 3.4,
+    # appeared in 11/12 top lineups), the flat 40% penalty was over-aggressive.
     if candidate.is_most_drafted_3x:
-        base_ev *= MOST_DRAFTED_3X_PENALTY
+        if candidate.env_score >= ENV_PASS_THRESHOLD:
+            base_ev *= MOST_DRAFTED_3X_ENV_PASS_PENALTY  # 20% penalty — env backed
+        else:
+            base_ev *= MOST_DRAFTED_3X_PENALTY  # 40% penalty — no env support
 
     # Filter 3b: Draft-count ownership leverage
     # V2 adds mega-chalk tier and graduated penalties.
@@ -812,6 +819,31 @@ def _validate_lineup_structure(
             )
             if best_ghost.filter_ev >= lineup[worst_idx].filter_ev * 0.7:
                 lineup[worst_idx] = best_ghost
+
+    # Rule 3: Max 1 starting pitcher (V2.3 — April 7 post-mortem)
+    # The edge comes from ghost+boost batters, not from stacking pitchers.
+    # A second pitcher slot is better spent on a ghost+boost batter.
+    pitcher_indices = [i for i, c in enumerate(lineup) if c.is_pitcher]
+    if len(pitcher_indices) > MAX_PITCHERS_IN_LINEUP:
+        # Keep the highest-EV pitcher, replace the rest with best available non-pitchers
+        pitcher_sorted = sorted(pitcher_indices, key=lambda i: lineup[i].filter_ev, reverse=True)
+        lineup_names = {c.player_name for c in lineup}
+        for idx in pitcher_sorted[MAX_PITCHERS_IN_LINEUP:]:
+            replacement = next(
+                (c for c in all_candidates_sorted
+                 if c.player_name not in lineup_names
+                 and not c.is_pitcher),
+                None,
+            )
+            if replacement:
+                removed_name = lineup[idx].player_name
+                lineup_names.discard(removed_name)
+                lineup[idx] = replacement
+                lineup_names.add(replacement.player_name)
+                logger.info(
+                    "Pitcher cap (max %d): replaced %s with %s",
+                    MAX_PITCHERS_IN_LINEUP, removed_name, replacement.player_name,
+                )
 
     return lineup
 
@@ -1137,9 +1169,12 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     pop_adj = _moonshot_popularity_adj(candidate.popularity)
     base_ev *= pop_adj
 
-    # V2: "Most drafted at 3x boost" trap — even heavier fade for Moonshot
+    # V2: "Most drafted at 3x boost" trap — Moonshot keeps the full penalty
+    # regardless of env: Moonshot's job is specifically to avoid the chalk+boost
+    # play that the field is on. If env makes Eovaldi viable, Starting 5 takes him;
+    # Moonshot explicitly goes the other way.
     if candidate.is_most_drafted_3x:
-        base_ev *= MOST_DRAFTED_3X_PENALTY
+        base_ev *= MOST_DRAFTED_3X_PENALTY  # always full 40% for Moonshot
 
     # Draft-count ownership leverage (heavier ghost bonus for Moonshot)
     if candidate.drafts is not None:
