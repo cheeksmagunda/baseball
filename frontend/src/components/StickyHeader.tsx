@@ -9,7 +9,7 @@ interface StickyHeaderProps {
 
 export function StickyHeader({ slate }: StickyHeaderProps) {
   return (
-    <header className="sticky top-0 z-50">
+    <header>
       <div className={styles.header}>
         <div className={styles.logo}>
           <div className={styles.logoIcon}>⚾</div>

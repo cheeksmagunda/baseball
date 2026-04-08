@@ -2,9 +2,19 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "DFS Predictor — Real Sports Lineup Optimizer",
-  description:
-    "AI-powered dual-lineup optimizer for Real Sports DFS. Starting 5 and Moonshot lineups with trait-based scoring.",
+  title: "Ben Oracle",
+  description: "Sees what others miss. AI-powered lineup optimizer for Real Sports DFS.",
+  openGraph: {
+    title: "Ben Oracle",
+    description: "Sees what others miss.",
+    siteName: "Ben Oracle",
+  },
+  applicationName: "Ben Oracle",
+  appleWebApp: {
+    title: "Ben Oracle",
+    capable: true,
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {
