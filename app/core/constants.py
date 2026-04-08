@@ -196,7 +196,13 @@ MEGA_CHALK_PENALTY = 0.70             # 30% EV penalty for mega-chalk
 # "Most drafted at 3x boost" trap (V2 §9 Finding 2)
 # These players bust 57% of the time with avg RS 0.72.
 # The crowd sees "3.0x boost on star name" and piles in.
-MOST_DRAFTED_3X_PENALTY = 0.60        # 40% EV penalty (57% bust rate)
+#
+# V2.3 (April 7 post-mortem): The 57% bust rate is for players WITHOUT env support.
+# Eovaldi (TEX, 2.2k drafts, 3.0x) appeared in 11/12 top lineups on April 7 because
+# he had real env support — the old flat 40% penalty crushed him regardless.
+# Rule: if env_score >= ENV_PASS_THRESHOLD, the 3x trap is half as severe.
+MOST_DRAFTED_3X_PENALTY = 0.60        # 40% EV penalty — no env support (bust risk is real)
+MOST_DRAFTED_3X_ENV_PASS_PENALTY = 0.80  # 20% EV penalty — env passes (boost is backed by conditions)
 
 # ---------------------------------------------------------------------------
 # Ghost + Boost synergy (V2 §2 Pillar 3 — the "holy grail")
@@ -233,6 +239,11 @@ GHOST_BOOST_EV_FLOOR_SCORE = 18.0  # minimum effective score for mega-ghost-boos
 # ---------------------------------------------------------------------------
 MAX_MEGA_CHALK_IN_LINEUP = 1          # max 1 player with 2000+ drafts
 MIN_GHOST_IN_LINEUP = 1              # min 1 ghost player (< 100 drafts)
+# V2.3: Cap at 1 starting pitcher per lineup.
+# Historical data shows rank-1 lineups had 0-5 pitchers, but the user's edge
+# comes from ghost+boost batters — not from stacking pitchers. A second pitcher
+# consumes a slot that a ghost+boost batter (the real edge) could fill.
+MAX_PITCHERS_IN_LINEUP = 1           # max 1 SP per lineup (Starting 5 and Moonshot)
 
 # ---------------------------------------------------------------------------
 # Boost concentration penalty (§4.2 Filter 4)
