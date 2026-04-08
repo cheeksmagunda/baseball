@@ -100,33 +100,47 @@ def score_pitcher_matchup(
 def score_pitcher_recent_form(
     game_logs: list[PlayerGameLog], max_pts: float
 ) -> TraitResult:
-    """Score based on last 3 starts. QS-like quality = high score."""
+    """Score based on last 3 starts with trajectory signal. Rewards pitchers trending up."""
     if not game_logs:
         return TraitResult("recent_form", max_pts * 0.4, max_pts, "no recent games")
 
     recent = get_recent_games(game_logs, 3)
-    total_score = 0
-    for g in recent:
-        # Quality start proxy: 5+ IP and <=3 ER
+
+    def _start_quality(g) -> float:
         if g.ip >= 5.0 and g.er <= 3:
             if g.er == 0:
-                total_score += 1.0  # Shutout start
+                return 1.0
             elif g.er <= 1:
-                total_score += 0.85
+                return 0.85
             else:
-                total_score += 0.6
+                return 0.6
         elif g.ip >= 4.0 and g.er <= 2:
-            total_score += 0.5
+            return 0.5
         else:
-            total_score += 0.15
+            return 0.15
 
-    avg_score = total_score / len(recent)
-    result = avg_score * max_pts
+    start_scores = [_start_quality(g) for g in recent]
+    avg_score = sum(start_scores) / len(start_scores)
+
+    # Trajectory: is the most recent start better than the prior average?
+    if len(start_scores) > 1:
+        most_recent = start_scores[0]
+        prior_avg = sum(start_scores[1:]) / len(start_scores[1:])
+        if most_recent > prior_avg * 1.20:
+            traj_mult = 1.10   # trending up
+        elif most_recent < prior_avg * 0.80:
+            traj_mult = 0.90   # trending down
+        else:
+            traj_mult = 1.0
+    else:
+        traj_mult = 1.0
+
+    result = min(max_pts, avg_score * max_pts * traj_mult)
     return TraitResult(
         "recent_form",
         round(result, 1),
         max_pts,
-        f"{len(recent)} starts, avg_quality={avg_score:.2f}",
+        f"{len(recent)} starts, avg_quality={avg_score:.2f} traj={traj_mult:.2f}x",
     )
 
 
@@ -225,26 +239,62 @@ def score_batter_matchup(
 def score_batter_recent_form(
     game_logs: list[PlayerGameLog], max_pts: float
 ) -> TraitResult:
-    """Score last 7 games by OPS-like metric."""
+    """Score last 7 games with trajectory weighting.
+
+    Primary signal is last 3 games (who they are right now). A trajectory
+    multiplier rewards players climbing toward their peak vs those already on
+    the way down. Ceiling raised to 0.65 so only genuinely hot stretches hit max.
+    """
     if not game_logs:
         return TraitResult("recent_form", max_pts * 0.4, max_pts, "no recent games")
 
-    recent = get_recent_games(game_logs, 7)
-    total_h = sum(g.hits for g in recent)
-    total_ab = sum(g.ab for g in recent) or 1
-    total_hr = sum(g.hr for g in recent)
-    total_rbi = sum(g.rbi for g in recent)
+    recent7 = get_recent_games(game_logs, 7)
+    window_new = recent7[:3]   # most recent 3 — primary signal
+    window_old = recent7[3:]   # prior 4 — trend baseline
 
-    avg = total_h / total_ab
-    # Weighted: AVG matters, but HR and RBI production boosts it
-    production = avg + (total_hr * 0.05) + (total_rbi * 0.02)
-    score = min(max_pts, production / 0.5 * max_pts)
+    def _production(games: list) -> float:
+        if not games:
+            return 0.0
+        h = sum(g.hits for g in games)
+        ab = sum(g.ab for g in games) or 1
+        hr = sum(g.hr for g in games)
+        rbi = sum(g.rbi for g in games)
+        return (h / ab) + (hr * 0.05) + (rbi * 0.02)
 
+    prod_new = _production(window_new)
+    prod_old = _production(window_old)
+
+    # Base score off last 3 games; harder ceiling (0.65) filters out average hot streaks
+    base_score = min(max_pts, prod_new / 0.65 * max_pts)
+
+    # Trajectory: bonus for ascending players, penalty for declining ones
+    if prod_old > 0 and window_old:
+        ratio = prod_new / prod_old
+        if ratio >= 1.30:
+            traj_mult = 1.15   # clearly ascending
+        elif ratio >= 1.10:
+            traj_mult = 1.08   # trending up
+        elif ratio <= 0.70:
+            traj_mult = 0.85   # clearly declining
+        elif ratio <= 0.90:
+            traj_mult = 0.92   # slightly declining
+        else:
+            traj_mult = 1.0
+    else:
+        traj_mult = 1.0
+
+    score = min(max_pts, round(base_score * traj_mult, 1))
+
+    all_h = sum(g.hits for g in recent7)
+    all_ab = sum(g.ab for g in recent7) or 1
+    all_hr = sum(g.hr for g in recent7)
+    all_rbi = sum(g.rbi for g in recent7)
     return TraitResult(
         "recent_form",
-        round(score, 1),
+        score,
         max_pts,
-        f"last {len(recent)}G: {total_h}/{total_ab} ({avg:.3f}) {total_hr}HR {total_rbi}RBI",
+        f"L3_prod={prod_new:.3f} prev4_prod={prod_old:.3f} traj={traj_mult:.2f}x"
+        f" | 7G: {all_h}/{all_ab} {all_hr}HR {all_rbi}RBI",
     )
 
 
