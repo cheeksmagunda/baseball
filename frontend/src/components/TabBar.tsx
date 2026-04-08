@@ -43,38 +43,42 @@ export function TabBar({ activeTab, onTabChange }: TabBarProps) {
   }, [measurePill]);
 
   return (
-    <div
-      ref={wrapRef}
-      role="tablist"
-      aria-label="Lineup selection"
-      className={`sticky top-[60px] z-40 ${styles.wrap}`}
-    >
-      <div className={styles.pill} style={pillStyle} />
-      {TABS.map((tab) => {
-        const isActive = activeTab === tab.key;
-        return (
-          <button
-            key={tab.key}
-            ref={(el) => {
-              if (el) btnRefs.current.set(tab.key, el);
-              else btnRefs.current.delete(tab.key);
-            }}
-            role="tab"
-            aria-selected={isActive}
-            aria-controls={`panel-${tab.key}`}
-            onClick={() => {
-              if (!isActive) {
-                navigator.vibrate?.(10);
-                onTabChange(tab.key);
-              }
-            }}
-            className={`${styles.btn} ${isActive ? styles.active : ""}`}
-            type="button"
-          >
-            {tab.label}
-          </button>
-        );
-      })}
+    <div className="sticky top-[56px] z-40 pb-2">
+      <div className="mx-auto max-w-md px-4">
+        <div
+          ref={wrapRef}
+          role="tablist"
+          aria-label="Lineup selection"
+          className={styles.wrap}
+        >
+          <div className={styles.pill} style={pillStyle} />
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                ref={(el) => {
+                  if (el) btnRefs.current.set(tab.key, el);
+                  else btnRefs.current.delete(tab.key);
+                }}
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`panel-${tab.key}`}
+                onClick={() => {
+                  if (!isActive) {
+                    navigator.vibrate?.(10);
+                    onTabChange(tab.key);
+                  }
+                }}
+                className={`${styles.btn} ${isActive ? styles.active : ""}`}
+                type="button"
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
