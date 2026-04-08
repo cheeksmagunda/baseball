@@ -34,14 +34,14 @@ from app.core.constants import (
     HITTER_DAY_VEGAS_TOTAL_THRESHOLD,
     BLOWOUT_MONEYLINE_THRESHOLD,
     BLOWOUT_MIN_GAMES_FOR_STACK_DAY,
-    BOOST_NO_ENV_PENALTY,
+    BOOST_NO_ENV_PENALTY_FLOOR,
     ENV_PASS_THRESHOLD,
     MIN_GAMES_REPRESENTED,
     SAME_GAME_EXCESS_PENALTY,
     STACK_MIN_PLAYERS,
     STACK_MAX_PLAYERS,
     MIN_SCORE_THRESHOLD,
-    MIN_SCORE_PENALTY,
+    MIN_SCORE_PENALTY_FLOOR,
     PITCHER_ENV_WEAK_OPP_OPS,
     PITCHER_ENV_WEAK_OPP_K_PCT,
     PITCHER_ENV_MIN_K_PER_9,
@@ -81,6 +81,7 @@ from app.core.constants import (
     BOOST_QUALITY_THRESHOLD,
     BOOSTED_POOL_FULL_THRESHOLD,
     UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
+    GHOST_BOOST_EV_FLOOR_SCORE,
 )
 from app.core.utils import BASE_MULTIPLIER, compute_total_value, get_trait_score
 from app.services.popularity import PopularityClass
@@ -492,6 +493,70 @@ class FilterOptimizedLineup:
     warnings: list[str] = field(default_factory=list)
 
 
+def _graduated_score_penalty(total_score: float) -> float:
+    """Return a graduated EV multiplier based on how far below MIN_SCORE_THRESHOLD.
+
+    Old behavior: binary 50% cliff at score < 15.
+    New behavior: linear scale from MIN_SCORE_PENALTY_FLOOR (at score=0)
+    to 1.0 (at score=MIN_SCORE_THRESHOLD).  Scores at or above the
+    threshold return 1.0 (no penalty).
+
+    This prevents ghost+boost players at score=14 from being penalized
+    identically to score=0 players.
+    """
+    if total_score >= MIN_SCORE_THRESHOLD:
+        return 1.0
+    # Linear interpolation: 0 → FLOOR, threshold → 1.0
+    ratio = max(0.0, total_score) / MIN_SCORE_THRESHOLD
+    return MIN_SCORE_PENALTY_FLOOR + ratio * (1.0 - MIN_SCORE_PENALTY_FLOOR)
+
+
+def _graduated_env_penalty(env_score: float) -> float:
+    """Return a graduated EV multiplier for boosted players below ENV_PASS_THRESHOLD.
+
+    Old behavior: binary 30% cliff at env < 0.5.
+    New behavior: linear scale from BOOST_NO_ENV_PENALTY_FLOOR (at env=0.0)
+    to 1.0 (at env=ENV_PASS_THRESHOLD).  Scores at or above the threshold
+    return 1.0 (no penalty).
+
+    This prevents a player at env=0.48 from being treated the same as env=0.0.
+    """
+    if env_score >= ENV_PASS_THRESHOLD:
+        return 1.0
+    ratio = max(0.0, env_score) / ENV_PASS_THRESHOLD
+    return BOOST_NO_ENV_PENALTY_FLOOR + ratio * (1.0 - BOOST_NO_ENV_PENALTY_FLOOR)
+
+
+def _apply_ghost_boost_ev_floor(candidate: 'FilteredCandidate', base_ev: float) -> float:
+    """Ensure mega-ghost-boost players have a minimum EV floor.
+
+    The scoring engine systematically under-scores ghost players due to limited
+    game logs and unknown batting orders.  For mega-ghost-boost candidates
+    (boost >= 3.0, drafts < 50), we enforce a floor: the EV must be at least
+    what it would be if the player had GHOST_BOOST_EV_FLOOR_SCORE as their
+    trait score (with graduated penalties already applied).
+
+    This floor is applied *before* ownership bonuses and synergy multipliers,
+    so it only prevents data-scarcity from destroying the base EV — the rest
+    of the pipeline (ghost bonus, synergy, popularity) still runs normally.
+    """
+    if (candidate.card_boost >= 3.0
+            and candidate.drafts is not None
+            and candidate.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS):
+        floor_ev = compute_total_value(GHOST_BOOST_EV_FLOOR_SCORE, candidate.card_boost)
+        floor_ev *= _graduated_score_penalty(GHOST_BOOST_EV_FLOOR_SCORE)
+        if candidate.card_boost >= 1.0:
+            floor_ev *= _graduated_env_penalty(candidate.env_score)
+        if base_ev < floor_ev:
+            logger.debug(
+                "Ghost-boost EV floor applied for %s: %.1f → %.1f (score=%.1f, boost=%.1f, drafts=%s)",
+                candidate.player_name, base_ev, floor_ev,
+                candidate.total_score, candidate.card_boost, candidate.drafts,
+            )
+            return floor_ev
+    return base_ev
+
+
 def _popularity_ev_adjustment(popularity: PopularityClass) -> float:
     """Return EV multiplier based on web-scraped popularity classification."""
     if popularity == PopularityClass.FADE:
@@ -517,13 +582,15 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     """
     base_ev = compute_total_value(candidate.total_score, candidate.card_boost)
 
-    # Low-score penalty
-    if candidate.total_score < MIN_SCORE_THRESHOLD:
-        base_ev *= MIN_SCORE_PENALTY
+    # Low-score penalty (graduated: score 0→40% haircut, score 14→4% haircut, score 15+→none)
+    base_ev *= _graduated_score_penalty(candidate.total_score)
 
-    # Filter 4: Boost-environment gating ("Boost Trap")
-    if candidate.card_boost >= 1.0 and candidate.env_score < ENV_PASS_THRESHOLD:
-        base_ev *= BOOST_NO_ENV_PENALTY
+    # Filter 4: Boost-environment gating (graduated: env 0→40% haircut, env 0.48→4% haircut, env 0.5+→none)
+    if candidate.card_boost >= 1.0:
+        base_ev *= _graduated_env_penalty(candidate.env_score)
+
+    # V2.2: Ghost-boost EV floor — prevent data-scarcity from crushing mega-ghost-boost players
+    base_ev = _apply_ghost_boost_ev_floor(candidate, base_ev)
 
     # Filter 3: Web-scraped popularity (FADE=0.75, TARGET=1.15)
     pop_adj = _popularity_ev_adjustment(candidate.popularity)
@@ -1056,13 +1123,15 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     """
     base_ev = compute_total_value(candidate.total_score, candidate.card_boost)
 
-    # Low-score penalty (same as Starting 5)
-    if candidate.total_score < MIN_SCORE_THRESHOLD:
-        base_ev *= MIN_SCORE_PENALTY
+    # Low-score penalty (graduated, same as Starting 5)
+    base_ev *= _graduated_score_penalty(candidate.total_score)
 
-    # Boost-environment gating (same as Starting 5)
-    if candidate.card_boost >= 1.0 and candidate.env_score < ENV_PASS_THRESHOLD:
-        base_ev *= BOOST_NO_ENV_PENALTY
+    # Boost-environment gating (graduated, same as Starting 5)
+    if candidate.card_boost >= 1.0:
+        base_ev *= _graduated_env_penalty(candidate.env_score)
+
+    # V2.2: Ghost-boost EV floor (same as Starting 5)
+    base_ev = _apply_ghost_boost_ev_floor(candidate, base_ev)
 
     # Moonshot popularity adjustment (heavier than Starting 5)
     pop_adj = _moonshot_popularity_adj(candidate.popularity)

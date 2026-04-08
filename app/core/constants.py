@@ -70,11 +70,14 @@ MLB_TEAMS = sorted(PARK_HR_FACTORS.keys())
 # Draft evaluation: warn if user's lineup is this % worse than optimal
 SUBOPTIMAL_THRESHOLD = 1.05  # 5% EV variance
 
-# Minimum score threshold: players below this get an EV penalty
-# Data shows ~65% of winning lineups have all players RS >= 1.0
-# A low-scoring player with a huge boost is often a trap
-MIN_SCORE_THRESHOLD = 15  # out of 100
-MIN_SCORE_PENALTY = 0.50  # 50% EV haircut for below-threshold players
+# Minimum score threshold: players below this get a graduated EV penalty.
+# Instead of a binary cliff (old: 50% haircut at <15), the penalty now scales
+# linearly from MIN_SCORE_PENALTY_FLOOR at score=0 up to 1.0 at the threshold.
+# This prevents ghost+boost players with score=14 from being treated identically
+# to score=0 players.  See _graduated_score_penalty() in filter_strategy.py.
+MIN_SCORE_THRESHOLD = 15  # out of 100 — full penalty below 0, no penalty at/above 15
+MIN_SCORE_PENALTY_FLOOR = 0.40  # worst-case multiplier at score=0 (60% haircut)
+# Removed: MIN_SCORE_PENALTY = 0.50 — replaced by graduated scale
 
 # ---------------------------------------------------------------------------
 # Filter Strategy constants (§4 "Filter, Not Forecast")
@@ -113,9 +116,14 @@ BOOST_QUALITY_THRESHOLD = 1.0
 BOOSTED_POOL_FULL_THRESHOLD = 5
 
 # Boost-environment gating (Filter 4 — §4.2 Filter 4)
-# A boost without environmental support is a trap (§3.5 "Boost Trap")
-BOOST_NO_ENV_PENALTY = 0.70      # 30% EV haircut when boost has no env support
-ENV_PASS_THRESHOLD = 0.5         # env_score must be > 0.5 (out of 1.0) to "pass"
+# A boost without environmental support is a trap (§3.5 "Boost Trap").
+# Instead of a binary 30% haircut at env < 0.5, the penalty now scales linearly:
+# env=0.0 → BOOST_NO_ENV_PENALTY_FLOOR (full penalty), env=ENV_PASS_THRESHOLD → 1.0 (no penalty).
+# This prevents a player at env=0.48 from being treated the same as env=0.0.
+# See _graduated_env_penalty() in filter_strategy.py.
+BOOST_NO_ENV_PENALTY_FLOOR = 0.60  # worst-case multiplier at env=0.0 (40% haircut)
+ENV_PASS_THRESHOLD = 0.5           # env_score >= this = no penalty at all
+# Removed: BOOST_NO_ENV_PENALTY = 0.70 — replaced by graduated scale
 
 # Game diversification (Filter 5 — V2 Law 9)
 MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup
@@ -199,6 +207,25 @@ GHOST_BOOST_SYNERGY_MIN_BOOST = 2.5   # minimum boost for ghost+boost synergy
 GHOST_BOOST_SYNERGY_BONUS = 1.30      # 30% EV bonus for ghost + high boost
 MEGA_GHOST_BOOST_MAX_DRAFTS = 50      # < 50 drafts + 3.0 boost + env pass = auto-include
 MEGA_GHOST_BOOST_BONUS = 1.50         # 50% EV bonus for mega-ghost + max boost
+
+# ---------------------------------------------------------------------------
+# High-boost ghost EV floor (V2.2 — April 8 post-mortem fix)
+#
+# The scoring engine systematically under-scores ghost players because they
+# have limited game logs, unknown batting orders, and thin statistical profiles.
+# The graduated score penalty + boost-env penalty can still crush a mega-ghost-
+# boost player whose trait score is low due to data scarcity rather than bad play.
+#
+# Historical data: mega-ghost-boost players (3.0x, <50 drafts) average ~28
+# total_value on the HV list.  Using the core formula backwards:
+#   28 = RS × (2 + 3) → RS ≈ 5.6 → implied score ≈ 56/100 if fully known.
+# These players' true ability is far higher than the scoring engine can measure.
+#
+# The floor ensures that when boost ≥ 3.0 AND drafts < 50, the EV is at least
+# GHOST_BOOST_EV_FLOOR_SCORE × (2 + boost), *before* synergy/ghost bonuses.
+# This acts as a minimum trait-score proxy for data-scarce ghost+boost players.
+# ---------------------------------------------------------------------------
+GHOST_BOOST_EV_FLOOR_SCORE = 18.0  # minimum effective score for mega-ghost-boost players
 
 # ---------------------------------------------------------------------------
 # Lineup structure validation (V2 §5 + §9 Finding 4)
