@@ -2,7 +2,7 @@
   display: flex;
   gap: 2px;
   position: relative;
-  margin: 0 16px 10px;
+  margin: 0;
   background: rgba(var(--chalk-rgb), 0.06);
   border: 1px solid rgba(var(--chalk-rgb), 0.12);
   border-top-color: rgba(255, 255, 255, 0.14);

@@ -3,6 +3,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  max-width: 28rem;
+  margin: 0 auto;
   padding: 10px 16px 8px;
 }
 
