@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
 /* ─── Design Tokens ─── */
@@ -51,6 +51,14 @@
   /* Typography */
   --font-body: "Inter", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "Barlow Condensed", sans-serif;
+
+  /* Chalk palette (glassmorphic glows) */
+  --chalk: #ffffff;
+  --chalk-rgb: 255, 255, 255;
+  --chalk-glow: rgba(255, 255, 255, 0.15);
+  --muted: #a0a0a0;
+  --green: #4ade80;
 }
 
 /* ─── Tailwind v4 Theme Extensions ─── */
@@ -79,6 +87,7 @@
 
   --font-body: var(--font-body);
   --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
 
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
