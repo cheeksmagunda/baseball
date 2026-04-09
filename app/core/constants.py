@@ -257,6 +257,7 @@ GHOST_ENFORCE_SWAP_THRESHOLD = 0.50  # was 0.70 — lowered so ghost inclusion a
 # comes from ghost+boost batters — not from stacking pitchers. A second pitcher
 # consumes a slot that a ghost+boost batter (the real edge) could fill.
 MAX_PITCHERS_IN_LINEUP = 1           # max 1 SP per lineup (Starting 5 and Moonshot)
+MAX_PLAYERS_PER_TEAM = 1             # max 1 player from any single team per lineup
 
 # ---------------------------------------------------------------------------
 # Boost concentration penalty (§4.2 Filter 4)
