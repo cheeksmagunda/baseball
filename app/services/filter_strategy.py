@@ -84,6 +84,8 @@ from app.core.constants import (
     BOOSTED_POOL_FULL_THRESHOLD,
     UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
     GHOST_BOOST_EV_FLOOR_SCORE,
+    MEGA_GHOST_ENV_PENALTY_FLOOR,
+    GHOST_ENFORCE_SWAP_THRESHOLD,
 )
 from app.core.utils import BASE_MULTIPLIER, compute_total_value, get_trait_score
 from app.services.popularity import PopularityClass
@@ -530,30 +532,35 @@ def _graduated_env_penalty(env_score: float) -> float:
 
 
 def _apply_ghost_boost_ev_floor(candidate: 'FilteredCandidate', base_ev: float) -> float:
-    """Ensure mega-ghost-boost players have a minimum EV floor.
+    """Ensure ghost-boost players have a minimum EV floor.
 
     The scoring engine systematically under-scores ghost players due to limited
-    game logs and unknown batting orders.  For mega-ghost-boost candidates
-    (boost >= 3.0, drafts < 50), we enforce a floor: the EV must be at least
+    game logs and unknown batting orders.  For ghost-boost candidates
+    (boost >= 2.5, drafts < 100), we enforce a floor: the EV must be at least
     what it would be if the player had GHOST_BOOST_EV_FLOOR_SCORE as their
-    trait score (with graduated penalties already applied).
+    trait score.
+
+    Critically, the floor does NOT apply the env penalty.  Data scarcity also
+    suppresses env_score (unknown batting order alone drops env ~0.5→0.17), so
+    penalising the floor by env would double-count the same information gap.
+    The floor compensates for ALL data-scarcity effects, env included.
 
     This floor is applied *before* ownership bonuses and synergy multipliers,
     so it only prevents data-scarcity from destroying the base EV — the rest
     of the pipeline (ghost bonus, synergy, popularity) still runs normally.
     """
-    if (candidate.card_boost >= 3.0
+    if (candidate.card_boost >= GHOST_BOOST_SYNERGY_MIN_BOOST
             and candidate.drafts is not None
-            and candidate.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS):
+            and candidate.drafts < GHOST_DRAFT_THRESHOLD):
         floor_ev = compute_total_value(GHOST_BOOST_EV_FLOOR_SCORE, candidate.card_boost)
         floor_ev *= _graduated_score_penalty(GHOST_BOOST_EV_FLOOR_SCORE)
-        if candidate.card_boost >= 1.0:
-            floor_ev *= _graduated_env_penalty(candidate.env_score)
+        # Intentionally NOT applying _graduated_env_penalty here — the floor is
+        # env-independent because data scarcity also suppresses env_score.
         if base_ev < floor_ev:
             logger.debug(
-                "Ghost-boost EV floor applied for %s: %.1f → %.1f (score=%.1f, boost=%.1f, drafts=%s)",
+                "Ghost-boost EV floor applied for %s: %.1f → %.1f (score=%.1f, boost=%.1f, drafts=%s, env=%.2f)",
                 candidate.player_name, base_ev, floor_ev,
-                candidate.total_score, candidate.card_boost, candidate.drafts,
+                candidate.total_score, candidate.card_boost, candidate.drafts, candidate.env_score,
             )
             return floor_ev
     return base_ev
@@ -589,7 +596,16 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
 
     # Filter 4: Boost-environment gating (graduated: env 0→40% haircut, env 0.48→4% haircut, env 0.5+→none)
     if candidate.card_boost >= 1.0:
-        base_ev *= _graduated_env_penalty(candidate.env_score)
+        env_penalty = _graduated_env_penalty(candidate.env_score)
+        # Mega-ghost-boost players (< 50 drafts, boost >= 3.0) have unreliable env_scores
+        # because data scarcity suppresses them (e.g. unknown batting order alone drops
+        # env from ~0.5 to ~0.17). Cap the haircut at 20% for this tier so data gaps
+        # don't compound with the already-low trait scores.
+        if (candidate.drafts is not None
+                and candidate.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS
+                and candidate.card_boost >= 3.0):
+            env_penalty = max(env_penalty, MEGA_GHOST_ENV_PENALTY_FLOOR)
+        base_ev *= env_penalty
 
     # V2.2: Ghost-boost EV floor — prevent data-scarcity from crushing mega-ghost-boost players
     base_ev = _apply_ghost_boost_ev_floor(candidate, base_ev)
@@ -626,11 +642,12 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
 
     # V2 §2 Pillar 3: Ghost + Boost synergy ("the holy grail")
     # boost ≥ 2.5 + < 200 drafts = avg ~28 total_value on HV list
-    # boost 3.0 + < 50 drafts + env pass = auto-include tier
+    # boost 3.0 + < 50 drafts = auto-include tier (historical 82% hit rate — env NOT required)
     if candidate.drafts is not None and candidate.card_boost >= GHOST_BOOST_SYNERGY_MIN_BOOST:
         if (candidate.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS
-                and candidate.card_boost >= 3.0
-                and candidate.env_score >= ENV_PASS_THRESHOLD):
+                and candidate.card_boost >= 3.0):
+            # Mega-ghost+max-boost: env gate removed. Historical data shows 82% TV>15 rate
+            # for this tier regardless of env — gating by env blocks the primary edge play.
             base_ev *= MEGA_GHOST_BOOST_BONUS
         elif candidate.drafts < LOW_DRAFT_THRESHOLD and candidate.env_score >= ENV_PASS_THRESHOLD:
             base_ev *= GHOST_BOOST_SYNERGY_BONUS
@@ -803,6 +820,9 @@ def _validate_lineup_structure(
     )
     if ghost_count < MIN_GHOST_IN_LINEUP:
         lineup_names = {c.player_name for c in lineup}
+        # First preference: ghost with full env support.
+        # Fallback: mega-ghost+boost even without env — their EV floor already
+        # compensates for data-scarcity-driven low env scores (see _apply_ghost_boost_ev_floor).
         best_ghost = next(
             (c for c in all_candidates_sorted
              if c.player_name not in lineup_names
@@ -811,13 +831,23 @@ def _validate_lineup_structure(
              and c.env_score >= ENV_PASS_THRESHOLD),
             None,
         )
+        if best_ghost is None:
+            # No env-passing ghost — try mega-ghost+boost (env gate waived per V2.4)
+            best_ghost = next(
+                (c for c in all_candidates_sorted
+                 if c.player_name not in lineup_names
+                 and c.drafts is not None
+                 and c.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS
+                 and c.card_boost >= 3.0),
+                None,
+            )
         if best_ghost:
             # Replace the lowest-EV non-ghost in the lineup
             worst_idx = min(
                 range(len(lineup)),
                 key=lambda i: lineup[i].filter_ev,
             )
-            if best_ghost.filter_ev >= lineup[worst_idx].filter_ev * 0.7:
+            if best_ghost.filter_ev >= lineup[worst_idx].filter_ev * GHOST_ENFORCE_SWAP_THRESHOLD:
                 lineup[worst_idx] = best_ghost
 
     # Rule 3: Max 1 starting pitcher (V2.3 — April 7 post-mortem)
