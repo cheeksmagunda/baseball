@@ -12,7 +12,7 @@ export function StickyHeader({ slate }: StickyHeaderProps) {
     <header>
       <div className={styles.header}>
         <div className={styles.logo}>
-          <div className={styles.logoIcon}>⚾</div>
+          <img src="/icon.svg" alt="" className={styles.logoIcon} width={44} height={44} />
           <div>
             <h1 className={styles.title}>BEN ORACLE</h1>
             <span className={styles.sub}>SEES WHAT OTHERS MISS</span>
