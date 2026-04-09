@@ -86,6 +86,7 @@ from app.core.constants import (
     GHOST_BOOST_EV_FLOOR_SCORE,
     MEGA_GHOST_ENV_PENALTY_FLOOR,
     GHOST_ENFORCE_SWAP_THRESHOLD,
+    MAX_PLAYERS_PER_TEAM,
 )
 from app.core.utils import BASE_MULTIPLIER, compute_total_value, get_trait_score
 from app.services.popularity import PopularityClass
@@ -874,6 +875,41 @@ def _validate_lineup_structure(
                     "Pitcher cap (max %d): replaced %s with %s",
                     MAX_PITCHERS_IN_LINEUP, removed_name, replacement.player_name,
                 )
+
+    # Rule 4: Max N players per team (diversification)
+    # Prevents over-concentration in a single team's outcome.
+    from collections import Counter
+    team_counts = Counter(c.team for c in lineup)
+    for team, count in team_counts.items():
+        if count > MAX_PLAYERS_PER_TEAM:
+            # Find indices of players from this team, sorted by EV descending
+            team_indices = sorted(
+                [i for i, c in enumerate(lineup) if c.team == team],
+                key=lambda i: lineup[i].filter_ev,
+                reverse=True,
+            )
+            lineup_names = {c.player_name for c in lineup}
+            # Keep the top MAX_PLAYERS_PER_TEAM, replace the rest
+            for idx in team_indices[MAX_PLAYERS_PER_TEAM:]:
+                # Find best candidate whose team isn't already at the cap
+                current_team_counts = Counter(c.team for c in lineup)
+                replacement = next(
+                    (c for c in all_candidates_sorted
+                     if c.player_name not in lineup_names
+                     and current_team_counts.get(c.team, 0) < MAX_PLAYERS_PER_TEAM),
+                    None,
+                )
+                if replacement:
+                    removed_name = lineup[idx].player_name
+                    removed_team = lineup[idx].team
+                    lineup_names.discard(removed_name)
+                    lineup[idx] = replacement
+                    lineup_names.add(replacement.player_name)
+                    logger.info(
+                        "Team cap (max %d per team): replaced %s (%s) with %s (%s)",
+                        MAX_PLAYERS_PER_TEAM, removed_name, removed_team,
+                        replacement.player_name, replacement.team,
+                    )
 
     return lineup
 
