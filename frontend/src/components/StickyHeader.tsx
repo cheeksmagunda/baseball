@@ -74,28 +74,28 @@ export function StickyHeader({ slate }: StickyHeaderProps) {
       <div className={styles.glowBackdrop} />
 
       <div className={styles.content}>
-        <div className={styles.titleRow}>
-          <h1 className={styles.title}>
-            <span className={styles.gradientText}>
-              BEN&nbsp;<InlineBaseball />RACLE
-            </span>
-          </h1>
-          <span className={styles.bombBadge}>ABSOLUTE BOMB</span>
+        <div className={styles.left}>
+          <div className={styles.titleRow}>
+            <h1 className={styles.title}>
+              <span className={styles.gradientText}>
+                BEN&nbsp;<InlineBaseball />RACLE
+              </span>
+            </h1>
+            <span className={styles.bombBadge}>ABSOLUTE BOMB</span>
+          </div>
+          <span className={styles.sub}>SEES WHAT OTHERS MISS</span>
         </div>
 
-        <div className={styles.metaRow}>
-          <span className={styles.sub}>SEES WHAT OTHERS MISS</span>
-          {slate && (
-            <div className={styles.meta}>
-              <div className={styles.badge}>
-                {slate.game_count} {slate.game_count === 1 ? "game" : "games"}
-              </div>
-              <div className={`${styles.badge} ${styles.badgeActive}`}>
-                {slate.slate_type.replace("_", " ")}
-              </div>
+        {slate && (
+          <div className={styles.meta}>
+            <div className={styles.badge}>
+              {slate.game_count} {slate.game_count === 1 ? "game" : "games"}
             </div>
-          )}
-        </div>
+            <div className={`${styles.badge} ${styles.badgeActive}`}>
+              {slate.slate_type.replace("_", " ")}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className={styles.bottomFade} />
