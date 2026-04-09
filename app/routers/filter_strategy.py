@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.core.constants import PITCHER_POSITIONS
+from app.core.constants import PITCHER_POSITIONS, MOST_DRAFTED_3X_TOP_N
 from app.core.utils import find_player_by_name, get_trait_score
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.schemas.scoring import TraitBreakdown
@@ -233,6 +233,22 @@ async def _resolve_candidates(
             is_most_drafted_3x=card.is_most_drafted_3x,
             traits=score_result.traits,
         ))
+
+    # Dynamic is_most_drafted_3x: the DB flag is only set retrospectively by post-game
+    # analysis and is always False for today's live slate.  Compute it on the fly:
+    # mark the top-N most-drafted players with boost >= 3.0 so the V2.3 env-aware
+    # trap penalty actually fires.  Matches the ~5-per-day historical pattern.
+    boost3_by_drafts = sorted(
+        [c for c in candidates if c.card_boost >= 3.0 and c.drafts is not None],
+        key=lambda c: c.drafts,
+        reverse=True,
+    )
+    for c in boost3_by_drafts[:MOST_DRAFTED_3X_TOP_N]:
+        c.is_most_drafted_3x = True
+        logger.debug(
+            "Dynamic is_most_drafted_3x: %s (drafts=%s, boost=%.1f)",
+            c.player_name, c.drafts, c.card_boost,
+        )
 
     return candidates
 

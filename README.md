@@ -31,15 +31,18 @@ A rule-based scoring engine and draft optimizer for **Real Sports DFS** (basebal
                     └──────────────┘
 ```
 
-### Three-Stage Pipeline
+### Four-Stage Pipeline
 
-1. **Collect** — Fetch today's MLB schedule and player stats from the MLB Stats API
-2. **Score** — Rate each player 0-100 via trait-based profiling (pitchers: 5 traits, batters: 7 traits)
-3. **Optimize** — Assign top cards to slots using the rearrangement inequality (greedy = provably optimal)
+1. **Collect** (`app/services/data_collection.py`) — Fetch today's MLB schedule, player stats, and game context from the MLB Stats API
+2. **Score** (`app/services/scoring_engine.py`) — Rate each player 0-100 via trait-based profiling (pitchers: 5 traits, batters: 7 traits)
+3. **Filter** (`app/services/filter_strategy.py`) — Apply five sequential filters: slate classification, environmental advantage, ownership leverage, boost optimization, slot sequencing
+4. **Optimize** (`app/routers/filter_strategy.py` → `run_dual_filter_strategy`) — Produce Starting 5 + Moonshot lineups
+
+The primary optimization path is `filter_strategy`, not `draft_optimizer.py` (which is dead code kept only for lineup evaluation).
 
 ### Philosophy
 
-It's not a machine learning model nor a deterministic predictive engine — it's a **rule-based scoring engine** backed by live API data, with a **feedback loop** that gets smarter over time. The goal at all times is to **win the drafts**. We don't need to predict Real Score — we estimate it via player profiling and optimize around card boosts.
+It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data with a feedback loop. The goal is to **win drafts**, not predict Real Score. The optimizer identifies which players are in the ghost+high-boost category, because that category's historical win rate (82%) is itself the signal. Trait scores from the scoring engine are secondary — they matter far less than draft tier × boost.
 
 ## Scoring Engine
 
@@ -90,34 +93,38 @@ A fifth signal source used exclusively by the Moonshot lineup:
 
 If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +25% EV boost in Moonshot only.
 
-## Dual-Lineup Optimizer
+## Dual-Lineup Optimizer (V2.4 "Anchor, Differentiate, Stack")
 
 The optimizer produces **two lineups** from the same ranked candidate pool:
 
 | Lineup | Strategy | Popularity | Edge |
 |---|---|---|---|
-| **Starting 5** | Best EV, safe | FADE=0.75, TARGET=1.15 | Most likely to win any slate |
+| **Starting 5** | Best EV | FADE=0.75, TARGET=1.15 | Primary win probability |
 | **Moonshot** | Completely different 5 | FADE=0.60, TARGET=1.30 | Anti-crowd, sharp signal, HR power |
 
-**Moonshot EV formula:**
-```
-moonshot_ev = raw_ev × pop_adj × sharp_bonus(+25% max) × explosive_bonus(+10% max)
-```
+**The primary signal is draft tier × boost**, not trait score:
 
-- Zero player overlap with Starting 5
-- Soft penalty (0.85x) for same-game exposure as Starting 5
-- Batters: power_profile trait as tiebreaker
-- Pitchers: k_rate trait as tiebreaker
-- Sharp underground signal boosts EV up to +20%
+| Draft tier + boost ≥ 2.0 | Avg TV | % TV>15 (15 dates) |
+|---|---|---|
+| mega-ghost (<50 drafts) | 19.9 | **82%** |
+| ghost (50–99 drafts) | 20.7 | **100%** |
+| medium (200–499 drafts) | 2.5 | 0% |
+| chalk (1500+ drafts) | 6.4 | 25% |
 
-Both lineups use the same scoring engine, same rearrangement inequality, same candidate pool. Moonshot just swings bigger.
+**Key optimizer behaviors:**
+- Top-5 most-drafted boost=3.0 players flagged each run as chalk+boost traps (57% bust rate)
+- Mega-ghost+3x players (< 50 drafts) get 1.50× synergy bonus and env penalty cap of 20%
+- Ghost+boost EV floor at score=30 (env-independent) prevents data scarcity from burying ghost picks
+- Min 1 ghost in lineup enforced; fallback accepts mega-ghost+3x even without env data
+- Max 1 starting pitcher per lineup (ghost+boost batters outweigh a 2nd pitcher slot)
+- Moonshot: zero overlap with Starting 5; heavier anti-crowd lean; underground sharp signal (+25% EV max)
 
 ## Strategy Insights
 
-- **Winning formula**: All 5 RS ≥ 1.0 with 2+ RS ≥ 3.0
-- **Anti-popularity edge**: Low-ownership players consistently outperform — popularity estimated dynamically via web signals, not historical draft counts
-- **Card boost leverage**: A +3.0x boosted player with RS 2.4 matches an unboosted ace with RS 6.0
-- **Draft optimizer**: Rearrangement inequality — highest expected value → highest slot multiplier, with popularity adjustments
+- **Primary edge**: Ghost+high-boost (< 100 drafts, boost ≥ 2.5) wins 82–100% of the time historically. Picking this tier correctly matters more than any trait score.
+- **Boost trap**: Medium/chalk-draft players with high boost (200–1499 drafts, boost ≥ 2.0) win only 0–12% of the time. The crowd sees the boost and piles in, but RS doesn't follow.
+- **Card boost math**: A ghost with RS 3.0 and +3.0x boost (TV 15.0) decisively beats an unboosted chalk player with RS 5.0 (TV 10.0).
+- **Slot sequencing**: Unboosted players in Slot 1 (67% value loss from Slot 1→5). Boosted players are slot-flexible (only 16% loss at +3.0x).
 
 ## API Endpoints
 
@@ -202,8 +209,9 @@ app/
 ├── schemas/                # Pydantic request/response models
 ├── routers/                # API route handlers
 └── services/
-    ├── scoring_engine.py   # THE HEART — trait-based scorer
-    ├── draft_optimizer.py  # Dual-lineup optimizer (Starting 5 + Moonshot)
+    ├── scoring_engine.py   # Trait-based scorer (0-100)
+    ├── filter_strategy.py  # THE HEART — EV pipeline + dual-lineup optimizer (Starting 5 + Moonshot)
+    ├── draft_optimizer.py  # DEAD CODE — kept only for evaluate_lineup; superseded by filter_strategy
     ├── popularity.py       # Web-scraping popularity signal aggregator
     ├── data_collection.py  # MLB API data fetching
     ├── pipeline.py         # Fetch → Score → Rank orchestrator

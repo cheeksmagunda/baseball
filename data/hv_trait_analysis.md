@@ -1,6 +1,17 @@
 # Highest Value Player Trait Analysis
 ## Pre-Draft Filtering Strategy — Based on March 25-31, 2026 Data
 
+> **V2.4 Update (April 9):** The expanded 15-date dataset (March 25 – April 8) confirms and
+> sharpens the findings below. The single most predictive signal is **draft tier × boost**:
+> - mega-ghost (<50 drafts) + boost ≥ 2.0 → **82% TV>15 rate**, avg TV 19.9
+> - ghost (50–99 drafts) + boost ≥ 2.0 → **100% TV>15 rate**, avg TV 20.7
+> - medium (200–499 drafts) + boost ≥ 2.0 → 0% TV>15 rate, avg TV 2.5
+>
+> Trait scores (power_profile, k_rate, etc.) remain useful for ranking within a tier, but
+> the tier selection dominates. A mega-ghost with average traits beats a chalk player with
+> elite traits when both have the same boost. The optimizer (V2.4) encodes this via an
+> env-independent EV floor at score=30 and unconstrained mega-ghost synergy bonus (1.50×).
+
 ### Dataset
 - 98 Highest Value player appearances across 7 slate dates
 - 16 pitcher appearances, 82 batter appearances

@@ -203,6 +203,10 @@ MEGA_CHALK_PENALTY = 0.70             # 30% EV penalty for mega-chalk
 # Rule: if env_score >= ENV_PASS_THRESHOLD, the 3x trap is half as severe.
 MOST_DRAFTED_3X_PENALTY = 0.60        # 40% EV penalty — no env support (bust risk is real)
 MOST_DRAFTED_3X_ENV_PASS_PENALTY = 0.80  # 20% EV penalty — env passes (boost is backed by conditions)
+# How many of the most-drafted 3x-boost players to flag per slate.
+# Historical data: ~5 players per day carry the is_most_drafted_3x label.
+# For live slates (where the DB flag is never set), compute this dynamically.
+MOST_DRAFTED_3X_TOP_N = 5
 
 # ---------------------------------------------------------------------------
 # Ghost + Boost synergy (V2 §2 Pillar 3 — the "holy grail")
@@ -210,9 +214,12 @@ MOST_DRAFTED_3X_ENV_PASS_PENALTY = 0.80  # 20% EV penalty — env passes (boost 
 # Players with boost 3.0 AND < 50 drafts who pass env = auto-include tier.
 # ---------------------------------------------------------------------------
 GHOST_BOOST_SYNERGY_MIN_BOOST = 2.5   # minimum boost for ghost+boost synergy
-GHOST_BOOST_SYNERGY_BONUS = 1.30      # 30% EV bonus for ghost + high boost
-MEGA_GHOST_BOOST_MAX_DRAFTS = 50      # < 50 drafts + 3.0 boost + env pass = auto-include
-MEGA_GHOST_BOOST_BONUS = 1.50         # 50% EV bonus for mega-ghost + max boost
+GHOST_BOOST_SYNERGY_BONUS = 1.30      # 30% EV bonus for ghost + high boost (env required)
+MEGA_GHOST_BOOST_MAX_DRAFTS = 50      # < 50 drafts + boost >= 3.0 = mega-ghost-boost tier
+MEGA_GHOST_BOOST_BONUS = 1.50         # 50% EV bonus for mega-ghost + max boost (NO env requirement)
+# For mega-ghost-boost players, data scarcity makes env_score unreliable (unknown batting
+# order alone drops env from ~0.5 to ~0.17). Cap the env haircut at 20% for this tier.
+MEGA_GHOST_ENV_PENALTY_FLOOR = 0.80  # worst-case env multiplier for mega-ghost-boost players
 
 # ---------------------------------------------------------------------------
 # High-boost ghost EV floor (V2.2 — April 8 post-mortem fix)
@@ -231,7 +238,11 @@ MEGA_GHOST_BOOST_BONUS = 1.50         # 50% EV bonus for mega-ghost + max boost
 # GHOST_BOOST_EV_FLOOR_SCORE × (2 + boost), *before* synergy/ghost bonuses.
 # This acts as a minimum trait-score proxy for data-scarce ghost+boost players.
 # ---------------------------------------------------------------------------
-GHOST_BOOST_EV_FLOOR_SCORE = 18.0  # minimum effective score for mega-ghost-boost players
+GHOST_BOOST_EV_FLOOR_SCORE = 30.0  # minimum effective score for ghost-boost players (env-independent)
+# Historical data: ghost+boost (<100 drafts, boost>=2.5) produces TV>15 at 82-100% rate.
+# At score=30 without env penalty: floor_ev=150 for boost=3.0, always beats a natural
+# ghost score (~29) that gets the 40% env haircut (87). Floor is intentionally env-independent
+# because data scarcity (unknown batting_order) also suppresses env_score unfairly.
 
 # ---------------------------------------------------------------------------
 # Lineup structure validation (V2 §5 + §9 Finding 4)
@@ -239,6 +250,8 @@ GHOST_BOOST_EV_FLOOR_SCORE = 18.0  # minimum effective score for mega-ghost-boos
 # ---------------------------------------------------------------------------
 MAX_MEGA_CHALK_IN_LINEUP = 1          # max 1 player with 2000+ drafts
 MIN_GHOST_IN_LINEUP = 1              # min 1 ghost player (< 100 drafts)
+# Ghost enforcement: replace worst lineup player with a ghost if ghost EV >= this fraction
+GHOST_ENFORCE_SWAP_THRESHOLD = 0.50  # was 0.70 — lowered so ghost inclusion actually fires
 # V2.3: Cap at 1 starting pitcher per lineup.
 # Historical data shows rank-1 lineups had 0-5 pitchers, but the user's edge
 # comes from ghost+boost batters — not from stacking pitchers. A second pitcher
