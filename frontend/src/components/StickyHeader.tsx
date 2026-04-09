@@ -81,21 +81,18 @@ export function StickyHeader({ slate }: StickyHeaderProps) {
                 BEN&nbsp;<InlineBaseball />RACLE
               </span>
             </h1>
-            <span className={styles.bombBadge}>ABSOLUTE BOMB</span>
           </div>
           <span className={styles.sub}>SEES WHAT OTHERS MISS</span>
         </div>
 
-        {slate && (
-          <div className={styles.meta}>
+        <div className={styles.meta}>
+          <span className={styles.bombBadge}>ABSOLUTE BOMB</span>
+          {slate && (
             <div className={styles.badge}>
               {slate.game_count} {slate.game_count === 1 ? "game" : "games"}
             </div>
-            <div className={`${styles.badge} ${styles.badgeActive}`}>
-              {slate.slate_type.replace("_", " ")}
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </header>
   );
