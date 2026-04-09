@@ -1,46 +1,106 @@
 .header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  position: relative;
   max-width: 28rem;
   margin: 0 auto;
-  padding: 10px 16px 8px;
+  padding: 12px 16px 0;
 }
 
-.logo {
+/* Soft fiery glow behind the header */
+.glowBackdrop {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 80% 100% at center top,
+    rgba(255, 107, 53, 0.10) 0%,
+    rgba(255, 69, 0, 0.05) 40%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.title {
   font-family: var(--font-display);
   font-size: 1.7rem;
   font-weight: 900;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.logoIcon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  object-fit: cover;
-  box-shadow:
-    0 4px 20px var(--chalk-glow),
-    0 1px 0 rgba(255, 255, 255, 0.26) inset;
-  flex-shrink: 0;
-}
-
-.title {
-  font-family: inherit;
-  font-size: inherit;
-  font-weight: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  color: var(--text-primary);
   line-height: 1.1;
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+/* Animated fiery gradient on text */
+.gradientText {
+  background: linear-gradient(
+    90deg,
+    #ff6b35 0%,
+    #ff4500 25%,
+    #ffaa00 50%,
+    #ff4500 75%,
+    #ff6b35 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: fireShift 4s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+}
+
+@keyframes fireShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gradientText {
+    animation: none;
+    background-position: 0% 50%;
+  }
+}
+
+/* Inline baseball SVG replacing the "O" */
+.inlineBaseball {
+  display: inline-block;
+  width: 1.3em;
+  height: 1.3em;
+  vertical-align: middle;
+  margin: 0 -0.02em;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 6px rgba(255, 107, 53, 0.6));
+}
+
+/* "ABSOLUTE BOMB" fiery badge */
+.bombBadge {
+  font-family: var(--font-display);
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffaa00;
+  background: rgba(255, 69, 0, 0.12);
+  border: 1px solid rgba(255, 107, 53, 0.3);
+  border-radius: var(--radius-full);
+  padding: 3px 8px;
+  white-space: nowrap;
+  line-height: 1;
+  flex-shrink: 0;
+  box-shadow: 0 0 10px rgba(255, 107, 53, 0.15);
 }
 
 .sub {
@@ -49,14 +109,20 @@
   color: var(--muted);
   letter-spacing: 0.14em;
   display: block;
-  margin-top: 2px;
+  margin-top: 3px;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
 }
 
 .meta {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
 }
 
 .badge {
@@ -71,4 +137,13 @@
 
 .badgeActive {
   color: var(--green);
+}
+
+/* Seamless bottom fade into page content */
+.bottomFade {
+  height: 16px;
+  background: linear-gradient(to bottom, transparent, var(--surface-base));
+  pointer-events: none;
+  position: relative;
+  z-index: 1;
 }
