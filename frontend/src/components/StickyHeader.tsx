@@ -97,8 +97,6 @@ export function StickyHeader({ slate }: StickyHeaderProps) {
           </div>
         )}
       </div>
-
-      <div className={styles.bottomFade} />
     </header>
   );
 }
