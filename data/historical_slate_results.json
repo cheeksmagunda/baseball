@@ -1436,5 +1436,14 @@
     "source": "screenshot_ingest",
     "saved_at": "2026-04-08T00:00:00Z",
     "notes": "Tuesday slate (13 games). Nathan Eovaldi (TEX, P) appeared in 11 of 12 top lineups — the essential anchor of the day with RS 3.4 and +3.0x boost. Shane Smith (SEA, OF) the biggest surprise: ghost +3.0x boost player in 8 of 12 top lineups, RS 2.8, only 1k drafts. Rank 1 (tyran_stokes, 71.08) ran Crochet/Eovaldi/Smith/Henderson/PCA — pure ghost+boost EV lineup. Sandy Alcantara (MIA, P) had best RS at 7.5 with zero boost (TV 15.0, 224 drafts); appeared in ranks 5, 9, 12. Ghost ghost sweep: Amed Rosario (MIL, SS, RS 7.3, 1 draft, TV 36.5) was highest-value player but nearly nobody had him — massive ghost win. Other ghost hits: Daniel Susac (OAK, 1 draft, RS 4.1), Matt McLain (CIN, 1 draft, RS 3.6), Jakob Marsee (OAK, 1 draft, RS 2.9), Nathan Church (WSH, 1 draft, RS 3.2), Alex Freeland (COL, 1 draft, RS 3.3). Willi Castro (MIN, 4 drafts, RS 5.4, TV 27.0) was the key ghost in rank 4 (foot_, 58.20) which ran a full BAL stack + Castro. Boost traps: Tarik Skubal (4.4k drafts, RS 0.7) worst crowd bust of the day; Shohei Ohtani (4.6k drafts, RS 1.4) underperformed; José Ramírez (RS -0.7, +3.0x, 362 drafts) destroyed lineups in rank 8; Aaron Judge (RS -0.2, +1.9x, 1.8k drafts); Yordan Alvarez (RS -0.4, +1.6x, 2.3k drafts). Robbie Ray (SF, P, RS 5.9, ghost, no boost) huge value play. Paul Skenes (PIT, RS 4.8, +0.3x) solid in 7 of 12 top lineups. Rank 4 (foot_) used a BAL stack (Henderson/Ward/Mullins) but Mullins (-0.4 RS) was a drag — however Willi Castro's 5.4 RS at 4.4x (ghost+boost) saved the lineup."
+  },
+  {
+    "date": "2026-04-09",
+    "game_count": 0,
+    "games": [],
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-09T00:00:00Z",
+    "notes": "Thursday slate. Game-level scores not captured. Most Popular data: Aaron Judge (NYY, OF, RS -0.7, +2.3x, 3.9k drafts) biggest bust — continued crowd trap. Nolan McLean (NYM, P, RS 5.6, no boost, 2.6k drafts) biggest overperformer in the popular pool; TV 11.2 with no boost amplification. Seth Lugo (KC, P, RS 4.1, no boost, 2.2k drafts) delivered. Jack Flaherty (LAD, P, RS 3.2, +2.1x, 2.1k drafts, TV 13.12) delivered with boost. Mick Abel (BAL, P, RS 4.6, +3.0x, 1.7k drafts, TV 23.0) — best TV in the most-popular pool; delivered despite being a most-drafted-3x player. Most Drafted 3x traps: Bobby Witt Jr. (KC, SS, RS 1.2, TV 6.0), Manny Machado (SD, 3B, RS 0.2, TV 1.0), Fernando Tatis Jr. (SD, SS, RS 0.4, TV 2.0), Munetaka Murakami (LAD, OF, RS 0.3, TV 1.5) — 4 of 5 most-drafted-3x players busted. Jackson Merrill (SD, OF, RS -0.4, +2.9x, 1.8k drafts, TV -1.96) popular bust. Luis Robert Jr. (CHW, OF, RS 2.1, +2.3x, 2.1k drafts, TV 9.03) delivered mid-value. Brent Rooker (OAK, OF, RS 0.0, +2.4x, 1.5k drafts) zero RS wasted boost. Corbin Carroll (ARI, OF, RS 0.0, +1.6x, 2.6k drafts) another zero."
   }
 ]
