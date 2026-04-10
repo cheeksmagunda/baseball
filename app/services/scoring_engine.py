@@ -430,10 +430,17 @@ def estimate_rs_probability(
     Instead of predicting "how good," answers a simpler question:
     will this player cross the TV=15 bar given their boost?
 
-    For a 3.0x boost player threshold is RS >= 3.0 — roughly 45-65% of
-    all starters produce this on a given day.  A simple rule-based approach
-    outperforms the 7-trait scorer for this question because ghost players
-    have sparse stat histories that suppress trait scores unfairly.
+    The threshold varies dramatically with boost:
+      - 3.0x boost → RS >= 3.0 (easy — ~50-65% of starters hit this)
+      - 1.5x boost → RS >= 4.3 (moderate)
+      - 0.0x boost → RS >= 7.5 (very hard — only aces/sluggers)
+
+    The base decision tree was calibrated for threshold <= 3.0 (high boost).
+    Lower boost levels apply a reduction since higher RS is harder to achieve:
+      - threshold <= 3.0: base values as-is
+      - threshold 3.0-5.0: ~30% reduction
+      - threshold 5.0-7.5: ~60% reduction
+      - threshold >= 7.5: near-zero for batters, still possible for ace pitchers
 
     Trait proxies used (all from scoring_engine, so no extra DB calls):
       - is_pitcher: k_rate trait (0-25) → proxy for K/9
@@ -444,24 +451,41 @@ def estimate_rs_probability(
     """
     from app.core.utils import get_trait_score
 
+    threshold = 15.0 / (2.0 + card_boost)
+
+    # Base probability from decision tree (calibrated for threshold <= 3.0)
     if is_pitcher:
         k_rate = get_trait_score(traits, "k_rate")  # 0-25
-        return 0.65 if k_rate >= 4.0 else 0.50
+        base_prob = 0.65 if k_rate >= 4.0 else 0.50
+    elif not traits:
+        base_prob = 0.40  # no data — default to near-league-average
+    else:
+        lineup_pos = get_trait_score(traits, "lineup_position")  # 0-15
+        matchup = get_trait_score(traits, "matchup_quality")     # 0-20
 
-    if not traits:
-        return 0.40  # no data — default to near-league-average
+        if lineup_pos >= 12.0 and matchup >= 12.0:
+            base_prob = 0.60  # top of order facing weak starter
+        elif lineup_pos >= 7.5:
+            base_prob = 0.45  # mid-order or quality arm
+        else:
+            base_prob = 0.30  # bottom of order
 
-    lineup_pos = get_trait_score(traits, "lineup_position")  # 0-15
-    matchup = get_trait_score(traits, "matchup_quality")     # 0-20
-
-    if lineup_pos >= 12.0 and matchup >= 12.0:
-        # Top of order (spots 1-5) facing a weak starter (ERA >= 4.5)
-        return 0.60
-    if lineup_pos >= 7.5:
-        # Mid-order (spots 6-7) or top of order facing a quality arm
-        return 0.45
-    # Bottom of order (spots 8-9)
-    return 0.30
+    # Adjust based on threshold difficulty (how much RS is needed for TV=15)
+    if threshold <= 3.0:
+        # Easy threshold (boost >= 3.0) — use base values as-is
+        return base_prob
+    elif threshold <= 5.0:
+        # Moderate threshold (boost ~1.0-3.0) — ~30% harder to reach
+        return base_prob * 0.70
+    elif threshold < 7.5:
+        # Hard threshold (boost < 1.0) — ~60% harder to reach
+        return base_prob * 0.40
+    else:
+        # Very hard threshold (no/minimal boost) — only elite players hit this
+        if is_pitcher:
+            k_rate = get_trait_score(traits, "k_rate")
+            return 0.25 if k_rate >= 4.0 else 0.15
+        return 0.10
 
 
 def score_player(

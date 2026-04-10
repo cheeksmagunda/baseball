@@ -68,14 +68,11 @@ from app.core.constants import (
     BOOST_CONCENTRATION_THRESHOLD,
     BOOST_CONCENTRATION_PENALTY,
     SLOT1_DIFFERENTIATOR_EV_THRESHOLD,
-    BOOST_QUALITY_THRESHOLD,
-    BOOSTED_POOL_FULL_THRESHOLD,
-    UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
     GHOST_ENFORCE_SWAP_THRESHOLD,
     MAX_PLAYERS_PER_TEAM,
     STACK_BONUS,
 )
-from app.core.utils import BASE_MULTIPLIER, compute_total_value, get_trait_score
+from app.core.utils import BASE_MULTIPLIER, get_trait_score
 from app.services.popularity import PopularityClass
 
 logger = logging.getLogger(__name__)
@@ -505,12 +502,12 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     bonuses can't undo.  This formula starts from the historical HV rate instead.
 
     Formula:
-        effective_score = condition_hv_rate × rs_prob × stack_bonus × anti_crowd × debut_bonus × 100
-        filter_ev       = effective_score × (2 + card_boost)   [same math as compute_total_value]
+        filter_ev = condition_hv_rate × rs_prob × stack_bonus × anti_crowd × debut_bonus × 100
 
-    The ×100 scalar keeps filter_ev in the same numeric range as before so that
-    _smart_slot_assignment() (which divides by (2 + boost) to recover intrinsic
-    value) continues to work without modification.
+    The card_boost effect is already captured in TWO places:
+      1. condition_hv_rate — ghost+3.0x maps to 1.00 HV rate (boost baked in)
+      2. rs_prob — threshold = 15/(2+boost), so higher boost → easier threshold
+    Multiplying by (2 + card_boost) again would double-count the boost.
     """
     from app.services.condition_classifier import get_condition_hv_rate
     from app.services.scoring_engine import estimate_rs_probability
@@ -531,7 +528,11 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
 
     effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * 100.0
-    return compute_total_value(effective_score, candidate.card_boost)
+    # The composite score IS the final EV.  Do NOT multiply by (2 + card_boost)
+    # again — the condition matrix HV rate and rs_prob already account for boost
+    # (ghost+3.0x → 1.00 HV rate precisely because boost is baked into the
+    # historical outcome; rs_prob threshold drops with higher boost).
+    return effective_score
 
 
 def _build_team_stack(
@@ -728,13 +729,28 @@ def _validate_lineup_structure(
                 None,
             )
         if best_ghost:
-            # Replace the lowest-EV non-ghost in the lineup
-            worst_idx = min(
-                range(len(lineup)),
-                key=lambda i: lineup[i].filter_ev,
-            )
-            if best_ghost.filter_ev >= lineup[worst_idx].filter_ev * GHOST_ENFORCE_SWAP_THRESHOLD:
-                lineup[worst_idx] = best_ghost
+            # Replace the lowest-EV non-ghost, non-stacked player.
+            # A "stacked" player shares a team with 2+ others in the lineup
+            # (i.e., part of a 3-player team stack).  Breaking a stack to insert
+            # a standalone ghost destroys correlated upside.
+            from collections import Counter as _Counter
+            _team_counts = _Counter(c.team for c in lineup)
+            stacked_teams = {team for team, cnt in _team_counts.items() if cnt >= 3}
+
+            swap_indices = [
+                i for i in range(len(lineup))
+                if lineup[i].team not in stacked_teams
+            ]
+
+            if swap_indices:
+                worst_idx = min(swap_indices, key=lambda i: lineup[i].filter_ev)
+                if best_ghost.filter_ev >= lineup[worst_idx].filter_ev * GHOST_ENFORCE_SWAP_THRESHOLD:
+                    lineup[worst_idx] = best_ghost
+            else:
+                # All non-ghost players are part of stacks — skip ghost enforcement
+                logger.info(
+                    "Ghost enforcement skipped: all lineup players are part of team stacks"
+                )
 
     # Rule 4: Max N players per team (diversification)
     # Prevents over-concentration in a single team's outcome.
@@ -956,46 +972,6 @@ def _smart_slot_assignment(
 
 
 # ---------------------------------------------------------------------------
-# Rich-pool pitcher correction (V2 §4.3 dynamic composition rule)
-# ---------------------------------------------------------------------------
-
-def _apply_rich_pool_pitcher_correction(candidates: list[FilteredCandidate]) -> None:
-    """
-    When the boosted pool is full, penalize unboosted pitchers.
-
-    Historical data (4/2 onward): every pitcher in a rank-1 lineup had
-    card_boost > 0 whenever 5+ quality boosted alternatives existed.
-    Unboosted pitchers are only the right play on thin-boosted slates.
-
-    "Quality boosted" = boost >= 1.0 AND total_score >= MIN_SCORE_THRESHOLD
-    AND env_score >= ENV_PASS_THRESHOLD.
-
-    Mutates candidates in-place (adjusts filter_ev).
-    """
-    quality_boosted_count = sum(
-        1 for c in candidates
-        if c.card_boost >= BOOST_QUALITY_THRESHOLD
-        and c.total_score >= MIN_SCORE_THRESHOLD
-        and c.env_score >= ENV_PASS_THRESHOLD
-    )
-    if quality_boosted_count < BOOSTED_POOL_FULL_THRESHOLD:
-        return
-
-    penalized = []
-    for c in candidates:
-        if c.is_pitcher and c.card_boost < BOOST_QUALITY_THRESHOLD:
-            c.filter_ev *= UNBOOSTED_PITCHER_RICH_POOL_PENALTY
-            penalized.append(c.player_name)
-
-    if penalized:
-        logger.info(
-            "Rich boosted pool (%d quality cards): unboosted pitcher penalty applied to %s",
-            quality_boosted_count,
-            ", ".join(penalized),
-        )
-
-
-# ---------------------------------------------------------------------------
 # Main filter pipeline
 # ---------------------------------------------------------------------------
 
@@ -1036,10 +1012,6 @@ def run_filter_strategy(
     # Step 1: Compute filter-adjusted EV (4-term condition-based formula)
     for c in candidates:
         c.filter_ev = _compute_filter_ev(c)
-
-    # Step 1b: Rich-pool correction — penalize unboosted pitchers when
-    # 5+ quality boosted alternatives exist (V2 §4.3, 4/2-onward pattern)
-    _apply_rich_pool_pitcher_correction(candidates)
 
     # Step 2: Enforce composition (pitcher/hitter counts)
     lineup = _enforce_composition(candidates, slate_classification)
@@ -1100,7 +1072,9 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
 
     effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * 100.0
-    base_ev = compute_total_value(effective_score, candidate.card_boost)
+    # Same fix as _compute_filter_ev: boost is already in the condition matrix
+    # and rs_prob — do not multiply by (2 + card_boost) again.
+    base_ev = effective_score
 
     # Moonshot-specific bonuses (unchanged from V2)
     sharp_bonus = 1.0 + (candidate.sharp_score / 100.0) * MOONSHOT_SHARP_BONUS_MAX
@@ -1156,9 +1130,6 @@ def run_dual_filter_strategy(
         # Game diversification: soft penalty for same-team overlap with Starting 5
         if c.team in s5_teams:
             c.filter_ev *= MOONSHOT_SAME_TEAM_PENALTY
-
-    # Rich-pool correction for Moonshot pool as well
-    _apply_rich_pool_pitcher_correction(moonshot_pool)
 
     # Enforce composition and build moonshot lineup
     moonshot_lineup = _enforce_composition(moonshot_pool, slate_classification)
