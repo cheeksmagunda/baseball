@@ -12,6 +12,10 @@ The 4× gap is captured directly in the matrix rather than via multiplicative mo
 that fight the base_ev = total_score × (2 + boost) starting point.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Condition Matrix — historical HV rate by (ownership_tier, boost_tier)
 # ---------------------------------------------------------------------------
@@ -55,6 +59,37 @@ CONDITION_MATRIX: dict[str, dict[str, float]] = {
 }
 
 # ---------------------------------------------------------------------------
+# Matrix version & training provenance (Bug 6 — survivorship bias guard)
+# ---------------------------------------------------------------------------
+# IMPORTANT: Update this version and date list whenever the matrix is retrained.
+CONDITION_MATRIX_VERSION = "1.0"
+CONDITION_MATRIX_TRAINING_DATES = [
+    "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-28", "2026-03-29",
+    "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-03",
+    "2026-04-04", "2026-04-05", "2026-04-06", "2026-04-07", "2026-04-09",
+]
+
+# ---------------------------------------------------------------------------
+# DEAD_CAPITAL — conditions that should NEVER be drafted.
+#
+# Four zones where historical data shows 0% edge or negative expectation:
+#   HIGH_BOOST + CHALK:       Classic boost trap — 57% bust rate, crowd priced in
+#   LOW_BOOST  + CHALK:       Not enough boost to overcome crowd drag
+#   LOW_BOOST  + MEGA_CHALK:  Dead money — everyone drafting them
+#   NO_BOOST   + MEGA_CHALK:  Dead money — can't generate TV, everyone has them
+#
+# Returning 0.0 zeros out the entire EV equation and makes it mathematically
+# impossible for these players to be drafted.
+# ---------------------------------------------------------------------------
+DEAD_CAPITAL_CONDITIONS: set[tuple[str, str]] = {
+    ("chalk", "elite_boost"),
+    ("chalk", "max_boost"),
+    ("chalk", "low_boost"),
+    ("mega_chalk", "low_boost"),
+    ("mega_chalk", "no_boost"),
+}
+
+# ---------------------------------------------------------------------------
 # AUTO_INCLUDE threshold — the ghost+boost sweet spot that drives the edge
 # ---------------------------------------------------------------------------
 
@@ -95,9 +130,21 @@ def get_boost_tier(card_boost: float) -> str:
 
 
 def get_condition_hv_rate(drafts: int | None, card_boost: float) -> float:
-    """Look up historical HV rate from the condition matrix."""
+    """Look up historical HV rate from the condition matrix.
+
+    Returns 0.0 for DEAD_CAPITAL conditions — these are hard-blocked
+    so the player can never generate positive EV.
+    """
     ownership_tier = get_ownership_tier(drafts)
     boost_tier = get_boost_tier(card_boost)
+
+    if (ownership_tier, boost_tier) in DEAD_CAPITAL_CONDITIONS:
+        logger.info(
+            "DEAD_CAPITAL hard-block: drafts=%s (tier=%s), boost=%.1f (tier=%s)",
+            drafts, ownership_tier, card_boost, boost_tier,
+        )
+        return 0.0
+
     return CONDITION_MATRIX[ownership_tier][boost_tier]
 
 
