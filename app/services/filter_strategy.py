@@ -73,6 +73,9 @@ from app.core.constants import (
     GHOST_ENFORCE_SWAP_THRESHOLD,
     MAX_PLAYERS_PER_TEAM,
     STACK_BONUS,
+    BOOST_QUALITY_THRESHOLD,
+    BOOSTED_POOL_FULL_THRESHOLD,
+    UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score
 from app.services.popularity import PopularityClass
@@ -757,22 +760,32 @@ def _validate_lineup_structure(
     )
     if ghost_count < MIN_GHOST_IN_LINEUP:
         lineup_names = {c.player_name for c in lineup}
+        # Respect pitcher cap: only allow a ghost pitcher if the lineup has room
+        pitcher_count_now = sum(1 for c in lineup if c.is_pitcher)
+        can_add_pitcher = pitcher_count_now < MAX_PITCHERS_IN_LINEUP
+
+        def _ghost_ok(c: FilteredCandidate) -> bool:
+            if c.player_name in lineup_names:
+                return False
+            if c.drafts is None or c.drafts >= GHOST_DRAFT_THRESHOLD:
+                return False
+            if c.is_pitcher and not can_add_pitcher:
+                return False
+            return True
+
         # First preference: ghost with full env support.
         # Fallback: mega-ghost+boost even without env — their EV floor already
         # compensates for data-scarcity-driven low env scores (see _apply_ghost_boost_ev_floor).
         best_ghost = next(
             (c for c in all_candidates_sorted
-             if c.player_name not in lineup_names
-             and c.drafts is not None
-             and c.drafts < GHOST_DRAFT_THRESHOLD
-             and c.env_score >= ENV_PASS_THRESHOLD),
+             if _ghost_ok(c) and c.env_score >= ENV_PASS_THRESHOLD),
             None,
         )
         if best_ghost is None:
             # No env-passing ghost — try mega-ghost+boost (env gate waived per V2.4)
             best_ghost = next(
                 (c for c in all_candidates_sorted
-                 if c.player_name not in lineup_names
+                 if _ghost_ok(c)
                  and c.drafts is not None
                  and c.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS
                  and c.card_boost >= 3.0),
@@ -802,7 +815,51 @@ def _validate_lineup_structure(
                     "Ghost enforcement skipped: all lineup players are part of team stacks"
                 )
 
-    # Rule 3: Max 1 starting pitcher (V2.3)
+    # Rule 3: Max N players per team (diversification)
+    # Prevents over-concentration in a single team's outcome.
+    # Runs BEFORE pitcher cap so that replacement picks respect the cap below.
+    from collections import Counter
+    team_counts = Counter(c.team for c in lineup)
+    pitcher_count_pre = sum(1 for c in lineup if c.is_pitcher)
+    for team, count in team_counts.items():
+        if count > MAX_PLAYERS_PER_TEAM:
+            # Find indices of players from this team, sorted by EV descending
+            team_indices = sorted(
+                [i for i, c in enumerate(lineup) if c.team == team],
+                key=lambda i: lineup[i].filter_ev,
+                reverse=True,
+            )
+            lineup_names = {c.player_name for c in lineup}
+            # Keep the top MAX_PLAYERS_PER_TEAM, replace the rest
+            for idx in team_indices[MAX_PLAYERS_PER_TEAM:]:
+                # Find best candidate whose team isn't at cap AND won't violate pitcher cap
+                current_team_counts = Counter(c.team for c in lineup)
+                current_pitcher_count = sum(1 for c in lineup if c.is_pitcher)
+                # If we're removing a pitcher, a pitcher replacement is fine.
+                # If we're removing a batter, only allow a batter replacement.
+                removing_pitcher = lineup[idx].is_pitcher
+                replacement = next(
+                    (c for c in all_candidates_sorted
+                     if c.player_name not in lineup_names
+                     and current_team_counts.get(c.team, 0) < MAX_PLAYERS_PER_TEAM
+                     and (not c.is_pitcher or removing_pitcher
+                          or current_pitcher_count < MAX_PITCHERS_IN_LINEUP)),
+                    None,
+                )
+                if replacement:
+                    removed_name = lineup[idx].player_name
+                    removed_team = lineup[idx].team
+                    lineup_names.discard(removed_name)
+                    lineup[idx] = replacement
+                    lineup_names.add(replacement.player_name)
+                    logger.info(
+                        "Team cap (max %d per team): replaced %s (%s) with %s (%s)",
+                        MAX_PLAYERS_PER_TEAM, removed_name, removed_team,
+                        replacement.player_name, replacement.team,
+                    )
+
+    # Rule 4: Max 1 starting pitcher (V2.3) — FINAL SWEEP
+    # This runs LAST so no subsequent rule can reintroduce pitchers.
     # Ghost+boost batter edge outweighs a second SP slot. Excess pitchers are
     # replaced by the highest-EV non-pitchers from the candidate pool.
     pitcher_indices = [i for i, c in enumerate(lineup) if c.is_pitcher]
@@ -827,46 +884,18 @@ def _validate_lineup_structure(
                     replacement.player_name, replacement.filter_ev,
                 )
             else:
+                # Hard enforcement: remove the pitcher even if no replacement found.
+                # A 4-player lineup is better than violating the pitcher cap.
+                removed = lineup.pop(idx)
+                # Adjust indices for remaining removals
+                pitcher_indices_by_ev = [
+                    (j if j < idx else j - 1) for j in pitcher_indices_by_ev
+                ]
                 logger.warning(
-                    "Pitcher cap: could not find a non-pitcher replacement for %s — "
-                    "candidate pool may be pitcher-heavy",
-                    lineup[idx].player_name,
+                    "Pitcher cap: removed pitcher %s (EV=%.2f) with no batter replacement — "
+                    "lineup reduced to %d players",
+                    removed.player_name, removed.filter_ev, len(lineup),
                 )
-
-    # Rule 4: Max N players per team (diversification)
-    # Prevents over-concentration in a single team's outcome.
-    from collections import Counter
-    team_counts = Counter(c.team for c in lineup)
-    for team, count in team_counts.items():
-        if count > MAX_PLAYERS_PER_TEAM:
-            # Find indices of players from this team, sorted by EV descending
-            team_indices = sorted(
-                [i for i, c in enumerate(lineup) if c.team == team],
-                key=lambda i: lineup[i].filter_ev,
-                reverse=True,
-            )
-            lineup_names = {c.player_name for c in lineup}
-            # Keep the top MAX_PLAYERS_PER_TEAM, replace the rest
-            for idx in team_indices[MAX_PLAYERS_PER_TEAM:]:
-                # Find best candidate whose team isn't already at the cap
-                current_team_counts = Counter(c.team for c in lineup)
-                replacement = next(
-                    (c for c in all_candidates_sorted
-                     if c.player_name not in lineup_names
-                     and current_team_counts.get(c.team, 0) < MAX_PLAYERS_PER_TEAM),
-                    None,
-                )
-                if replacement:
-                    removed_name = lineup[idx].player_name
-                    removed_team = lineup[idx].team
-                    lineup_names.discard(removed_name)
-                    lineup[idx] = replacement
-                    lineup_names.add(replacement.player_name)
-                    logger.info(
-                        "Team cap (max %d per team): replaced %s (%s) with %s (%s)",
-                        MAX_PLAYERS_PER_TEAM, removed_name, removed_team,
-                        replacement.player_name, replacement.team,
-                    )
 
     return lineup
 
@@ -1101,6 +1130,26 @@ def run_filter_strategy(
     for c in candidates:
         c.filter_ev = _compute_filter_ev(c)
 
+    # Step 1b: Unboosted pitcher penalty when boosted pool is rich (V2 §4.3).
+    # Historical data (4/2 onward): zero unboosted pitchers in rank-1 lineups
+    # when quality boosted alternatives existed.  Pitchers typically get 0.0 boost,
+    # so without this penalty they float to the top of EV rankings on rs_prob alone.
+    quality_boosted_count = sum(
+        1 for c in candidates
+        if c.card_boost >= BOOST_QUALITY_THRESHOLD
+        and c.env_score >= ENV_PASS_THRESHOLD
+        and not c.is_pitcher
+    )
+    if quality_boosted_count >= BOOSTED_POOL_FULL_THRESHOLD:
+        for c in candidates:
+            if c.is_pitcher and c.card_boost < BOOST_QUALITY_THRESHOLD:
+                c.filter_ev *= UNBOOSTED_PITCHER_RICH_POOL_PENALTY
+                logger.debug(
+                    "Unboosted pitcher penalty (rich pool): %s EV %.2f → %.2f",
+                    c.player_name, c.filter_ev / UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
+                    c.filter_ev,
+                )
+
     # Step 2: Enforce composition (pitcher/hitter counts)
     lineup = _enforce_composition(candidates, slate_classification)
 
@@ -1222,6 +1271,18 @@ def run_dual_filter_strategy(
         # Game diversification: soft penalty for same-team overlap with Starting 5
         if c.team in s5_teams:
             c.filter_ev *= MOONSHOT_SAME_TEAM_PENALTY
+
+    # Unboosted pitcher penalty for moonshot too (same logic as Starting 5)
+    moonshot_quality_boosted = sum(
+        1 for c in moonshot_pool
+        if c.card_boost >= BOOST_QUALITY_THRESHOLD
+        and c.env_score >= ENV_PASS_THRESHOLD
+        and not c.is_pitcher
+    )
+    if moonshot_quality_boosted >= BOOSTED_POOL_FULL_THRESHOLD:
+        for c in moonshot_pool:
+            if c.is_pitcher and c.card_boost < BOOST_QUALITY_THRESHOLD:
+                c.filter_ev *= UNBOOSTED_PITCHER_RICH_POOL_PENALTY
 
     # Enforce composition and build moonshot lineup
     moonshot_lineup = _enforce_composition(moonshot_pool, slate_classification)

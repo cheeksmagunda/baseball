@@ -531,10 +531,15 @@ def estimate_rs_probability(
         # Hard threshold (boost < 1.0) — ~60% harder to reach
         return base_prob * 0.40
     else:
-        # Very hard threshold (no/minimal boost) — only elite players hit this
+        # Very hard threshold (no/minimal boost) — only elite players hit this.
+        # Historical data: zero unboosted pitchers in rank-1 lineups when quality
+        # boosted alternatives existed (CLAUDE.md V2 §4.3). Pitchers have a high
+        # RS floor (93% positive, avg RS 5.4) but RS >= 7.5 is rare for anyone.
+        # The old values (pitcher 0.25/0.15 vs batter 0.10) gave pitchers a
+        # systematic 2.5× EV advantage that caused all-pitcher lineups.
         if is_pitcher:
             k_rate = get_trait_score(traits, "k_rate")
-            return 0.25 if k_rate >= 4.0 else 0.15
+            return 0.12 if k_rate >= 4.0 else 0.08
         return 0.10
 
 
