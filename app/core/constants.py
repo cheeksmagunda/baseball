@@ -202,6 +202,7 @@ MIN_GHOST_IN_LINEUP = 1              # min 1 ghost player (< 100 drafts)
 # Ghost enforcement: replace worst lineup player with a ghost if ghost EV >= this fraction
 GHOST_ENFORCE_SWAP_THRESHOLD = 0.50  # was 0.70 — lowered so ghost inclusion actually fires
 MAX_PLAYERS_PER_TEAM = 1             # max 1 player from any single team per lineup
+MAX_PITCHERS_IN_LINEUP = 1           # V2.3: max 1 starting pitcher per lineup; ghost+boost batter edge outweighs a 2nd SP slot
 
 # ---------------------------------------------------------------------------
 # Blowout game stack bonus (4-term EV formula)
