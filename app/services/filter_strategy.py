@@ -34,7 +34,6 @@ from app.core.constants import (
     HITTER_DAY_VEGAS_TOTAL_THRESHOLD,
     BLOWOUT_MONEYLINE_THRESHOLD,
     BLOWOUT_MIN_GAMES_FOR_STACK_DAY,
-    BOOST_NO_ENV_PENALTY_FLOOR,
     ENV_PASS_THRESHOLD,
     MIN_GAMES_REPRESENTED,
     SAME_GAME_EXCESS_PENALTY,
@@ -59,34 +58,22 @@ from app.core.constants import (
     MOONSHOT_EXPLOSIVE_BONUS_MAX,
     MOONSHOT_SAME_TEAM_PENALTY,
     GHOST_DRAFT_THRESHOLD,
-    GHOST_ENV_BONUS,
-    GHOST_MOONSHOT_ENV_BONUS,
     LOW_DRAFT_THRESHOLD,
-    LOW_DRAFT_BONUS,
     CHALK_DRAFT_THRESHOLD,
-    CHALK_PENALTY,
-    CHALK_EXEMPT_MIN_BOOST,
     MEGA_CHALK_DRAFT_THRESHOLD,
-    MEGA_CHALK_PENALTY,
-    MOST_DRAFTED_3X_PENALTY,
-    MOST_DRAFTED_3X_ENV_PASS_PENALTY,
     GHOST_BOOST_SYNERGY_MIN_BOOST,
-    GHOST_BOOST_SYNERGY_BONUS,
     MEGA_GHOST_BOOST_MAX_DRAFTS,
-    MEGA_GHOST_BOOST_BONUS,
     MAX_MEGA_CHALK_IN_LINEUP,
     MIN_GHOST_IN_LINEUP,
-    MAX_PITCHERS_IN_LINEUP,
     BOOST_CONCENTRATION_THRESHOLD,
     BOOST_CONCENTRATION_PENALTY,
     SLOT1_DIFFERENTIATOR_EV_THRESHOLD,
     BOOST_QUALITY_THRESHOLD,
     BOOSTED_POOL_FULL_THRESHOLD,
     UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
-    GHOST_BOOST_EV_FLOOR_SCORE,
-    MEGA_GHOST_ENV_PENALTY_FLOOR,
     GHOST_ENFORCE_SWAP_THRESHOLD,
     MAX_PLAYERS_PER_TEAM,
+    STACK_BONUS,
 )
 from app.core.utils import BASE_MULTIPLIER, compute_total_value, get_trait_score
 from app.services.popularity import PopularityClass
@@ -475,6 +462,7 @@ class FilteredCandidate:
     drafts: int | None = None
     is_most_drafted_3x: bool = False  # V2: 57% bust rate trap signal
     traits: list = field(default_factory=list)  # TraitScore list from scoring engine
+    is_in_blowout_game: bool = False  # set by run_filter_strategy before EV computation
 
     # Computed by the optimizer
     filter_ev: float = 0.0
@@ -498,75 +486,6 @@ class FilterOptimizedLineup:
     warnings: list[str] = field(default_factory=list)
 
 
-def _graduated_score_penalty(total_score: float) -> float:
-    """Return a graduated EV multiplier based on how far below MIN_SCORE_THRESHOLD.
-
-    Old behavior: binary 50% cliff at score < 15.
-    New behavior: linear scale from MIN_SCORE_PENALTY_FLOOR (at score=0)
-    to 1.0 (at score=MIN_SCORE_THRESHOLD).  Scores at or above the
-    threshold return 1.0 (no penalty).
-
-    This prevents ghost+boost players at score=14 from being penalized
-    identically to score=0 players.
-    """
-    if total_score >= MIN_SCORE_THRESHOLD:
-        return 1.0
-    # Linear interpolation: 0 → FLOOR, threshold → 1.0
-    ratio = max(0.0, total_score) / MIN_SCORE_THRESHOLD
-    return MIN_SCORE_PENALTY_FLOOR + ratio * (1.0 - MIN_SCORE_PENALTY_FLOOR)
-
-
-def _graduated_env_penalty(env_score: float) -> float:
-    """Return a graduated EV multiplier for boosted players below ENV_PASS_THRESHOLD.
-
-    Old behavior: binary 30% cliff at env < 0.5.
-    New behavior: linear scale from BOOST_NO_ENV_PENALTY_FLOOR (at env=0.0)
-    to 1.0 (at env=ENV_PASS_THRESHOLD).  Scores at or above the threshold
-    return 1.0 (no penalty).
-
-    This prevents a player at env=0.48 from being treated the same as env=0.0.
-    """
-    if env_score >= ENV_PASS_THRESHOLD:
-        return 1.0
-    ratio = max(0.0, env_score) / ENV_PASS_THRESHOLD
-    return BOOST_NO_ENV_PENALTY_FLOOR + ratio * (1.0 - BOOST_NO_ENV_PENALTY_FLOOR)
-
-
-def _apply_ghost_boost_ev_floor(candidate: 'FilteredCandidate', base_ev: float) -> float:
-    """Ensure ghost-boost players have a minimum EV floor.
-
-    The scoring engine systematically under-scores ghost players due to limited
-    game logs and unknown batting orders.  For ghost-boost candidates
-    (boost >= 2.5, drafts < 100), we enforce a floor: the EV must be at least
-    what it would be if the player had GHOST_BOOST_EV_FLOOR_SCORE as their
-    trait score.
-
-    Critically, the floor does NOT apply the env penalty.  Data scarcity also
-    suppresses env_score (unknown batting order alone drops env ~0.5→0.17), so
-    penalising the floor by env would double-count the same information gap.
-    The floor compensates for ALL data-scarcity effects, env included.
-
-    This floor is applied *before* ownership bonuses and synergy multipliers,
-    so it only prevents data-scarcity from destroying the base EV — the rest
-    of the pipeline (ghost bonus, synergy, popularity) still runs normally.
-    """
-    if (candidate.card_boost >= GHOST_BOOST_SYNERGY_MIN_BOOST
-            and candidate.drafts is not None
-            and candidate.drafts < GHOST_DRAFT_THRESHOLD):
-        floor_ev = compute_total_value(GHOST_BOOST_EV_FLOOR_SCORE, candidate.card_boost)
-        floor_ev *= _graduated_score_penalty(GHOST_BOOST_EV_FLOOR_SCORE)
-        # Intentionally NOT applying _graduated_env_penalty here — the floor is
-        # env-independent because data scarcity also suppresses env_score.
-        if base_ev < floor_ev:
-            logger.debug(
-                "Ghost-boost EV floor applied for %s: %.1f → %.1f (score=%.1f, boost=%.1f, drafts=%s, env=%.2f)",
-                candidate.player_name, base_ev, floor_ev,
-                candidate.total_score, candidate.card_boost, candidate.drafts, candidate.env_score,
-            )
-            return floor_ev
-    return base_ev
-
-
 def _popularity_ev_adjustment(popularity: PopularityClass) -> float:
     """Return EV multiplier based on web-scraped popularity classification."""
     if popularity == PopularityClass.FADE:
@@ -578,86 +497,41 @@ def _popularity_ev_adjustment(popularity: PopularityClass) -> float:
 
 def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     """
-    Compute EV through the full filter pipeline (Filters 2-4).
+    Compute composite EV via 4-term condition-based formula.
 
-    V2 "Anchor, Differentiate, Stack" EV formula:
-    1. Base EV = total_score × (2 + card_boost)
-    2. Low-score penalty
-    3. Boost-environment gating (boost trap detection)
-    4. Web-scraped popularity (FADE/TARGET)
-    5. Draft-count ownership leverage (ghost/chalk/mega-chalk)
-    6. "Most drafted 3x" trap penalty (V2 §9 Finding 2)
-    7. Ghost + Boost synergy bonus (V2 §2 Pillar 3)
-    8. Debut/return premium
+    Replaces the 15-modifier V2.4 pipeline.  The core insight: ownership × boost
+    tier predicts HV rate 4× more reliably than trait scores do.  Starting from
+    total_score × (2 + boost) bakes in a chalk bias that all the downstream
+    bonuses can't undo.  This formula starts from the historical HV rate instead.
+
+    Formula:
+        effective_score = condition_hv_rate × rs_prob × stack_bonus × anti_crowd × debut_bonus × 100
+        filter_ev       = effective_score × (2 + card_boost)   [same math as compute_total_value]
+
+    The ×100 scalar keeps filter_ev in the same numeric range as before so that
+    _smart_slot_assignment() (which divides by (2 + boost) to recover intrinsic
+    value) continues to work without modification.
     """
-    base_ev = compute_total_value(candidate.total_score, candidate.card_boost)
+    from app.services.condition_classifier import get_condition_hv_rate
+    from app.services.scoring_engine import estimate_rs_probability
 
-    # Low-score penalty (graduated: score 0→40% haircut, score 14→4% haircut, score 15+→none)
-    base_ev *= _graduated_score_penalty(candidate.total_score)
+    # Term 1: Historical HV rate from condition matrix (primary signal)
+    condition_hv_rate = get_condition_hv_rate(candidate.drafts, candidate.card_boost)
 
-    # Filter 4: Boost-environment gating (graduated: env 0→40% haircut, env 0.48→4% haircut, env 0.5+→none)
-    if candidate.card_boost >= 1.0:
-        env_penalty = _graduated_env_penalty(candidate.env_score)
-        # Mega-ghost-boost players (< 50 drafts, boost >= 3.0) have unreliable env_scores
-        # because data scarcity suppresses them (e.g. unknown batting order alone drops
-        # env from ~0.5 to ~0.17). Cap the haircut at 20% for this tier so data gaps
-        # don't compound with the already-low trait scores.
-        if (candidate.drafts is not None
-                and candidate.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS
-                and candidate.card_boost >= 3.0):
-            env_penalty = max(env_penalty, MEGA_GHOST_ENV_PENALTY_FLOOR)
-        base_ev *= env_penalty
+    # Term 2: P(RS >= threshold) where threshold = 15 / (2 + boost)
+    rs_prob = estimate_rs_probability(candidate.card_boost, candidate.traits, candidate.is_pitcher)
 
-    # V2.2: Ghost-boost EV floor — prevent data-scarcity from crushing mega-ghost-boost players
-    base_ev = _apply_ghost_boost_ev_floor(candidate, base_ev)
+    # Term 3: Blowout game stack bonus
+    stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
 
-    # Filter 3: Web-scraped popularity (FADE=0.75, TARGET=1.15)
-    pop_adj = _popularity_ev_adjustment(candidate.popularity)
-    base_ev *= pop_adj
+    # Term 4: Anti-crowd adjustment (popularity signal)
+    anti_crowd = _popularity_ev_adjustment(candidate.popularity)
 
-    # V2: "Most drafted at 3x boost" trap (57% bust rate, avg RS 0.72)
-    # V2.3: Penalty is env-aware. The 57% bust rate is for players WITHOUT env
-    # support. When env passes (e.g. Eovaldi April 7: strong matchup, RS 3.4,
-    # appeared in 11/12 top lineups), the flat 40% penalty was over-aggressive.
-    if candidate.is_most_drafted_3x:
-        if candidate.env_score >= ENV_PASS_THRESHOLD:
-            base_ev *= MOST_DRAFTED_3X_ENV_PASS_PENALTY  # 20% penalty — env backed
-        else:
-            base_ev *= MOST_DRAFTED_3X_PENALTY  # 40% penalty — no env support
+    # Debut/return premium (first appearance → near-zero ownership + historically elite RS)
+    debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
 
-    # Filter 3b: Draft-count ownership leverage
-    # V2 adds mega-chalk tier and graduated penalties.
-    if candidate.drafts is not None:
-        if candidate.drafts < GHOST_DRAFT_THRESHOLD and candidate.env_score >= ENV_PASS_THRESHOLD:
-            base_ev *= GHOST_ENV_BONUS
-        elif candidate.drafts < LOW_DRAFT_THRESHOLD:
-            base_ev *= LOW_DRAFT_BONUS
-        elif candidate.drafts >= MEGA_CHALK_DRAFT_THRESHOLD:
-            # Mega-chalk (2000+): 55% bust rate, avg RS 1.5
-            if not (candidate.env_score >= ENV_PASS_THRESHOLD and candidate.card_boost >= CHALK_EXEMPT_MIN_BOOST):
-                base_ev *= MEGA_CHALK_PENALTY
-        elif candidate.drafts >= CHALK_DRAFT_THRESHOLD:
-            # Chalk (1500-2000): 45% bust rate
-            if not (candidate.env_score >= ENV_PASS_THRESHOLD and candidate.card_boost >= CHALK_EXEMPT_MIN_BOOST):
-                base_ev *= CHALK_PENALTY
-
-    # V2 §2 Pillar 3: Ghost + Boost synergy ("the holy grail")
-    # boost ≥ 2.5 + < 200 drafts = avg ~28 total_value on HV list
-    # boost 3.0 + < 50 drafts = auto-include tier (historical 82% hit rate — env NOT required)
-    if candidate.drafts is not None and candidate.card_boost >= GHOST_BOOST_SYNERGY_MIN_BOOST:
-        if (candidate.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS
-                and candidate.card_boost >= 3.0):
-            # Mega-ghost+max-boost: env gate removed. Historical data shows 82% TV>15 rate
-            # for this tier regardless of env — gating by env blocks the primary edge play.
-            base_ev *= MEGA_GHOST_BOOST_BONUS
-        elif candidate.drafts < LOW_DRAFT_THRESHOLD and candidate.env_score >= ENV_PASS_THRESHOLD:
-            base_ev *= GHOST_BOOST_SYNERGY_BONUS
-
-    # Debut/return premium
-    if candidate.is_debut_or_return:
-        base_ev *= DEBUT_RETURN_EV_BONUS
-
-    return base_ev
+    effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * 100.0
+    return compute_total_value(effective_score, candidate.card_boost)
 
 
 def _build_team_stack(
@@ -725,21 +599,32 @@ def _enforce_composition(
     slate_class: SlateClassification,
 ) -> list[FilteredCandidate]:
     """
-    Pure EV-driven lineup construction. No position forcing. No "day types."
+    AUTO_INCLUDE-first lineup construction. No position forcing. No "day types."
 
     Historical data (13 rank-1 winners) proves composition varies wildly:
     0P/5H, 1P/4H, 2P/3H, 3P/2H, 4P/1H, 5P/0H — all won on different days.
-    Average: 2.15 pitchers. The ONLY constant: the 5 highest-EV players win.
+    The ONLY constant: ghost+boost players (< 100 drafts, boost ≥ 2.5) win at
+    82–100% HV rate regardless of position or env score.
 
     Construction logic:
-    1. If stackable blowout game exists → try team stack + diversifiers
-    2. Otherwise → take top 5 by filter_ev, position-agnostic
-    3. Validate: max 1 mega-chalk, try for ≥1 ghost
+    1. Separate candidates into AUTO_INCLUDE (ghost+elite boost) and rest.
+    2. Prioritize AUTO_INCLUDE: they fill spots before any other candidate is
+       considered — ownership × boost tier is the entry criterion, not a modifier.
+    3. Backfill from remaining candidates sorted by filter_ev.
+    4. If stackable blowout game exists → try team stack + diversifiers (unchanged).
+    5. Validate: max 1 mega-chalk, try for ≥1 ghost.
 
-    Position is NEVER forced. If 5 pitchers have the best EV, take them.
-    If 0 pitchers have competitive EV, take none. EV decides everything.
+    Position is NEVER forced. EV × condition tier decides everything.
     """
+    from app.services.condition_classifier import is_auto_include
+
+    # Sort by filter_ev within each tier
     all_sorted = sorted(candidates, key=lambda c: c.filter_ev, reverse=True)
+
+    # Two-tier ordering: AUTO_INCLUDE candidates always precede regular candidates
+    auto = [c for c in all_sorted if is_auto_include(c.drafts, c.card_boost)]
+    rest = [c for c in all_sorted if not is_auto_include(c.drafts, c.card_boost)]
+    ordered = auto + rest
 
     # --- Try team stacking when a blowout game exists ---
     if slate_class.stackable_games:
@@ -748,28 +633,28 @@ def _enforce_composition(
             stack_names = {c.player_name for c in stack}
             stack_game_ids = {c.game_id for c in stack}
             diversifiers = [
-                c for c in all_sorted
+                c for c in ordered
                 if c.player_name not in stack_names
                 and c.game_id not in stack_game_ids
             ]
             spots_left = 5 - len(stack)
             lineup = list(stack) + diversifiers[:spots_left]
-            lineup = _validate_lineup_structure(lineup, all_sorted)
+            lineup = _validate_lineup_structure(lineup, ordered)
             pitcher_count = sum(1 for c in lineup if c.is_pitcher)
             logger.info(
-                "Stack construction: %d stack + %d diversifiers = %dP/%dH",
+                "Stack construction: %d stack + %d diversifiers = %dP/%dH (auto_include: %d)",
                 len(stack), len(lineup) - len(stack),
-                pitcher_count, 5 - pitcher_count,
+                pitcher_count, 5 - pitcher_count, len(auto),
             )
             return lineup[:5]
 
-    # --- Pure EV ranking — no position constraints ---
-    lineup = all_sorted[:5]
-    lineup = _validate_lineup_structure(lineup, all_sorted)
+    # --- AUTO_INCLUDE-first EV ranking ---
+    lineup = ordered[:5]
+    lineup = _validate_lineup_structure(lineup, ordered)
     pitcher_count = sum(1 for c in lineup if c.is_pitcher)
     logger.info(
-        "EV-driven composition: %dP/%dH (candidates: %d)",
-        pitcher_count, 5 - pitcher_count, len(candidates),
+        "EV-driven composition: %dP/%dH (candidates: %d, auto_include: %d)",
+        pitcher_count, 5 - pitcher_count, len(candidates), len(auto),
     )
     return lineup
 
@@ -850,31 +735,6 @@ def _validate_lineup_structure(
             )
             if best_ghost.filter_ev >= lineup[worst_idx].filter_ev * GHOST_ENFORCE_SWAP_THRESHOLD:
                 lineup[worst_idx] = best_ghost
-
-    # Rule 3: Max 1 starting pitcher (V2.3 — April 7 post-mortem)
-    # The edge comes from ghost+boost batters, not from stacking pitchers.
-    # A second pitcher slot is better spent on a ghost+boost batter.
-    pitcher_indices = [i for i, c in enumerate(lineup) if c.is_pitcher]
-    if len(pitcher_indices) > MAX_PITCHERS_IN_LINEUP:
-        # Keep the highest-EV pitcher, replace the rest with best available non-pitchers
-        pitcher_sorted = sorted(pitcher_indices, key=lambda i: lineup[i].filter_ev, reverse=True)
-        lineup_names = {c.player_name for c in lineup}
-        for idx in pitcher_sorted[MAX_PITCHERS_IN_LINEUP:]:
-            replacement = next(
-                (c for c in all_candidates_sorted
-                 if c.player_name not in lineup_names
-                 and not c.is_pitcher),
-                None,
-            )
-            if replacement:
-                removed_name = lineup[idx].player_name
-                lineup_names.discard(removed_name)
-                lineup[idx] = replacement
-                lineup_names.add(replacement.player_name)
-                logger.info(
-                    "Pitcher cap (max %d): replaced %s with %s",
-                    MAX_PITCHERS_IN_LINEUP, removed_name, replacement.player_name,
-                )
 
     # Rule 4: Max N players per team (diversification)
     # Prevents over-concentration in a single team's outcome.
@@ -1163,7 +1023,17 @@ def run_filter_strategy(
             slate_classification=slate_classification,
         )
 
-    # Step 1: Compute filter-adjusted EV
+    # Mark blowout-game players before EV computation so _compute_filter_ev()
+    # can apply the stack_bonus without needing slate_classification as a parameter.
+    blowout_teams = {
+        g.favored_team.upper()
+        for g in slate_classification.stackable_games
+        if g.favored_team
+    }
+    for c in candidates:
+        c.is_in_blowout_game = c.team.upper() in blowout_teams
+
+    # Step 1: Compute filter-adjusted EV (4-term condition-based formula)
     for c in candidates:
         c.filter_ev = _compute_filter_ev(c)
 
@@ -1213,70 +1083,31 @@ def _moonshot_popularity_adj(popularity: PopularityClass) -> float:
 
 def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     """
-    Moonshot EV through the filter pipeline. Same base as Starting 5 but:
-    1. Heavier anti-popularity lean (FADE=0.60, TARGET=1.30)
-    2. V2 ghost+boost synergy and most-drafted-3x penalties
-    3. Sharp signal bonus (underground buzz -> up to +25% EV)
-    4. Explosive bonus (power_profile or k_rate trait -> up to +10% EV)
+    Moonshot EV via 4-term condition-based formula with heavier anti-crowd lean.
+
+    Same structure as _compute_filter_ev() but:
+    - anti_crowd uses Moonshot weights (FADE=0.60, TARGET=1.30, NEUTRAL=0.95)
+    - Sharp signal bonus: underground buzz → up to +25% EV
+    - Explosive bonus: power_profile (batters) or k_rate (pitchers) → up to +10% EV
     """
-    base_ev = compute_total_value(candidate.total_score, candidate.card_boost)
+    from app.services.condition_classifier import get_condition_hv_rate
+    from app.services.scoring_engine import estimate_rs_probability
 
-    # Low-score penalty (graduated, same as Starting 5)
-    base_ev *= _graduated_score_penalty(candidate.total_score)
+    condition_hv_rate = get_condition_hv_rate(candidate.drafts, candidate.card_boost)
+    rs_prob = estimate_rs_probability(candidate.card_boost, candidate.traits, candidate.is_pitcher)
+    stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
+    anti_crowd = _moonshot_popularity_adj(candidate.popularity)
+    debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
 
-    # Boost-environment gating (graduated, same as Starting 5)
-    if candidate.card_boost >= 1.0:
-        base_ev *= _graduated_env_penalty(candidate.env_score)
+    effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * 100.0
+    base_ev = compute_total_value(effective_score, candidate.card_boost)
 
-    # V2.2: Ghost-boost EV floor (same as Starting 5)
-    base_ev = _apply_ghost_boost_ev_floor(candidate, base_ev)
-
-    # Moonshot popularity adjustment (heavier than Starting 5)
-    pop_adj = _moonshot_popularity_adj(candidate.popularity)
-    base_ev *= pop_adj
-
-    # V2: "Most drafted at 3x boost" trap — Moonshot keeps the full penalty
-    # regardless of env: Moonshot's job is specifically to avoid the chalk+boost
-    # play that the field is on. If env makes Eovaldi viable, Starting 5 takes him;
-    # Moonshot explicitly goes the other way.
-    if candidate.is_most_drafted_3x:
-        base_ev *= MOST_DRAFTED_3X_PENALTY  # always full 40% for Moonshot
-
-    # Draft-count ownership leverage (heavier ghost bonus for Moonshot)
-    if candidate.drafts is not None:
-        if candidate.drafts < GHOST_DRAFT_THRESHOLD and candidate.env_score >= ENV_PASS_THRESHOLD:
-            base_ev *= GHOST_MOONSHOT_ENV_BONUS
-        elif candidate.drafts < LOW_DRAFT_THRESHOLD:
-            base_ev *= LOW_DRAFT_BONUS
-        elif candidate.drafts >= MEGA_CHALK_DRAFT_THRESHOLD:
-            if not (candidate.env_score >= ENV_PASS_THRESHOLD and candidate.card_boost >= CHALK_EXEMPT_MIN_BOOST):
-                base_ev *= MEGA_CHALK_PENALTY
-        elif candidate.drafts >= CHALK_DRAFT_THRESHOLD:
-            if not (candidate.env_score >= ENV_PASS_THRESHOLD and candidate.card_boost >= CHALK_EXEMPT_MIN_BOOST):
-                base_ev *= CHALK_PENALTY
-
-    # V2: Ghost + Boost synergy (even more valuable for Moonshot differentiation)
-    if candidate.drafts is not None and candidate.card_boost >= GHOST_BOOST_SYNERGY_MIN_BOOST:
-        if (candidate.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS
-                and candidate.card_boost >= 3.0
-                and candidate.env_score >= ENV_PASS_THRESHOLD):
-            base_ev *= MEGA_GHOST_BOOST_BONUS
-        elif candidate.drafts < LOW_DRAFT_THRESHOLD and candidate.env_score >= ENV_PASS_THRESHOLD:
-            base_ev *= GHOST_BOOST_SYNERGY_BONUS
-
-    # Debut/return premium
-    if candidate.is_debut_or_return:
-        base_ev *= DEBUT_RETURN_EV_BONUS
-
-    # Sharp signal bonus: 0-100 score -> 0-25% EV boost
+    # Moonshot-specific bonuses (unchanged from V2)
     sharp_bonus = 1.0 + (candidate.sharp_score / 100.0) * MOONSHOT_SHARP_BONUS_MAX
 
-    # Explosive bonus: power_profile (batters) or k_rate (pitchers)
-    if candidate.is_pitcher:
-        explosive_trait = get_trait_score(candidate.traits, "k_rate")
-    else:
-        explosive_trait = get_trait_score(candidate.traits, "power_profile")
-    # Normalize trait (max is 25) to a 0-10% bonus
+    explosive_trait = get_trait_score(
+        candidate.traits, "k_rate" if candidate.is_pitcher else "power_profile"
+    )
     explosive_bonus = 1.0 + (explosive_trait / 25.0) * MOONSHOT_EXPLOSIVE_BONUS_MAX
 
     return base_ev * sharp_bonus * explosive_bonus

@@ -115,15 +115,7 @@ BOOST_QUALITY_THRESHOLD = 1.0
 # composition with no positional constraints.
 BOOSTED_POOL_FULL_THRESHOLD = 5
 
-# Boost-environment gating (Filter 4 — §4.2 Filter 4)
-# A boost without environmental support is a trap (§3.5 "Boost Trap").
-# Instead of a binary 30% haircut at env < 0.5, the penalty now scales linearly:
-# env=0.0 → BOOST_NO_ENV_PENALTY_FLOOR (full penalty), env=ENV_PASS_THRESHOLD → 1.0 (no penalty).
-# This prevents a player at env=0.48 from being treated the same as env=0.0.
-# See _graduated_env_penalty() in filter_strategy.py.
-BOOST_NO_ENV_PENALTY_FLOOR = 0.60  # worst-case multiplier at env=0.0 (40% haircut)
-ENV_PASS_THRESHOLD = 0.5           # env_score >= this = no penalty at all
-# Removed: BOOST_NO_ENV_PENALTY = 0.70 — replaced by graduated scale
+ENV_PASS_THRESHOLD = 0.5           # env_score >= 0.5 = passes environmental filter
 
 # Game diversification (Filter 5 — V2 Law 9)
 MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup
@@ -183,66 +175,23 @@ MOONSHOT_SAME_TEAM_PENALTY = 0.85
 # 12/13 rank-1 lineups had at least 1 ghost player.
 # ---------------------------------------------------------------------------
 GHOST_DRAFT_THRESHOLD = 100           # < 100 drafts = ghost player
-GHOST_ENV_BONUS = 1.25                # 25% EV bonus for ghosts with env support (up from 20%)
-GHOST_MOONSHOT_ENV_BONUS = 1.35       # 35% EV bonus for ghosts in Moonshot (up from 30%)
 LOW_DRAFT_THRESHOLD = 200             # < 200 drafts = low-ownership differentiator
-LOW_DRAFT_BONUS = 1.10                # 10% EV bonus
-CHALK_DRAFT_THRESHOLD = 1500          # >= 1500 drafts = chalk (V2: 1500+ bust 45%)
-CHALK_PENALTY = 0.80                  # 20% EV penalty for chalk (up from 15%)
-CHALK_EXEMPT_MIN_BOOST = 3.0          # Chalk exemption requires 3.0 boost + env pass
-MEGA_CHALK_DRAFT_THRESHOLD = 2000     # >= 2000 drafts = mega-chalk (V2: bust 55%, avg RS 1.5)
-MEGA_CHALK_PENALTY = 0.70             # 30% EV penalty for mega-chalk
+CHALK_DRAFT_THRESHOLD = 1500          # >= 1500 drafts = chalk
+MEGA_CHALK_DRAFT_THRESHOLD = 2000     # >= 2000 drafts = mega-chalk
 
-# "Most drafted at 3x boost" trap (V2 §9 Finding 2)
-# These players bust 57% of the time with avg RS 0.72.
-# The crowd sees "3.0x boost on star name" and piles in.
-#
-# V2.3 (April 7 post-mortem): The 57% bust rate is for players WITHOUT env support.
-# Eovaldi (TEX, 2.2k drafts, 3.0x) appeared in 11/12 top lineups on April 7 because
-# he had real env support — the old flat 40% penalty crushed him regardless.
-# Rule: if env_score >= ENV_PASS_THRESHOLD, the 3x trap is half as severe.
-MOST_DRAFTED_3X_PENALTY = 0.60        # 40% EV penalty — no env support (bust risk is real)
-MOST_DRAFTED_3X_ENV_PASS_PENALTY = 0.80  # 20% EV penalty — env passes (boost is backed by conditions)
+# "Most drafted at 3x boost" trap — still flagged dynamically each run in the router.
+# Historical bust rate: 57% with avg RS 0.72.
 # How many of the most-drafted 3x-boost players to flag per slate.
-# Historical data: ~5 players per day carry the is_most_drafted_3x label.
-# For live slates (where the DB flag is never set), compute this dynamically.
 MOST_DRAFTED_3X_TOP_N = 5
 
 # ---------------------------------------------------------------------------
-# Ghost + Boost synergy (V2 §2 Pillar 3 — the "holy grail")
-# Players with boost ≥ 2.5 AND < 200 drafts avg ~28 total_value on HV list.
-# Players with boost 3.0 AND < 50 drafts who pass env = auto-include tier.
+# Ghost + Boost synergy constants
+# Used for stack-building sort priority in _build_team_stack().
+# The EV adjustments themselves are now in the condition matrix
+# (app/services/condition_classifier.py).
 # ---------------------------------------------------------------------------
-GHOST_BOOST_SYNERGY_MIN_BOOST = 2.5   # minimum boost for ghost+boost synergy
-GHOST_BOOST_SYNERGY_BONUS = 1.30      # 30% EV bonus for ghost + high boost (env required)
-MEGA_GHOST_BOOST_MAX_DRAFTS = 50      # < 50 drafts + boost >= 3.0 = mega-ghost-boost tier
-MEGA_GHOST_BOOST_BONUS = 1.50         # 50% EV bonus for mega-ghost + max boost (NO env requirement)
-# For mega-ghost-boost players, data scarcity makes env_score unreliable (unknown batting
-# order alone drops env from ~0.5 to ~0.17). Cap the env haircut at 20% for this tier.
-MEGA_GHOST_ENV_PENALTY_FLOOR = 0.80  # worst-case env multiplier for mega-ghost-boost players
-
-# ---------------------------------------------------------------------------
-# High-boost ghost EV floor (V2.2 — April 8 post-mortem fix)
-#
-# The scoring engine systematically under-scores ghost players because they
-# have limited game logs, unknown batting orders, and thin statistical profiles.
-# The graduated score penalty + boost-env penalty can still crush a mega-ghost-
-# boost player whose trait score is low due to data scarcity rather than bad play.
-#
-# Historical data: mega-ghost-boost players (3.0x, <50 drafts) average ~28
-# total_value on the HV list.  Using the core formula backwards:
-#   28 = RS × (2 + 3) → RS ≈ 5.6 → implied score ≈ 56/100 if fully known.
-# These players' true ability is far higher than the scoring engine can measure.
-#
-# The floor ensures that when boost ≥ 3.0 AND drafts < 50, the EV is at least
-# GHOST_BOOST_EV_FLOOR_SCORE × (2 + boost), *before* synergy/ghost bonuses.
-# This acts as a minimum trait-score proxy for data-scarce ghost+boost players.
-# ---------------------------------------------------------------------------
-GHOST_BOOST_EV_FLOOR_SCORE = 30.0  # minimum effective score for ghost-boost players (env-independent)
-# Historical data: ghost+boost (<100 drafts, boost>=2.5) produces TV>15 at 82-100% rate.
-# At score=30 without env penalty: floor_ev=150 for boost=3.0, always beats a natural
-# ghost score (~29) that gets the 40% env haircut (87). Floor is intentionally env-independent
-# because data scarcity (unknown batting_order) also suppresses env_score unfairly.
+GHOST_BOOST_SYNERGY_MIN_BOOST = 2.5   # minimum boost for ghost+boost stack priority
+MEGA_GHOST_BOOST_MAX_DRAFTS = 50      # < 50 drafts + boost >= 3.0 = mega-ghost-boost tier (fallback ghost in validation)
 
 # ---------------------------------------------------------------------------
 # Lineup structure validation (V2 §5 + §9 Finding 4)
@@ -252,12 +201,14 @@ MAX_MEGA_CHALK_IN_LINEUP = 1          # max 1 player with 2000+ drafts
 MIN_GHOST_IN_LINEUP = 1              # min 1 ghost player (< 100 drafts)
 # Ghost enforcement: replace worst lineup player with a ghost if ghost EV >= this fraction
 GHOST_ENFORCE_SWAP_THRESHOLD = 0.50  # was 0.70 — lowered so ghost inclusion actually fires
-# V2.3: Cap at 1 starting pitcher per lineup.
-# Historical data shows rank-1 lineups had 0-5 pitchers, but the user's edge
-# comes from ghost+boost batters — not from stacking pitchers. A second pitcher
-# consumes a slot that a ghost+boost batter (the real edge) could fill.
-MAX_PITCHERS_IN_LINEUP = 1           # max 1 SP per lineup (Starting 5 and Moonshot)
 MAX_PLAYERS_PER_TEAM = 1             # max 1 player from any single team per lineup
+
+# ---------------------------------------------------------------------------
+# Blowout game stack bonus (4-term EV formula)
+# Applied in _compute_filter_ev() when a player's team is the favored side
+# in a blowout game (moneyline <= BLOWOUT_MONEYLINE_THRESHOLD).
+# ---------------------------------------------------------------------------
+STACK_BONUS = 1.20  # 20% EV bonus for players on blowout-game teams
 
 # ---------------------------------------------------------------------------
 # Boost concentration penalty (§4.2 Filter 4)

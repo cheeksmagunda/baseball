@@ -420,6 +420,50 @@ def score_batter(
     )
 
 
+def estimate_rs_probability(
+    card_boost: float,
+    traits: list,
+    is_pitcher: bool,
+) -> float:
+    """Estimate P(RS >= threshold) where threshold = 15.0 / (2.0 + card_boost).
+
+    Instead of predicting "how good," answers a simpler question:
+    will this player cross the TV=15 bar given their boost?
+
+    For a 3.0x boost player threshold is RS >= 3.0 — roughly 45-65% of
+    all starters produce this on a given day.  A simple rule-based approach
+    outperforms the 7-trait scorer for this question because ghost players
+    have sparse stat histories that suppress trait scores unfairly.
+
+    Trait proxies used (all from scoring_engine, so no extra DB calls):
+      - is_pitcher: k_rate trait (0-25) → proxy for K/9
+          k_rate >= 4.0 ↔ K/9 >= 7.0  [scale_score(7, 6, 12, 25) = 4.17]
+      - batter: lineup_position (0-15) and matchup_quality (0-20)
+          lineup_position >= 12 → batting 1-5 (max is 15 for spots 2-4)
+          matchup_quality >= 12 → opposing ERA >= 4.5 (weak starter)
+    """
+    from app.core.utils import get_trait_score
+
+    if is_pitcher:
+        k_rate = get_trait_score(traits, "k_rate")  # 0-25
+        return 0.65 if k_rate >= 4.0 else 0.50
+
+    if not traits:
+        return 0.40  # no data — default to near-league-average
+
+    lineup_pos = get_trait_score(traits, "lineup_position")  # 0-15
+    matchup = get_trait_score(traits, "matchup_quality")     # 0-20
+
+    if lineup_pos >= 12.0 and matchup >= 12.0:
+        # Top of order (spots 1-5) facing a weak starter (ERA >= 4.5)
+        return 0.60
+    if lineup_pos >= 7.5:
+        # Mid-order (spots 6-7) or top of order facing a quality arm
+        return 0.45
+    # Bottom of order (spots 8-9)
+    return 0.30
+
+
 def score_player(
     db: Session,
     player: Player,
