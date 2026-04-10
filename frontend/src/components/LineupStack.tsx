@@ -29,7 +29,7 @@ export function LineupStack({ lineup, tab, direction }: LineupStackProps) {
       id={`panel-${tab}`}
       role="tabpanel"
       aria-label={isMoonshot ? "Moonshot lineup" : "Starting 5 lineup"}
-      className="mx-auto w-full max-w-md px-4"
+      className="mx-auto w-full max-w-md px-4 lg:max-w-none"
     >
       {/* Lineup header */}
       <div className="mb-4 flex items-center justify-between">

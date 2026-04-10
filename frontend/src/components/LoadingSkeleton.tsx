@@ -2,9 +2,9 @@
 
 import { PlayerCardSkeleton } from "./PlayerCardSkeleton";
 
-export function LoadingSkeleton() {
+function ColumnSkeleton() {
   return (
-    <div className="mx-auto w-full max-w-md space-y-3 px-4 py-4">
+    <div className="space-y-3">
       {/* Header skeleton */}
       <div className="flex items-center justify-between pb-2">
         <div className="space-y-1">
@@ -21,6 +21,20 @@ export function LoadingSkeleton() {
       {Array.from({ length: 5 }).map((_, i) => (
         <PlayerCardSkeleton key={i} />
       ))}
+    </div>
+  );
+}
+
+export function LoadingSkeleton() {
+  return (
+    <div className="mx-auto w-full max-w-md px-4 py-4 lg:max-w-6xl lg:px-6">
+      {/* Mobile: single column, Desktop: two columns */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <ColumnSkeleton />
+        <div className="hidden lg:block">
+          <ColumnSkeleton />
+        </div>
+      </div>
     </div>
   );
 }

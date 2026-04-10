@@ -45,6 +45,13 @@
   padding: 14px 20px;
 }
 
+@media (min-width: 1024px) {
+  .content {
+    max-width: 72rem;
+    padding: 14px 24px;
+  }
+}
+
 .left {
   flex-shrink: 0;
   min-width: 0;
