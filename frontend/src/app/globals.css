@@ -134,6 +134,33 @@ body {
   font-size: clamp(1.5rem, 1.2rem + 0.75vw, 2.25rem);
 }
 
+/* ─── Responsive Desktop Enhancements ─── */
+@media (min-width: 1024px) {
+  .text-fluid-xs {
+    font-size: 0.75rem;
+  }
+
+  .text-fluid-sm {
+    font-size: 0.875rem;
+  }
+
+  .text-fluid-base {
+    font-size: 1rem;
+  }
+
+  .text-fluid-lg {
+    font-size: 1.25rem;
+  }
+
+  .text-fluid-xl {
+    font-size: 1.75rem;
+  }
+
+  .text-fluid-2xl {
+    font-size: 2.25rem;
+  }
+}
+
 /* ─── Glass Morphism Utility ─── */
 .glass {
   background: rgba(255, 255, 255, 0.03);

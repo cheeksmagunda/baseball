@@ -32,6 +32,8 @@ class GameEnvironment(BaseModel):
     wind_speed_mph: float | None = None
     wind_direction: str | None = None
     temperature_f: int | None = None
+    home_bullpen_era: float | None = None
+    away_bullpen_era: float | None = None
 
 
 class FilterCard(BaseModel):

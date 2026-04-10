@@ -139,6 +139,7 @@ PITCHER_ENV_FRIENDLY_PARK = 1.00      # park factor below this = pitcher-friendl
 BATTER_ENV_HIGH_VEGAS_TOTAL = 8.5     # O/U >= this = high-run environment
 BATTER_ENV_WEAK_PITCHER_ERA = 4.5     # opposing starter ERA above this = weak
 BATTER_ENV_TOP_LINEUP = 5             # batting 1-5 = top of lineup (V2 §4)
+BATTER_ENV_WEAK_BULLPEN_ERA = 4.5     # opposing bullpen ERA above this = vulnerable
 
 # Debut/return premium (§2.3 Condition C)
 DEBUT_RETURN_EV_BONUS = 1.15          # 15% EV bonus for debut/return players

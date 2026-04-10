@@ -6,6 +6,7 @@ import type { LineupTab, FilterOptimizeResponse } from "@/lib/types";
 import { useLineupData } from "@/hooks/useLineupData";
 import { useSlatePolling } from "@/hooks/useSlatePolling";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { StickyHeader } from "@/components/StickyHeader";
 import { TabBar } from "@/components/TabBar";
 import { LineupStack } from "@/components/LineupStack";
@@ -24,6 +25,7 @@ export function ClientHome({ initialData }: ClientHomeProps) {
   const [activeTab, setActiveTab] = useState<LineupTab>("starting5");
   const [direction, setDirection] = useState(0);
   const reduced = useReducedMotion();
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   const dragX = useMotionValue(0);
   const dragOpacity = useTransform(dragX, [-150, 0, 150], [0.5, 1, 0.5]);
@@ -39,7 +41,7 @@ export function ClientHome({ initialData }: ClientHomeProps) {
   useSlatePolling(refetch);
 
   function handleDragEnd(_: unknown, info: PanInfo) {
-    if (reduced) return;
+    if (reduced || isDesktop) return;
     const { offset, velocity } = info;
     const swipe = Math.abs(offset.x) * velocity.x;
 
@@ -86,6 +88,23 @@ export function ClientHome({ initialData }: ClientHomeProps) {
 
   const currentLineup = activeTab === "starting5" ? data.starting_5 : data.moonshot;
 
+  /* ── Desktop: side-by-side lineups ── */
+  if (isDesktop) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <StickyHeader slate={data.slate_classification} />
+
+        <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">
+          <div className="grid grid-cols-2 gap-6">
+            <LineupStack lineup={data.starting_5} tab="starting5" direction={0} />
+            <LineupStack lineup={data.moonshot} tab="moonshot" direction={0} />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  /* ── Mobile: tabbed + swipeable ── */
   return (
     <div className="flex min-h-screen flex-col">
       <StickyHeader slate={data.slate_classification} />

@@ -101,10 +101,38 @@ AUTO_INCLUDE_BOOST_THRESHOLD = 2.5   # boost ≥ 2.5 = elite/max boost tier
 # Tier classification helpers
 # ---------------------------------------------------------------------------
 
-def get_ownership_tier(drafts: int | None) -> str:
-    """Map draft count to ownership tier. None defaults to 'medium'."""
+def get_ownership_tier(drafts: int | None, total_slate_drafts: int | None = None) -> str:
+    """Map draft count to ownership tier.
+
+    When total_slate_drafts is provided, thresholds become percentages of the
+    slate's total draft volume.  This accounts for slate size: 100 drafts on a
+    3-game day (concentrated) is very different from 100 drafts on a 15-game day
+    (diluted).  Falls back to absolute thresholds when the slate total is unknown.
+
+    Percentage thresholds (calibrated to match the static thresholds at a
+    typical ~150-player slate with ~150k total drafts):
+      ghost:      < 0.1%  of total drafts  (~150 on a 150k slate)
+      low:        < 0.35%
+      medium:     < 0.7%
+      chalk:      < 1.4%
+      mega_chalk: >= 1.4%
+    """
     if drafts is None:
         return "medium"
+
+    if total_slate_drafts is not None and total_slate_drafts > 0:
+        pct = drafts / total_slate_drafts
+        if pct < 0.001:
+            return "ghost"
+        if pct < 0.0035:
+            return "low"
+        if pct < 0.007:
+            return "medium"
+        if pct < 0.014:
+            return "chalk"
+        return "mega_chalk"
+
+    # Absolute fallback (when slate draft totals aren't available)
     if drafts < 100:
         return "ghost"
     if drafts < 500:
@@ -129,13 +157,27 @@ def get_boost_tier(card_boost: float) -> str:
     return "max_boost"
 
 
-def get_condition_hv_rate(drafts: int | None, card_boost: float) -> float:
-    """Look up historical HV rate from the condition matrix.
+def get_condition_hv_rate(
+    drafts: int | None,
+    card_boost: float,
+    is_pitcher: bool = False,
+    total_slate_drafts: int | None = None,
+) -> float:
+    """Look up historical HV rate from the condition matrix, blended with ML.
 
     Returns 0.0 for DEAD_CAPITAL conditions — these are hard-blocked
     so the player can never generate positive EV.
+
+    When a trained ML model is available (data/hv_model.joblib), the matrix
+    rate is blended with the model's P(HV) prediction.  The ML model captures
+    non-linear interactions (e.g. the exact draft count where boost overcomes
+    crowd drag) that the 25-cell matrix cannot express.  DEAD_CAPITAL hard-
+    blocks are always respected regardless of the ML signal.
+
+    When total_slate_drafts is provided, ownership tiers use percentage-based
+    thresholds instead of fixed draft counts.
     """
-    ownership_tier = get_ownership_tier(drafts)
+    ownership_tier = get_ownership_tier(drafts, total_slate_drafts)
     boost_tier = get_boost_tier(card_boost)
 
     if (ownership_tier, boost_tier) in DEAD_CAPITAL_CONDITIONS:
@@ -145,16 +187,27 @@ def get_condition_hv_rate(drafts: int | None, card_boost: float) -> float:
         )
         return 0.0
 
-    return CONDITION_MATRIX[ownership_tier][boost_tier]
+    matrix_rate = CONDITION_MATRIX[ownership_tier][boost_tier]
+
+    # Blend with ML prediction when model is available
+    from app.services.ml_model import get_blended_hv_rate
+    return get_blended_hv_rate(matrix_rate, card_boost, drafts, is_pitcher)
 
 
-def is_auto_include(drafts: int | None, card_boost: float) -> bool:
+def is_auto_include(
+    drafts: int | None,
+    card_boost: float,
+    total_slate_drafts: int | None = None,
+) -> bool:
     """Return True for ghost+elite boost players — the primary historical edge.
 
-    These candidates (< 100 drafts, boost ≥ 2.5) have 82–100% HV rate
+    These candidates (ghost tier, boost >= 2.5) have 82-100% HV rate
     historically and should fill the lineup before lower-tier candidates
     are considered, regardless of trait score.
+
+    Uses dynamic ownership thresholds when total_slate_drafts is provided.
     """
     if drafts is None:
         return False
-    return drafts < AUTO_INCLUDE_DRAFT_THRESHOLD and card_boost >= AUTO_INCLUDE_BOOST_THRESHOLD
+    tier = get_ownership_tier(drafts, total_slate_drafts)
+    return tier == "ghost" and card_boost >= AUTO_INCLUDE_BOOST_THRESHOLD
