@@ -65,6 +65,7 @@ from app.core.constants import (
     MEGA_GHOST_BOOST_MAX_DRAFTS,
     MAX_MEGA_CHALK_IN_LINEUP,
     MIN_GHOST_IN_LINEUP,
+    MAX_PITCHERS_IN_LINEUP,
     BOOST_CONCENTRATION_THRESHOLD,
     BOOST_CONCENTRATION_PENALTY,
     SLOT1_DIFFERENTIATOR_EV_THRESHOLD,
@@ -750,6 +751,31 @@ def _validate_lineup_structure(
                 # All non-ghost players are part of stacks — skip ghost enforcement
                 logger.info(
                     "Ghost enforcement skipped: all lineup players are part of team stacks"
+                )
+
+    # Rule 3: Max 1 starting pitcher (V2.3)
+    # Ghost+boost batter edge outweighs a second SP slot. Excess pitchers are
+    # replaced by the highest-EV non-pitchers from the candidate pool.
+    pitcher_indices = [i for i, c in enumerate(lineup) if c.is_pitcher]
+    if len(pitcher_indices) > MAX_PITCHERS_IN_LINEUP:
+        # Keep the single highest-EV pitcher; replace the rest
+        pitcher_indices_by_ev = sorted(pitcher_indices, key=lambda i: lineup[i].filter_ev, reverse=True)
+        lineup_names = {c.player_name for c in lineup}
+        for idx in pitcher_indices_by_ev[MAX_PITCHERS_IN_LINEUP:]:
+            replacement = next(
+                (c for c in all_candidates_sorted
+                 if c.player_name not in lineup_names and not c.is_pitcher),
+                None,
+            )
+            if replacement:
+                removed = lineup[idx]
+                lineup_names.discard(removed.player_name)
+                lineup[idx] = replacement
+                lineup_names.add(replacement.player_name)
+                logger.info(
+                    "Pitcher cap (max %d): replaced pitcher %s (EV=%.2f) with batter %s (EV=%.2f)",
+                    MAX_PITCHERS_IN_LINEUP, removed.player_name, removed.filter_ev,
+                    replacement.player_name, replacement.filter_ev,
                 )
 
     # Rule 4: Max N players per team (diversification)
