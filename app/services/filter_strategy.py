@@ -48,6 +48,7 @@ from app.core.constants import (
     BATTER_ENV_HIGH_VEGAS_TOTAL,
     BATTER_ENV_WEAK_PITCHER_ERA,
     BATTER_ENV_TOP_LINEUP,
+    BATTER_ENV_WEAK_BULLPEN_ERA,
     DEBUT_RETURN_EV_BONUS,
     POPULARITY_FADE_PENALTY,
     POPULARITY_TARGET_BONUS,
@@ -351,6 +352,7 @@ def compute_batter_env_score(
     wind_direction: str | None = None,
     temperature_f: int | None = None,
     team_moneyline: int | None = None,
+    opp_bullpen_era: float | None = None,
 ) -> tuple[float, list[str]]:
     """
     Compute environmental score for a batter (0-1.0).
@@ -362,10 +364,11 @@ def compute_batter_env_score(
     - Batting in top 5 of lineup (V2 says top 5, not top 4)
     - Hitter-friendly park or favorable weather
     - Team is moneyline favorite (V2 addition)
+    - Vulnerable opposing bullpen (high bullpen ERA)
     """
     score = 0.0
     factors = []
-    max_score = 6.0  # 6 factors now (added moneyline)
+    max_score = 7.0  # 7 factors (added bullpen vulnerability)
 
     # 1. High Vegas total (run environment)
     if vegas_total is not None:
@@ -427,6 +430,19 @@ def compute_batter_env_score(
             score += 0.5
             factors.append(f"Moneyline favorite (ML={team_moneyline})")
 
+    # 7. Vulnerable opposing bullpen (high ERA = late-game upside)
+    # Starting pitchers only pitch ~5-6 innings; batters get 1-2 PAs against the
+    # bullpen in the 7th-9th innings where high-leverage runs are generated.
+    # A great starter with a terrible bullpen behind him is still a favorable
+    # environment for batters — the crowd only looks at the starter.
+    if opp_bullpen_era is not None:
+        if opp_bullpen_era >= BATTER_ENV_WEAK_BULLPEN_ERA:
+            score += 1.0
+            factors.append(f"Vulnerable bullpen (ERA={opp_bullpen_era:.2f})")
+        elif opp_bullpen_era >= BATTER_ENV_WEAK_BULLPEN_ERA - 0.5:
+            score += 0.5
+            factors.append(f"Below-avg bullpen (ERA={opp_bullpen_era:.2f})")
+
     # Debut/return bonus
     if is_debut_or_return:
         score += 0.5
@@ -461,6 +477,7 @@ class FilteredCandidate:
     is_most_drafted_3x: bool = False  # V2: 57% bust rate trap signal
     traits: list = field(default_factory=list)  # TraitScore list from scoring engine
     is_in_blowout_game: bool = False  # set by run_filter_strategy before EV computation
+    total_slate_drafts: int | None = None  # sum of all drafts on the slate (for dynamic thresholds)
 
     # Computed by the optimizer
     filter_ev: float = 0.0
@@ -513,8 +530,12 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     from app.services.condition_classifier import get_condition_hv_rate
     from app.services.scoring_engine import estimate_rs_probability
 
-    # Term 1: Historical HV rate from condition matrix (primary signal)
-    condition_hv_rate = get_condition_hv_rate(candidate.drafts, candidate.card_boost)
+    # Term 1: Historical HV rate from condition matrix, blended with ML (primary signal)
+    condition_hv_rate = get_condition_hv_rate(
+        candidate.drafts, candidate.card_boost,
+        is_pitcher=candidate.is_pitcher,
+        total_slate_drafts=candidate.total_slate_drafts,
+    )
 
     # Term 2: P(RS >= threshold) where threshold = 15 / (2 + boost)
     rs_prob = estimate_rs_probability(candidate.card_boost, candidate.traits, candidate.is_pitcher)
@@ -1025,6 +1046,12 @@ def run_filter_strategy(
             slate_classification=slate_classification,
         )
 
+    # Compute total slate draft volume for dynamic ownership thresholds.
+    # On a 3-game slate draft counts are concentrated; on a 15-game slate they're
+    # diluted.  Passing the slate total lets get_ownership_tier() use percentage-
+    # based thresholds instead of fixed draft counts.
+    total_slate_drafts = sum(c.drafts for c in candidates if c.drafts is not None) or None
+
     # Mark blowout-game players before EV computation so _compute_filter_ev()
     # can apply the stack_bonus without needing slate_classification as a parameter.
     blowout_teams = {
@@ -1034,6 +1061,7 @@ def run_filter_strategy(
     }
     for c in candidates:
         c.is_in_blowout_game = c.team.upper() in blowout_teams
+        c.total_slate_drafts = total_slate_drafts
 
     # Step 1: Compute filter-adjusted EV (4-term condition-based formula)
     for c in candidates:
@@ -1091,7 +1119,11 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     from app.services.condition_classifier import get_condition_hv_rate
     from app.services.scoring_engine import estimate_rs_probability
 
-    condition_hv_rate = get_condition_hv_rate(candidate.drafts, candidate.card_boost)
+    condition_hv_rate = get_condition_hv_rate(
+        candidate.drafts, candidate.card_boost,
+        is_pitcher=candidate.is_pitcher,
+        total_slate_drafts=candidate.total_slate_drafts,
+    )
     rs_prob = estimate_rs_probability(candidate.card_boost, candidate.traits, candidate.is_pitcher)
     stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
     anti_crowd = _moonshot_popularity_adj(candidate.popularity)

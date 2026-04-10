@@ -109,6 +109,10 @@ async def _resolve_candidates(
                     score_kwargs["opp_pitcher_stats"] = {"era": _opp_era}
                 score_kwargs["batting_order"] = card.batting_order
                 score_kwargs["park_team"] = game.home_team.upper()
+                # Pass weather data for dynamic park factor adjustment
+                score_kwargs["wind_speed_mph"] = game.wind_speed_mph
+                score_kwargs["wind_direction"] = game.wind_direction
+                score_kwargs["temperature_f"] = game.temperature_f
 
         score_result = score_player(db, player, **score_kwargs)
 
@@ -158,6 +162,9 @@ async def _resolve_candidates(
             # V2: pass team's moneyline for favorite detection
             team_ml = game.home_moneyline if is_home else game.away_moneyline
 
+            # Bullpen vulnerability: the opposing team's bullpen ERA
+            opp_bp_era = game.away_bullpen_era if is_home else game.home_bullpen_era
+
             env_score, env_factors = compute_batter_env_score(
                 vegas_total=game.vegas_total,
                 opp_pitcher_era=opp_era,
@@ -169,6 +176,7 @@ async def _resolve_candidates(
                 wind_direction=game.wind_direction,
                 temperature_f=game.temperature_f,
                 team_moneyline=team_ml,
+                opp_bullpen_era=opp_bp_era,
             )
         else:
             env_score = 0.5
@@ -329,6 +337,8 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             wind_speed_mph=g.wind_speed_mph,
             wind_direction=g.wind_direction,
             temperature_f=g.temperature_f,
+            home_bullpen_era=g.home_bullpen_era,
+            away_bullpen_era=g.away_bullpen_era,
         )
         for g in remaining_games
     ]

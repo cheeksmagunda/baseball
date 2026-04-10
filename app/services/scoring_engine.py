@@ -298,17 +298,64 @@ def score_batter_recent_form(
     )
 
 
-def score_ballpark_factor(park_team: str | None, max_pts: float) -> TraitResult:
-    """Score based on home ballpark HR factor."""
+def score_ballpark_factor(
+    park_team: str | None,
+    max_pts: float,
+    wind_speed_mph: float | None = None,
+    wind_direction: str | None = None,
+    temperature_f: int | None = None,
+) -> TraitResult:
+    """Score based on home ballpark HR factor, dynamically adjusted for weather.
+
+    Wind blowing out increases the effective park factor (balls carry further).
+    Wind blowing in decreases it (suppresses fly balls).  Temperature above 80°F
+    also gives a small boost (warmer air is less dense).
+
+    This is critical for parks like Wrigley Field whose factor swings wildly
+    depending on wind off Lake Michigan:
+      - CHC base factor = 1.06
+      - Wind blowing out 15 mph → effective ~1.16
+      - Wind blowing in 15 mph → effective ~0.96 (pitcher's park)
+    """
     if not park_team:
         return TraitResult("ballpark_factor", max_pts * 0.5, max_pts, "park unknown")
 
-    factor = PARK_HR_FACTORS.get(park_team, 1.0)
-    # Scale: 0.89 (LAD) → 0, 1.38 (COL) → max
-    score = max(0, min(max_pts, (factor - 0.89) / (1.38 - 0.89) * max_pts))
-    return TraitResult(
-        "ballpark_factor", round(score, 1), max_pts, f"park={park_team} factor={factor:.2f}"
-    )
+    base_factor = PARK_HR_FACTORS.get(park_team, 1.0)
+    adjustment = 0.0
+    notes = []
+
+    if wind_speed_mph is not None and wind_speed_mph >= 5 and wind_direction:
+        direction_upper = wind_direction.upper()
+        # Wind intensity: scale from 5 mph (minimal) to 20 mph (max effect)
+        wind_intensity = min(1.0, (wind_speed_mph - 5.0) / 15.0)
+
+        if any(d in direction_upper for d in ("OUT", "OUT TO CF", "OUT TO LF", "OUT TO RF")):
+            # Wind blowing out — balls carry further, raises HR factor
+            adjustment += 0.10 * wind_intensity
+            notes.append(f"wind out +{adjustment:.2f}")
+        elif any(d in direction_upper for d in ("L TO R", "R TO L")):
+            # Crosswind — moderate boost (balls pushed along the line)
+            adjustment += 0.04 * wind_intensity
+            notes.append(f"crosswind +{adjustment:.2f}")
+        elif any(d in direction_upper for d in ("IN",)):
+            # Wind blowing in — suppresses fly balls
+            adjustment -= 0.10 * wind_intensity
+            notes.append(f"wind in {adjustment:.2f}")
+
+    if temperature_f is not None and temperature_f >= 80:
+        # Hot air is less dense, balls carry further
+        temp_boost = min(0.04, (temperature_f - 80) / 250)
+        adjustment += temp_boost
+        notes.append(f"temp +{temp_boost:.2f}")
+
+    effective_factor = base_factor + adjustment
+    note_str = f"park={park_team} base={base_factor:.2f} eff={effective_factor:.2f}"
+    if notes:
+        note_str += f" ({', '.join(notes)})"
+
+    # Scale: 0.89 → 0, 1.38 → max (same range as static, but effective factor can exceed)
+    score = max(0, min(max_pts, (effective_factor - 0.89) / (1.38 - 0.89) * max_pts))
+    return TraitResult("ballpark_factor", round(score, 1), max_pts, note_str)
 
 
 def score_hot_streak(game_logs: list[PlayerGameLog], max_pts: float) -> TraitResult:
@@ -395,6 +442,9 @@ def score_batter(
     opp_pitcher_stats: dict | None = None,
     park_team: str | None = None,
     weights: ScoringWeights | None = None,
+    wind_speed_mph: float | None = None,
+    wind_direction: str | None = None,
+    temperature_f: int | None = None,
 ) -> PlayerScoreResult:
     """Score a batter on all traits."""
     w = (weights or ScoringWeights()).batter
@@ -404,7 +454,7 @@ def score_batter(
         score_lineup_position(batting_order, w.lineup_position),
         score_batter_matchup(opp_pitcher_stats, None, w.matchup_quality),
         score_batter_recent_form(game_logs, w.recent_form),
-        score_ballpark_factor(park_team, w.ballpark_factor),
+        score_ballpark_factor(park_team, w.ballpark_factor, wind_speed_mph, wind_direction, temperature_f),
         score_hot_streak(game_logs, w.hot_streak),
         score_speed_component(stats, w.speed_component),
     ]
@@ -497,6 +547,9 @@ def score_player(
     opp_pitcher_stats: dict | None = None,
     batting_order: int | None = None,
     park_team: str | None = None,
+    wind_speed_mph: float | None = None,
+    wind_direction: str | None = None,
+    temperature_f: int | None = None,
 ) -> PlayerScoreResult:
     """Score any player (auto-detects pitcher vs batter)."""
     from app.config import settings
@@ -531,4 +584,7 @@ def score_player(
             opp_pitcher_stats=opp_pitcher_stats,
             park_team=park_team or opp_team,
             weights=weights,
+            wind_speed_mph=wind_speed_mph,
+            wind_direction=wind_direction,
+            temperature_f=temperature_f,
         )

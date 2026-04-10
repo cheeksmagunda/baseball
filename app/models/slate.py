@@ -65,6 +65,10 @@ class SlateGame(Base):
     home_team_k_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     away_team_k_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Bullpen vulnerability data (enriches batter env scoring beyond just the starter)
+    home_bullpen_era: Mapped[float | None] = mapped_column(Float, nullable=True)
+    away_bullpen_era: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     slate: Mapped["Slate"] = relationship(back_populates="games")
 
 
