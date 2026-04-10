@@ -661,7 +661,22 @@ def _enforce_composition(
                 and c.game_id not in stack_game_ids
             ]
             spots_left = 5 - len(stack)
-            lineup = list(stack) + diversifiers[:spots_left]
+            # Stack is always hitters (_build_team_stack excludes pitchers).
+            # Diversifier slots should allow at most MAX_PITCHERS_IN_LINEUP
+            # pitchers total across the whole lineup.
+            stack_pitcher_count = sum(1 for c in stack if c.is_pitcher)
+            pitchers_allowed = max(0, MAX_PITCHERS_IN_LINEUP - stack_pitcher_count)
+            div_pitchers = 0
+            filtered_diversifiers: list[FilteredCandidate] = []
+            for c in diversifiers:
+                if len(filtered_diversifiers) == spots_left:
+                    break
+                if c.is_pitcher:
+                    if div_pitchers >= pitchers_allowed:
+                        continue
+                    div_pitchers += 1
+                filtered_diversifiers.append(c)
+            lineup = list(stack) + filtered_diversifiers
             lineup = _validate_lineup_structure(lineup, ordered)
             pitcher_count = sum(1 for c in lineup if c.is_pitcher)
             logger.info(
@@ -672,7 +687,20 @@ def _enforce_composition(
             return lineup[:5]
 
     # --- AUTO_INCLUDE-first EV ranking ---
-    lineup = ordered[:5]
+    # Enforce pitcher cap during selection: at most MAX_PITCHERS_IN_LINEUP pitchers
+    # are allowed into the initial 5 slots.  Without this guard, if pitchers dominate
+    # the top of the EV ranking the post-selection validation may silently fail to
+    # find a replacement (e.g. when all non-pitchers are already in the lineup).
+    pitchers_added = 0
+    lineup = []
+    for c in ordered:
+        if len(lineup) == 5:
+            break
+        if c.is_pitcher:
+            if pitchers_added >= MAX_PITCHERS_IN_LINEUP:
+                continue  # skip extra pitchers; they stay in ordered for replacement use
+            pitchers_added += 1
+        lineup.append(c)
     lineup = _validate_lineup_structure(lineup, ordered)
     pitcher_count = sum(1 for c in lineup if c.is_pitcher)
     logger.info(
@@ -797,6 +825,12 @@ def _validate_lineup_structure(
                     "Pitcher cap (max %d): replaced pitcher %s (EV=%.2f) with batter %s (EV=%.2f)",
                     MAX_PITCHERS_IN_LINEUP, removed.player_name, removed.filter_ev,
                     replacement.player_name, replacement.filter_ev,
+                )
+            else:
+                logger.warning(
+                    "Pitcher cap: could not find a non-pitcher replacement for %s — "
+                    "candidate pool may be pitcher-heavy",
+                    lineup[idx].player_name,
                 )
 
     # Rule 4: Max N players per team (diversification)
