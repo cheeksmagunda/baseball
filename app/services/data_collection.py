@@ -4,7 +4,8 @@ and stores them in the database.
 """
 
 import asyncio
-from datetime import date
+from datetime import date, datetime as _datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,31 @@ from app.core.mlb_api import (
 )
 from app.models.player import Player, PlayerStats, PlayerGameLog, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
+
+_ET = ZoneInfo("America/New_York")
+
+
+def _format_game_time_et(game_date_iso: str | None) -> str | None:
+    """
+    Convert MLB API gameDate (ISO 8601 UTC) to 'H:MM AM/PM ET' display format.
+
+    The MLB schedule API returns gameDate as e.g. "2026-04-11T23:05:00Z".
+    This converts to Eastern Time and formats as "7:05 PM ET" for storage
+    in SlateGame.scheduled_game_time, which the T-65 monitor parses to
+    determine first-pitch time.
+    """
+    if not game_date_iso:
+        return None
+    try:
+        utc_dt = _datetime.fromisoformat(game_date_iso.replace("Z", "+00:00"))
+        et_dt = utc_dt.astimezone(_ET)
+        formatted = et_dt.strftime("%I:%M %p")
+        # Strip leading zero: "07:05 PM" → "7:05 PM"
+        if formatted.startswith("0"):
+            formatted = formatted[1:]
+        return f"{formatted} ET"
+    except (ValueError, TypeError):
+        return None
 
 
 async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
@@ -60,6 +86,10 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
         home_starter_mlb_id = home_prob.get("id") if home_prob else None
         away_starter_mlb_id = away_prob.get("id") if away_prob else None
 
+        # Extract scheduled game time from MLB API gameDate field
+        # e.g. "2026-04-11T23:05:00Z" → "7:05 PM ET"
+        scheduled_game_time = _format_game_time_et(game.get("gameDate"))
+
         # Capture scores from schedule response for completed games
         game_status = game.get("status", {}).get("abstractGameState", "")
         home_score = game.get("teams", {}).get("home", {}).get("score")
@@ -81,6 +111,7 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
                 home_starter_mlb_id=home_starter_mlb_id,
                 away_starter=away_starter_name,
                 away_starter_mlb_id=away_starter_mlb_id,
+                scheduled_game_time=scheduled_game_time,
             )
             # Set scores if game is Final
             if game_status == "Final" and home_score is not None:
@@ -101,6 +132,8 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
                 existing.away_starter = away_starter_name
             if away_starter_mlb_id and not existing.away_starter_mlb_id:
                 existing.away_starter_mlb_id = away_starter_mlb_id
+            if scheduled_game_time and not existing.scheduled_game_time:
+                existing.scheduled_game_time = scheduled_game_time
             # Update scores if game is now Final
             if game_status == "Final" and home_score is not None and existing.home_score is None:
                 existing.home_score = home_score
