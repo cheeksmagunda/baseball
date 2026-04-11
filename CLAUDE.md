@@ -256,6 +256,34 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
 - `MOST_DRAFTED_3X_MIN_N = 3`, `MOST_DRAFTED_3X_MAX_N = 7`, `MOST_DRAFTED_3X_PROPORTION = 0.30`
 - `MAX_PITCHERS_THIN_POOL = 2`
 
+### V3.1 Changes (April 11 — Empirical Calibration from April 6-9 Data)
+
+**Fix 1 — Pitcher Exemption for Most-Drafted-3x Trap** (`app/routers/filter_strategy.py`)
+- The 57% bust rate for most-drafted 3x batters does NOT apply to starting pitchers.
+- Historical evidence: Mick Abel (Apr 9, TV 23.0), Eovaldi (Apr 7, in 11/12 top lineups).
+- Pitchers inherently control their own environment — the "crowd is wrong about boost" thesis doesn't transfer.
+- `is_most_drafted_3x` flag now only applied to batters. Pitchers with 3x boost are never flagged.
+
+**Fix 2 — Stacking Re-enabled** (`app/core/constants.py`, `app/services/filter_strategy.py`)
+- `MAX_PLAYERS_PER_GAME` raised from 1 to 3. `MAX_PLAYERS_PER_TEAM` raised from 1 to 3.
+- Historical proof: Apr 6 Rank 1 = LAD+HOU stack. 62% of winning days featured 3-4 player team stacks.
+- `MAX_PLAYERS_PER_GAME = 1` was mathematically preventing the winning lineup shape.
+- New: `MAX_OPPONENTS_SAME_GAME = 1` — allows teammate stacking but prevents negative correlation (opposing pitcher + batters in the same game).
+- Team-aware game diversification: the selection loop tracks `(game_id, team)` tuples, not just `game_id`.
+
+**Fix 3 — Ghost Absolute Draft Floor** (`app/services/condition_classifier.py`)
+- Added `GHOST_ABSOLUTE_DRAFT_FLOOR = 25`: players with ≤25 drafts are always classified ghost.
+- Prevents the zero-draft CDF trap: when 30-40% of the pool has 0 drafts, the 15th percentile is 0, pushing mega-ghosts (1-2 drafts) into "low" tier.
+- Applied BEFORE the percentile check as an `OR` condition.
+
+**Fix 4 — Env-Scaled Unboosted Pitcher Penalty** (`app/services/filter_strategy.py`)
+- `UNBOOSTED_PITCHER_RICH_POOL_PENALTY` now scales with `env_score`:
+  - env=0.0 → 0.65 (35% haircut, same as V2)
+  - env=0.5 → 0.775 (22% haircut)
+  - env=1.0 → 0.90 (10% haircut — ace with perfect environment barely penalized)
+- New constant: `UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL = 0.90`.
+- Historical counter-examples: Nolan McLean (Apr 9, 0 boost, biggest overperformer), Sandy Alcantara (Apr 7, RS 7.5).
+
 ### Lineup Construction (Pure EV — dynamic pitcher cap)
 Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. V3.0 uses dynamic cap: 1 SP when boosted pool is rich, 2 SP when thin. **No "day types" force composition.** `SLATE_COMPOSITION` was removed entirely.
 

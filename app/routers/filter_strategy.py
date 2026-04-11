@@ -339,20 +339,38 @@ async def _resolve_candidates(
     # between MIN_N and MAX_N.  On a thin 2-game slate with 10 3x players,
     # the 5th-most-drafted might have 80 drafts (a ghost being punished as chalk).
     # Proportional scaling prevents this.
-    boost3_by_drafts = sorted(
-        [c for c in candidates if c.card_boost >= 3.0 and c.drafts is not None],
+    #
+    # V3.1: PITCHER EXEMPTION — Starting pitchers with 3x boost are unicorn events.
+    # Historical data: Mick Abel (Apr 9, TV 23.0), Eovaldi (Apr 7, in 11/12 top
+    # lineups).  Pitchers inherently control their own environment (they ARE the
+    # matchup), so the "crowd is wrong about boost" thesis doesn't apply the same
+    # way.  A 3x-boosted pitcher's edge is causal, not just information asymmetry.
+    # Only flag non-pitcher batters as most_drafted_3x traps.
+    boost3_batters_by_drafts = sorted(
+        [c for c in candidates
+         if c.card_boost >= 3.0 and c.drafts is not None and not c.is_pitcher],
         key=lambda c: c.drafts,
         reverse=True,
     )
     dynamic_top_n = max(
         MOST_DRAFTED_3X_MIN_N,
-        min(MOST_DRAFTED_3X_MAX_N, int(len(boost3_by_drafts) * MOST_DRAFTED_3X_PROPORTION)),
+        min(MOST_DRAFTED_3X_MAX_N, int(len(boost3_batters_by_drafts) * MOST_DRAFTED_3X_PROPORTION)),
     )
-    for c in boost3_by_drafts[:dynamic_top_n]:
+    for c in boost3_batters_by_drafts[:dynamic_top_n]:
         c.is_most_drafted_3x = True
         logger.debug(
-            "Dynamic is_most_drafted_3x: %s (drafts=%s, boost=%.1f) [top_n=%d of %d 3x players]",
-            c.player_name, c.drafts, c.card_boost, dynamic_top_n, len(boost3_by_drafts),
+            "Dynamic is_most_drafted_3x: %s (drafts=%s, boost=%.1f) [top_n=%d of %d 3x batters]",
+            c.player_name, c.drafts, c.card_boost, dynamic_top_n, len(boost3_batters_by_drafts),
+        )
+    # Log any pitchers that would have been flagged under the old rule
+    boost3_pitchers = [
+        c for c in candidates
+        if c.card_boost >= 3.0 and c.drafts is not None and c.is_pitcher
+    ]
+    for c in boost3_pitchers:
+        logger.debug(
+            "V3.1 pitcher exemption: %s (drafts=%s, boost=%.1f) — NOT flagged as most_drafted_3x",
+            c.player_name, c.drafts, c.card_boost,
         )
 
     return candidates

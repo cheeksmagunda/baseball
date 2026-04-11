@@ -73,6 +73,7 @@ from app.core.constants import (
     GHOST_ENFORCE_SWAP_THRESHOLD,
     MAX_PLAYERS_PER_TEAM,
     MAX_PLAYERS_PER_GAME,
+    MAX_OPPONENTS_SAME_GAME,
     STACK_BONUS,
     DNP_RISK_PENALTY,
     DNP_UNKNOWN_PENALTY,
@@ -80,6 +81,7 @@ from app.core.constants import (
     BOOST_QUALITY_THRESHOLD,
     BOOSTED_POOL_FULL_THRESHOLD,
     UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
+    UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL,
     MAX_PITCHERS_THIN_POOL,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score
@@ -740,9 +742,9 @@ def _enforce_composition(
     ordered = auto + rest
 
     # --- Try team stacking when a blowout game exists ---
-    # V2.5: Stacking requires 3-4 players from the same team/game.
-    # When MAX_PLAYERS_PER_GAME = 1, stacking is impossible — skip entirely.
-    if MAX_PLAYERS_PER_GAME > 1 and slate_class.stackable_games:
+    # V3.1: Stacking re-enabled (MAX_PLAYERS_PER_GAME raised to 3).
+    # Stacking requires 3-4 players from the same team/game.
+    if slate_class.stackable_games:
         stack = _build_team_stack(candidates, slate_class.stackable_games)
         if stack and len(stack) >= STACK_MIN_PLAYERS:
             stack_names = {c.player_name for c in stack}
@@ -779,11 +781,17 @@ def _enforce_composition(
             return lineup[:5]
 
     # --- AUTO_INCLUDE-first EV ranking ---
-    # Enforce pitcher cap AND game cap during selection: at most
-    # pitcher_cap pitchers and MAX_PLAYERS_PER_GAME players per
-    # game are allowed into the initial 5 slots.
+    # Enforce pitcher cap AND game cap during selection.
+    # V3.1: Game cap is now team-aware.  Up to MAX_PLAYERS_PER_GAME (3) teammates
+    # from the same game are allowed (correlation upside: if one hitter scores,
+    # teammates likely score too because runs require baserunners).  But opposing
+    # players in the same game are capped at MAX_OPPONENTS_SAME_GAME (1) because
+    # of negative correlation (if a pitcher dominates, the other team's batters suffer).
     pitchers_added = 0
-    games_used: dict[int | str | None, int] = {}
+    # Track (game_id, team) → count for teammate cap
+    game_team_used: dict[tuple, int] = {}
+    # Track game_id → set of teams for opponent detection
+    game_teams: dict[int | str | None, set[str]] = {}
     lineup = []
     for c in ordered:
         if len(lineup) == 5:
@@ -792,11 +800,31 @@ def _enforce_composition(
             if pitchers_added >= pitcher_cap:
                 continue  # skip extra pitchers; they stay in ordered for replacement use
             pitchers_added += 1
-        # V2.5: enforce max players per game during selection
+        # V3.1: Team-aware game diversification
         if c.game_id is not None:
-            if games_used.get(c.game_id, 0) >= MAX_PLAYERS_PER_GAME:
+            gt_key = (c.game_id, c.team.upper())
+            current_teammates = game_team_used.get(gt_key, 0)
+            # Check teammate cap
+            if current_teammates >= MAX_PLAYERS_PER_GAME:
                 continue
-            games_used[c.game_id] = games_used.get(c.game_id, 0) + 1
+            # Check opponent cap: if another team from this game is already in
+            # the lineup, this player is an "opponent" — limit to 1.
+            existing_teams = game_teams.get(c.game_id, set())
+            opponent_teams = existing_teams - {c.team.upper()}
+            if opponent_teams:
+                # There's already a player from the other side of this game.
+                # How many opponents are already in?
+                opp_count = sum(
+                    game_team_used.get((c.game_id, t), 0)
+                    for t in opponent_teams
+                )
+                if opp_count >= MAX_OPPONENTS_SAME_GAME:
+                    # Already have an opponent — only allow if this is a teammate
+                    # of an existing lineup player (not another opponent).
+                    if c.team.upper() not in existing_teams:
+                        continue
+            game_team_used[gt_key] = current_teammates + 1
+            game_teams.setdefault(c.game_id, set()).add(c.team.upper())
         lineup.append(c)
     lineup = _validate_lineup_structure(lineup, ordered, pitcher_cap=pitcher_cap)
     pitcher_count = sum(1 for c in lineup if c.is_pitcher)
@@ -1291,6 +1319,11 @@ def run_filter_strategy(
     # Historical data (4/2 onward): zero unboosted pitchers in rank-1 lineups
     # when quality boosted alternatives existed.  Pitchers typically get 0.0 boost,
     # so without this penalty they float to the top of EV rankings on rs_prob alone.
+    #
+    # V3.1: Penalty scales inversely by env_score.  An ace with env=1.0 gets
+    # only a 10% haircut, while a mediocre pitcher with env=0.0 gets the full
+    # 35%.  This prevents penalizing generational anchors just because boosted
+    # batters exist.
     quality_boosted_count = sum(
         1 for c in candidates
         if c.card_boost >= BOOST_QUALITY_THRESHOLD
@@ -1300,11 +1333,19 @@ def run_filter_strategy(
     if quality_boosted_count >= BOOSTED_POOL_FULL_THRESHOLD:
         for c in candidates:
             if c.is_pitcher and c.card_boost < BOOST_QUALITY_THRESHOLD:
-                c.filter_ev *= UNBOOSTED_PITCHER_RICH_POOL_PENALTY
+                # V3.1: env-scaled penalty — lerp from FLOOR (env=0) to CEIL (env=1)
+                env_adj = min(1.0, max(0.0, c.env_score))
+                penalty = (
+                    UNBOOSTED_PITCHER_RICH_POOL_PENALTY
+                    + (UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL - UNBOOSTED_PITCHER_RICH_POOL_PENALTY)
+                    * env_adj
+                )
+                old_ev = c.filter_ev
+                c.filter_ev *= penalty
                 logger.debug(
-                    "Unboosted pitcher penalty (rich pool): %s EV %.2f → %.2f",
-                    c.player_name, c.filter_ev / UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
-                    c.filter_ev,
+                    "Unboosted pitcher penalty (rich pool, V3.1 env-scaled): "
+                    "%s env=%.2f penalty=%.2f EV %.2f → %.2f",
+                    c.player_name, c.env_score, penalty, old_ev, c.filter_ev,
                 )
 
     # Step 2: Enforce composition (pitcher/hitter counts) with dynamic pitcher cap
@@ -1440,7 +1481,7 @@ def run_dual_filter_strategy(
         if c.team in s5_teams:
             c.filter_ev *= MOONSHOT_SAME_TEAM_PENALTY
 
-    # Unboosted pitcher penalty for moonshot too (same logic as Starting 5)
+    # Unboosted pitcher penalty for moonshot too (V3.1 env-scaled, same as Starting 5)
     moonshot_quality_boosted = sum(
         1 for c in moonshot_pool
         if c.card_boost >= BOOST_QUALITY_THRESHOLD
@@ -1450,7 +1491,13 @@ def run_dual_filter_strategy(
     if moonshot_quality_boosted >= BOOSTED_POOL_FULL_THRESHOLD:
         for c in moonshot_pool:
             if c.is_pitcher and c.card_boost < BOOST_QUALITY_THRESHOLD:
-                c.filter_ev *= UNBOOSTED_PITCHER_RICH_POOL_PENALTY
+                env_adj = min(1.0, max(0.0, c.env_score))
+                penalty = (
+                    UNBOOSTED_PITCHER_RICH_POOL_PENALTY
+                    + (UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL - UNBOOSTED_PITCHER_RICH_POOL_PENALTY)
+                    * env_adj
+                )
+                c.filter_ev *= penalty
 
     # V3.0: Dynamic pitcher cap for moonshot pool (independent of Starting 5)
     moonshot_pitcher_cap = compute_dynamic_pitcher_cap(moonshot_pool)
