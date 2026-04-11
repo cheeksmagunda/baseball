@@ -13,6 +13,7 @@ import { LineupStack } from "@/components/LineupStack";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { WaitState } from "@/components/WaitState";
 
 const SWIPE_THRESHOLD = 50;
 
@@ -21,7 +22,7 @@ interface ClientHomeProps {
 }
 
 export function ClientHome({ initialData }: ClientHomeProps) {
-  const { data, loading, error, refetch } = useLineupData(initialData);
+  const { data, loading, error, waitInfo, refetch } = useLineupData(initialData);
   const [activeTab, setActiveTab] = useState<LineupTab>("starting5");
   const [direction, setDirection] = useState(0);
   const reduced = useReducedMotion();
@@ -59,6 +60,17 @@ export function ClientHome({ initialData }: ClientHomeProps) {
         <TabBar activeTab={activeTab} onTabChange={switchTab} />
         <main className="flex-1 py-4">
           <LoadingSkeleton />
+        </main>
+      </div>
+    );
+  }
+
+  if (waitInfo) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <StickyHeader />
+        <main className="flex-1">
+          <WaitState waitInfo={waitInfo} onReady={refetch} />
         </main>
       </div>
     );
