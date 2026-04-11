@@ -78,6 +78,7 @@ from app.core.constants import (
     DNP_RISK_PENALTY,
     DNP_UNKNOWN_PENALTY,
     DNP_GHOST_UNKNOWN_PENALTY,
+    ENV_UNKNOWN_COUNT_THRESHOLD,
     BOOST_QUALITY_THRESHOLD,
     BOOSTED_POOL_FULL_THRESHOLD,
     UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
@@ -173,7 +174,7 @@ def _identify_correlation_groups(
 
     team_ghosts: dict[str, list] = defaultdict(list)
     for c in candidates:
-        if c.drafts is not None and c.drafts < GHOST_DRAFT_THRESHOLD:
+        if c.is_ghost:
             team_ghosts[c.team.upper()].append(c)
 
     # Filter to teams meeting the minimum ghost player threshold
@@ -608,6 +609,11 @@ class FilteredCandidate:
     # Computed by the optimizer
     filter_ev: float = 0.0
 
+    @property
+    def is_ghost(self) -> bool:
+        """True if this player is in the ghost ownership tier (< GHOST_DRAFT_THRESHOLD drafts)."""
+        return self.drafts is not None and self.drafts < GHOST_DRAFT_THRESHOLD
+
 
 @dataclass
 class FilterSlotAssignment:
@@ -636,63 +642,92 @@ def _popularity_ev_adjustment(popularity: PopularityClass) -> float:
     return 1.0
 
 
-def _compute_filter_ev(candidate: FilteredCandidate) -> float:
-    """
-    Compute composite EV via 4-term condition-based formula.
+def _compute_dnp_adjustment(candidate: FilteredCandidate) -> float:
+    """Compute bifurcated DNP risk adjustment (V3.0).
 
-    Replaces the 15-modifier V2.4 pipeline.  The core insight: ownership × boost
-    tier predicts HV rate 4× more reliably than trait scores do.  Starting from
-    total_score × (2 + boost) bakes in a chalk bias that all the downstream
-    bonuses can't undo.  This formula starts from the historical HV rate instead.
+    Separates "confirmed bad" (lineup published, player absent) from "unknown"
+    (data not yet available).  Ghost players missing batting order face data
+    scarcity, not a genuinely bad matchup — penalizing them at the same rate
+    as chalk with published lineups is asymmetrically wrong for high-boost
+    convex payouts.
+    """
+    if candidate.is_pitcher or candidate.batting_order is not None:
+        return 1.0
+    if candidate.is_ghost:
+        return DNP_GHOST_UNKNOWN_PENALTY
+    if candidate.env_unknown_count >= ENV_UNKNOWN_COUNT_THRESHOLD:
+        return DNP_UNKNOWN_PENALTY
+    return DNP_RISK_PENALTY
+
+
+def _apply_unboosted_pitcher_penalty(
+    candidates: list[FilteredCandidate],
+    log_prefix: str = "",
+) -> None:
+    """Apply env-scaled penalty to unboosted pitchers when the boosted pool is rich.
+
+    V3.1: Penalty scales inversely by env_score.  An ace with env=1.0 gets only
+    10% haircut, while a mediocre pitcher with env=0.0 gets the full 35%.
+
+    Shared by run_filter_strategy (Starting 5) and run_dual_filter_strategy (Moonshot).
+    """
+    quality_boosted_count = sum(
+        1 for c in candidates
+        if c.card_boost >= BOOST_QUALITY_THRESHOLD
+        and c.env_score >= ENV_PASS_THRESHOLD
+        and not c.is_pitcher
+    )
+    if quality_boosted_count < BOOSTED_POOL_FULL_THRESHOLD:
+        return
+
+    for c in candidates:
+        if c.is_pitcher and c.card_boost < BOOST_QUALITY_THRESHOLD:
+            env_adj = min(1.0, max(0.0, c.env_score))
+            penalty = (
+                UNBOOSTED_PITCHER_RICH_POOL_PENALTY
+                + (UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL - UNBOOSTED_PITCHER_RICH_POOL_PENALTY)
+                * env_adj
+            )
+            old_ev = c.filter_ev
+            c.filter_ev *= penalty
+            logger.debug(
+                "Unboosted pitcher penalty (%srich pool, V3.1 env-scaled): "
+                "%s env=%.2f penalty=%.2f EV %.2f → %.2f",
+                log_prefix, c.player_name, c.env_score, penalty, old_ev, c.filter_ev,
+            )
+
+
+def _compute_base_ev(
+    candidate: FilteredCandidate,
+    anti_crowd: float,
+) -> float:
+    """Compute the shared base EV used by both Starting 5 and Moonshot.
+
+    This is the single source of truth for the 4-term condition-based formula.
+    Both _compute_filter_ev() and _compute_moonshot_filter_ev() delegate here,
+    differing only in the anti_crowd multiplier and moonshot-specific bonuses.
 
     Formula:
-        filter_ev = condition_hv_rate × rs_prob × stack_bonus × anti_crowd × debut_bonus × 100
+        base_ev = condition_hv_rate × rs_prob × stack_bonus × anti_crowd
+                  × debut_bonus × dnp_adj × env_tiebreaker × 100
 
     The card_boost effect is already captured in TWO places:
       1. condition_hv_rate — ghost+3.0x maps to 1.00 HV rate (boost baked in)
       2. rs_prob — threshold = 15/(2+boost), so higher boost → easier threshold
-    Multiplying by (2 + card_boost) again would double-count the boost.
+    Do NOT multiply by (2 + card_boost) again — that would double-count.
     """
     from app.services.condition_classifier import get_condition_hv_rate
     from app.services.scoring_engine import estimate_rs_probability
 
-    # Term 1: Historical HV rate from condition matrix, blended with ML (primary signal)
     condition_hv_rate = get_condition_hv_rate(
         candidate.drafts, candidate.card_boost,
         is_pitcher=candidate.is_pitcher,
         total_slate_drafts=candidate.total_slate_drafts,
     )
-
-    # Term 2: P(RS >= threshold) where threshold = 15 / (2 + boost)
     rs_prob = estimate_rs_probability(candidate.card_boost, candidate.traits, candidate.is_pitcher)
-
-    # Term 3: Blowout game stack bonus
     stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
-
-    # Term 4: Anti-crowd adjustment (popularity signal)
-    anti_crowd = _popularity_ev_adjustment(candidate.popularity)
-
-    # Debut/return premium (first appearance → near-zero ownership + historically elite RS)
     debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
-
-    # V3.0: Bifurcated DNP risk — separate "confirmed bad" from "unknown."
-    # Ghost players missing a batting order face data scarcity, not a genuinely
-    # bad matchup.  Penalizing them at the same rate as chalk players with
-    # published lineups is asymmetrically wrong for high-boost convex payouts.
-    dnp_adj = 1.0
-    if not candidate.is_pitcher and candidate.batting_order is None:
-        is_ghost = candidate.drafts is not None and candidate.drafts < GHOST_DRAFT_THRESHOLD
-        # High unknown count means the env_score depression is from missing data,
-        # not from confirmed bad conditions — apply lighter penalty.
-        if is_ghost:
-            dnp_adj = DNP_GHOST_UNKNOWN_PENALTY
-        elif candidate.env_unknown_count >= 3:
-            # Many unknowns = lineup/data not yet published, not confirmed bad
-            dnp_adj = DNP_UNKNOWN_PENALTY
-        else:
-            # Few unknowns + no batting order = lineup is likely published and
-            # this player isn't in it → genuine DNP risk
-            dnp_adj = DNP_RISK_PENALTY
+    dnp_adj = _compute_dnp_adjustment(candidate)
 
     effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * dnp_adj * 100.0
 
@@ -704,11 +739,12 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
         env_tiebreaker = 1.0 + candidate.env_score * ENV_TIEBREAKER_BONUS_MAX
         effective_score *= env_tiebreaker
 
-    # The composite score IS the final EV.  Do NOT multiply by (2 + card_boost)
-    # again — the condition matrix HV rate and rs_prob already account for boost
-    # (ghost+3.0x → 1.00 HV rate precisely because boost is baked into the
-    # historical outcome; rs_prob threshold drops with higher boost).
     return effective_score
+
+
+def _compute_filter_ev(candidate: FilteredCandidate) -> float:
+    """Compute Starting 5 EV via the shared 4-term condition-based formula."""
+    return _compute_base_ev(candidate, _popularity_ev_adjustment(candidate.popularity))
 
 
 def _build_team_stack(
@@ -1394,37 +1430,7 @@ def run_filter_strategy(
     dynamic_pitcher_cap = compute_dynamic_pitcher_cap(candidates)
 
     # Step 1b: Unboosted pitcher penalty when boosted pool is rich (V2 §4.3).
-    # Historical data (4/2 onward): zero unboosted pitchers in rank-1 lineups
-    # when quality boosted alternatives existed.  Pitchers typically get 0.0 boost,
-    # so without this penalty they float to the top of EV rankings on rs_prob alone.
-    #
-    # V3.1: Penalty scales inversely by env_score.  An ace with env=1.0 gets
-    # only a 10% haircut, while a mediocre pitcher with env=0.0 gets the full
-    # 35%.  This prevents penalizing generational anchors just because boosted
-    # batters exist.
-    quality_boosted_count = sum(
-        1 for c in candidates
-        if c.card_boost >= BOOST_QUALITY_THRESHOLD
-        and c.env_score >= ENV_PASS_THRESHOLD
-        and not c.is_pitcher
-    )
-    if quality_boosted_count >= BOOSTED_POOL_FULL_THRESHOLD:
-        for c in candidates:
-            if c.is_pitcher and c.card_boost < BOOST_QUALITY_THRESHOLD:
-                # V3.1: env-scaled penalty — lerp from FLOOR (env=0) to CEIL (env=1)
-                env_adj = min(1.0, max(0.0, c.env_score))
-                penalty = (
-                    UNBOOSTED_PITCHER_RICH_POOL_PENALTY
-                    + (UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL - UNBOOSTED_PITCHER_RICH_POOL_PENALTY)
-                    * env_adj
-                )
-                old_ev = c.filter_ev
-                c.filter_ev *= penalty
-                logger.debug(
-                    "Unboosted pitcher penalty (rich pool, V3.1 env-scaled): "
-                    "%s env=%.2f penalty=%.2f EV %.2f → %.2f",
-                    c.player_name, c.env_score, penalty, old_ev, c.filter_ev,
-                )
+    _apply_unboosted_pitcher_penalty(candidates, log_prefix="S5 ")
 
     # Step 2: Enforce composition (pitcher/hitter counts) with dynamic pitcher cap
     lineup = _enforce_composition(candidates, slate_classification, pitcher_cap=dynamic_pitcher_cap)
@@ -1467,52 +1473,14 @@ def _moonshot_popularity_adj(popularity: PopularityClass) -> float:
 
 
 def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
+    """Compute Moonshot EV: shared base formula + sharp/explosive bonuses.
+
+    Delegates to _compute_base_ev() for the 4-term formula (DRY),
+    then applies moonshot-specific sharp signal and explosive trait bonuses.
     """
-    Moonshot EV via 4-term condition-based formula with heavier anti-crowd lean.
+    base_ev = _compute_base_ev(candidate, _moonshot_popularity_adj(candidate.popularity))
 
-    Same structure as _compute_filter_ev() but:
-    - anti_crowd uses Moonshot weights (FADE=0.60, TARGET=1.30, NEUTRAL=0.95)
-    - Sharp signal bonus: underground buzz → up to +25% EV
-    - Explosive bonus: power_profile (batters) or k_rate (pitchers) → up to +10% EV
-    """
-    from app.services.condition_classifier import get_condition_hv_rate
-    from app.services.scoring_engine import estimate_rs_probability
-
-    condition_hv_rate = get_condition_hv_rate(
-        candidate.drafts, candidate.card_boost,
-        is_pitcher=candidate.is_pitcher,
-        total_slate_drafts=candidate.total_slate_drafts,
-    )
-    rs_prob = estimate_rs_probability(candidate.card_boost, candidate.traits, candidate.is_pitcher)
-    stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
-    anti_crowd = _moonshot_popularity_adj(candidate.popularity)
-    debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
-
-    # V3.0: Bifurcated DNP risk — same logic as Starting 5
-    dnp_adj = 1.0
-    if not candidate.is_pitcher and candidate.batting_order is None:
-        is_ghost = candidate.drafts is not None and candidate.drafts < GHOST_DRAFT_THRESHOLD
-        if is_ghost:
-            dnp_adj = DNP_GHOST_UNKNOWN_PENALTY
-        elif candidate.env_unknown_count >= 3:
-            dnp_adj = DNP_UNKNOWN_PENALTY
-        else:
-            dnp_adj = DNP_RISK_PENALTY
-
-    effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * dnp_adj * 100.0
-
-    # V3.2: Environmental tiebreaker (same as Starting 5 — consistency)
-    if condition_hv_rate >= ENV_TIEBREAKER_HV_THRESHOLD:
-        env_tiebreaker = 1.0 + candidate.env_score * ENV_TIEBREAKER_BONUS_MAX
-        effective_score *= env_tiebreaker
-
-    # Same fix as _compute_filter_ev: boost is already in the condition matrix
-    # and rs_prob — do not multiply by (2 + card_boost) again.
-    base_ev = effective_score
-
-    # Moonshot-specific bonuses (unchanged from V2)
     sharp_bonus = 1.0 + (candidate.sharp_score / 100.0) * MOONSHOT_SHARP_BONUS_MAX
-
     explosive_trait = get_trait_score(
         candidate.traits, "k_rate" if candidate.is_pitcher else "power_profile"
     )
@@ -1613,23 +1581,8 @@ def run_dual_filter_strategy(
             # Standard same-team penalty for non-correlation overlaps
             c.filter_ev *= MOONSHOT_SAME_TEAM_PENALTY
 
-    # Unboosted pitcher penalty for moonshot too (V3.1 env-scaled, same as Starting 5)
-    moonshot_quality_boosted = sum(
-        1 for c in moonshot_pool
-        if c.card_boost >= BOOST_QUALITY_THRESHOLD
-        and c.env_score >= ENV_PASS_THRESHOLD
-        and not c.is_pitcher
-    )
-    if moonshot_quality_boosted >= BOOSTED_POOL_FULL_THRESHOLD:
-        for c in moonshot_pool:
-            if c.is_pitcher and c.card_boost < BOOST_QUALITY_THRESHOLD:
-                env_adj = min(1.0, max(0.0, c.env_score))
-                penalty = (
-                    UNBOOSTED_PITCHER_RICH_POOL_PENALTY
-                    + (UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL - UNBOOSTED_PITCHER_RICH_POOL_PENALTY)
-                    * env_adj
-                )
-                c.filter_ev *= penalty
+    # Unboosted pitcher penalty for moonshot too (shared helper, same as Starting 5)
+    _apply_unboosted_pitcher_penalty(moonshot_pool, log_prefix="Moonshot ")
 
     # V3.0: Dynamic pitcher cap for moonshot pool (independent of Starting 5)
     moonshot_pitcher_cap = compute_dynamic_pitcher_cap(moonshot_pool)

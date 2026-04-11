@@ -180,6 +180,7 @@ DEBUT_RETURN_EV_BONUS = 1.15          # 15% EV bonus for debut/return players
 DNP_RISK_PENALTY = 0.70               # CONFIRMED bad: 30% haircut (lineup published, player absent)
 DNP_UNKNOWN_PENALTY = 0.85            # UNKNOWN: 15% haircut (lineup not published, could go either way)
 DNP_GHOST_UNKNOWN_PENALTY = 0.92      # GHOST UNKNOWN: 8% haircut (data scarcity expected for ghosts)
+ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data not published" (not "bad env")
 
 # ---------------------------------------------------------------------------
 # Popularity-based EV adjustments (web-scraped FADE/TARGET/NEUTRAL)

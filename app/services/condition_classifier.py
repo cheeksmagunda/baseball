@@ -346,13 +346,19 @@ def get_ownership_tier(
         return "mega_chalk"
 
     # Absolute fallback (when slate draft totals aren't available)
-    if drafts < 100:
+    from app.core.constants import (
+        GHOST_DRAFT_THRESHOLD,
+        LOW_DRAFT_THRESHOLD,
+        CHALK_DRAFT_THRESHOLD,
+        MEGA_CHALK_DRAFT_THRESHOLD,
+    )
+    if drafts < GHOST_DRAFT_THRESHOLD:   # 100
         return "ghost"
-    if drafts < 500:
+    if drafts < LOW_DRAFT_THRESHOLD:     # 200
         return "low"
-    if drafts < 1000:
+    if drafts < CHALK_DRAFT_THRESHOLD:   # 1500
         return "medium"
-    if drafts < 2000:
+    if drafts < MEGA_CHALK_DRAFT_THRESHOLD:  # 2000
         return "chalk"
     return "mega_chalk"
 
