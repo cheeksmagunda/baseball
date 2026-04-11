@@ -293,10 +293,20 @@ def get_ownership_tier(
         OWNERSHIP_PERCENTILE_MEDIUM,
         OWNERSHIP_PERCENTILE_CHALK,
         MEGA_CHALK_MEDIAN_MULTIPLE,
+        GHOST_ABSOLUTE_DRAFT_FLOOR,
     )
 
     if drafts is None:
         return "medium"
+
+    # V3.1: Absolute draft-count floor — micro-drafted players are ALWAYS ghost.
+    # DFS draft distributions have extreme right tails.  It's common for 30-40%
+    # of the player pool to have exactly 0 drafts.  When this happens, the 15th
+    # percentile is mathematically 0, and players with 1-2 drafts (the exact
+    # mega-ghosts we're hunting, like Amed Rosario on Apr 7 or Brent Rooker on
+    # Apr 5) fall outside the ghost tier.  This floor prevents that.
+    if drafts <= GHOST_ABSOLUTE_DRAFT_FLOOR:
+        return "ghost"
 
     # V3.0 Primary: Empirical CDF percentile from actual distribution
     if slate_draft_distribution is not None and len(slate_draft_distribution) >= 5:

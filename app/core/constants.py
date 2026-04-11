@@ -118,17 +118,24 @@ BOOSTED_POOL_FULL_THRESHOLD = 5
 ENV_PASS_THRESHOLD = 0.5           # env_score >= 0.5 = passes environmental filter
 
 # Game diversification (Filter 5 — V2 Law 9)
-# V2.5: Max 1 player per game (matchup). Two players in the same game means
-# 40% of the lineup rides on one game outcome. Until we can reliably predict
-# highest-value performers, spread risk across games.
-MAX_PLAYERS_PER_GAME = 1         # max 1 player from any single game/matchup
-MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup (legacy, now implicit with 1-per-game)
-SAME_GAME_EXCESS_PENALTY = 0.90  # 10% penalty for excess players (legacy, kept for Moonshot soft logic)
+#
+# V3.1: Raised from 1 to 3.  Historical data proves stacking wins:
+#   - Apr 6: Rank 1 = LAD+HOU stack (Ohtani, Freeman, Tucker, Hernandez, Rushing)
+#   - Apr 5: OAK ghost stack dominated
+#   - 62% of winning days featured team stacks of 3-4 players
+# Cap of 1 was mathematically preventing the winning lineup shape.
+#
+# The cap applies to TEAMMATES from the same game.  Opponents in the same game
+# are restricted to 1 total (negative correlation: if one team's SP dominates,
+# the other team's batters suffer).  See MAX_OPPONENTS_SAME_GAME.
+MAX_PLAYERS_PER_GAME = 3         # max 3 teammates from any single game
+MAX_OPPONENTS_SAME_GAME = 1      # max 1 player from the opposing side of the same game
+MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup
+SAME_GAME_EXCESS_PENALTY = 0.90  # 10% penalty for 4th+ player from same game
 
 # ---------------------------------------------------------------------------
 # Team stacking constants (V2 §2 Pillar 2 — dominant on 62% of winning days)
-# NOTE: Stacking is disabled when MAX_PLAYERS_PER_GAME = 1 since a stack
-# requires 3-4 players from the same game. Kept for future re-enablement.
+# V3.1: Stacking re-enabled now that MAX_PLAYERS_PER_GAME = 3.
 # ---------------------------------------------------------------------------
 STACK_MIN_PLAYERS = 3             # minimum players from same team to form a stack
 STACK_MAX_PLAYERS = 4             # typical stack size (1-2 diversifiers from other games)
@@ -220,6 +227,12 @@ MEGA_CHALK_DRAFT_THRESHOLD = 2000     # FALLBACK: >= 2000 drafts = mega-chalk
 # "Chalk" = 65th-90th percentile
 # "Mega-chalk" = top 10% AND requires minimum absolute draft count
 OWNERSHIP_PERCENTILE_GHOST = 0.15     # bottom 15%
+# V3.1: Absolute draft-count floor for ghost classification.
+# When the slate has a massive zero-draft pool (common: 30-40% of players
+# have exactly 0 drafts), the 15th percentile can be 0, pushing players
+# with 1-2 drafts out of the ghost tier.  This floor ensures micro-drafted
+# players (the exact mega-ghosts we're hunting) are always classified ghost.
+GHOST_ABSOLUTE_DRAFT_FLOOR = 25       # drafts <= 25 = always ghost, regardless of percentile
 OWNERSHIP_PERCENTILE_LOW = 0.35       # 15th-35th
 OWNERSHIP_PERCENTILE_MEDIUM = 0.65    # 35th-65th
 OWNERSHIP_PERCENTILE_CHALK = 0.90     # 65th-90th
@@ -254,7 +267,7 @@ MAX_MEGA_CHALK_IN_LINEUP = 1          # max 1 player with 2000+ drafts
 MIN_GHOST_IN_LINEUP = 1              # min 1 ghost player (< 100 drafts)
 # Ghost enforcement: replace worst lineup player with a ghost if ghost EV >= this fraction
 GHOST_ENFORCE_SWAP_THRESHOLD = 0.50  # was 0.70 — lowered so ghost inclusion actually fires
-MAX_PLAYERS_PER_TEAM = 1             # max 1 player from any single team per lineup
+MAX_PLAYERS_PER_TEAM = 3             # V3.1: raised from 1 to 3 to allow team stacking (62% of winning days)
 # V3.0: Dynamic pitcher cap — replaces hard MAX_PITCHERS_IN_LINEUP = 1.
 # When the boosted batter pool is rich (>= BOOSTED_POOL_FULL_THRESHOLD quality
 # cards), cap at 1 pitcher — the ghost+boost batter edge outweighs a 2nd SP.
@@ -288,9 +301,20 @@ SLOT1_DIFFERENTIATOR_EV_THRESHOLD = 0.90  # Only swap if contrarian within 10% E
 # ---------------------------------------------------------------------------
 # Rich-pool pitcher correction (V2 §4.3 dynamic composition rule)
 # When the boosted pool is full (≥ BOOSTED_POOL_FULL_THRESHOLD quality cards),
-# unboosted pitchers get de-prioritized. Historical data (4/2 onward): zero
-# unboosted pitchers appeared in rank-1 lineups when quality boosted
-# alternatives existed. Boost amplifies RS — an unboosted pitcher at RS 5.5
-# still loses to a ghost-boosted batter with RS 2.5 + boost 3.0.
+# unboosted pitchers get de-prioritized.
+#
+# V3.1: Scaled inversely by env_score. A generational ace with env_score=1.0
+# (facing bottom-10 offense, high K/9, pitcher park) should NOT get a 35%
+# haircut just because boosted batters exist. Historical counter-examples:
+#   - Apr 9: Nolan McLean (NYM, 0 boost, 2.6k drafts) = biggest overperformer
+#   - Apr 7: Sandy Alcantara (0 boost, RS 7.5) = elite anchor
+#
+# Scaling: penalty interpolates from FLOOR (full haircut at env=0) to
+# CEILING (mild haircut at env=1.0). Formula:
+#   effective_penalty = FLOOR + (CEILING - FLOOR) * env_score
+#   At env=0.0 → 0.65 (35% haircut, same as V2)
+#   At env=0.5 → 0.775 (22% haircut)
+#   At env=1.0 → 0.90 (10% haircut — ace with perfect environment)
 # ---------------------------------------------------------------------------
-UNBOOSTED_PITCHER_RICH_POOL_PENALTY = 0.65  # 35% EV haircut
+UNBOOSTED_PITCHER_RICH_POOL_PENALTY = 0.65      # worst-case (env=0.0) — 35% haircut
+UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL = 0.90  # best-case (env=1.0) — 10% haircut
