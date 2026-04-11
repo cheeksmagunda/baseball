@@ -15,11 +15,13 @@ from sqlalchemy.orm import Session, selectinload
 from app.database import get_db
 from app.core.constants import (
     PITCHER_POSITIONS,
+    GHOST_DRAFT_THRESHOLD,
     MOST_DRAFTED_3X_TOP_N,
     MOST_DRAFTED_3X_MIN_N,
     MOST_DRAFTED_3X_MAX_N,
     MOST_DRAFTED_3X_PROPORTION,
 )
+from app.services.condition_classifier import AUTO_INCLUDE_BOOST_THRESHOLD
 from app.core.utils import find_player_by_name, get_trait_score
 from app.models.player import Player, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
@@ -321,10 +323,10 @@ async def _resolve_candidates(
         ))
 
     # Candidate pool health summary
-    ghost_count = sum(1 for c in candidates if c.drafts is not None and c.drafts < 100)
+    ghost_count = sum(1 for c in candidates if c.is_ghost)
     auto_include_count = sum(
         1 for c in candidates
-        if c.drafts is not None and c.drafts < 100 and c.card_boost >= 2.5
+        if c.is_ghost and c.card_boost >= AUTO_INCLUDE_BOOST_THRESHOLD
     )
     logger.info(
         "Candidate pool: %d cards in → %d candidates out "

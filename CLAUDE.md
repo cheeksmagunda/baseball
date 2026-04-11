@@ -109,7 +109,7 @@ Web-scraping signal aggregator that estimates which players the crowd will over-
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V2.4 "Anchor, Differentiate, Stack"** — based on 15 days of historical data (V2.4: April 9 ghost-boost pipeline fixes).
+**Strategy Version: V3.2 "Correlate, Differentiate, Distribute"** — V3.2: cross-lineup correlation, three-tier composition, env tiebreaker, MAX_PLAYERS_PER_TEAM=1.
 
 The active optimizer produces **two lineups** from the same candidate pool via `run_dual_filter_strategy`.
 
@@ -132,22 +132,23 @@ Ghost+boost players have 82–100% historical TV>15 rate. Medium/chalk+boost pla
 2. **Team Stacking:** Dominant winning pattern on 62% of days. On hitter/stack days, stack 3-4 from the favored team's ghost pool + 1-2 diversifiers.
 3. **Boost Leverage:** "Most drafted at 3x boost" busts 57% of the time — it's a SELL signal. The top-5 most-drafted 3x players are dynamically penalized each run. Ghost+boost is the buy signal.
 
-### Starting 5 EV formula (V2.4)
+### EV Formula (V3.2 — 4-term condition-based, single source: `_compute_base_ev()`)
 ```
-base_ev = total_score × (2 + card_boost)
-  × graduated_score_penalty (linear: score 0→0.40x, score 15+→1.0x)
-  × graduated_env_penalty (if boost ≥ 1.0: env 0→0.60x, env 0.5+→1.0x)
-      [mega-ghost-boost: env penalty capped at 0.80x — data scarcity makes env unreliable]
-  → ghost_boost_ev_floor (boost ≥ 2.5 + drafts < 100: floor at score=30, env-independent)
-  × popularity_adj (FADE=0.75, TARGET=1.15)
-  × most_drafted_3x_penalty (0.80 if env passes; 0.60 if env fails)
-      [dynamically computed: top-5 most-drafted players with boost ≥ 3.0]
-  × ownership_adj (ghost=1.25 [env required], low=1.10, chalk=0.80, mega_chalk=0.70)
-  × ghost_boost_synergy:
-      mega_ghost+3x (drafts<50, boost=3.0): ×1.50 — NO env requirement (V2.4)
-      ghost+boost (drafts<200, boost≥2.5): ×1.30 — env required
-  × debut_return_bonus (1.15 if flagged)
+filter_ev = condition_hv_rate                    # Term 1: from CONDITION_MATRIX (primary signal)
+  × rs_prob                                       # Term 2: P(RS >= 15/(2+boost)) from traits
+  × stack_bonus (1.20 if blowout game, else 1.0)  # Term 3: blowout team bonus
+  × anti_crowd (FADE=0.75, TARGET=1.15)            # Term 4: popularity adjustment
+  × debut_bonus (1.15 if first appearance)
+  × dnp_adj (ghost=0.92, unknown=0.85, confirmed_bad=0.70)
+  × env_tiebreaker (up to +15% for HV rate ≥ 0.85) # V3.2: differentiates among auto-includes
+  × correlation_bonus (1.10-1.15 for correlation teams) # V3.2: cross-lineup correlation
+  × 100
 ```
+Note: card_boost is NOT multiplied again — it's already captured in condition_hv_rate (ghost+3.0x → HV rate 1.00) and rs_prob (higher boost → lower RS threshold).
+
+Post-EV adjustments (applied in `run_filter_strategy`):
+- Unboosted pitcher penalty (`_apply_unboosted_pitcher_penalty`): 10-35% haircut when boosted pool is rich
+- Three-tier ordering: auto-include → soft_auto_include → rest by filter_ev
 
 ### V2.4 Changes (April 9 — April 8 Post-Mortem)
 
@@ -256,6 +257,42 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
 - `MOST_DRAFTED_3X_MIN_N = 3`, `MOST_DRAFTED_3X_MAX_N = 7`, `MOST_DRAFTED_3X_PROPORTION = 0.30`
 - `MAX_PITCHERS_THIN_POOL = 2`
 
+### V3.2 Changes (April 11 — Cross-Lineup Correlation & Within-Tier Differentiation)
+
+**Context**: April 10th simulation showed optimizer captures ~10 of top 17 performers. Root causes: (a) all ghost+max_boost candidates have identical condition_hv_rate=1.00, leaving within-tier differentiation to noisy rs_prob alone; (b) ghost+mid_boost players (HV rate 0.75) blocked by binary 2.5 threshold; (c) no mechanism to capture correlated upside across two lineups when MAX_PLAYERS_PER_TEAM=1.
+
+**Change 1 — MAX_PLAYERS_PER_TEAM=1, MAX_PLAYERS_PER_GAME=2** (`app/core/constants.py`)
+- Hard constraint: max 1 player per team per individual lineup (Starting 5 or Moonshot).
+- MAX_PLAYERS_PER_GAME lowered from 3 to 2.
+- Within-lineup stacking disabled. Correlation captured cross-lineup via Change 3.
+- _build_team_stack() path in _enforce_composition() auto-skipped (MAX_PLAYERS_PER_TEAM < STACK_MIN_PLAYERS).
+
+**Change 2 — Three-Tier Lineup Construction: auto → soft_auto → rest** (`app/services/condition_classifier.py`, `app/services/filter_strategy.py`)
+- New `is_soft_auto_include()`: ghost tier + boost >= 2.0 (but < 2.5).
+- Ghost+mid_boost historical HV rate = 0.75 — excellent but below auto-include's 0.88-1.00.
+- Three-tier ordering in `_enforce_composition()`: auto-include fills first, then soft_auto, then rest by filter_ev.
+- Captures James Wood (Apr 10: 52 drafts, 2.0x, TV 16.8) who was missed by the binary 2.5 threshold.
+- New constant: `SOFT_AUTO_INCLUDE_BOOST_THRESHOLD = 2.0`.
+
+**Change 3 — Cross-Lineup Correlation Awareness** (`app/services/filter_strategy.py`)
+- `_identify_correlation_groups()`: finds teams with 2+ ghost players.
+- `correlation_bonus` field on FilteredCandidate, set before EV computation.
+- Ghost players on correlation teams get +10% EV (2 ghosts) or +15% EV (3+ ghosts).
+- Moonshot: ghost teammate of a Starting 5 player gets +20% BONUS (replaces -15% penalty).
+- Example: TOR has Vlad (56 drafts) + Schneider (7 drafts) → S5 gets one, Moonshot gets the other.
+- New constants: `CORRELATION_GHOST_MIN_PLAYERS=2`, `CORRELATION_EV_BONUS=1.10`, `CORRELATION_EV_BONUS_3PLUS=1.15`, `MOONSHOT_CORRELATION_TEAMMATE_BONUS=1.20`.
+
+**Change 4 — Environmental Tiebreaker for Auto-Include Tier** (`app/services/filter_strategy.py`)
+- When condition_hv_rate >= 0.85, add up to +15% EV based on env_score.
+- Differentiates among ghost+max_boost candidates: confirmed lineup spot at Coors > unknown order at Petco.
+- Applied in both `_compute_filter_ev()` and `_compute_moonshot_filter_ev()`.
+- New constants: `ENV_TIEBREAKER_BONUS_MAX=0.15`, `ENV_TIEBREAKER_HV_THRESHOLD=0.85`.
+
+**Change 5 — Ghost+Boost Pitcher Cap Expansion** (`app/services/filter_strategy.py`)
+- `compute_dynamic_pitcher_cap()`: when ghost+boost pitcher exists (drafts < 100, boost >= 2.5), cap raised to 2 even in rich batter pools.
+- Captures Walker Buehler-type plays (low-tier pitcher with max boost, TV 29.5).
+- Without this, ghost+boost pitchers lose to ghost+boost batters and get excluded.
+
 ### V3.1 Changes (April 11 — Empirical Calibration from April 6-9 Data)
 
 **Fix 1 — Pitcher Exemption for Most-Drafted-3x Trap** (`app/routers/filter_strategy.py`)
@@ -265,10 +302,9 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
 - `is_most_drafted_3x` flag now only applied to batters. Pitchers with 3x boost are never flagged.
 
 **Fix 2 — Stacking Re-enabled** (`app/core/constants.py`, `app/services/filter_strategy.py`)
-- `MAX_PLAYERS_PER_GAME` raised from 1 to 3. `MAX_PLAYERS_PER_TEAM` raised from 1 to 3.
-- Historical proof: Apr 6 Rank 1 = LAD+HOU stack. 62% of winning days featured 3-4 player team stacks.
-- `MAX_PLAYERS_PER_GAME = 1` was mathematically preventing the winning lineup shape.
-- New: `MAX_OPPONENTS_SAME_GAME = 1` — allows teammate stacking but prevents negative correlation (opposing pitcher + batters in the same game).
+- V3.1: `MAX_PLAYERS_PER_GAME` raised from 1 to 3. `MAX_PLAYERS_PER_TEAM` raised from 1 to 3.
+- **Superseded by V3.2**: `MAX_PLAYERS_PER_TEAM` lowered back to 1, `MAX_PLAYERS_PER_GAME` to 2. Within-lineup stacking disabled. Correlation value now captured cross-lineup via `CORRELATION_*` constants. See V3.2 Changes above.
+- `MAX_OPPONENTS_SAME_GAME = 1` remains — prevents negative correlation (opposing pitcher + batters).
 - Team-aware game diversification: the selection loop tracks `(game_id, team)` tuples, not just `game_id`.
 
 **Fix 3 — Ghost Absolute Draft Floor** (`app/services/condition_classifier.py`)
@@ -284,43 +320,51 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
 - New constant: `UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL = 0.90`.
 - Historical counter-examples: Nolan McLean (Apr 9, 0 boost, biggest overperformer), Sandy Alcantara (Apr 7, RS 7.5).
 
-### Lineup Construction (Pure EV — dynamic pitcher cap)
-Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. V3.0 uses dynamic cap: 1 SP when boosted pool is rich, 2 SP when thin. **No "day types" force composition.** `SLATE_COMPOSITION` was removed entirely.
+### Lineup Construction (V3.2 — Three-Tier EV, dynamic pitcher cap)
+Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. Dynamic cap: 1 SP when boosted pool is rich (V3.2: 2 SP if ghost+boost pitcher exists), 2 SP when thin. **No "day types" force composition.**
 
-1. **Blowout game detected** (moneyline >= -200): Try team stack from ghost pool -> fill 1-2 diversifiers from other games
-2. **All other slates**: Pure EV ranking. EV decides everything within the dynamic pitcher cap.
+1. **Three-tier ordering**: auto-include (ghost+boost ≥ 2.5) → soft_auto_include (ghost+boost ≥ 2.0) → rest by filter_ev
+2. **MAX_PLAYERS_PER_TEAM = 1**: No within-lineup stacking. Correlation captured cross-lineup.
+3. **Blowout game detected**: Stack path skipped (requires MAX_PLAYERS_PER_TEAM ≥ 3, currently 1).
+4. **All slates**: Pure three-tier EV ranking with team cap (1), game cap (2), pitcher cap.
 
-### Lineup Validation (V3.0)
+### Lineup Validation (V3.2)
 - Max 1 mega-chalk (top 10% percentile + 3x median drafts) player
 - Min 1 ghost (bottom 15% percentile) player: first seek env-passing ghost, fallback to mega-ghost+3x boost even without env pass
-- **Dynamic pitcher cap** (1 or 2) — excess pitchers replaced by best non-pitcher from candidate pool
+- **Max 1 player per team** per individual lineup (V3.2)
+- **Dynamic pitcher cap** (1 or 2) — V3.2: 2 allowed when ghost+boost SP exists
 - Slot 1 Differentiator: swap consensus Slot 1 for contrarian if EV loss <10%
 
 ### Slate Classification (informational only — does NOT force composition)
-- Classification exists for display and stacking decisions only
-- Blowout detection (moneyline ≥ -200) triggers stack-building logic
-- **No slate type forces pitcher/hitter counts.** `SLATE_COMPOSITION` dict was removed.
+- Classification exists for blowout detection and display only
+- **No slate type forces pitcher/hitter counts.** `SLATE_COMPOSITION` dict was removed in V2.1.
 
 **Moonshot** — Completely different 5 players. Heavier anti-crowd lean:
 - FADE=0.60, NEUTRAL=0.95, TARGET=1.30
 - Sharp signal bonus: up to +25% EV from underground buzz
 - Explosive bonus: up to +10% EV from power_profile (batters) or k_rate (pitchers)
-- Game diversification: 0.85x soft penalty for same-team overlap with Starting 5
+- Game diversification: 0.85x soft penalty for same-team overlap with Starting 5, EXCEPT ghost teammates on correlation teams (2+ ghosts same team) get +20% BONUS instead (V3.2)
 - Zero player overlap with Starting 5
 - All V2 penalties (most_drafted_3x, mega-chalk, ghost+boost synergy) apply
 
 **Key functions (filter_strategy.py):**
 - `run_filter_strategy()` — Starting 5
-- `run_dual_filter_strategy()` — One call, two lineups
-- `_compute_filter_ev()` — Starting 5 EV with all V2.4 filters
-- `_compute_moonshot_filter_ev()` — Moonshot-specific EV
-- `_graduated_score_penalty()` — V2.2: linear score penalty (replaces binary cliff)
-- `_graduated_env_penalty()` — V2.2: linear env penalty (replaces binary cliff)
-- `_apply_ghost_boost_ev_floor()` — V2.4: env-independent floor (boost≥2.5, drafts<100, score=30)
-- `_build_team_stack()` — Ghost-pool team stacking for hitter/stack days
-- `_enforce_composition()` — V2 three-path construction (stack / EV / backfill)
+- `run_dual_filter_strategy()` — One call, two lineups (V3.2: cross-lineup correlation)
+- `_compute_base_ev()` — DRY: shared 4-term formula (condition_hv_rate × rs_prob × stack × crowd × dnp × env_tiebreaker)
+- `_compute_filter_ev()` — Starting 5 EV (delegates to `_compute_base_ev`)
+- `_compute_moonshot_filter_ev()` — Moonshot EV (delegates to `_compute_base_ev` + sharp/explosive bonuses)
+- `_compute_dnp_adjustment()` — DRY: bifurcated DNP risk (ghost/unknown/confirmed)
+- `_apply_unboosted_pitcher_penalty()` — DRY: env-scaled pitcher haircut (shared by S5 and Moonshot)
+- `_identify_correlation_groups()` — V3.2: finds teams with 2+ ghost players for cross-lineup distribution
+- `compute_dynamic_pitcher_cap()` — V3.2: allows 2 pitchers when ghost+boost SP exists
+- `_build_team_stack()` — Ghost-pool team stacking (V3.2: skipped when MAX_PLAYERS_PER_TEAM=1)
+- `_enforce_composition()` — V3.2: three-tier (auto/soft_auto/rest) with team cap=1
 - `_validate_lineup_structure()` — Max 1 mega-chalk, min 1 ghost (V2.4: fallback to mega-ghost+3x)
 - `_smart_slot_assignment()` — Slot sequencing (unboosted first)
+
+**Key functions (condition_classifier.py):**
+- `is_auto_include()` — Ghost + boost >= 2.5 (primary edge)
+- `is_soft_auto_include()` — V3.2: Ghost + boost >= 2.0 (second tier, HV rate 0.75)
 
 **Key functions (routers/filter_strategy.py):**
 - `_resolve_candidates()` — Builds candidate pool; V2.4 dynamically sets `is_most_drafted_3x` for top-5 boost=3.0 players by draft count
@@ -365,12 +409,12 @@ Not multiplicative. Proven from historical data. This means:
 
 ### The Five Filters (Sequential)
 
-**Filter 1 — Slate Classification**
-- Tiny (1-3 games): heavy team-stack, 1-2 pitchers
-- Pitcher Day (4+ quality SP matchups): 4-5 pitchers
-- Hitter Day (5+ games with O/U ≥ 9.0): 4-5 hitters
-- Standard (10+ games, mixed): 2-3 pitchers + 2-3 hitters
-- Classify BEFORE looking at any individual player. Constants in `app/core/constants.py`.
+**Filter 1 — Slate Classification** (informational only — does NOT force composition)
+- Tiny (1-3 games): candidate for blowout stacking (if detected)
+- Pitcher Day (4+ quality SP matchups): indicates pitcher environmental advantage
+- Hitter Day (5+ games with O/U ≥ 9.0): indicates hitter environmental advantage
+- Standard (10+ games, mixed): no special classification
+- Classification is used for blowout detection and display only. Pure EV ranking determines actual composition. `SLATE_COMPOSITION` was removed in V2.1.
 
 **Filter 2 — Environmental Advantage** (pre-game data only)
 - Pitchers: weak opponent (OPS < .700), high K/9 (≥ 8.0), pitcher-friendly park, home field

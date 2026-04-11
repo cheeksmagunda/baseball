@@ -108,4 +108,11 @@ fi
 echo "==> Setting PYTHONPATH..."
 echo 'export PYTHONPATH="$CLAUDE_PROJECT_DIR"' >> "$CLAUDE_ENV_FILE"
 
+echo "==> Reading project documentation into context..."
+echo "--- CLAUDE.md (first 50 lines) ---"
+head -50 "$CLAUDE_PROJECT_DIR/CLAUDE.md" 2>/dev/null || echo "(CLAUDE.md not found)"
+echo "--- README.md (first 30 lines) ---"
+head -30 "$CLAUDE_PROJECT_DIR/README.md" 2>/dev/null || echo "(README.md not found)"
+echo "---"
+
 echo "==> Session start complete."

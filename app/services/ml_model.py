@@ -67,7 +67,8 @@ def train_hv_model() -> dict:
     df["is_pitcher"] = df["position"].isin({"P", "SP", "RP"}).astype(int)
     df["log_drafts"] = np.log1p(df["drafts"])
     df["boost_x_log_drafts"] = df["card_boost"] * df["log_drafts"]
-    df["is_ghost"] = (df["drafts"] < 100).astype(int)
+    from app.core.constants import GHOST_DRAFT_THRESHOLD
+    df["is_ghost"] = (df["drafts"] < GHOST_DRAFT_THRESHOLD).astype(int)
     df["ghost_x_boost"] = df["is_ghost"] * df["card_boost"]
 
     features = ["card_boost", "log_drafts", "is_pitcher", "boost_x_log_drafts",
@@ -164,7 +165,8 @@ def predict_hv_probability(
     _pitcher = 1.0 if is_pitcher else 0.0
     _log_drafts = np.log1p(_drafts)
     _boost_x_log_drafts = _boost * _log_drafts
-    _is_ghost = 1.0 if _drafts < 100 else 0.0
+    from app.core.constants import GHOST_DRAFT_THRESHOLD
+    _is_ghost = 1.0 if _drafts < GHOST_DRAFT_THRESHOLD else 0.0
     _ghost_x_boost = _is_ghost * _boost
 
     X = np.array([[_boost, _log_drafts, _pitcher, _boost_x_log_drafts,

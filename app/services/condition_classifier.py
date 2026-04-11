@@ -346,13 +346,19 @@ def get_ownership_tier(
         return "mega_chalk"
 
     # Absolute fallback (when slate draft totals aren't available)
-    if drafts < 100:
+    from app.core.constants import (
+        GHOST_DRAFT_THRESHOLD,
+        LOW_DRAFT_THRESHOLD,
+        CHALK_DRAFT_THRESHOLD,
+        MEGA_CHALK_DRAFT_THRESHOLD,
+    )
+    if drafts < GHOST_DRAFT_THRESHOLD:   # 100
         return "ghost"
-    if drafts < 500:
+    if drafts < LOW_DRAFT_THRESHOLD:     # 200
         return "low"
-    if drafts < 1000:
+    if drafts < CHALK_DRAFT_THRESHOLD:   # 1500
         return "medium"
-    if drafts < 2000:
+    if drafts < MEGA_CHALK_DRAFT_THRESHOLD:  # 2000
         return "chalk"
     return "mega_chalk"
 
@@ -513,3 +519,32 @@ def is_auto_include(
         return False
     tier = get_ownership_tier(drafts, total_slate_drafts)
     return tier == "ghost" and card_boost >= AUTO_INCLUDE_BOOST_THRESHOLD
+
+
+def is_soft_auto_include(
+    drafts: int | None,
+    card_boost: float,
+    total_slate_drafts: int | None = None,
+) -> bool:
+    """Return True for ghost+mid_boost players — second-tier priority.
+
+    V3.2: Ghost players with boost >= 2.0 (but < 2.5) have a historical
+    HV rate of 0.75 — excellent, but below auto-include's 0.88-1.00.
+    These candidates get priority over non-ghost players but rank after
+    full auto-includes in lineup construction.
+
+    Captures players like James Wood (Apr 10: 52 drafts, 2.0x, TV 16.8)
+    who fall below the 2.5 auto-include threshold but still have strong
+    condition signals.
+
+    Returns False for players that already qualify as auto_include.
+    """
+    from app.core.constants import SOFT_AUTO_INCLUDE_BOOST_THRESHOLD
+
+    if drafts is None:
+        return False
+    # Already auto_include → not soft_auto
+    if card_boost >= AUTO_INCLUDE_BOOST_THRESHOLD:
+        return False
+    tier = get_ownership_tier(drafts, total_slate_drafts)
+    return tier == "ghost" and card_boost >= SOFT_AUTO_INCLUDE_BOOST_THRESHOLD
