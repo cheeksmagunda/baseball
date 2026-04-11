@@ -150,10 +150,26 @@ BATTER_ENV_WEAK_BULLPEN_ERA = 4.5     # opposing bullpen ERA above this = vulner
 # Debut/return premium (§2.3 Condition C)
 DEBUT_RETURN_EV_BONUS = 1.15          # 15% EV bonus for debut/return players
 
-# DNP risk penalty (V2.5) — batting_order=None for a batter means no
-# confirmed lineup spot.  This is the strongest pre-game DNP signal.
-# Pitchers are excluded (they're already filtered to confirmed starters).
-DNP_RISK_PENALTY = 0.70               # 30% EV haircut for batters without confirmed lineup spot
+# ---------------------------------------------------------------------------
+# V3.0: Bifurcated missing-data handling
+#
+# "Unknown environment" (missing data) ≠ "Bad environment" (confirmed bad).
+# In DFS with convex payouts, uncertainty widens variance without shifting
+# the mean.  A ghost player's missing batting order could be leadoff or DNP —
+# penalizing as if it's DNP is asymmetrically wrong for high-boost players
+# where any positive outcome crosses the threshold.
+#
+# Three tiers:
+#   CONFIRMED_BAD: batting_order=None AND the player's team's lineup is
+#                  published (so absence = genuinely not starting).
+#   UNKNOWN:       batting_order=None AND lineup not yet published.
+#                  Applies a lighter penalty reflecting true uncertainty.
+#   GHOST_UNKNOWN: batting_order=None AND ghost-tier player.
+#                  Lightest penalty — data scarcity is expected, not a signal.
+# ---------------------------------------------------------------------------
+DNP_RISK_PENALTY = 0.70               # CONFIRMED bad: 30% haircut (lineup published, player absent)
+DNP_UNKNOWN_PENALTY = 0.85            # UNKNOWN: 15% haircut (lineup not published, could go either way)
+DNP_GHOST_UNKNOWN_PENALTY = 0.92      # GHOST UNKNOWN: 8% haircut (data scarcity expected for ghosts)
 
 # ---------------------------------------------------------------------------
 # Popularity-based EV adjustments (web-scraped FADE/TARGET/NEUTRAL)
@@ -185,16 +201,41 @@ MOONSHOT_SAME_TEAM_PENALTY = 0.85
 # Draft-count ownership leverage (V2 §2 Pillar 1 + §9 Finding 1)
 # Ghost ownership is THE #1 edge separating rank 1 from the field.
 # 12/13 rank-1 lineups had at least 1 ghost player.
+#
+# V3.0: These absolute thresholds are now FALLBACKS only.  When the slate's
+# draft distribution is available, ownership tiers are computed from empirical
+# CDF percentiles (see condition_classifier.get_ownership_tier).  This makes
+# the system slate-size-invariant: 100 drafts on a 2-game day is very
+# different from 100 drafts on a 15-game day.
 # ---------------------------------------------------------------------------
-GHOST_DRAFT_THRESHOLD = 100           # < 100 drafts = ghost player
-LOW_DRAFT_THRESHOLD = 200             # < 200 drafts = low-ownership differentiator
-CHALK_DRAFT_THRESHOLD = 1500          # >= 1500 drafts = chalk
-MEGA_CHALK_DRAFT_THRESHOLD = 2000     # >= 2000 drafts = mega-chalk
+GHOST_DRAFT_THRESHOLD = 100           # FALLBACK: < 100 drafts = ghost player
+LOW_DRAFT_THRESHOLD = 200             # FALLBACK: < 200 drafts = low-ownership differentiator
+CHALK_DRAFT_THRESHOLD = 1500          # FALLBACK: >= 1500 drafts = chalk
+MEGA_CHALK_DRAFT_THRESHOLD = 2000     # FALLBACK: >= 2000 drafts = mega-chalk
+
+# V3.0 percentile-based ownership tier thresholds (empirical CDF)
+# "Ghost" = bottom 15% of the draft distribution
+# "Low" = 15th-35th percentile
+# "Medium" = 35th-65th percentile
+# "Chalk" = 65th-90th percentile
+# "Mega-chalk" = top 10% AND requires minimum absolute draft count
+OWNERSHIP_PERCENTILE_GHOST = 0.15     # bottom 15%
+OWNERSHIP_PERCENTILE_LOW = 0.35       # 15th-35th
+OWNERSHIP_PERCENTILE_MEDIUM = 0.65    # 35th-65th
+OWNERSHIP_PERCENTILE_CHALK = 0.90     # 65th-90th
+# Mega-chalk activation floor: even if a player is in the top 10% by
+# percentile, they must also exceed this multiple of the median draft count
+# to be classified mega-chalk.  Prevents false mega-chalk on thin slates.
+MEGA_CHALK_MEDIAN_MULTIPLE = 3.0
 
 # "Most drafted at 3x boost" trap — still flagged dynamically each run in the router.
 # Historical bust rate: 57% with avg RS 0.72.
-# How many of the most-drafted 3x-boost players to flag per slate.
-MOST_DRAFTED_3X_TOP_N = 5
+# V3.0: Scales with slate size — floor of 3, ceiling of 7, proportional to
+# the number of 3x-boost candidates on the slate.
+MOST_DRAFTED_3X_TOP_N = 5             # default (overridden dynamically)
+MOST_DRAFTED_3X_MIN_N = 3             # minimum (thin slates)
+MOST_DRAFTED_3X_MAX_N = 7             # maximum (large slates)
+MOST_DRAFTED_3X_PROPORTION = 0.30     # flag top 30% of 3x-boost pool
 
 # ---------------------------------------------------------------------------
 # Ghost + Boost synergy constants
@@ -214,7 +255,15 @@ MIN_GHOST_IN_LINEUP = 1              # min 1 ghost player (< 100 drafts)
 # Ghost enforcement: replace worst lineup player with a ghost if ghost EV >= this fraction
 GHOST_ENFORCE_SWAP_THRESHOLD = 0.50  # was 0.70 — lowered so ghost inclusion actually fires
 MAX_PLAYERS_PER_TEAM = 1             # max 1 player from any single team per lineup
-MAX_PITCHERS_IN_LINEUP = 1           # V2.3: max 1 starting pitcher per lineup; ghost+boost batter edge outweighs a 2nd SP slot
+# V3.0: Dynamic pitcher cap — replaces hard MAX_PITCHERS_IN_LINEUP = 1.
+# When the boosted batter pool is rich (>= BOOSTED_POOL_FULL_THRESHOLD quality
+# cards), cap at 1 pitcher — the ghost+boost batter edge outweighs a 2nd SP.
+# When the pool is thin (< BOOSTED_POOL_FULL_THRESHOLD), relax to 2 pitchers —
+# unboosted pitchers have the highest RS floor (93% positive, avg RS 5.4) and
+# are the best alternative when quality boosted batters are scarce.
+MAX_PITCHERS_IN_LINEUP = 1           # V2.3 default (overridden dynamically in V3.0)
+MAX_PITCHERS_THIN_POOL = 2           # V3.0: allowed when boosted pool is thin
+PITCHER_CAP_EV_THRESHOLD = 0.0       # V3.0: cumulative EV floor for top-5 batters (see compute_dynamic_pitcher_cap)
 
 # ---------------------------------------------------------------------------
 # Blowout game stack bonus (4-term EV formula)

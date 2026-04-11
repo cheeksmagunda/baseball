@@ -183,12 +183,13 @@ def get_blended_hv_rate(
     """Blend the static matrix HV rate with the ML prediction.
 
     If the ML model isn't loaded, returns the matrix rate unchanged.
-    DEAD_CAPITAL (matrix_rate == 0.0) is always respected — the ML model
-    cannot override a hard-block.
-    """
-    if matrix_rate == 0.0:
-        return 0.0
 
+    V3.0: The ML model can now contribute signal for all conditions, including
+    formerly dead-capital ones.  The Bayesian floor in condition_classifier
+    ensures matrix_rate is never 0.0, so the blend always operates.
+    The ML model's contribution is still capped at ML_BLEND_WEIGHT (30%)
+    to prevent a single model from dominating the proven matrix signal.
+    """
     ml_prob = predict_hv_probability(card_boost, drafts, is_pitcher)
     if ml_prob is None:
         return matrix_rate
