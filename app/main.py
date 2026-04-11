@@ -82,18 +82,19 @@ async def lifespan(app: FastAPI):
                 except Exception as exc:
                     logger.error("Morning baseline failed: %s\n%s", exc, traceback.format_exc())
 
-                # Publish schedule immediately so the UI shows "Picks Available
-                # at HH:MM" instead of "Preparing Today's Picks" while waiting
-                # for the T-65 monitor to wake up.
-                try:
-                    from app.services.slate_monitor import _get_first_pitch_utc
+            # Publish schedule immediately so the UI shows "Picks Available
+            # at HH:MM" instead of "Preparing Today's Picks" while waiting
+            # for the T-65 monitor to wake up.  Runs even when pipeline_ok is
+            # False — the slate/games may already exist from a prior run.
+            try:
+                from app.services.slate_monitor import _get_first_pitch_utc
 
-                    first_pitch = _get_first_pitch_utc(db, active_date)
-                    if first_pitch is not None:
-                        lineup_cache.set_schedule(first_pitch)
-                        logger.info("Schedule published: first pitch %s UTC", first_pitch.strftime("%H:%M"))
-                except Exception as exc:
-                    logger.warning("Could not publish schedule at startup: %s", exc)
+                first_pitch = _get_first_pitch_utc(db, active_date)
+                if first_pitch is not None:
+                    lineup_cache.set_schedule(first_pitch)
+                    logger.info("Schedule published: first pitch %s UTC", first_pitch.strftime("%H:%M"))
+            except Exception as exc:
+                logger.warning("Could not publish schedule at startup: %s", exc)
         finally:
             db.close()
             # Always signal the monitor so it can compute lock timing even if
