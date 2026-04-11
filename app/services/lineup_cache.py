@@ -214,8 +214,12 @@ class _LineupCache:
             if not games:
                 return True
 
+            # A postponed/cancelled/suspended game will never receive scores.
+            # Treat those statuses as "done" so the cache doesn't perma-freeze.
+            _NON_PLAYING = {"Postponed", "Cancelled", "Suspended"}
             return all(
-                g.home_score is not None and g.away_score is not None
+                (g.home_score is not None and g.away_score is not None)
+                or g.game_status in _NON_PLAYING
                 for g in games
             )
         except Exception as exc:

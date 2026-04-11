@@ -996,56 +996,81 @@ def _validate_lineup_structure(
         pitcher_count_now = sum(1 for c in lineup if c.is_pitcher)
         can_add_pitcher = pitcher_count_now < pitcher_cap
 
-        def _ghost_ok(c: FilteredCandidate) -> bool:
-            if c.player_name in lineup_names:
-                return False
-            if c.drafts is None or c.drafts >= GHOST_DRAFT_THRESHOLD:
-                return False
-            if c.is_pitcher and not can_add_pitcher:
-                return False
-            return True
+        # Identify stacked teams (teams with 3+ players) whose members are protected
+        # from ghost-enforcement swaps (breaking a stack destroys correlated upside).
+        from collections import Counter as _Counter
+        _team_counts = _Counter(c.team for c in lineup)
+        _game_counts = _Counter(c.game_id for c in lineup if c.game_id is not None)
+        stacked_teams = {team for team, cnt in _team_counts.items() if cnt >= 3}
 
-        # First preference: ghost with full env support.
-        # Fallback: mega-ghost+boost even without env — their EV floor already
-        # compensates for data-scarcity-driven low env scores (see _apply_ghost_boost_ev_floor).
-        best_ghost = next(
-            (c for c in all_candidates_sorted
-             if _ghost_ok(c) and c.env_score >= ENV_PASS_THRESHOLD),
-            None,
-        )
-        if best_ghost is None:
-            # No env-passing ghost — try mega-ghost+boost (env gate waived per V2.4)
+        # Determine the swap target FIRST so ghost selection can account for which
+        # player is being removed.  This prevents the enforced ghost from being
+        # immediately evicted by Rule 3 (team cap) or Rule 3b (game cap) because
+        # it shares a team/game with a player that was still in the lineup when
+        # the ghost was chosen under the old ordering.
+        swap_indices = [
+            i for i in range(len(lineup))
+            if lineup[i].team not in stacked_teams
+        ]
+
+        if not swap_indices:
+            # All non-ghost players are part of stacks — skip ghost enforcement
+            logger.info(
+                "Ghost enforcement skipped: all lineup players are part of team stacks"
+            )
+        else:
+            worst_idx = min(swap_indices, key=lambda i: lineup[i].filter_ev)
+            removing = lineup[worst_idx]
+
+            # _ghost_ok checks basic eligibility AND verifies the candidate won't
+            # violate team/game caps in the post-swap lineup.
+            # Net logic: subtract the removed player's slot, add the ghost's slot.
+            def _ghost_ok(c: FilteredCandidate) -> bool:
+                if c.player_name in lineup_names:
+                    return False
+                if c.drafts is None or c.drafts >= GHOST_DRAFT_THRESHOLD:
+                    return False
+                if c.is_pitcher and not can_add_pitcher:
+                    return False
+                # Team cap after swap (remove `removing`, add `c`)
+                net_team = (
+                    _team_counts.get(c.team, 0)
+                    - (1 if removing.team == c.team else 0)
+                    + 1
+                )
+                if net_team > MAX_PLAYERS_PER_TEAM:
+                    return False
+                # Game cap after swap
+                if c.game_id is not None:
+                    net_game = (
+                        _game_counts.get(c.game_id, 0)
+                        - (1 if removing.game_id == c.game_id else 0)
+                        + 1
+                    )
+                    if net_game > MAX_PLAYERS_PER_GAME:
+                        return False
+                return True
+
+            # First preference: ghost with full env support.
+            # Fallback: mega-ghost+boost even without env — their EV floor already
+            # compensates for data-scarcity-driven low env scores (see _apply_ghost_boost_ev_floor).
             best_ghost = next(
                 (c for c in all_candidates_sorted
-                 if _ghost_ok(c)
-                 and c.drafts is not None
-                 and c.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS
-                 and c.card_boost >= 3.0),
+                 if _ghost_ok(c) and c.env_score >= ENV_PASS_THRESHOLD),
                 None,
             )
-        if best_ghost:
-            # Replace the lowest-EV non-ghost, non-stacked player.
-            # A "stacked" player shares a team with 2+ others in the lineup
-            # (i.e., part of a 3-player team stack).  Breaking a stack to insert
-            # a standalone ghost destroys correlated upside.
-            from collections import Counter as _Counter
-            _team_counts = _Counter(c.team for c in lineup)
-            stacked_teams = {team for team, cnt in _team_counts.items() if cnt >= 3}
-
-            swap_indices = [
-                i for i in range(len(lineup))
-                if lineup[i].team not in stacked_teams
-            ]
-
-            if swap_indices:
-                worst_idx = min(swap_indices, key=lambda i: lineup[i].filter_ev)
-                if best_ghost.filter_ev >= lineup[worst_idx].filter_ev * GHOST_ENFORCE_SWAP_THRESHOLD:
-                    lineup[worst_idx] = best_ghost
-            else:
-                # All non-ghost players are part of stacks — skip ghost enforcement
-                logger.info(
-                    "Ghost enforcement skipped: all lineup players are part of team stacks"
+            if best_ghost is None:
+                # No env-passing ghost — try mega-ghost+boost (env gate waived per V2.4)
+                best_ghost = next(
+                    (c for c in all_candidates_sorted
+                     if _ghost_ok(c)
+                     and c.drafts is not None
+                     and c.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS
+                     and c.card_boost >= 3.0),
+                    None,
                 )
+            if best_ghost and best_ghost.filter_ev >= removing.filter_ev * GHOST_ENFORCE_SWAP_THRESHOLD:
+                lineup[worst_idx] = best_ghost
 
     # Rule 3: Max N players per team (diversification)
     # Prevents over-concentration in a single team's outcome.
@@ -1070,10 +1095,25 @@ def _validate_lineup_structure(
                 # If we're removing a pitcher, a pitcher replacement is fine.
                 # If we're removing a batter, only allow a batter replacement.
                 removing_pitcher = lineup[idx].is_pitcher
+                # Ghost preservation: if removing the last ghost, replacement must
+                # also be a ghost so we don't drop below MIN_GHOST_IN_LINEUP.
+                current_ghost_count = sum(
+                    1 for c in lineup
+                    if c.drafts is not None and c.drafts < GHOST_DRAFT_THRESHOLD
+                )
+                removing_ghost = (
+                    lineup[idx].drafts is not None
+                    and lineup[idx].drafts < GHOST_DRAFT_THRESHOLD
+                )
+                must_replace_with_ghost = (
+                    removing_ghost and current_ghost_count <= MIN_GHOST_IN_LINEUP
+                )
                 replacement = next(
                     (c for c in all_candidates_sorted
                      if c.player_name not in lineup_names
                      and current_team_counts.get(c.team, 0) < MAX_PLAYERS_PER_TEAM
+                     and (not must_replace_with_ghost
+                          or (c.drafts is not None and c.drafts < GHOST_DRAFT_THRESHOLD))
                      and (not c.is_pitcher or removing_pitcher
                           or current_pitcher_count < pitcher_cap)),
                     None,
@@ -1111,11 +1151,25 @@ def _validate_lineup_structure(
                 )
                 current_pitcher_count = sum(1 for c in lineup if c.is_pitcher)
                 removing_pitcher = lineup[idx].is_pitcher
+                # Ghost preservation: same logic as Rule 3.
+                current_ghost_count = sum(
+                    1 for c in lineup
+                    if c.drafts is not None and c.drafts < GHOST_DRAFT_THRESHOLD
+                )
+                removing_ghost = (
+                    lineup[idx].drafts is not None
+                    and lineup[idx].drafts < GHOST_DRAFT_THRESHOLD
+                )
+                must_replace_with_ghost = (
+                    removing_ghost and current_ghost_count <= MIN_GHOST_IN_LINEUP
+                )
                 replacement = next(
                     (c for c in all_candidates_sorted
                      if c.player_name not in lineup_names
                      and (c.game_id is None
                           or current_game_counts.get(c.game_id, 0) < MAX_PLAYERS_PER_GAME)
+                     and (not must_replace_with_ghost
+                          or (c.drafts is not None and c.drafts < GHOST_DRAFT_THRESHOLD))
                      and (not c.is_pitcher or removing_pitcher
                           or current_pitcher_count < pitcher_cap)),
                     None,

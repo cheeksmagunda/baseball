@@ -189,7 +189,7 @@ async def _resolve_candidates(
                 score_kwargs["wind_direction"] = game.wind_direction
                 score_kwargs["temperature_f"] = game.temperature_f
 
-        score_result = score_player(db, player, **score_kwargs)
+        score_result = score_player(db, player, is_pitcher=is_pitcher, **score_kwargs)
 
         # Compute environmental score (Filter 2)
         if is_pitcher and game:

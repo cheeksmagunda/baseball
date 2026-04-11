@@ -78,8 +78,18 @@ def _parse_game_time(game_time_str: str, game_date: date) -> datetime | None:
             logger.warning("Cannot parse game time string: %r", game_time_str)
             return None
 
+    # Late West Coast games (e.g. 10:10 PM PT) convert to early-AM ET times
+    # (1:10 AM ET) that belong to the *next* calendar day.  Without this
+    # correction the converted UTC timestamp falls before all afternoon games,
+    # making min(times) fire the T-65 lock at midnight — 12+ hours too early.
+    # No MLB game intentionally starts between midnight and 5 AM ET, so any
+    # sub-5 AM time safely belongs to the following calendar day.
+    actual_date = game_date
+    if naive_time.hour < 5:
+        actual_date = game_date + timedelta(days=1)
+
     naive_dt = datetime(
-        game_date.year, game_date.month, game_date.day,
+        actual_date.year, actual_date.month, actual_date.day,
         naive_time.hour, naive_time.minute, 0,
     )
     et_dt = naive_dt.replace(tzinfo=_ET)
@@ -166,8 +176,10 @@ async def _post_lock_monitor(today: date) -> None:
                 if not games:
                     continue
 
+                _NON_PLAYING = {"Postponed", "Cancelled", "Suspended"}
                 all_final = all(
-                    g.home_score is not None and g.away_score is not None
+                    (g.home_score is not None and g.away_score is not None)
+                    or g.game_status in _NON_PLAYING
                     for g in games
                 )
 
@@ -289,8 +301,10 @@ async def _fallback_status_monitor(monitor_date: date | None = None) -> None:
 
                 prev_remaining = remaining
 
+                _NON_PLAYING = {"Postponed", "Cancelled", "Suspended"}
                 all_final = all(
-                    g.home_score is not None and g.away_score is not None
+                    (g.home_score is not None and g.away_score is not None)
+                    or g.game_status in _NON_PLAYING
                     for g in games
                 )
 
