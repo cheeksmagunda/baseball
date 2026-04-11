@@ -59,6 +59,57 @@ CONDITION_MATRIX: dict[str, dict[str, float]] = {
 }
 
 # ---------------------------------------------------------------------------
+# Pitcher-specific condition matrix (V2.5)
+#
+# SPs structurally get low/no boost from Real Sports because they accumulate
+# more game time and stats. An SP with 0 boost is not the same signal as a
+# batter with 0 boost — pitchers have a higher RS floor (93% positive RS
+# historically) and generate TV through raw RS alone.
+#
+# Trained on 112 pitcher appearances across 15 dates.
+# Key data:  ghost+no_boost=12.5%, low+no_boost=40%, medium+no_boost=0%,
+#            ghost+low_boost=100%, ghost+elite_boost=100%.
+#            chalk+max_boost=50%, mega_chalk+no_boost=0%.
+# ---------------------------------------------------------------------------
+PITCHER_CONDITION_MATRIX: dict[str, dict[str, float]] = {
+    "ghost": {
+        "no_boost":    0.12,   # 1/8 = 12.5% — low but NOT zero
+        "low_boost":   1.00,   # 2/2 = 100%
+        "mid_boost":   0.75,   # no data, interpolate
+        "elite_boost": 1.00,   # 2/2 = 100%
+        "max_boost":   1.00,   # 1/1 = 100%
+    },
+    "low": {
+        "no_boost":    0.40,   # 2/5 = 40% — Imanaga's tier, strong
+        "low_boost":   1.00,   # 1/1 = 100%
+        "mid_boost":   0.60,   # no data, interpolate
+        "elite_boost": 0.70,   # no data, interpolate
+        "max_boost":   0.50,   # 0/1 small sample, conservative
+    },
+    "medium": {
+        "no_boost":    0.10,   # 0/11 = 0% — round up slightly for small sample
+        "low_boost":   0.15,   # 0/1 small sample
+        "mid_boost":   0.20,   # no data, interpolate
+        "elite_boost": 0.25,   # no data, interpolate
+        "max_boost":   0.14,   # 1/7 = 14.3%
+    },
+    "chalk": {
+        "no_boost":    0.05,   # 0/21 = 0% — round up for small sample
+        "low_boost":   0.67,   # 2/3 = 66.7% — boosted chalk SPs can hit
+        "mid_boost":   0.40,   # no data, interpolate
+        "elite_boost": 0.45,   # no data, interpolate
+        "max_boost":   0.50,   # 5/10 = 50% — better than batter chalk+max
+    },
+    "mega_chalk": {
+        "no_boost":    0.02,   # 0/34 = 0% — dead money
+        "low_boost":   0.10,   # no data
+        "mid_boost":   0.05,   # 0/2 = 0%
+        "elite_boost": 0.10,   # no data
+        "max_boost":   0.67,   # 2/3 = 66.7% — small sample but boosted mega-chalk SPs survive
+    },
+}
+
+# ---------------------------------------------------------------------------
 # Matrix version & training provenance (Bug 6 — survivorship bias guard)
 # ---------------------------------------------------------------------------
 # IMPORTANT: Update this version and date list whenever the matrix is retrained.
@@ -180,14 +231,25 @@ def get_condition_hv_rate(
     ownership_tier = get_ownership_tier(drafts, total_slate_drafts)
     boost_tier = get_boost_tier(card_boost)
 
-    if (ownership_tier, boost_tier) in DEAD_CAPITAL_CONDITIONS:
-        logger.info(
-            "DEAD_CAPITAL hard-block: drafts=%s (tier=%s), boost=%.1f (tier=%s)",
-            drafts, ownership_tier, card_boost, boost_tier,
-        )
-        return 0.0
-
-    matrix_rate = CONDITION_MATRIX[ownership_tier][boost_tier]
+    # Pitchers use a separate matrix — their low/no boost is structural
+    # (Real Sports doesn't boost SPs), not a negative signal.
+    # Pitcher DEAD_CAPITAL: only mega_chalk + no_boost is truly dead.
+    if is_pitcher:
+        if ownership_tier == "mega_chalk" and boost_tier == "no_boost":
+            logger.info(
+                "Pitcher DEAD_CAPITAL: drafts=%s (tier=%s), boost=%.1f (tier=%s)",
+                drafts, ownership_tier, card_boost, boost_tier,
+            )
+            return 0.0
+        matrix_rate = PITCHER_CONDITION_MATRIX[ownership_tier][boost_tier]
+    else:
+        if (ownership_tier, boost_tier) in DEAD_CAPITAL_CONDITIONS:
+            logger.info(
+                "DEAD_CAPITAL hard-block: drafts=%s (tier=%s), boost=%.1f (tier=%s)",
+                drafts, ownership_tier, card_boost, boost_tier,
+            )
+            return 0.0
+        matrix_rate = CONDITION_MATRIX[ownership_tier][boost_tier]
 
     # Blend with ML prediction when model is available
     from app.services.ml_model import get_blended_hv_rate
