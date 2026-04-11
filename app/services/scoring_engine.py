@@ -555,8 +555,16 @@ def score_player(
     wind_speed_mph: float | None = None,
     wind_direction: str | None = None,
     temperature_f: int | None = None,
+    is_pitcher: bool | None = None,
 ) -> PlayerScoreResult:
-    """Score any player (auto-detects pitcher vs batter)."""
+    """Score any player (auto-detects pitcher vs batter, override with is_pitcher).
+
+    The is_pitcher override is required for two-way players (e.g. Ohtani) whose
+    DB position is 'DH' but who are confirmed starters for today's game.
+    Without the override, score_player routes them to score_batter, producing
+    batter traits (power_profile, etc.) while the caller expects pitcher traits
+    (k_rate, ace_status, etc.), silently corrupting their EV calculation.
+    """
     from app.config import settings
 
     weights = get_current_weights(db)
@@ -573,7 +581,9 @@ def score_player(
         .all()
     )
 
-    is_pitcher = player.position in PITCHER_POSITIONS
+    # Caller override takes precedence; fall back to DB position.
+    if is_pitcher is None:
+        is_pitcher = player.position in PITCHER_POSITIONS
 
     if is_pitcher:
         return score_pitcher(
