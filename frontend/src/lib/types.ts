@@ -48,3 +48,10 @@ export interface FilterOptimizeResponse {
 }
 
 export type LineupTab = "starting5" | "moonshot";
+
+export interface WaitInfo {
+  phase: "before_lock" | "initializing";
+  first_pitch_utc: string | null;
+  lock_time_utc: string | null;
+  minutes_until_lock: number | null;
+}

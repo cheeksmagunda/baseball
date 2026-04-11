@@ -1,9 +1,11 @@
 import type { FilterOptimizeResponse } from "./types";
 
 class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  public body: Record<string, unknown> | null;
+  constructor(public status: number, message: string, body: Record<string, unknown> | null = null) {
     super(message);
     this.name = "ApiError";
+    this.body = body;
   }
 }
 
@@ -18,11 +20,12 @@ export async function fetchLineups(signal?: AbortSignal): Promise<FilterOptimize
 
   if (!res.ok) {
     let message = `API error: ${res.status}`;
+    let body: Record<string, unknown> | null = null;
     try {
-      const body = await res.json();
-      message = body.detail ?? body.message ?? message;
+      body = await res.json();
+      message = (body?.detail as string) ?? (body?.message as string) ?? message;
     } catch {}
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, body);
   }
 
   return res.json();

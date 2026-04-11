@@ -655,18 +655,35 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
     games = req.games
 
     if not cards:
+        from fastapi.responses import JSONResponse
+
         # Frozen → serve locked picks instantly (static file mode)
         if lineup_cache.is_frozen:
             cached = lineup_cache.get()
             if cached is not None:
                 return cached
 
-        # Before T-65 → tell the user to come back later with timing info
+        # Cache warm but schedule not yet published → system still initializing
+        # (startup pipeline stored picks but slate_monitor hasn't called set_schedule)
+        # If cache is cold, fall through to on-demand rebuild below.
         lock_time = lineup_cache.lock_time_utc
+        if lock_time is None and lineup_cache.is_warm:
+            return JSONResponse(
+                status_code=425,
+                content={
+                    "detail": "Pipeline initializing — picks will be available soon.",
+                    "phase": "initializing",
+                    "first_pitch_utc": None,
+                    "lock_time_utc": None,
+                    "minutes_until_lock": None,
+                },
+            )
+
+        # Schedule is set → enforce T-65 gate
         if lock_time is not None:
             now = datetime.now(timezone.utc)
             if now < lock_time:
-                from fastapi.responses import JSONResponse
+                # Before T-65 → countdown
                 minutes_until = max(0, int((lock_time - now).total_seconds() / 60))
                 return JSONResponse(
                     status_code=425,
@@ -682,10 +699,10 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
                     },
                 )
 
-        # Normal fast path: serve from cache if already warm
-        cached = lineup_cache.get()
-        if cached is not None:
-            return cached
+            # Past T-65 → serve from cache
+            cached = lineup_cache.get()
+            if cached is not None:
+                return cached
 
     if not cards:
         active_date = _get_active_slate_date(db)
