@@ -109,7 +109,7 @@ Web-scraping signal aggregator that estimates which players the crowd will over-
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V3.2 "Correlate, Differentiate, Distribute"** — V3.2: cross-lineup correlation, three-tier composition, env tiebreaker, MAX_PLAYERS_PER_TEAM=1.
+**Strategy Version: V3.3 "Correlate, Differentiate, Distribute"** — V3.3: cross-lineup correlation, three-tier composition, env tiebreaker, MAX_PLAYERS_PER_TEAM=1, MAX_PLAYERS_PER_GAME=1.
 
 The active optimizer produces **two lineups** from the same candidate pool via `run_dual_filter_strategy`.
 
@@ -261,9 +261,9 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
 
 **Context**: April 10th simulation showed optimizer captures ~10 of top 17 performers. Root causes: (a) all ghost+max_boost candidates have identical condition_hv_rate=1.00, leaving within-tier differentiation to noisy rs_prob alone; (b) ghost+mid_boost players (HV rate 0.75) blocked by binary 2.5 threshold; (c) no mechanism to capture correlated upside across two lineups when MAX_PLAYERS_PER_TEAM=1.
 
-**Change 1 — MAX_PLAYERS_PER_TEAM=1, MAX_PLAYERS_PER_GAME=2** (`app/core/constants.py`)
+**Change 1 — MAX_PLAYERS_PER_TEAM=1, MAX_PLAYERS_PER_GAME=1** (`app/core/constants.py`)
 - Hard constraint: max 1 player per team per individual lineup (Starting 5 or Moonshot).
-- MAX_PLAYERS_PER_GAME lowered from 3 to 2.
+- MAX_PLAYERS_PER_GAME lowered from 3 to 2 (V3.2), then to 1 (V3.3) — full game diversification on large slates.
 - Within-lineup stacking disabled. Correlation captured cross-lineup via Change 3.
 - _build_team_stack() path in _enforce_composition() auto-skipped (MAX_PLAYERS_PER_TEAM < STACK_MIN_PLAYERS).
 
@@ -303,7 +303,7 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
 
 **Fix 2 — Stacking Re-enabled** (`app/core/constants.py`, `app/services/filter_strategy.py`)
 - V3.1: `MAX_PLAYERS_PER_GAME` raised from 1 to 3. `MAX_PLAYERS_PER_TEAM` raised from 1 to 3.
-- **Superseded by V3.2**: `MAX_PLAYERS_PER_TEAM` lowered back to 1, `MAX_PLAYERS_PER_GAME` to 2. Within-lineup stacking disabled. Correlation value now captured cross-lineup via `CORRELATION_*` constants. See V3.2 Changes above.
+- **Superseded by V3.2/V3.3**: `MAX_PLAYERS_PER_TEAM` lowered back to 1, `MAX_PLAYERS_PER_GAME` to 2 (V3.2), then to 1 (V3.3). Within-lineup stacking disabled. Correlation value now captured cross-lineup via `CORRELATION_*` constants. See V3.2 Changes above.
 - `MAX_OPPONENTS_SAME_GAME = 1` remains — prevents negative correlation (opposing pitcher + batters).
 - Team-aware game diversification: the selection loop tracks `(game_id, team)` tuples, not just `game_id`.
 
@@ -324,14 +324,15 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
 Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. Dynamic cap: 1 SP when boosted pool is rich (V3.2: 2 SP if ghost+boost pitcher exists), 2 SP when thin. **No "day types" force composition.**
 
 1. **Three-tier ordering**: auto-include (ghost+boost ≥ 2.5) → soft_auto_include (ghost+boost ≥ 2.0) → rest by filter_ev
-2. **MAX_PLAYERS_PER_TEAM = 1**: No within-lineup stacking. Correlation captured cross-lineup.
+2. **MAX_PLAYERS_PER_TEAM = 1, MAX_PLAYERS_PER_GAME = 1**: No within-lineup stacking, no same-game pairing. Each of the 5 players comes from a different game. Correlation captured cross-lineup.
 3. **Blowout game detected**: Stack path skipped (requires MAX_PLAYERS_PER_TEAM ≥ 3, currently 1).
-4. **All slates**: Pure three-tier EV ranking with team cap (1), game cap (2), pitcher cap.
+4. **All slates**: Pure three-tier EV ranking with team cap (1), game cap (1), pitcher cap.
 
 ### Lineup Validation (V3.2)
 - Max 1 mega-chalk (top 10% percentile + 3x median drafts) player
 - Min 1 ghost (bottom 15% percentile) player: first seek env-passing ghost, fallback to mega-ghost+3x boost even without env pass
 - **Max 1 player per team** per individual lineup (V3.2)
+- **Max 1 player per game** per individual lineup (V3.3) — each pick from a distinct game
 - **Dynamic pitcher cap** (1 or 2) — V3.2: 2 allowed when ghost+boost SP exists
 - Slot 1 Differentiator: swap consensus Slot 1 for contrarian if EV loss <10%
 

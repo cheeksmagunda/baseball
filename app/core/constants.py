@@ -128,7 +128,7 @@ ENV_PASS_THRESHOLD = 0.5           # env_score >= 0.5 = passes environmental fil
 # The cap applies to TEAMMATES from the same game.  Opponents in the same game
 # are restricted to 1 total (negative correlation: if one team's SP dominates,
 # the other team's batters suffer).  See MAX_OPPONENTS_SAME_GAME.
-MAX_PLAYERS_PER_GAME = 2         # V3.2: max 2 players from any single game (was 3 in V3.1)
+MAX_PLAYERS_PER_GAME = 1         # V3.3: max 1 player per game per lineup — full diversification on large slates
 MAX_OPPONENTS_SAME_GAME = 1      # max 1 player from the opposing side of the same game
 MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup
 SAME_GAME_EXCESS_PENALTY = 0.90  # 10% penalty for 4th+ player from same game
