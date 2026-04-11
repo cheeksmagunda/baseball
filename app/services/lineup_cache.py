@@ -223,8 +223,8 @@ class _LineupCache:
                 for g in games
             )
         except Exception as exc:
-            logger.warning("Slate completion check failed: %s", exc)
-            return False  # on error, keep serving (safe default)
+            logger.error("Slate completion check failed: %s", exc)
+            raise
         finally:
             db.close()
 

@@ -384,13 +384,10 @@ async def targeted_slate_monitor(
     logger.info("T-65 monitor targeting date: %s", monitor_date)
 
     if first_pitch_utc is None:
-        logger.warning(
-            "No scheduled_game_time values found for %s — "
-            "activating fallback status-polling monitor",
-            monitor_date,
+        raise RuntimeError(
+            f"No scheduled_game_time values found for {monitor_date} — "
+            "cannot determine first pitch time; pipeline must fail loudly"
         )
-        await _fallback_status_monitor(monitor_date)
-        return
 
     lock_time_utc = first_pitch_utc - timedelta(minutes=LOCK_MINUTES_BEFORE_PITCH)
 
@@ -445,13 +442,10 @@ async def targeted_slate_monitor(
                     first_pitch_utc.strftime("%H:%M"),
                 )
             else:
-                logger.error(
-                    "T-%d lineup build returned nothing — cache NOT frozen. "
-                    "Falling back to status monitor.",
-                    LOCK_MINUTES_BEFORE_PITCH,
+                raise RuntimeError(
+                    f"T-{LOCK_MINUTES_BEFORE_PITCH} lineup build returned nothing — "
+                    "no slate data available; pipeline must fail loudly"
                 )
-                await _fallback_status_monitor(monitor_date)
-                return
         except Exception as exc:
             logger.error(
                 "T-%d lineup build raised: %s — cache NOT frozen",

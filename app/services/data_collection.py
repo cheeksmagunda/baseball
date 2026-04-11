@@ -170,13 +170,8 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict:
     async def _fetch_roster(team: str):
         team_id = TEAM_MLB_IDS.get(team)
         if not team_id:
-            logger.warning("No MLB team ID for %s — skipping roster fetch", team)
-            return team, None
-        try:
-            return team, await get_team_roster(team_id)
-        except Exception as exc:
-            logger.warning("Failed to fetch roster for %s: %s", team, exc)
-            return team, None
+            raise ValueError(f"No MLB team ID for {team} — cannot fetch roster")
+        return team, await get_team_roster(team_id)
 
     roster_results = await asyncio.gather(*[_fetch_roster(t) for t in team_games])
 
@@ -256,11 +251,10 @@ async def _enrich_batting_order(db: Session, slate: Slate, games: list, logger) 
     """
     async def _fetch_boxscore(game):
         if game.mlb_game_pk is None:
-            return game, None
-        try:
-            return game, await get_game_boxscore(game.mlb_game_pk)
-        except Exception:
-            return game, None
+            raise ValueError(
+                f"SlateGame {game.id} ({game.away_team} @ {game.home_team}) has no mlb_game_pk"
+            )
+        return game, await get_game_boxscore(game.mlb_game_pk)
 
     game_boxscores = await asyncio.gather(*[_fetch_boxscore(g) for g in games])
     enriched = 0
