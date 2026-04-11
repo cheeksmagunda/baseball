@@ -16,7 +16,7 @@ async def lifespan(app: FastAPI):
     from pathlib import Path
     from app.database import SessionLocal
     from app.services.pipeline import run_full_pipeline
-    from app.services.slate_monitor import monitor_slate_completion
+    from app.services.slate_monitor import targeted_slate_monitor
     from app.models.player import Player
     from app.seed import run_seed
 
@@ -39,6 +39,10 @@ async def lifespan(app: FastAPI):
     # must never survive a restart.
     from app.services.lineup_cache import lineup_cache
     lineup_cache.purge()
+
+    # startup_done_event signals the T-65 monitor that the morning baseline
+    # pipeline has finished and it is safe to compute lock timing.
+    startup_done_event = asyncio.Event()
 
     # Run pipeline in background so health checks respond immediately
     async def _startup_pipeline():
@@ -67,24 +71,24 @@ async def lifespan(app: FastAPI):
                 except Exception as exc:
                     logger.error("Next-day pipeline failed: %s\n%s", exc, traceback.format_exc())
 
-            # Stage 2: pre-compute and cache lineups (only if pipeline succeeded)
+            # Stage 2: morning baseline cache (NOT frozen — T-65 monitor freezes later)
             if pipeline_ok:
                 try:
                     cached = await build_and_cache_lineups(db)
                     if cached:
-                        logger.info("Lineup cache ready — frontend requests will be instant")
+                        logger.info("Morning baseline ready — T-65 monitor will freeze at lock time")
                     else:
-                        logger.warning("Lineup cache empty after startup (no slate data?)")
+                        logger.warning("Morning baseline empty after startup (no slate data?)")
                 except Exception as exc:
-                    logger.error("Lineup cache warm failed: %s\n%s", exc, traceback.format_exc())
+                    logger.error("Morning baseline failed: %s\n%s", exc, traceback.format_exc())
         finally:
             db.close()
+            # Always signal the monitor so it can compute lock timing even if
+            # the pipeline partially failed.
+            startup_done_event.set()
 
     startup_task = asyncio.create_task(_startup_pipeline())
-    monitor_task = asyncio.create_task(monitor_slate_completion(
-        check_interval=30,
-        pipeline_refresh_interval=settings.pipeline_refresh_interval,
-    ))
+    monitor_task = asyncio.create_task(targeted_slate_monitor(startup_done_event))
 
     yield
 

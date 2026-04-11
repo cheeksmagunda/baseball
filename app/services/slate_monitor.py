@@ -1,110 +1,141 @@
 """
-Background task for monitoring slate changes and keeping lineups fresh.
+T-65 Sniper Architecture — event-driven slate monitor.
 
-Runs every CHECK_INTERVAL seconds (default 30) and performs two jobs:
+Four phases per slate day:
 
-  **Fast loop (every check):**
-    1. Refresh game statuses from MLB API (Preview → Live → Final)
-    2. Detect game starts → rebuild cache with remaining games only
-    3. Detect slate completion → clear cache, trigger next-day pipeline
+  1. INIT        — Morning pipeline runs on boot (handled by main.py startup task).
+                   Builds internal data baseline; cache is NOT frozen yet.
 
-  **Full refresh (every PIPELINE_REFRESH_INTERVAL, default 5 min):**
-    4. Re-run the full pipeline (fetch starters, batting orders, stats, scores)
-    5. Fingerprint the slate data — if anything changed, rebuild the lineup cache
+  2. BEFORE_LOCK — Monitor sleeps until T-65 (65 min before first pitch).
+                   /optimize returns HTTP 425 "come back later" with countdown.
 
-This guarantees:
-  - Lineups are regenerated cold on every deployment (handled by main.py lifespan)
-  - Lineups are rebuilt within seconds of a game starting
-  - Stale starters, batting orders, and boosts are picked up within 5 minutes
-  - Tomorrow's pre-warm is retried until it succeeds
+  3. LOCKED      — At T-65 the monitor fires the final pipeline run, builds the
+                   Starting 5 + Moonshot, then calls lineup_cache.freeze().
+                   From this point the API serves a static payload — zero compute
+                   per request, zero risk of dirty mid-run data.
 
-The app assumes MLB/API data is always available — no defensive retries
-or exponential backoff.  If a fetch fails, the next cycle will pick it up.
+  4. MONITORING  — Lightweight 60-second loop watching only for game completion.
+                   On all-final: clear cache, pre-warm tomorrow's pipeline.
+
+Design decisions
+----------------
+* 65-minute buffer = 60-min user draft window + 5-min generation headroom.
+* Uses ZoneInfo("America/New_York") to parse "H:MM AM/PM ET" game times stored
+  in SlateGame.scheduled_game_time. Automatically handles EDT vs EST via DST.
+* If no scheduled_game_time values are present in the DB, falls back to the
+  original status-polling approach (Preview→Live transition = freeze trigger).
+  In fallback mode the "come back later" gate is skipped (no known lock time).
+* Chunked async sleep (≤60 s per chunk) keeps CancelledError responsive.
 """
 
 import asyncio
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
+# T-65: 60-min user draft window + 5-min final generation buffer
+LOCK_MINUTES_BEFORE_PITCH = 65
+
+# How often the post-lock loop checks for slate completion
+POST_LOCK_CHECK_INTERVAL = 60  # seconds
+
+_ET = ZoneInfo("America/New_York")
 _STARTED_STATUSES = {"Live", "Final"}
 
-# How often the fast loop runs (game-start detection).
-CHECK_INTERVAL_DEFAULT = 30
 
-# How often the full pipeline re-runs (pick up new starters, orders, stats).
-# Data is always available, so we can be aggressive.
-PIPELINE_REFRESH_INTERVAL_DEFAULT = 300  # 5 minutes
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-
-def _slate_fingerprint(db) -> str:
-    """Build a fingerprint of the active slate's key data fields.
-
-    If any of these change, the lineup cache should be rebuilt:
-      - Game starters (name + mlb_id)
-      - Vegas lines / moneylines
-      - Player card boosts
-      - Batting orders
-      - Game statuses
+def _parse_game_time(game_time_str: str, game_date: date) -> datetime | None:
     """
-    import hashlib
-    from app.models.slate import Slate, SlateGame, SlatePlayer
+    Parse a scheduled game time string into a UTC-aware datetime.
 
-    today = date.today()
-    slate = db.query(Slate).filter_by(date=today).first()
-    if not slate:
-        return ""
+    Handles formats stored by fetch_schedule_for_date, e.g.:
+      "7:05 PM ET"   "1:10 PM ET"   "10:10 AM PT"
 
-    parts = []
+    The suffix is stripped; the time is interpreted as America/New_York
+    (handles EDT vs EST automatically via DST). Returns None on any parse
+    failure so missing times never crash the monitor.
+    """
+    if not game_time_str:
+        return None
 
-    games = db.query(SlateGame).filter_by(slate_id=slate.id).order_by(SlateGame.id).all()
-    for g in games:
-        parts.append(
-            f"G:{g.id}|{g.game_status}|"
-            f"{g.home_starter}:{g.home_starter_mlb_id}|"
-            f"{g.away_starter}:{g.away_starter_mlb_id}|"
-            f"{g.vegas_total}|{g.home_moneyline}|{g.away_moneyline}|"
-            f"{g.home_starter_era}|{g.away_starter_era}|"
-            f"{g.home_starter_k_per_9}|{g.away_starter_k_per_9}|"
-            f"{g.home_team_ops}|{g.away_team_ops}"
-        )
+    time_str = game_time_str.strip()
+    for suffix in (" ET", " EST", " EDT", " CT", " MT", " PT"):
+        if time_str.endswith(suffix):
+            time_str = time_str[: -len(suffix)].strip()
+            break
 
-    players = (
-        db.query(SlatePlayer)
-        .filter_by(slate_id=slate.id)
-        .order_by(SlatePlayer.id)
-        .all()
+    try:
+        naive_time = datetime.strptime(time_str, "%I:%M %p")
+    except ValueError:
+        try:
+            naive_time = datetime.strptime(time_str, "%H:%M")
+        except ValueError:
+            logger.warning("Cannot parse game time string: %r", game_time_str)
+            return None
+
+    naive_dt = datetime(
+        game_date.year, game_date.month, game_date.day,
+        naive_time.hour, naive_time.minute, 0,
     )
-    for p in players:
-        parts.append(
-            f"P:{p.id}|{p.card_boost}|{p.batting_order}|"
-            f"{p.player_status}|{p.drafts}|{p.is_most_drafted_3x}"
-        )
-
-    raw = "\n".join(parts)
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    et_dt = naive_dt.replace(tzinfo=_ET)
+    return et_dt.astimezone(timezone.utc)
 
 
-async def monitor_slate_completion(
-    check_interval: int = CHECK_INTERVAL_DEFAULT,
-    pipeline_refresh_interval: int = PIPELINE_REFRESH_INTERVAL_DEFAULT,
-) -> None:
+def _get_first_pitch_utc(db, game_date: date) -> datetime | None:
     """
-    Background task: keep lineups fresh by reacting to slate changes.
+    Return the earliest scheduled game start time as a UTC datetime.
 
-    Fast loop (every check_interval seconds):
-      - Refresh game statuses from MLB API
-      - Game starts → rebuild cache with remaining games
-      - All games final → clear cache, pre-warm tomorrow
+    Queries all SlateGame rows for the given date, parses
+    scheduled_game_time via _parse_game_time, and returns the minimum.
+    Returns None if no slate exists or no times can be parsed.
+    """
+    from app.models.slate import Slate, SlateGame
 
-    Full refresh (every pipeline_refresh_interval seconds):
-      - Re-run full pipeline (starters, batting orders, stats, scores)
-      - Compare slate fingerprint — rebuild cache only if data changed
+    slate = db.query(Slate).filter_by(date=game_date).first()
+    if not slate:
+        return None
 
-    Args:
-        check_interval: seconds between game-status checks (default 30)
-        pipeline_refresh_interval: seconds between full pipeline refreshes (default 300)
+    games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+    times = []
+    for g in games:
+        if g.scheduled_game_time:
+            parsed = _parse_game_time(g.scheduled_game_time, game_date)
+            if parsed:
+                times.append(parsed)
+
+    return min(times) if times else None
+
+
+async def _sleep_until(target: datetime) -> None:
+    """
+    Async sleep until a specific UTC datetime.
+
+    Sleeps in ≤60-second chunks so asyncio.CancelledError is handled
+    promptly without busy-waiting.
+    """
+    while True:
+        remaining = (target - datetime.now(timezone.utc)).total_seconds()
+        if remaining <= 0:
+            return
+        await asyncio.sleep(min(remaining, 60))
+
+
+# ---------------------------------------------------------------------------
+# Post-lock monitor (Phase 4)
+# ---------------------------------------------------------------------------
+
+async def _post_lock_monitor(today: date) -> None:
+    """
+    Lightweight completion watcher after the cache is frozen.
+
+    Polls every POST_LOCK_CHECK_INTERVAL seconds. On slate completion
+    (all games final) it clears the frozen cache and pre-warms tomorrow's
+    pipeline. No lineup rebuilds — picks are locked.
     """
     from app.database import SessionLocal
     from app.models.slate import Slate, SlateGame
@@ -112,153 +143,306 @@ async def monitor_slate_completion(
     from app.services.pipeline import run_full_pipeline
     from app.services.data_collection import fetch_schedule_for_date
 
-    prev_remaining_count: int | None = None
-    prev_fingerprint: str = ""
-    seconds_since_refresh: int = 0
-    tomorrow_warmed: bool = False
+    tomorrow_warmed = False
+
+    logger.info("Post-lock monitor active — watching %s for completion", today)
 
     while True:
         try:
-            await asyncio.sleep(check_interval)
-            seconds_since_refresh += check_interval
+            await asyncio.sleep(POST_LOCK_CHECK_INTERVAL)
 
             db = SessionLocal()
             try:
-                today = date.today()
-
-                # -------------------------------------------------------
-                # Fast loop: refresh game statuses and detect transitions
-                # -------------------------------------------------------
                 try:
                     await fetch_schedule_for_date(db, today)
                 except Exception as exc:
-                    logger.warning("Schedule refresh failed in monitor: %s", exc)
+                    logger.warning("Post-lock status refresh failed: %s", exc)
 
                 slate = db.query(Slate).filter_by(date=today).first()
                 if not slate:
-                    prev_remaining_count = None
-                    prev_fingerprint = ""
-                    # No slate yet — try full pipeline to create one
-                    if seconds_since_refresh >= pipeline_refresh_interval:
-                        seconds_since_refresh = 0
-                        try:
-                            await run_full_pipeline(db, today)
-                            logger.info("Pipeline created slate for %s", today)
-                        except Exception as exc:
-                            logger.warning("Pipeline for %s failed: %s", today, exc)
                     continue
 
                 games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
                 if not games:
-                    prev_remaining_count = None
                     continue
 
-                remaining_count = sum(
-                    1 for g in games if g.game_status not in _STARTED_STATUSES
-                )
-
-                # A game just started — rebuild cache with remaining games only.
-                if (
-                    prev_remaining_count is not None
-                    and remaining_count < prev_remaining_count
-                    and remaining_count > 0
-                ):
-                    logger.info(
-                        "Game started — rebuilding cache with %d remaining game(s)",
-                        remaining_count,
-                    )
-                    try:
-                        from app.routers.filter_strategy import build_and_cache_lineups
-                        cached = await build_and_cache_lineups(db)
-                        if cached:
-                            logger.info("Cache rebuilt for %d remaining game(s)", remaining_count)
-                        else:
-                            logger.warning("Cache rebuild returned nothing (no eligible candidates?)")
-                        prev_fingerprint = _slate_fingerprint(db)
-                    except Exception as exc:
-                        logger.warning("Cache rebuild after game start failed: %s", exc)
-
-                prev_remaining_count = remaining_count
-
-                # -------------------------------------------------------
-                # Check if all games are final (slate complete)
-                # -------------------------------------------------------
                 all_final = all(
                     g.home_score is not None and g.away_score is not None
                     for g in games
                 )
 
-                if all_final:
-                    logger.info(
-                        "Slate %s complete (all %d games final) — clearing cache",
-                        today,
-                        len(games),
-                    )
-                    lineup_cache.clear()
-                    prev_remaining_count = None
-                    prev_fingerprint = ""
-
-                    # Pre-warm tomorrow's pipeline (retry until successful)
-                    if not tomorrow_warmed:
-                        tomorrow = today + timedelta(days=1)
-                        try:
-                            logger.info("Triggering pipeline for tomorrow (%s)", tomorrow)
-                            await run_full_pipeline(db, tomorrow)
-
-                            from app.routers.filter_strategy import build_and_cache_lineups
-                            cached = await build_and_cache_lineups(db)
-                            if cached:
-                                logger.info("Cache warmed for %s after slate turnover", tomorrow)
-                                tomorrow_warmed = True
-                        except Exception as exc:
-                            logger.warning(
-                                "Tomorrow's pipeline failed — will retry next cycle: %s", exc
-                            )
+                if not all_final:
                     continue
 
-                # Reset tomorrow flag when we're back to a live slate day
-                tomorrow_warmed = False
+                logger.info(
+                    "Slate %s complete (%d games final) — clearing frozen cache",
+                    today, len(games),
+                )
+                lineup_cache.clear()
 
-                # -------------------------------------------------------
-                # Full refresh: re-run pipeline and check for data changes
-                # -------------------------------------------------------
-                if seconds_since_refresh >= pipeline_refresh_interval:
-                    seconds_since_refresh = 0
-
+                if not tomorrow_warmed:
+                    tomorrow = today + timedelta(days=1)
                     try:
-                        await run_full_pipeline(db, today)
-                        logger.info("Periodic pipeline refresh complete for %s", today)
-                    except Exception as exc:
-                        logger.warning("Periodic pipeline refresh failed: %s", exc)
-                        continue
+                        logger.info("Pre-warming tomorrow's pipeline (%s)", tomorrow)
+                        await run_full_pipeline(db, tomorrow)
 
-                    # Check if slate data actually changed
-                    new_fingerprint = _slate_fingerprint(db)
-                    if new_fingerprint != prev_fingerprint:
-                        logger.info(
-                            "Slate data changed (fingerprint %s → %s) — rebuilding cache",
-                            prev_fingerprint[:8] or "(empty)",
-                            new_fingerprint[:8],
+                        from app.routers.filter_strategy import build_and_cache_lineups
+                        cached = await build_and_cache_lineups(db)
+                        if cached:
+                            logger.info("Tomorrow's cache warmed (%s)", tomorrow)
+                            tomorrow_warmed = True
+                    except Exception as exc:
+                        logger.warning(
+                            "Tomorrow pre-warm failed — will retry next cycle: %s", exc
                         )
-                        try:
-                            from app.routers.filter_strategy import build_and_cache_lineups
-                            cached = await build_and_cache_lineups(db)
-                            if cached:
-                                logger.info("Cache rebuilt after data change")
-                            else:
-                                logger.warning("Cache rebuild returned nothing after data change")
-                        except Exception as exc:
-                            logger.warning("Cache rebuild after data change failed: %s", exc)
-                        prev_fingerprint = new_fingerprint
-                    else:
-                        logger.debug("Slate fingerprint unchanged — skipping cache rebuild")
+
+                if tomorrow_warmed:
+                    logger.info("Post-lock monitor done for %s", today)
+                    break
 
             finally:
                 db.close()
 
         except asyncio.CancelledError:
-            logger.info("Slate monitor cancelled")
+            logger.info("Post-lock monitor cancelled")
             break
         except Exception as exc:
-            logger.error("Slate monitor error (will retry): %s", exc)
+            logger.error("Post-lock monitor error (will retry): %s", exc)
             continue
+
+
+# ---------------------------------------------------------------------------
+# Fallback: status-polling monitor (no scheduled_game_time in DB)
+# ---------------------------------------------------------------------------
+
+async def _fallback_status_monitor() -> None:
+    """
+    Fallback monitor when scheduled_game_time is unavailable for all games.
+
+    Replicates the old Preview→Live transition detection to find game starts.
+    The cache is frozen at first-game-start (T-0), not T-65.
+
+    The "come back later" gate is NOT active in this mode because there is
+    no known lock_time_utc for the optimize endpoint to check against.
+    """
+    from app.database import SessionLocal
+    from app.models.slate import Slate, SlateGame
+    from app.services.lineup_cache import lineup_cache
+    from app.services.pipeline import run_full_pipeline
+    from app.services.data_collection import fetch_schedule_for_date
+
+    today = date.today()
+    prev_remaining: int | None = None
+    frozen = False
+    tomorrow_warmed = False
+
+    logger.info(
+        "Fallback status monitor active for %s "
+        "(no scheduled_game_time found — will freeze at first game start)",
+        today,
+    )
+
+    while True:
+        try:
+            await asyncio.sleep(30)
+
+            db = SessionLocal()
+            try:
+                try:
+                    await fetch_schedule_for_date(db, today)
+                except Exception as exc:
+                    logger.warning("Fallback monitor schedule refresh failed: %s", exc)
+
+                slate = db.query(Slate).filter_by(date=today).first()
+                if not slate:
+                    prev_remaining = None
+                    continue
+
+                games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+                if not games:
+                    continue
+
+                remaining = sum(
+                    1 for g in games if g.game_status not in _STARTED_STATUSES
+                )
+
+                # First game just started → run final pipeline and freeze
+                if (
+                    not frozen
+                    and prev_remaining is not None
+                    and remaining < prev_remaining
+                ):
+                    logger.info(
+                        "First game started (fallback mode) — "
+                        "running final pipeline and freezing cache"
+                    )
+                    try:
+                        await run_full_pipeline(db, today)
+                        from app.routers.filter_strategy import build_and_cache_lineups
+                        cached = await build_and_cache_lineups(db)
+                        if cached:
+                            lineup_cache.freeze()
+                            logger.info("Cache frozen at first game start (fallback)")
+                            frozen = True
+                    except Exception as exc:
+                        logger.warning("Fallback freeze pipeline failed: %s", exc)
+
+                prev_remaining = remaining
+
+                all_final = all(
+                    g.home_score is not None and g.away_score is not None
+                    for g in games
+                )
+
+                if all_final and games:
+                    lineup_cache.clear()
+                    if not tomorrow_warmed:
+                        tomorrow = today + timedelta(days=1)
+                        try:
+                            await run_full_pipeline(db, tomorrow)
+                            from app.routers.filter_strategy import build_and_cache_lineups
+                            cached = await build_and_cache_lineups(db)
+                            if cached:
+                                tomorrow_warmed = True
+                        except Exception as exc:
+                            logger.warning(
+                                "Fallback tomorrow pre-warm failed: %s", exc
+                            )
+                    if tomorrow_warmed:
+                        break
+
+            finally:
+                db.close()
+
+        except asyncio.CancelledError:
+            logger.info("Fallback monitor cancelled")
+            break
+        except Exception as exc:
+            logger.error("Fallback monitor error (will retry): %s", exc)
+            continue
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+async def targeted_slate_monitor(
+    startup_done_event: asyncio.Event | None = None,
+) -> None:
+    """
+    T-65 Sniper: event-driven slate monitor.
+
+    Waits for the startup pipeline to complete, determines first-pitch time,
+    sleeps until T-65, runs the final optimizer, freezes the cache, then
+    switches to lightweight completion monitoring.
+
+    Args:
+        startup_done_event: Set by the startup pipeline task when it finishes.
+                            If None the monitor proceeds immediately (useful
+                            for testing or manual invocation).
+    """
+    from app.database import SessionLocal
+    from app.services.lineup_cache import lineup_cache
+    from app.services.pipeline import run_full_pipeline
+    from app.routers.filter_strategy import build_and_cache_lineups
+
+    # -----------------------------------------------------------------------
+    # Wait for startup pipeline so we don't race with the morning init
+    # -----------------------------------------------------------------------
+    if startup_done_event is not None:
+        logger.info("T-65 monitor waiting for startup pipeline to complete…")
+        await startup_done_event.wait()
+        logger.info("Startup pipeline done — T-65 monitor proceeding")
+
+    today = date.today()
+
+    # -----------------------------------------------------------------------
+    # Phase 1: Determine first pitch time from the DB
+    # -----------------------------------------------------------------------
+    db = SessionLocal()
+    try:
+        first_pitch_utc = _get_first_pitch_utc(db, today)
+    finally:
+        db.close()
+
+    if first_pitch_utc is None:
+        logger.warning(
+            "No scheduled_game_time values found for %s — "
+            "activating fallback status-polling monitor",
+            today,
+        )
+        await _fallback_status_monitor()
+        return
+
+    lock_time_utc = first_pitch_utc - timedelta(minutes=LOCK_MINUTES_BEFORE_PITCH)
+
+    # Publish timing so /status and /optimize can expose the countdown
+    lineup_cache.set_schedule(first_pitch_utc=first_pitch_utc)
+
+    logger.info(
+        "T-%d schedule: first_pitch=%s UTC, lock=%s UTC (%.0f min from now)",
+        LOCK_MINUTES_BEFORE_PITCH,
+        first_pitch_utc.strftime("%H:%M"),
+        lock_time_utc.strftime("%H:%M"),
+        max(0, (lock_time_utc - datetime.now(timezone.utc)).total_seconds() / 60),
+    )
+
+    # -----------------------------------------------------------------------
+    # Phase 2: Sleep until T-65
+    # -----------------------------------------------------------------------
+    now = datetime.now(timezone.utc)
+    if now < lock_time_utc:
+        logger.info(
+            "Sleeping until T-%d (%s UTC)…",
+            LOCK_MINUTES_BEFORE_PITCH,
+            lock_time_utc.strftime("%H:%M"),
+        )
+        await _sleep_until(lock_time_utc)
+
+    # -----------------------------------------------------------------------
+    # Phase 3: Final pipeline run + cache freeze
+    # -----------------------------------------------------------------------
+    logger.info(
+        "T-%d FINAL RUN — fetching data, building lineups, freezing cache",
+        LOCK_MINUTES_BEFORE_PITCH,
+    )
+
+    db = SessionLocal()
+    try:
+        try:
+            await run_full_pipeline(db, today)
+            logger.info("T-%d pipeline complete", LOCK_MINUTES_BEFORE_PITCH)
+        except Exception as exc:
+            logger.error(
+                "T-%d pipeline failed: %s — attempting lineup build with existing data",
+                LOCK_MINUTES_BEFORE_PITCH, exc,
+            )
+
+        try:
+            cached = await build_and_cache_lineups(db)
+            if cached:
+                lineup_cache.freeze(first_pitch_utc=first_pitch_utc)
+                logger.info(
+                    "Cache FROZEN. First pitch: %s UTC. Picks are locked.",
+                    first_pitch_utc.strftime("%H:%M"),
+                )
+            else:
+                logger.error(
+                    "T-%d lineup build returned nothing — cache NOT frozen. "
+                    "Falling back to status monitor.",
+                    LOCK_MINUTES_BEFORE_PITCH,
+                )
+                await _fallback_status_monitor()
+                return
+        except Exception as exc:
+            logger.error(
+                "T-%d lineup build raised: %s — cache NOT frozen",
+                LOCK_MINUTES_BEFORE_PITCH, exc,
+            )
+    finally:
+        db.close()
+
+    # -----------------------------------------------------------------------
+    # Phase 4: Lightweight post-lock monitoring
+    # -----------------------------------------------------------------------
+    await _post_lock_monitor(today)

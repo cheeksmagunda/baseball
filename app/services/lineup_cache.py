@@ -17,7 +17,7 @@ Turnover logic:
 """
 
 import logging
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,8 @@ class _LineupCache:
         self._slate_date: Optional[date] = None   # date the cached slate belongs to
         self._redis: Optional[Any] = None         # redis.Redis instance, or None
         self._redis_checked: bool = False          # avoid re-attempting a failed connection
+        self._is_frozen: bool = False             # True after T-65 freeze; blocks further writes
+        self._first_pitch_utc: Optional[datetime] = None  # earliest game start (UTC)
 
     # ---------- Redis helpers ----------
 
@@ -61,10 +63,46 @@ class _LineupCache:
     def _redis_key(self, slate_date: date) -> str:
         return f"{_REDIS_KEY_PREFIX}:{slate_date.isoformat()}"
 
+    # ---------- T-65 schedule / freeze ----------
+
+    def set_schedule(self, first_pitch_utc: datetime) -> None:
+        """Store first-pitch time so /status can expose the T-65 countdown before the freeze."""
+        self._first_pitch_utc = first_pitch_utc
+
+    def freeze(self, first_pitch_utc: datetime | None = None) -> None:
+        """
+        Freeze the cache after the T-65 final run.
+
+        From this point the cache is immutable — store() calls are no-ops
+        until clear() resets state for the next day.
+        """
+        if first_pitch_utc is not None:
+            self._first_pitch_utc = first_pitch_utc
+        self._is_frozen = True
+        logger.info("Lineup cache FROZEN — picks are locked until slate completion")
+
+    @property
+    def is_frozen(self) -> bool:
+        return self._is_frozen
+
+    @property
+    def first_pitch_utc(self) -> Optional[datetime]:
+        return self._first_pitch_utc
+
+    @property
+    def lock_time_utc(self) -> Optional[datetime]:
+        """T-65 lock target: 65 minutes (60-min window + 5-min generation buffer) before first pitch."""
+        if self._first_pitch_utc is None:
+            return None
+        return self._first_pitch_utc - timedelta(minutes=65)
+
     # ---------- public API ----------
 
     def store(self, response: Any, slate_date: date | None = None) -> None:
         """Cache in memory, Redis, and SQLite DB."""
+        if self._is_frozen:
+            logger.debug("Cache is frozen — ignoring store() call (picks are locked)")
+            return
         self._data = response
         self._slate_date = slate_date or date.today()
         payload = response.model_dump_json()
@@ -112,6 +150,8 @@ class _LineupCache:
     def clear(self) -> None:
         self._data = None
         self._slate_date = None
+        self._is_frozen = False
+        self._first_pitch_utc = None
 
     def purge(self) -> None:
         """

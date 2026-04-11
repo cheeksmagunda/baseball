@@ -7,7 +7,7 @@ the full 5-filter pipeline from the Master Strategy Document.
 
 import asyncio
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
@@ -601,8 +601,39 @@ async def build_and_cache_lineups(db: Session) -> FilterOptimizeResponse | None:
 
 @router.get("/status")
 def optimize_status():
-    """Returns whether the lineup cache is warm (startup pipeline complete)."""
-    return {"ready": lineup_cache.is_warm}
+    """
+    Returns lineup cache state and T-65 timing.
+
+    Phases:
+      no_slate    — no games scheduled today
+      before_lock — morning baseline is ready; waiting for T-65 window
+      finalizing  — T-65 has passed, final run in progress (rare race window)
+      locked      — picks are frozen; serve from cache until slate completes
+    """
+    first_pitch = lineup_cache.first_pitch_utc
+    lock_time = lineup_cache.lock_time_utc
+    now = datetime.now(timezone.utc)
+
+    if lineup_cache.is_frozen:
+        phase = "locked"
+        minutes_until_lock = None
+    elif first_pitch is not None and lock_time is not None and now < lock_time:
+        phase = "before_lock"
+        minutes_until_lock = max(0, int((lock_time - now).total_seconds() / 60))
+    elif first_pitch is not None:
+        phase = "finalizing"
+        minutes_until_lock = 0
+    else:
+        phase = "no_slate"
+        minutes_until_lock = None
+
+    return {
+        "ready": lineup_cache.is_warm,
+        "phase": phase,
+        "first_pitch_utc": first_pitch.isoformat() if first_pitch else None,
+        "lock_time_utc": lock_time.isoformat() if lock_time else None,
+        "minutes_until_lock": minutes_until_lock,
+    }
 
 
 @router.post("/optimize", response_model=FilterOptimizeResponse)
@@ -621,8 +652,35 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
     cards = req.cards
     games = req.games
 
-    # Fast path: serve pre-computed result from cache when no custom cards given
     if not cards:
+        # Frozen → serve locked picks instantly (static file mode)
+        if lineup_cache.is_frozen:
+            cached = lineup_cache.get()
+            if cached is not None:
+                return cached
+
+        # Before T-65 → tell the user to come back later with timing info
+        lock_time = lineup_cache.lock_time_utc
+        if lock_time is not None:
+            now = datetime.now(timezone.utc)
+            if now < lock_time:
+                from fastapi.responses import JSONResponse
+                minutes_until = max(0, int((lock_time - now).total_seconds() / 60))
+                return JSONResponse(
+                    status_code=425,
+                    content={
+                        "detail": (
+                            f"Picks lock at T-65 ({minutes_until} min). "
+                            "Come back closer to game time."
+                        ),
+                        "phase": "before_lock",
+                        "first_pitch_utc": lineup_cache.first_pitch_utc.isoformat(),
+                        "lock_time_utc": lock_time.isoformat(),
+                        "minutes_until_lock": minutes_until,
+                    },
+                )
+
+        # Normal fast path: serve from cache if already warm
         cached = lineup_cache.get()
         if cached is not None:
             return cached
