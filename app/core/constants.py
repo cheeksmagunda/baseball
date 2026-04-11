@@ -118,11 +118,17 @@ BOOSTED_POOL_FULL_THRESHOLD = 5
 ENV_PASS_THRESHOLD = 0.5           # env_score >= 0.5 = passes environmental filter
 
 # Game diversification (Filter 5 — V2 Law 9)
-MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup
-SAME_GAME_EXCESS_PENALTY = 0.90  # 10% penalty for 5th player from same game (softened for stacking)
+# V2.5: Max 1 player per game (matchup). Two players in the same game means
+# 40% of the lineup rides on one game outcome. Until we can reliably predict
+# highest-value performers, spread risk across games.
+MAX_PLAYERS_PER_GAME = 1         # max 1 player from any single game/matchup
+MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup (legacy, now implicit with 1-per-game)
+SAME_GAME_EXCESS_PENALTY = 0.90  # 10% penalty for excess players (legacy, kept for Moonshot soft logic)
 
 # ---------------------------------------------------------------------------
 # Team stacking constants (V2 §2 Pillar 2 — dominant on 62% of winning days)
+# NOTE: Stacking is disabled when MAX_PLAYERS_PER_GAME = 1 since a stack
+# requires 3-4 players from the same game. Kept for future re-enablement.
 # ---------------------------------------------------------------------------
 STACK_MIN_PLAYERS = 3             # minimum players from same team to form a stack
 STACK_MAX_PLAYERS = 4             # typical stack size (1-2 diversifiers from other games)
@@ -143,6 +149,11 @@ BATTER_ENV_WEAK_BULLPEN_ERA = 4.5     # opposing bullpen ERA above this = vulner
 
 # Debut/return premium (§2.3 Condition C)
 DEBUT_RETURN_EV_BONUS = 1.15          # 15% EV bonus for debut/return players
+
+# DNP risk penalty (V2.5) — batting_order=None for a batter means no
+# confirmed lineup spot.  This is the strongest pre-game DNP signal.
+# Pitchers are excluded (they're already filtered to confirmed starters).
+DNP_RISK_PENALTY = 0.70               # 30% EV haircut for batters without confirmed lineup spot
 
 # ---------------------------------------------------------------------------
 # Popularity-based EV adjustments (web-scraped FADE/TARGET/NEUTRAL)

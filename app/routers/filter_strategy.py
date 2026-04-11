@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.database import get_db
 from app.core.constants import PITCHER_POSITIONS, MOST_DRAFTED_3X_TOP_N
 from app.core.utils import find_player_by_name, get_trait_score
+from app.models.player import Player, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.schemas.scoring import TraitBreakdown
 from app.schemas.filter_strategy import (
@@ -40,6 +41,7 @@ from app.services.filter_strategy import (
 )
 from app.services.popularity import PopularityClass, get_popularity_profile
 from app.services.pipeline import run_full_pipeline
+from app.services.data_collection import fetch_player_season_stats
 from app.services.lineup_cache import lineup_cache
 
 logger = logging.getLogger(__name__)
@@ -72,12 +74,53 @@ async def _resolve_candidates(
     """
     game_by_id, team_to_game = _build_game_lookup(games)
 
-    # Stage 1: synchronous work (DB lookups, scoring, env score)
-    pre_candidates = []
+    # Stage 0: ensure every card has a Player record with real stats.
+    # Mega-ghost players (1-3 drafts) are the least likely to have existing
+    # records AND the most valuable — silently dropping them is catastrophic.
+    new_players: list[Player] = []
+    card_player_map: dict[str, Player] = {}
     for card in cards:
         player = find_player_by_name(db, card.player_name, card.team)
         if not player:
-            continue
+            player = Player(
+                name=card.player_name,
+                name_normalized=normalize_name(card.player_name),
+                team=card.team or "UNK",
+                position=card.position or "DH",
+            )
+            db.add(player)
+            db.flush()
+            new_players.append(player)
+            logger.warning(
+                "Created missing Player: %s (%s, %s) — "
+                "drafts=%s, boost=%.1f. Fetching real stats from MLB API.",
+                card.player_name, card.team, card.position,
+                card.drafts, card.card_boost,
+            )
+        card_player_map[f"{card.player_name}|{card.team}"] = player
+
+    # Fetch real stats for newly-created players — no zeros, no defaults.
+    if new_players:
+        stat_results = await asyncio.gather(
+            *[fetch_player_season_stats(db, p) for p in new_players],
+            return_exceptions=True,
+        )
+        for player, result in zip(new_players, stat_results):
+            if isinstance(result, Exception):
+                logger.error(
+                    "Stats fetch FAILED for %s (%s): %s — player will score with available data only",
+                    player.name, player.team, result,
+                )
+            else:
+                logger.info(
+                    "Fetched real stats for new player: %s (%s)",
+                    player.name, player.team,
+                )
+
+    # Stage 1: synchronous work (DB lookups, scoring, env score)
+    pre_candidates = []
+    for card in cards:
+        player = card_player_map[f"{card.player_name}|{card.team}"]
 
         is_pitcher = player.position in PITCHER_POSITIONS
 
@@ -87,6 +130,30 @@ async def _resolve_candidates(
             game = game_by_id.get(card.game_id)
         if game is None:
             game = team_to_game.get(card.team.upper())
+
+        # Two-way player detection (V2.5): if a non-pitcher is the confirmed
+        # starter for their game, treat them as a pitcher.  Ohtani is stored
+        # as "DH" but when he's on the mound he's an SP with elite batter
+        # upside — he needs to fill one of the two SP slots across both drafts.
+        if not is_pitcher and game:
+            _is_home = game.home_team.upper() == card.team.upper()
+            _starter_mlb_id = game.home_starter_mlb_id if _is_home else game.away_starter_mlb_id
+            _starter_name = game.home_starter if _is_home else game.away_starter
+            if _starter_mlb_id is not None and player.mlb_id == _starter_mlb_id:
+                is_pitcher = True
+                logger.info(
+                    "Two-way player detected: %s (%s) is confirmed starter — treating as SP",
+                    card.player_name, card.team,
+                )
+            elif _starter_name is not None:
+                _card_name = card.player_name.lower().strip()
+                _prob_name = _starter_name.lower().strip()
+                if _card_name in _prob_name or _prob_name in _card_name:
+                    is_pitcher = True
+                    logger.info(
+                        "Two-way player detected (name match): %s (%s) is confirmed starter — treating as SP",
+                        card.player_name, card.team,
+                    )
 
         # Build game-aware scoring context. Without this, batters default to
         # neutral scores on lineup_position, matchup_quality, and ballpark_factor,
@@ -240,7 +307,21 @@ async def _resolve_candidates(
             drafts=card.drafts,
             is_most_drafted_3x=card.is_most_drafted_3x,
             traits=score_result.traits,
+            batting_order=card.batting_order,
         ))
+
+    # Candidate pool health summary
+    ghost_count = sum(1 for c in candidates if c.drafts is not None and c.drafts < 100)
+    auto_include_count = sum(
+        1 for c in candidates
+        if c.drafts is not None and c.drafts < 100 and c.card_boost >= 2.5
+    )
+    logger.info(
+        "Candidate pool: %d cards in → %d candidates out "
+        "(ghosts: %d, auto-include ghost+boost: %d, dropped: %d)",
+        len(cards), len(candidates), ghost_count, auto_include_count,
+        len(cards) - len(candidates),
+    )
 
     # Dynamic is_most_drafted_3x: the DB flag is only set retrospectively by post-game
     # analysis and is always False for today's live slate.  Compute it on the fly:

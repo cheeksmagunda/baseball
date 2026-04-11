@@ -72,7 +72,9 @@ from app.core.constants import (
     SLOT1_DIFFERENTIATOR_EV_THRESHOLD,
     GHOST_ENFORCE_SWAP_THRESHOLD,
     MAX_PLAYERS_PER_TEAM,
+    MAX_PLAYERS_PER_GAME,
     STACK_BONUS,
+    DNP_RISK_PENALTY,
     BOOST_QUALITY_THRESHOLD,
     BOOSTED_POOL_FULL_THRESHOLD,
     UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
@@ -479,6 +481,7 @@ class FilteredCandidate:
     drafts: int | None = None
     is_most_drafted_3x: bool = False  # V2: 57% bust rate trap signal
     traits: list = field(default_factory=list)  # TraitScore list from scoring engine
+    batting_order: int | None = None  # 1-9 if confirmed in lineup, None = DNP risk (V2.5)
     is_in_blowout_game: bool = False  # set by run_filter_strategy before EV computation
     total_slate_drafts: int | None = None  # sum of all drafts on the slate (for dynamic thresholds)
 
@@ -552,7 +555,14 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     # Debut/return premium (first appearance → near-zero ownership + historically elite RS)
     debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
 
-    effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * 100.0
+    # DNP risk penalty (V2.5): batters without a confirmed batting order have
+    # meaningful scratch/bench risk.  A DNP zeros the entire slot.
+    # Pitchers are excluded — they are already filtered to confirmed starters.
+    dnp_adj = 1.0
+    if not candidate.is_pitcher and candidate.batting_order is None:
+        dnp_adj = DNP_RISK_PENALTY
+
+    effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * dnp_adj * 100.0
     # The composite score IS the final EV.  Do NOT multiply by (2 + card_boost)
     # again — the condition matrix HV rate and rs_prob already account for boost
     # (ghost+3.0x → 1.00 HV rate precisely because boost is baked into the
@@ -653,7 +663,9 @@ def _enforce_composition(
     ordered = auto + rest
 
     # --- Try team stacking when a blowout game exists ---
-    if slate_class.stackable_games:
+    # V2.5: Stacking requires 3-4 players from the same team/game.
+    # When MAX_PLAYERS_PER_GAME = 1, stacking is impossible — skip entirely.
+    if MAX_PLAYERS_PER_GAME > 1 and slate_class.stackable_games:
         stack = _build_team_stack(candidates, slate_class.stackable_games)
         if stack and len(stack) >= STACK_MIN_PLAYERS:
             stack_names = {c.player_name for c in stack}
@@ -690,11 +702,11 @@ def _enforce_composition(
             return lineup[:5]
 
     # --- AUTO_INCLUDE-first EV ranking ---
-    # Enforce pitcher cap during selection: at most MAX_PITCHERS_IN_LINEUP pitchers
-    # are allowed into the initial 5 slots.  Without this guard, if pitchers dominate
-    # the top of the EV ranking the post-selection validation may silently fail to
-    # find a replacement (e.g. when all non-pitchers are already in the lineup).
+    # Enforce pitcher cap AND game cap during selection: at most
+    # MAX_PITCHERS_IN_LINEUP pitchers and MAX_PLAYERS_PER_GAME players per
+    # game are allowed into the initial 5 slots.
     pitchers_added = 0
+    games_used: dict[int | str | None, int] = {}
     lineup = []
     for c in ordered:
         if len(lineup) == 5:
@@ -703,6 +715,11 @@ def _enforce_composition(
             if pitchers_added >= MAX_PITCHERS_IN_LINEUP:
                 continue  # skip extra pitchers; they stay in ordered for replacement use
             pitchers_added += 1
+        # V2.5: enforce max players per game during selection
+        if c.game_id is not None:
+            if games_used.get(c.game_id, 0) >= MAX_PLAYERS_PER_GAME:
+                continue
+            games_used[c.game_id] = games_used.get(c.game_id, 0) + 1
         lineup.append(c)
     lineup = _validate_lineup_structure(lineup, ordered)
     pitcher_count = sum(1 for c in lineup if c.is_pitcher)
@@ -858,6 +875,48 @@ def _validate_lineup_structure(
                         replacement.player_name, replacement.team,
                     )
 
+    # Rule 3b: Max N players per game/matchup (V2.5 game diversification)
+    # Prevents over-concentration in a single game's outcome.
+    # Two players in the same game = 40% of lineup on one game.
+    from collections import Counter as _GameCounter
+    game_counts = _GameCounter(c.game_id for c in lineup if c.game_id is not None)
+    for game_id, count in game_counts.items():
+        if count > MAX_PLAYERS_PER_GAME:
+            # Find indices of players in this game, sorted by EV descending
+            game_indices = sorted(
+                [i for i, c in enumerate(lineup) if c.game_id == game_id],
+                key=lambda i: lineup[i].filter_ev,
+                reverse=True,
+            )
+            lineup_names = {c.player_name for c in lineup}
+            # Keep the top MAX_PLAYERS_PER_GAME, replace the rest
+            for idx in game_indices[MAX_PLAYERS_PER_GAME:]:
+                current_game_counts = _GameCounter(
+                    c.game_id for c in lineup if c.game_id is not None
+                )
+                current_pitcher_count = sum(1 for c in lineup if c.is_pitcher)
+                removing_pitcher = lineup[idx].is_pitcher
+                replacement = next(
+                    (c for c in all_candidates_sorted
+                     if c.player_name not in lineup_names
+                     and (c.game_id is None
+                          or current_game_counts.get(c.game_id, 0) < MAX_PLAYERS_PER_GAME)
+                     and (not c.is_pitcher or removing_pitcher
+                          or current_pitcher_count < MAX_PITCHERS_IN_LINEUP)),
+                    None,
+                )
+                if replacement:
+                    removed_name = lineup[idx].player_name
+                    removed_game = lineup[idx].game_id
+                    lineup_names.discard(removed_name)
+                    lineup[idx] = replacement
+                    lineup_names.add(replacement.player_name)
+                    logger.info(
+                        "Game cap (max %d per game): replaced %s (game=%s) with %s (game=%s)",
+                        MAX_PLAYERS_PER_GAME, removed_name, removed_game,
+                        replacement.player_name, replacement.game_id,
+                    )
+
     # Rule 4: Max 1 starting pitcher (V2.3) — FINAL SWEEP
     # This runs LAST so no subsequent rule can reintroduce pitchers.
     # Ghost+boost batter edge outweighs a second SP slot. Excess pitchers are
@@ -904,11 +963,11 @@ def _apply_game_diversification(
     lineup: list[FilteredCandidate],
 ) -> list[str]:
     """
-    Check game diversification (V2 Law 9).
+    Check game diversification (V2.5).
 
-    V2 endorses stacking 3-4 players from the same team/game.
-    Only apply soft penalty for 5th player from same game (full concentration).
-    Warn if all 5 are in 1 game.
+    V2.5: max 1 player per game enforced during composition and validation.
+    This function now serves as a safety-net warning if any violations leaked
+    through, plus reports game spread for diagnostics.
     """
     warnings = []
     if not lineup:
@@ -922,24 +981,26 @@ def _apply_game_diversification(
 
     games_represented = len(game_counts) if game_counts else 0
 
-    if games_represented < MIN_GAMES_REPRESENTED and len(lineup) >= 5:
-        warnings.append(
-            f"Only {games_represented} game(s) represented. "
-            f"Strategy recommends at least {MIN_GAMES_REPRESENTED}."
-        )
-
-    # V2: Only penalize 5th player from same game — stacking 3-4 is correct
+    # Safety-net: warn if any game has more than the cap (shouldn't happen
+    # after _enforce_composition + _validate_lineup_structure, but belt+suspenders).
     for gid, count in game_counts.items():
-        if count >= 5:
+        if count > MAX_PLAYERS_PER_GAME:
             warnings.append(
-                f"All 5 players from game {gid}. Consider 1-2 diversifiers."
+                f"Game {gid} has {count} players (cap={MAX_PLAYERS_PER_GAME}). "
+                f"Game diversification may not have been fully enforced."
             )
-            # Soft penalty only on the lowest-EV player from the concentrated game
+            # Soft penalty on excess as fallback
             game_players = sorted(
                 [c for c in lineup if c.game_id == gid],
                 key=lambda c: c.filter_ev,
             )
-            game_players[0].filter_ev *= SAME_GAME_EXCESS_PENALTY
+            for p in game_players[:count - MAX_PLAYERS_PER_GAME]:
+                p.filter_ev *= SAME_GAME_EXCESS_PENALTY
+
+    logger.info(
+        "Game diversification: %d games represented across %d players",
+        games_represented, len(lineup),
+    )
 
     return warnings
 
@@ -1212,7 +1273,12 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     anti_crowd = _moonshot_popularity_adj(candidate.popularity)
     debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
 
-    effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * 100.0
+    # DNP risk penalty (V2.5) — same as Starting 5
+    dnp_adj = 1.0
+    if not candidate.is_pitcher and candidate.batting_order is None:
+        dnp_adj = DNP_RISK_PENALTY
+
+    effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * dnp_adj * 100.0
     # Same fix as _compute_filter_ev: boost is already in the condition matrix
     # and rs_prob — do not multiply by (2 + card_boost) again.
     base_ev = effective_score
