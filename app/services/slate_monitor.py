@@ -215,7 +215,7 @@ async def _post_lock_monitor(today: date) -> None:
 # Fallback: status-polling monitor (no scheduled_game_time in DB)
 # ---------------------------------------------------------------------------
 
-async def _fallback_status_monitor() -> None:
+async def _fallback_status_monitor(monitor_date: date | None = None) -> None:
     """
     Fallback monitor when scheduled_game_time is unavailable for all games.
 
@@ -231,7 +231,7 @@ async def _fallback_status_monitor() -> None:
     from app.services.pipeline import run_full_pipeline
     from app.services.data_collection import fetch_schedule_for_date
 
-    today = date.today()
+    today = monitor_date or date.today()
     prev_remaining: int | None = None
     frozen = False
     tomorrow_warmed = False
@@ -354,24 +354,28 @@ async def targeted_slate_monitor(
         await startup_done_event.wait()
         logger.info("Startup pipeline done — T-65 monitor proceeding")
 
-    today = date.today()
-
     # -----------------------------------------------------------------------
-    # Phase 1: Determine first pitch time from the DB
+    # Phase 1: Determine the active slate date and first pitch time
     # -----------------------------------------------------------------------
+    # Use the same active-date logic as the startup pipeline so the monitor
+    # targets tomorrow's slate when today's games are already complete.
     db = SessionLocal()
     try:
-        first_pitch_utc = _get_first_pitch_utc(db, today)
+        from app.routers.filter_strategy import _get_active_slate_date
+        monitor_date = _get_active_slate_date(db)
+        first_pitch_utc = _get_first_pitch_utc(db, monitor_date)
     finally:
         db.close()
+
+    logger.info("T-65 monitor targeting date: %s", monitor_date)
 
     if first_pitch_utc is None:
         logger.warning(
             "No scheduled_game_time values found for %s — "
             "activating fallback status-polling monitor",
-            today,
+            monitor_date,
         )
-        await _fallback_status_monitor()
+        await _fallback_status_monitor(monitor_date)
         return
 
     lock_time_utc = first_pitch_utc - timedelta(minutes=LOCK_MINUTES_BEFORE_PITCH)
@@ -410,7 +414,7 @@ async def targeted_slate_monitor(
     db = SessionLocal()
     try:
         try:
-            await run_full_pipeline(db, today)
+            await run_full_pipeline(db, monitor_date)
             logger.info("T-%d pipeline complete", LOCK_MINUTES_BEFORE_PITCH)
         except Exception as exc:
             logger.error(
@@ -432,7 +436,7 @@ async def targeted_slate_monitor(
                     "Falling back to status monitor.",
                     LOCK_MINUTES_BEFORE_PITCH,
                 )
-                await _fallback_status_monitor()
+                await _fallback_status_monitor(monitor_date)
                 return
         except Exception as exc:
             logger.error(
@@ -445,4 +449,4 @@ async def targeted_slate_monitor(
     # -----------------------------------------------------------------------
     # Phase 4: Lightweight post-lock monitoring
     # -----------------------------------------------------------------------
-    await _post_lock_monitor(today)
+    await _post_lock_monitor(monitor_date)
