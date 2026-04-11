@@ -213,16 +213,59 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
 
 **Old constants removed:** `MIN_SCORE_PENALTY`, `BOOST_NO_ENV_PENALTY` (replaced by `MIN_SCORE_PENALTY_FLOOR`, `BOOST_NO_ENV_PENALTY_FLOOR`).
 
-### Lineup Construction (Pure EV — 1 pitcher cap)
-Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. V2.3 caps at 1 SP: ghost+boost batter edge outweighs a second pitcher slot. **No "day types" force composition.** `SLATE_COMPOSITION` was removed entirely.
+### V3.0 Changes (April 11 — Game Theory & Probabilistic Architecture)
 
-1. **Blowout game detected** (moneyline ≥ -200): Try team stack from ghost pool → fill 1-2 diversifiers from other games
-2. **All other slates**: Pure EV ranking. Take the best-EV SP + 4 highest-EV batters. EV decides everything within the 1-pitcher cap.
+**Philosophy shift:** From heuristic rule engine to probabilistic options-pricing model. The system now treats DFS picks as options contracts: a +3.0x boost is an "in-the-money" option (low strike price), a 0.0x boost is "at-the-money," and the crowd's information asymmetry is the "implied volatility."
 
-### Lineup Validation (V2.4)
-- Max 1 mega-chalk (2000+ drafts) player
-- Min 1 ghost (<100 drafts) player: first seek env-passing ghost, fallback to mega-ghost+3x boost even without env pass
-- **Max 1 starting pitcher** — excess pitchers replaced by best non-pitcher from candidate pool
+**Pillar 1 — Bayesian Dead Capital (`app/services/condition_classifier.py`)**
+- Replaced DEAD_CAPITAL hard-blocks (returned 0.0) with Laplace-smoothed Bayesian floors.
+- Uses Beta-Binomial conjugate prior (alpha=1, beta=1): `posterior = (successes + 1) / (trials + 2)`.
+- 0/34 observations → floor of 0.028 (not 0.0). 0/8 → floor of 0.10.
+- Added `CONDITION_OBSERVATIONS` and `PITCHER_CONDITION_OBSERVATIONS` matrices tracking (successes, trials) per cell for principled updating.
+- `LEGACY_DEAD_CAPITAL_CONDITIONS` retained for logging/reference only.
+- ML model (`ml_model.py`) can now contribute signal for all conditions — the `matrix_rate == 0.0` early-return is removed.
+
+**Pillar 2 — Bifurcated Environmental Module (`app/services/filter_strategy.py`)**
+- `compute_batter_env_score()` now returns `(env_score, factors, unknown_count)` — tracking how many environmental factors were missing (None) vs. confirmed bad.
+- Three-tier DNP handling replaces the single `DNP_RISK_PENALTY = 0.70`:
+  - `DNP_RISK_PENALTY = 0.70`: Confirmed bad (lineup published, player absent) — 30% haircut
+  - `DNP_UNKNOWN_PENALTY = 0.85`: Unknown (lineup not published, many missing factors) — 15% haircut
+  - `DNP_GHOST_UNKNOWN_PENALTY = 0.92`: Ghost unknown (data scarcity expected) — 8% haircut
+- `FilteredCandidate` carries `env_unknown_count` for downstream use.
+- Ghost players with missing batting orders no longer receive the same penalty as chalk players with published lineups.
+
+**Pillar 3 — Percentile-Based Ownership Tiers (`app/services/condition_classifier.py`)**
+- `get_ownership_tier()` now uses empirical CDF percentiles as the primary path (when slate distribution is available):
+  - Ghost: bottom 15%, Low: 15-35%, Medium: 35-65%, Chalk: 65-90%, Mega-chalk: top 10% + drafts > 3x median
+- Absolute draft-count thresholds (`GHOST_DRAFT_THRESHOLD = 100`, etc.) are fallbacks only.
+- Mega-chalk requires both percentile rank AND absolute floor (`MEGA_CHALK_MEDIAN_MULTIPLE = 3.0`) to prevent false positives on thin slates.
+- `most_drafted_3x` now scales with slate size: top 30% of the 3x-boost pool, clamped [3, 7].
+- Meta-game monitoring: `compute_draft_entropy()` and `compute_gini_coefficient()` logged per slate. Sustained entropy increase = ghost edge compression warning.
+
+**Pillar 4 — Dynamic Pitcher Cap (`app/services/filter_strategy.py`)**
+- `compute_dynamic_pitcher_cap()` replaces the rigid `MAX_PITCHERS_IN_LINEUP = 1`.
+- Rich boosted pool (>= 5 quality cards): cap at 1 pitcher (ghost+boost batter edge dominates).
+- Thin boosted pool (< 5 quality cards): cap at 2 pitchers (unboosted SPs have 93% positive RS, avg 5.4).
+- Applied independently to Starting 5 and Moonshot lineups.
+- `_enforce_composition()` and `_validate_lineup_structure()` accept `pitcher_cap` parameter.
+
+**New constants (`app/core/constants.py`):**
+- `DNP_UNKNOWN_PENALTY = 0.85`, `DNP_GHOST_UNKNOWN_PENALTY = 0.92`
+- `OWNERSHIP_PERCENTILE_GHOST = 0.15`, `OWNERSHIP_PERCENTILE_LOW = 0.35`, `OWNERSHIP_PERCENTILE_MEDIUM = 0.65`, `OWNERSHIP_PERCENTILE_CHALK = 0.90`
+- `MEGA_CHALK_MEDIAN_MULTIPLE = 3.0`
+- `MOST_DRAFTED_3X_MIN_N = 3`, `MOST_DRAFTED_3X_MAX_N = 7`, `MOST_DRAFTED_3X_PROPORTION = 0.30`
+- `MAX_PITCHERS_THIN_POOL = 2`
+
+### Lineup Construction (Pure EV — dynamic pitcher cap)
+Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. V3.0 uses dynamic cap: 1 SP when boosted pool is rich, 2 SP when thin. **No "day types" force composition.** `SLATE_COMPOSITION` was removed entirely.
+
+1. **Blowout game detected** (moneyline >= -200): Try team stack from ghost pool -> fill 1-2 diversifiers from other games
+2. **All other slates**: Pure EV ranking. EV decides everything within the dynamic pitcher cap.
+
+### Lineup Validation (V3.0)
+- Max 1 mega-chalk (top 10% percentile + 3x median drafts) player
+- Min 1 ghost (bottom 15% percentile) player: first seek env-passing ghost, fallback to mega-ghost+3x boost even without env pass
+- **Dynamic pitcher cap** (1 or 2) — excess pitchers replaced by best non-pitcher from candidate pool
 - Slot 1 Differentiator: swap consensus Slot 1 for contrarian if EV loss <10%
 
 ### Slate Classification (informational only — does NOT force composition)

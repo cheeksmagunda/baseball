@@ -75,14 +75,56 @@ from app.core.constants import (
     MAX_PLAYERS_PER_GAME,
     STACK_BONUS,
     DNP_RISK_PENALTY,
+    DNP_UNKNOWN_PENALTY,
+    DNP_GHOST_UNKNOWN_PENALTY,
     BOOST_QUALITY_THRESHOLD,
     BOOSTED_POOL_FULL_THRESHOLD,
     UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
+    MAX_PITCHERS_THIN_POOL,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score
 from app.services.popularity import PopularityClass
 
 logger = logging.getLogger(__name__)
+
+
+def compute_dynamic_pitcher_cap(candidates: list) -> int:
+    """Compute the maximum number of pitchers allowed in a lineup.
+
+    V3.0: Replaces the rigid MAX_PITCHERS_IN_LINEUP = 1 with a knapsack-style
+    approach based on "Boost Pool Richness."
+
+    Logic:
+    1. Count the number of quality-boosted batters available
+       (boost >= BOOST_QUALITY_THRESHOLD and env_score >= ENV_PASS_THRESHOLD).
+    2. If the pool is rich (>= BOOSTED_POOL_FULL_THRESHOLD quality cards),
+       cap at 1 pitcher — ghost+boost batter edge outweighs a 2nd SP.
+    3. If the pool is thin (< BOOSTED_POOL_FULL_THRESHOLD), allow 2 pitchers —
+       unboosted pitchers (93% positive RS, avg 5.4) are the best unboosted
+       option and shouldn't be excluded when quality boosted alternatives
+       don't exist.
+
+    Returns: 1 or 2 (the dynamic pitcher cap for this slate).
+    """
+    quality_boosted_batters = sum(
+        1 for c in candidates
+        if not c.is_pitcher
+        and c.card_boost >= BOOST_QUALITY_THRESHOLD
+        and c.env_score >= ENV_PASS_THRESHOLD
+    )
+
+    if quality_boosted_batters >= BOOSTED_POOL_FULL_THRESHOLD:
+        logger.info(
+            "V3.0 dynamic pitcher cap: 1 (rich pool: %d quality boosted batters)",
+            quality_boosted_batters,
+        )
+        return MAX_PITCHERS_IN_LINEUP  # 1
+    else:
+        logger.info(
+            "V3.0 dynamic pitcher cap: %d (thin pool: only %d quality boosted batters, need %d)",
+            MAX_PITCHERS_THIN_POOL, quality_boosted_batters, BOOSTED_POOL_FULL_THRESHOLD,
+        )
+        return MAX_PITCHERS_THIN_POOL  # 2
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +300,7 @@ class EnvironmentalProfile:
     is_pitcher: bool = False
     env_score: float = 0.5  # 0-1.0; >0.5 = passes environmental filter
     env_factors: list[str] = field(default_factory=list)
+    env_unknown_count: int = 0  # V3.0: how many factors were missing (unknown vs bad)
 
     # Pitcher-specific
     opp_team_ops: float | None = None
@@ -358,9 +401,14 @@ def compute_batter_env_score(
     temperature_f: int | None = None,
     team_moneyline: int | None = None,
     opp_bullpen_era: float | None = None,
-) -> tuple[float, list[str]]:
+) -> tuple[float, list[str], int]:
     """
     Compute environmental score for a batter (0-1.0).
+
+    V3.0: Returns a third value, `unknown_count`, tracking how many environmental
+    factors were missing (None) vs. confirmed bad.  This enables the pipeline to
+    distinguish "data scarcity" from "genuinely bad conditions" — critical for
+    ghost-tier players where missing data is expected, not a negative signal.
 
     V2 §4 batter filters:
     - Playing in high Vegas total game (O/U >= 8.5)
@@ -373,6 +421,7 @@ def compute_batter_env_score(
     """
     score = 0.0
     factors = []
+    unknown_count = 0  # V3.0: track missing data factors
     max_score = 7.0  # 7 factors (added bullpen vulnerability)
 
     # 1. High Vegas total (run environment)
@@ -382,6 +431,8 @@ def compute_batter_env_score(
             factors.append(f"High-run environment (O/U={vegas_total:.1f})")
         elif vegas_total >= 7.5:
             score += 0.5
+    else:
+        unknown_count += 1
 
     # 2. Weak opposing starter
     if opp_pitcher_era is not None:
@@ -390,6 +441,8 @@ def compute_batter_env_score(
             factors.append(f"Weak opposing starter (ERA={opp_pitcher_era:.2f})")
         elif opp_pitcher_era >= 4.0:
             score += 0.5
+    else:
+        unknown_count += 1
 
     # 3. Platoon advantage
     if platoon_advantage:
@@ -397,12 +450,17 @@ def compute_batter_env_score(
         factors.append("Platoon advantage")
 
     # 4. Top of lineup (V2 says top 5)
+    # V3.0: Missing batting order is tracked as unknown, not penalized as bad.
+    # The DNP risk penalty in _compute_filter_ev() handles the lineup risk
+    # separately with ghost-awareness (DNP_GHOST_UNKNOWN_PENALTY).
     if batting_order is not None:
         if batting_order <= BATTER_ENV_TOP_LINEUP:
             score += 1.0
             factors.append(f"Top of lineup (bats #{batting_order})")
         elif batting_order <= 6:
             score += 0.5
+    else:
+        unknown_count += 1
 
     # 5. Hitter-friendly park + favorable weather (combined, capped at 1.0)
     f5 = 0.0
@@ -434,12 +492,10 @@ def compute_batter_env_score(
         elif team_moneyline < -120:
             score += 0.5
             factors.append(f"Moneyline favorite (ML={team_moneyline})")
+    else:
+        unknown_count += 1
 
     # 7. Vulnerable opposing bullpen (high ERA = late-game upside)
-    # Starting pitchers only pitch ~5-6 innings; batters get 1-2 PAs against the
-    # bullpen in the 7th-9th innings where high-leverage runs are generated.
-    # A great starter with a terrible bullpen behind him is still a favorable
-    # environment for batters — the crowd only looks at the starter.
     if opp_bullpen_era is not None:
         if opp_bullpen_era >= BATTER_ENV_WEAK_BULLPEN_ERA:
             score += 1.0
@@ -447,14 +503,19 @@ def compute_batter_env_score(
         elif opp_bullpen_era >= BATTER_ENV_WEAK_BULLPEN_ERA - 0.5:
             score += 0.5
             factors.append(f"Below-avg bullpen (ERA={opp_bullpen_era:.2f})")
+    else:
+        unknown_count += 1
 
     # Debut/return bonus
     if is_debut_or_return:
         score += 0.5
         factors.append("Debut/return premium")
 
+    if unknown_count > 0:
+        factors.append(f"V3.0: {unknown_count} unknown factor(s) (data scarcity, not bad env)")
+
     env_score = min(1.0, score / max_score)
-    return env_score, factors
+    return env_score, factors, unknown_count
 
 
 
@@ -473,6 +534,7 @@ class FilteredCandidate:
     total_score: float  # 0-100 from scoring engine
     env_score: float    # 0-1.0 from environmental filter
     env_factors: list[str] = field(default_factory=list)
+    env_unknown_count: int = 0  # V3.0: how many env factors were missing data
     popularity: PopularityClass = PopularityClass.NEUTRAL  # web-scraped
     is_debut_or_return: bool = False
     game_id: int | str | None = None  # for diversification tracking
@@ -555,12 +617,24 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     # Debut/return premium (first appearance → near-zero ownership + historically elite RS)
     debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
 
-    # DNP risk penalty (V2.5): batters without a confirmed batting order have
-    # meaningful scratch/bench risk.  A DNP zeros the entire slot.
-    # Pitchers are excluded — they are already filtered to confirmed starters.
+    # V3.0: Bifurcated DNP risk — separate "confirmed bad" from "unknown."
+    # Ghost players missing a batting order face data scarcity, not a genuinely
+    # bad matchup.  Penalizing them at the same rate as chalk players with
+    # published lineups is asymmetrically wrong for high-boost convex payouts.
     dnp_adj = 1.0
     if not candidate.is_pitcher and candidate.batting_order is None:
-        dnp_adj = DNP_RISK_PENALTY
+        is_ghost = candidate.drafts is not None and candidate.drafts < GHOST_DRAFT_THRESHOLD
+        # High unknown count means the env_score depression is from missing data,
+        # not from confirmed bad conditions — apply lighter penalty.
+        if is_ghost:
+            dnp_adj = DNP_GHOST_UNKNOWN_PENALTY
+        elif candidate.env_unknown_count >= 3:
+            # Many unknowns = lineup/data not yet published, not confirmed bad
+            dnp_adj = DNP_UNKNOWN_PENALTY
+        else:
+            # Few unknowns + no batting order = lineup is likely published and
+            # this player isn't in it → genuine DNP risk
+            dnp_adj = DNP_RISK_PENALTY
 
     effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * dnp_adj * 100.0
     # The composite score IS the final EV.  Do NOT multiply by (2 + card_boost)
@@ -633,6 +707,7 @@ def _build_team_stack(
 def _enforce_composition(
     candidates: list[FilteredCandidate],
     slate_class: SlateClassification,
+    pitcher_cap: int = MAX_PITCHERS_IN_LINEUP,
 ) -> list[FilteredCandidate]:
     """
     AUTO_INCLUDE-first lineup construction. No position forcing. No "day types."
@@ -641,6 +716,8 @@ def _enforce_composition(
     0P/5H, 1P/4H, 2P/3H, 3P/2H, 4P/1H, 5P/0H — all won on different days.
     The ONLY constant: ghost+boost players (< 100 drafts, boost ≥ 2.5) win at
     82–100% HV rate regardless of position or env score.
+
+    V3.0: pitcher_cap is now dynamic (1 for rich boosted pools, 2 for thin).
 
     Construction logic:
     1. Separate candidates into AUTO_INCLUDE (ghost+elite boost) and rest.
@@ -677,10 +754,10 @@ def _enforce_composition(
             ]
             spots_left = 5 - len(stack)
             # Stack is always hitters (_build_team_stack excludes pitchers).
-            # Diversifier slots should allow at most MAX_PITCHERS_IN_LINEUP
+            # Diversifier slots should allow at most pitcher_cap
             # pitchers total across the whole lineup.
             stack_pitcher_count = sum(1 for c in stack if c.is_pitcher)
-            pitchers_allowed = max(0, MAX_PITCHERS_IN_LINEUP - stack_pitcher_count)
+            pitchers_allowed = max(0, pitcher_cap - stack_pitcher_count)
             div_pitchers = 0
             filtered_diversifiers: list[FilteredCandidate] = []
             for c in diversifiers:
@@ -692,18 +769,18 @@ def _enforce_composition(
                     div_pitchers += 1
                 filtered_diversifiers.append(c)
             lineup = list(stack) + filtered_diversifiers
-            lineup = _validate_lineup_structure(lineup, ordered)
+            lineup = _validate_lineup_structure(lineup, ordered, pitcher_cap=pitcher_cap)
             pitcher_count = sum(1 for c in lineup if c.is_pitcher)
             logger.info(
-                "Stack construction: %d stack + %d diversifiers = %dP/%dH (auto_include: %d)",
+                "Stack construction: %d stack + %d diversifiers = %dP/%dH (auto_include: %d, pitcher_cap: %d)",
                 len(stack), len(lineup) - len(stack),
-                pitcher_count, 5 - pitcher_count, len(auto),
+                pitcher_count, 5 - pitcher_count, len(auto), pitcher_cap,
             )
             return lineup[:5]
 
     # --- AUTO_INCLUDE-first EV ranking ---
     # Enforce pitcher cap AND game cap during selection: at most
-    # MAX_PITCHERS_IN_LINEUP pitchers and MAX_PLAYERS_PER_GAME players per
+    # pitcher_cap pitchers and MAX_PLAYERS_PER_GAME players per
     # game are allowed into the initial 5 slots.
     pitchers_added = 0
     games_used: dict[int | str | None, int] = {}
@@ -712,7 +789,7 @@ def _enforce_composition(
         if len(lineup) == 5:
             break
         if c.is_pitcher:
-            if pitchers_added >= MAX_PITCHERS_IN_LINEUP:
+            if pitchers_added >= pitcher_cap:
                 continue  # skip extra pitchers; they stay in ordered for replacement use
             pitchers_added += 1
         # V2.5: enforce max players per game during selection
@@ -721,11 +798,11 @@ def _enforce_composition(
                 continue
             games_used[c.game_id] = games_used.get(c.game_id, 0) + 1
         lineup.append(c)
-    lineup = _validate_lineup_structure(lineup, ordered)
+    lineup = _validate_lineup_structure(lineup, ordered, pitcher_cap=pitcher_cap)
     pitcher_count = sum(1 for c in lineup if c.is_pitcher)
     logger.info(
-        "EV-driven composition: %dP/%dH (candidates: %d, auto_include: %d)",
-        pitcher_count, 5 - pitcher_count, len(candidates), len(auto),
+        "EV-driven composition: %dP/%dH (candidates: %d, auto_include: %d, pitcher_cap: %d)",
+        pitcher_count, 5 - pitcher_count, len(candidates), len(auto), pitcher_cap,
     )
     return lineup
 
@@ -733,6 +810,7 @@ def _enforce_composition(
 def _validate_lineup_structure(
     lineup: list[FilteredCandidate],
     all_candidates_sorted: list[FilteredCandidate],
+    pitcher_cap: int = MAX_PITCHERS_IN_LINEUP,
 ) -> list[FilteredCandidate]:
     """
     V2 §5 Step 6 Final Check — enforce anchor/ghost structure.
@@ -742,9 +820,12 @@ def _validate_lineup_structure(
     - 2-3 differentiators (ghost players ranks 2-8 don't have)
     - 1 flex
 
+    V3.0: pitcher_cap is now dynamic (1 for rich pools, 2 for thin).
+
     Validation rules:
     - Max 1 mega-chalk (2000+ drafts) player
     - Try to include at least 1 ghost (< 100 drafts) player
+    - Max pitcher_cap starting pitchers
     """
     if len(lineup) < 5:
         return lineup
@@ -779,7 +860,7 @@ def _validate_lineup_structure(
         lineup_names = {c.player_name for c in lineup}
         # Respect pitcher cap: only allow a ghost pitcher if the lineup has room
         pitcher_count_now = sum(1 for c in lineup if c.is_pitcher)
-        can_add_pitcher = pitcher_count_now < MAX_PITCHERS_IN_LINEUP
+        can_add_pitcher = pitcher_count_now < pitcher_cap
 
         def _ghost_ok(c: FilteredCandidate) -> bool:
             if c.player_name in lineup_names:
@@ -860,7 +941,7 @@ def _validate_lineup_structure(
                      if c.player_name not in lineup_names
                      and current_team_counts.get(c.team, 0) < MAX_PLAYERS_PER_TEAM
                      and (not c.is_pitcher or removing_pitcher
-                          or current_pitcher_count < MAX_PITCHERS_IN_LINEUP)),
+                          or current_pitcher_count < pitcher_cap)),
                     None,
                 )
                 if replacement:
@@ -902,7 +983,7 @@ def _validate_lineup_structure(
                      and (c.game_id is None
                           or current_game_counts.get(c.game_id, 0) < MAX_PLAYERS_PER_GAME)
                      and (not c.is_pitcher or removing_pitcher
-                          or current_pitcher_count < MAX_PITCHERS_IN_LINEUP)),
+                          or current_pitcher_count < pitcher_cap)),
                     None,
                 )
                 if replacement:
@@ -917,16 +998,16 @@ def _validate_lineup_structure(
                         replacement.player_name, replacement.game_id,
                     )
 
-    # Rule 4: Max 1 starting pitcher (V2.3) — FINAL SWEEP
+    # Rule 4: Max pitcher_cap starting pitchers (V3.0 dynamic, V2.3 was hard 1) — FINAL SWEEP
     # This runs LAST so no subsequent rule can reintroduce pitchers.
-    # Ghost+boost batter edge outweighs a second SP slot. Excess pitchers are
-    # replaced by the highest-EV non-pitchers from the candidate pool.
+    # When boosted pool is rich, cap=1 (ghost+boost batter edge dominates).
+    # When thin, cap=2 (unboosted pitchers are the best alternative).
     pitcher_indices = [i for i, c in enumerate(lineup) if c.is_pitcher]
-    if len(pitcher_indices) > MAX_PITCHERS_IN_LINEUP:
-        # Keep the single highest-EV pitcher; replace the rest
+    if len(pitcher_indices) > pitcher_cap:
+        # Keep the top pitcher_cap highest-EV pitchers; replace the rest
         pitcher_indices_by_ev = sorted(pitcher_indices, key=lambda i: lineup[i].filter_ev, reverse=True)
         lineup_names = {c.player_name for c in lineup}
-        for idx in pitcher_indices_by_ev[MAX_PITCHERS_IN_LINEUP:]:
+        for idx in pitcher_indices_by_ev[pitcher_cap:]:
             replacement = next(
                 (c for c in all_candidates_sorted
                  if c.player_name not in lineup_names and not c.is_pitcher),
@@ -939,7 +1020,7 @@ def _validate_lineup_structure(
                 lineup_names.add(replacement.player_name)
                 logger.info(
                     "Pitcher cap (max %d): replaced pitcher %s (EV=%.2f) with batter %s (EV=%.2f)",
-                    MAX_PITCHERS_IN_LINEUP, removed.player_name, removed.filter_ev,
+                    pitcher_cap, removed.player_name, removed.filter_ev,
                     replacement.player_name, replacement.filter_ev,
                 )
             else:
@@ -1170,11 +1251,23 @@ def run_filter_strategy(
             slate_classification=slate_classification,
         )
 
-    # Compute total slate draft volume for dynamic ownership thresholds.
-    # On a 3-game slate draft counts are concentrated; on a 15-game slate they're
-    # diluted.  Passing the slate total lets get_ownership_tier() use percentage-
-    # based thresholds instead of fixed draft counts.
-    total_slate_drafts = sum(c.drafts for c in candidates if c.drafts is not None) or None
+    # V3.0: Compute slate draft distribution for percentile-based ownership tiers.
+    # The full distribution enables empirical CDF classification instead of
+    # arbitrary absolute thresholds.  Also compute meta-game health metrics.
+    draft_counts = [c.drafts for c in candidates if c.drafts is not None]
+    total_slate_drafts = sum(draft_counts) if draft_counts else None
+
+    # V3.0: Meta-game monitoring — log distribution health metrics.
+    # Sustained entropy increase over consecutive slates = ghost edge compression.
+    if draft_counts:
+        from app.services.condition_classifier import compute_draft_entropy, compute_gini_coefficient
+        entropy = compute_draft_entropy(draft_counts)
+        gini = compute_gini_coefficient(draft_counts)
+        logger.info(
+            "V3.0 meta-game monitor: entropy=%.3f bits, gini=%.3f, "
+            "slate_players=%d, total_drafts=%s",
+            entropy, gini, len(draft_counts), total_slate_drafts,
+        )
 
     # Mark blowout-game players before EV computation so _compute_filter_ev()
     # can apply the stack_bonus without needing slate_classification as a parameter.
@@ -1190,6 +1283,9 @@ def run_filter_strategy(
     # Step 1: Compute filter-adjusted EV (4-term condition-based formula)
     for c in candidates:
         c.filter_ev = _compute_filter_ev(c)
+
+    # V3.0: Compute dynamic pitcher cap before composition enforcement
+    dynamic_pitcher_cap = compute_dynamic_pitcher_cap(candidates)
 
     # Step 1b: Unboosted pitcher penalty when boosted pool is rich (V2 §4.3).
     # Historical data (4/2 onward): zero unboosted pitchers in rank-1 lineups
@@ -1211,8 +1307,8 @@ def run_filter_strategy(
                     c.filter_ev,
                 )
 
-    # Step 2: Enforce composition (pitcher/hitter counts)
-    lineup = _enforce_composition(candidates, slate_classification)
+    # Step 2: Enforce composition (pitcher/hitter counts) with dynamic pitcher cap
+    lineup = _enforce_composition(candidates, slate_classification, pitcher_cap=dynamic_pitcher_cap)
 
     # Step 3: Game diversification check
     warnings = _apply_game_diversification(lineup)
@@ -1273,10 +1369,16 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     anti_crowd = _moonshot_popularity_adj(candidate.popularity)
     debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
 
-    # DNP risk penalty (V2.5) — same as Starting 5
+    # V3.0: Bifurcated DNP risk — same logic as Starting 5
     dnp_adj = 1.0
     if not candidate.is_pitcher and candidate.batting_order is None:
-        dnp_adj = DNP_RISK_PENALTY
+        is_ghost = candidate.drafts is not None and candidate.drafts < GHOST_DRAFT_THRESHOLD
+        if is_ghost:
+            dnp_adj = DNP_GHOST_UNKNOWN_PENALTY
+        elif candidate.env_unknown_count >= 3:
+            dnp_adj = DNP_UNKNOWN_PENALTY
+        else:
+            dnp_adj = DNP_RISK_PENALTY
 
     effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * dnp_adj * 100.0
     # Same fix as _compute_filter_ev: boost is already in the condition matrix
@@ -1350,8 +1452,11 @@ def run_dual_filter_strategy(
             if c.is_pitcher and c.card_boost < BOOST_QUALITY_THRESHOLD:
                 c.filter_ev *= UNBOOSTED_PITCHER_RICH_POOL_PENALTY
 
+    # V3.0: Dynamic pitcher cap for moonshot pool (independent of Starting 5)
+    moonshot_pitcher_cap = compute_dynamic_pitcher_cap(moonshot_pool)
+
     # Enforce composition and build moonshot lineup
-    moonshot_lineup = _enforce_composition(moonshot_pool, slate_classification)
+    moonshot_lineup = _enforce_composition(moonshot_pool, slate_classification, pitcher_cap=moonshot_pitcher_cap)
     moonshot_warnings = _apply_game_diversification(moonshot_lineup)
     moonshot_boost_warnings = _apply_boost_diversification(moonshot_lineup)
     moonshot_warnings.extend(moonshot_boost_warnings)

@@ -13,7 +13,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.core.constants import PITCHER_POSITIONS, MOST_DRAFTED_3X_TOP_N
+from app.core.constants import (
+    PITCHER_POSITIONS,
+    MOST_DRAFTED_3X_TOP_N,
+    MOST_DRAFTED_3X_MIN_N,
+    MOST_DRAFTED_3X_MAX_N,
+    MOST_DRAFTED_3X_PROPORTION,
+)
 from app.core.utils import find_player_by_name, get_trait_score
 from app.models.player import Player, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
@@ -222,6 +228,7 @@ async def _resolve_candidates(
                 is_home=is_home,
                 is_debut_or_return=card.is_debut_or_return,
             )
+            env_unknown_count = 0  # pitchers are confirmed starters; env data is reliable
         elif not is_pitcher and game:
             is_home = game.home_team.upper() == card.team.upper()
             opp_era = game.away_starter_era if is_home else game.home_starter_era
@@ -232,7 +239,7 @@ async def _resolve_candidates(
             # Bullpen vulnerability: the opposing team's bullpen ERA
             opp_bp_era = game.away_bullpen_era if is_home else game.home_bullpen_era
 
-            env_score, env_factors = compute_batter_env_score(
+            env_score, env_factors, env_unknown_count = compute_batter_env_score(
                 vegas_total=game.vegas_total,
                 opp_pitcher_era=opp_era,
                 platoon_advantage=card.platoon_advantage,
@@ -248,6 +255,7 @@ async def _resolve_candidates(
         else:
             env_score = 0.5
             env_factors = ["No game environment data available"]
+            env_unknown_count = 7  # V3.0: all factors unknown
 
         game_id = card.game_id
         if game_id is None and game is not None:
@@ -260,6 +268,7 @@ async def _resolve_candidates(
             "score_result": score_result,
             "env_score": env_score,
             "env_factors": env_factors,
+            "env_unknown_count": env_unknown_count,
             "game_id": game_id,
         })
 
@@ -299,6 +308,7 @@ async def _resolve_candidates(
             total_score=score_result.total_score,
             env_score=pre["env_score"],
             env_factors=pre["env_factors"],
+            env_unknown_count=pre.get("env_unknown_count", 0),
             popularity=pop_class,
             is_debut_or_return=card.is_debut_or_return,
             game_id=pre["game_id"],
@@ -324,19 +334,25 @@ async def _resolve_candidates(
     )
 
     # Dynamic is_most_drafted_3x: the DB flag is only set retrospectively by post-game
-    # analysis and is always False for today's live slate.  Compute it on the fly:
-    # mark the top-N most-drafted players with boost >= 3.0 so the V2.3 env-aware
-    # trap penalty actually fires.  Matches the ~5-per-day historical pattern.
+    # analysis and is always False for today's live slate.  Compute it on the fly.
+    # V3.0: Scale with slate size — flag top 30% of the 3x-boost pool, clamped
+    # between MIN_N and MAX_N.  On a thin 2-game slate with 10 3x players,
+    # the 5th-most-drafted might have 80 drafts (a ghost being punished as chalk).
+    # Proportional scaling prevents this.
     boost3_by_drafts = sorted(
         [c for c in candidates if c.card_boost >= 3.0 and c.drafts is not None],
         key=lambda c: c.drafts,
         reverse=True,
     )
-    for c in boost3_by_drafts[:MOST_DRAFTED_3X_TOP_N]:
+    dynamic_top_n = max(
+        MOST_DRAFTED_3X_MIN_N,
+        min(MOST_DRAFTED_3X_MAX_N, int(len(boost3_by_drafts) * MOST_DRAFTED_3X_PROPORTION)),
+    )
+    for c in boost3_by_drafts[:dynamic_top_n]:
         c.is_most_drafted_3x = True
         logger.debug(
-            "Dynamic is_most_drafted_3x: %s (drafts=%s, boost=%.1f)",
-            c.player_name, c.drafts, c.card_boost,
+            "Dynamic is_most_drafted_3x: %s (drafts=%s, boost=%.1f) [top_n=%d of %d 3x players]",
+            c.player_name, c.drafts, c.card_boost, dynamic_top_n, len(boost3_by_drafts),
         )
 
     return candidates

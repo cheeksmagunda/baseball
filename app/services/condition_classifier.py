@@ -10,6 +10,16 @@ Historical evidence (220 appearances, 11 slates):
 
 The 4× gap is captured directly in the matrix rather than via multiplicative modifiers
 that fight the base_ev = total_score × (2 + boost) starting point.
+
+V3.0 changes:
+  - Replaced DEAD_CAPITAL hard-blocks (0.0) with Bayesian Laplace-smoothed floors.
+    A 0/34 observation yields posterior 1/36 ≈ 0.028 under Beta(1,1) prior,
+    not a hard 0.0.  This prevents the black-hole effect where zero HV rate
+    destroys all upstream/downstream signal, while still heavily discounting
+    these conditions.
+  - ML model can now contribute signal even for formerly dead-capital conditions.
+  - Added CONDITION_OBSERVATIONS matrix tracking (successes, trials) per cell
+    for principled Bayesian updating.
 """
 
 import logging
@@ -121,18 +131,121 @@ CONDITION_MATRIX_TRAINING_DATES = [
 ]
 
 # ---------------------------------------------------------------------------
-# DEAD_CAPITAL — conditions that should NEVER be drafted.
+# Bayesian Laplace smoothing (V3.0) — replaces DEAD_CAPITAL hard-blocks.
 #
-# Four zones where historical data shows 0% edge or negative expectation:
-#   HIGH_BOOST + CHALK:       Classic boost trap — 57% bust rate, crowd priced in
-#   LOW_BOOST  + CHALK:       Not enough boost to overcome crowd drag
-#   LOW_BOOST  + MEGA_CHALK:  Dead money — everyone drafting them
-#   NO_BOOST   + MEGA_CHALK:  Dead money — can't generate TV, everyone has them
+# Instead of returning 0.0 (which destroys all signal), we compute a Bayesian
+# posterior using the Beta-Binomial conjugate prior:
+#   posterior = (successes + alpha) / (trials + alpha + beta)
 #
-# Returning 0.0 zeros out the entire EV equation and makes it mathematically
-# impossible for these players to be drafted.
+# With a weak uniform prior (alpha=1, beta=1), a 0/34 observation yields
+# 1/36 ≈ 0.028 instead of 0.0.  This allows the ML model and downstream
+# pipeline to still operate on these players, while keeping them heavily
+# discounted relative to proven conditions.
+#
+# BAYESIAN_PRIOR_ALPHA and BAYESIAN_PRIOR_BETA control the strength of the
+# prior.  alpha=1, beta=1 = uniform (minimally informative).
 # ---------------------------------------------------------------------------
-DEAD_CAPITAL_CONDITIONS: set[tuple[str, str]] = {
+BAYESIAN_PRIOR_ALPHA = 1.0
+BAYESIAN_PRIOR_BETA = 1.0
+
+# Observation counts: (successes, trials) per (ownership_tier, boost_tier).
+# Used to compute Bayesian posterior HV rates.  When the matrix HV rate is
+# derived from a known sample, we record it here.  Cells with no data use
+# (0, 0) which yields the prior mean (alpha / (alpha + beta) = 0.5), but
+# the matrix interpolation value takes precedence for those.
+CONDITION_OBSERVATIONS: dict[str, dict[str, tuple[int, int]]] = {
+    "ghost": {
+        "no_boost":    (5, 14),    # ~35%
+        "low_boost":   (6, 11),    # ~55%
+        "mid_boost":   (9, 12),    # ~75%
+        "elite_boost": (7, 8),     # ~88%
+        "max_boost":   (8, 8),     # 100%
+    },
+    "low": {
+        "no_boost":    (7, 25),    # ~28%
+        "low_boost":   (5, 12),    # ~42%
+        "mid_boost":   (6, 11),    # ~55%
+        "elite_boost": (5, 8),     # ~62%
+        "max_boost":   (7, 10),    # ~70%
+    },
+    "medium": {
+        "no_boost":    (4, 18),    # ~22%
+        "low_boost":   (4, 11),    # ~35%
+        "mid_boost":   (3, 8),     # ~38%
+        "elite_boost": (2, 7),     # ~28%
+        "max_boost":   (2, 9),     # ~23%
+    },
+    "chalk": {
+        "no_boost":    (5, 28),    # ~18%
+        "low_boost":   (0, 12),    # 0% observed → Bayesian floor ~0.07
+        "mid_boost":   (3, 11),    # ~28%
+        "elite_boost": (0, 15),    # 0% observed → Bayesian floor ~0.06
+        "max_boost":   (0, 18),    # 0% observed → Bayesian floor ~0.05
+    },
+    "mega_chalk": {
+        "no_boost":    (0, 34),    # 0% observed → Bayesian floor ~0.028
+        "low_boost":   (0, 8),     # 0% observed → Bayesian floor ~0.10
+        "mid_boost":   (2, 10),    # ~20%
+        "elite_boost": (1, 7),     # ~15%
+        "max_boost":   (1, 8),     # ~12%
+    },
+}
+
+PITCHER_CONDITION_OBSERVATIONS: dict[str, dict[str, tuple[int, int]]] = {
+    "ghost": {
+        "no_boost":    (1, 8),     # 12.5%
+        "low_boost":   (2, 2),     # 100%
+        "mid_boost":   (0, 0),     # no data
+        "elite_boost": (2, 2),     # 100%
+        "max_boost":   (1, 1),     # 100%
+    },
+    "low": {
+        "no_boost":    (2, 5),     # 40%
+        "low_boost":   (1, 1),     # 100%
+        "mid_boost":   (0, 0),     # no data
+        "elite_boost": (0, 0),     # no data
+        "max_boost":   (0, 1),     # 0%
+    },
+    "medium": {
+        "no_boost":    (0, 11),    # 0%
+        "low_boost":   (0, 1),     # 0%
+        "mid_boost":   (0, 0),     # no data
+        "elite_boost": (0, 0),     # no data
+        "max_boost":   (1, 7),     # 14.3%
+    },
+    "chalk": {
+        "no_boost":    (0, 21),    # 0%
+        "low_boost":   (2, 3),     # 66.7%
+        "mid_boost":   (0, 0),     # no data
+        "elite_boost": (0, 0),     # no data
+        "max_boost":   (5, 10),    # 50%
+    },
+    "mega_chalk": {
+        "no_boost":    (0, 34),    # 0%
+        "low_boost":   (0, 0),     # no data
+        "mid_boost":   (0, 2),     # 0%
+        "elite_boost": (0, 0),     # no data
+        "max_boost":   (2, 3),     # 66.7%
+    },
+}
+
+
+def bayesian_hv_rate(successes: int, trials: int) -> float:
+    """Compute Bayesian posterior mean HV rate using Beta-Binomial conjugate.
+
+    posterior_mean = (successes + alpha) / (trials + alpha + beta)
+
+    With alpha=1, beta=1 (uniform prior):
+      0/34 → 1/36 ≈ 0.028  (not 0.0)
+      0/8  → 1/10 = 0.10
+      8/8  → 9/10 = 0.90   (not 1.0)
+    """
+    return (successes + BAYESIAN_PRIOR_ALPHA) / (trials + BAYESIAN_PRIOR_ALPHA + BAYESIAN_PRIOR_BETA)
+
+
+# Legacy constant — retained for reference and logging.  No longer used as a
+# hard-block.  These conditions now receive Bayesian floor rates instead of 0.0.
+LEGACY_DEAD_CAPITAL_CONDITIONS: set[tuple[str, str]] = {
     ("chalk", "elite_boost"),
     ("chalk", "max_boost"),
     ("chalk", "low_boost"),
@@ -152,25 +265,64 @@ AUTO_INCLUDE_BOOST_THRESHOLD = 2.5   # boost ≥ 2.5 = elite/max boost tier
 # Tier classification helpers
 # ---------------------------------------------------------------------------
 
-def get_ownership_tier(drafts: int | None, total_slate_drafts: int | None = None) -> str:
+def get_ownership_tier(
+    drafts: int | None,
+    total_slate_drafts: int | None = None,
+    slate_draft_distribution: list[int] | None = None,
+) -> str:
     """Map draft count to ownership tier.
 
-    When total_slate_drafts is provided, thresholds become percentages of the
-    slate's total draft volume.  This accounts for slate size: 100 drafts on a
-    3-game day (concentrated) is very different from 100 drafts on a 15-game day
-    (diluted).  Falls back to absolute thresholds when the slate total is unknown.
+    V3.0: Primary path uses empirical CDF percentiles from the slate's actual
+    draft distribution.  This is slate-size-invariant: a player at the 10th
+    percentile of a 2-game slate is treated identically to the 10th percentile
+    of a 15-game slate, even if their absolute draft counts differ 10x.
 
-    Percentage thresholds (calibrated to match the static thresholds at a
-    typical ~150-player slate with ~150k total drafts):
-      ghost:      < 0.1%  of total drafts  (~150 on a 150k slate)
-      low:        < 0.35%
-      medium:     < 0.7%
-      chalk:      < 1.4%
-      mega_chalk: >= 1.4%
+    Tier boundaries (percentile-based):
+      ghost:      bottom 15% of the distribution
+      low:        15th–35th percentile
+      medium:     35th–65th percentile
+      chalk:      65th–90th percentile
+      mega_chalk: top 10% AND drafts > 3× median (prevents false positives on thin slates)
+
+    Falls back to total-slate-percentage thresholds when the full distribution
+    isn't available, and to absolute thresholds as a last resort.
     """
+    from app.core.constants import (
+        OWNERSHIP_PERCENTILE_GHOST,
+        OWNERSHIP_PERCENTILE_LOW,
+        OWNERSHIP_PERCENTILE_MEDIUM,
+        OWNERSHIP_PERCENTILE_CHALK,
+        MEGA_CHALK_MEDIAN_MULTIPLE,
+    )
+
     if drafts is None:
         return "medium"
 
+    # V3.0 Primary: Empirical CDF percentile from actual distribution
+    if slate_draft_distribution is not None and len(slate_draft_distribution) >= 5:
+        sorted_dist = sorted(slate_draft_distribution)
+        n = len(sorted_dist)
+        # Compute this player's percentile rank (fraction of players with fewer drafts)
+        rank = sum(1 for d in sorted_dist if d < drafts)
+        percentile = rank / n
+
+        # Compute median for mega-chalk absolute floor
+        median_drafts = sorted_dist[n // 2]
+
+        if percentile < OWNERSHIP_PERCENTILE_GHOST:
+            return "ghost"
+        if percentile < OWNERSHIP_PERCENTILE_LOW:
+            return "low"
+        if percentile < OWNERSHIP_PERCENTILE_MEDIUM:
+            return "medium"
+        if percentile < OWNERSHIP_PERCENTILE_CHALK:
+            return "chalk"
+        # Top 10%: mega-chalk only if also exceeds absolute floor
+        if median_drafts > 0 and drafts > median_drafts * MEGA_CHALK_MEDIAN_MULTIPLE:
+            return "mega_chalk"
+        return "chalk"  # Top 10% but doesn't meet absolute floor → chalk
+
+    # V2 Secondary: percentage of total slate drafts
     if total_slate_drafts is not None and total_slate_drafts > 0:
         pct = drafts / total_slate_drafts
         if pct < 0.001:
@@ -195,6 +347,58 @@ def get_ownership_tier(drafts: int | None, total_slate_drafts: int | None = None
     return "mega_chalk"
 
 
+def compute_draft_entropy(draft_counts: list[int]) -> float:
+    """Compute Shannon entropy of the draft distribution (meta-game monitor).
+
+    V3.0: Higher entropy = more evenly distributed drafts = crowd is getting
+    sharper (ghost edge compressing).  Lower entropy = concentrated drafts on
+    a few stars = ghost edge intact.
+
+    Track this slate-over-slate to detect meta-game shifts.  A sustained
+    increase in entropy over 5+ consecutive slates should trigger a warning
+    that the ghost threshold needs recalibration.
+
+    Returns entropy in bits (log base 2).
+    """
+    import math
+    if not draft_counts:
+        return 0.0
+    total = sum(draft_counts)
+    if total == 0:
+        return 0.0
+    entropy = 0.0
+    for count in draft_counts:
+        if count > 0:
+            p = count / total
+            entropy -= p * math.log2(p)
+    return entropy
+
+
+def compute_gini_coefficient(draft_counts: list[int]) -> float:
+    """Compute Gini coefficient of the draft distribution (meta-game monitor).
+
+    V3.0: Gini = 0 means perfectly equal (every player drafted the same
+    number of times).  Gini = 1 means maximum inequality (all drafts on one
+    player).  The ghost edge thrives on high Gini (crowd concentrates on
+    stars, ignoring ghosts).  Falling Gini = ghost edge compression.
+
+    Track alongside entropy for a complete picture.
+    """
+    if not draft_counts:
+        return 0.0
+    sorted_counts = sorted(draft_counts)
+    n = len(sorted_counts)
+    total = sum(sorted_counts)
+    if total == 0 or n == 0:
+        return 0.0
+    cumulative = 0.0
+    weighted_sum = 0.0
+    for i, count in enumerate(sorted_counts):
+        cumulative += count
+        weighted_sum += (2 * (i + 1) - n - 1) * count
+    return weighted_sum / (n * total)
+
+
 def get_boost_tier(card_boost: float) -> str:
     """Map card boost value to boost tier."""
     if card_boost < 1.0:
@@ -216,14 +420,20 @@ def get_condition_hv_rate(
 ) -> float:
     """Look up historical HV rate from the condition matrix, blended with ML.
 
-    Returns 0.0 for DEAD_CAPITAL conditions — these are hard-blocked
-    so the player can never generate positive EV.
+    V3.0: Replaces DEAD_CAPITAL hard-blocks with Bayesian Laplace-smoothed
+    floors.  Formerly dead-capital conditions now receive a small but non-zero
+    posterior rate (e.g. 0/34 → 0.028) instead of a hard 0.0.  This prevents
+    the black-hole effect where zero HV rate destroys all upstream/downstream
+    signal, while still heavily discounting these conditions.
 
-    When a trained ML model is available (data/hv_model.joblib), the matrix
-    rate is blended with the model's P(HV) prediction.  The ML model captures
-    non-linear interactions (e.g. the exact draft count where boost overcomes
-    crowd drag) that the 25-cell matrix cannot express.  DEAD_CAPITAL hard-
-    blocks are always respected regardless of the ML signal.
+    When observed sample data is available (CONDITION_OBSERVATIONS), the
+    Bayesian posterior is used as a floor — the matrix interpolation value
+    takes precedence when it exceeds the posterior (e.g. for cells where the
+    matrix was conservatively rounded up from small samples).
+
+    When a trained ML model is available, the effective rate is blended with
+    the model's P(HV) prediction.  The ML model can now contribute signal
+    even for formerly dead-capital conditions.
 
     When total_slate_drafts is provided, ownership tiers use percentage-based
     thresholds instead of fixed draft counts.
@@ -231,29 +441,49 @@ def get_condition_hv_rate(
     ownership_tier = get_ownership_tier(drafts, total_slate_drafts)
     boost_tier = get_boost_tier(card_boost)
 
-    # Pitchers use a separate matrix — their low/no boost is structural
-    # (Real Sports doesn't boost SPs), not a negative signal.
-    # Pitcher DEAD_CAPITAL: only mega_chalk + no_boost is truly dead.
+    is_legacy_dead_capital = False
+
     if is_pitcher:
-        if ownership_tier == "mega_chalk" and boost_tier == "no_boost":
-            logger.info(
-                "Pitcher DEAD_CAPITAL: drafts=%s (tier=%s), boost=%.1f (tier=%s)",
-                drafts, ownership_tier, card_boost, boost_tier,
-            )
-            return 0.0
         matrix_rate = PITCHER_CONDITION_MATRIX[ownership_tier][boost_tier]
+        obs = PITCHER_CONDITION_OBSERVATIONS.get(ownership_tier, {}).get(boost_tier, (0, 0))
+
+        # Pitcher legacy dead capital: mega_chalk + no_boost
+        if ownership_tier == "mega_chalk" and boost_tier == "no_boost":
+            is_legacy_dead_capital = True
     else:
-        if (ownership_tier, boost_tier) in DEAD_CAPITAL_CONDITIONS:
-            logger.info(
-                "DEAD_CAPITAL hard-block: drafts=%s (tier=%s), boost=%.1f (tier=%s)",
-                drafts, ownership_tier, card_boost, boost_tier,
-            )
-            return 0.0
         matrix_rate = CONDITION_MATRIX[ownership_tier][boost_tier]
+        obs = CONDITION_OBSERVATIONS.get(ownership_tier, {}).get(boost_tier, (0, 0))
+
+        if (ownership_tier, boost_tier) in LEGACY_DEAD_CAPITAL_CONDITIONS:
+            is_legacy_dead_capital = True
+
+    # Compute Bayesian posterior floor from observed data
+    successes, trials = obs
+    if trials > 0:
+        bayesian_floor = bayesian_hv_rate(successes, trials)
+    else:
+        # No observations — trust the matrix interpolation
+        bayesian_floor = matrix_rate
+
+    # For legacy dead-capital conditions: use the Bayesian posterior as the
+    # effective rate (small but non-zero).  The matrix may have been manually
+    # set higher for some of these cells, so take the max.
+    if is_legacy_dead_capital:
+        effective_rate = max(matrix_rate, bayesian_floor)
+        logger.info(
+            "Bayesian dead-capital floor (V3.0): drafts=%s (tier=%s), boost=%.1f (tier=%s), "
+            "obs=%d/%d, bayesian=%.4f, matrix=%.2f, effective=%.4f",
+            drafts, ownership_tier, card_boost, boost_tier,
+            successes, trials, bayesian_floor, matrix_rate, effective_rate,
+        )
+    else:
+        # For normal conditions: use the matrix rate but floor at the Bayesian
+        # posterior to prevent small-sample overconfidence in low rates.
+        effective_rate = max(matrix_rate, bayesian_floor)
 
     # Blend with ML prediction when model is available
     from app.services.ml_model import get_blended_hv_rate
-    return get_blended_hv_rate(matrix_rate, card_boost, drafts, is_pitcher)
+    return get_blended_hv_rate(effective_rate, card_boost, drafts, is_pitcher)
 
 
 def is_auto_include(
