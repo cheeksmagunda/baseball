@@ -240,6 +240,7 @@ async def _resolve_candidates(
             drafts=card.drafts,
             is_most_drafted_3x=card.is_most_drafted_3x,
             traits=score_result.traits,
+            batting_order=card.batting_order,
         ))
 
     # Dynamic is_most_drafted_3x: the DB flag is only set retrospectively by post-game
