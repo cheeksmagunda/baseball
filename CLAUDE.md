@@ -109,7 +109,7 @@ Web-scraping signal aggregator that estimates which players the crowd will over-
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V2.4 "Anchor, Differentiate, Stack"** — based on 15 days of historical data (V2.4: April 9 ghost-boost pipeline fixes).
+**Strategy Version: V3.2 "Correlate, Differentiate, Distribute"** — V3.2: cross-lineup correlation, three-tier composition, env tiebreaker, MAX_PLAYERS_PER_TEAM=1.
 
 The active optimizer produces **two lineups** from the same candidate pool via `run_dual_filter_strategy`.
 
@@ -256,6 +256,42 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
 - `MOST_DRAFTED_3X_MIN_N = 3`, `MOST_DRAFTED_3X_MAX_N = 7`, `MOST_DRAFTED_3X_PROPORTION = 0.30`
 - `MAX_PITCHERS_THIN_POOL = 2`
 
+### V3.2 Changes (April 11 — Cross-Lineup Correlation & Within-Tier Differentiation)
+
+**Context**: April 10th simulation showed optimizer captures ~10 of top 17 performers. Root causes: (a) all ghost+max_boost candidates have identical condition_hv_rate=1.00, leaving within-tier differentiation to noisy rs_prob alone; (b) ghost+mid_boost players (HV rate 0.75) blocked by binary 2.5 threshold; (c) no mechanism to capture correlated upside across two lineups when MAX_PLAYERS_PER_TEAM=1.
+
+**Change 1 — MAX_PLAYERS_PER_TEAM=1, MAX_PLAYERS_PER_GAME=2** (`app/core/constants.py`)
+- Hard constraint: max 1 player per team per individual lineup (Starting 5 or Moonshot).
+- MAX_PLAYERS_PER_GAME lowered from 3 to 2.
+- Within-lineup stacking disabled. Correlation captured cross-lineup via Change 3.
+- _build_team_stack() path in _enforce_composition() auto-skipped (MAX_PLAYERS_PER_TEAM < STACK_MIN_PLAYERS).
+
+**Change 2 — Three-Tier Lineup Construction: auto → soft_auto → rest** (`app/services/condition_classifier.py`, `app/services/filter_strategy.py`)
+- New `is_soft_auto_include()`: ghost tier + boost >= 2.0 (but < 2.5).
+- Ghost+mid_boost historical HV rate = 0.75 — excellent but below auto-include's 0.88-1.00.
+- Three-tier ordering in `_enforce_composition()`: auto-include fills first, then soft_auto, then rest by filter_ev.
+- Captures James Wood (Apr 10: 52 drafts, 2.0x, TV 16.8) who was missed by the binary 2.5 threshold.
+- New constant: `SOFT_AUTO_INCLUDE_BOOST_THRESHOLD = 2.0`.
+
+**Change 3 — Cross-Lineup Correlation Awareness** (`app/services/filter_strategy.py`)
+- `_identify_correlation_groups()`: finds teams with 2+ ghost players.
+- `correlation_bonus` field on FilteredCandidate, set before EV computation.
+- Ghost players on correlation teams get +10% EV (2 ghosts) or +15% EV (3+ ghosts).
+- Moonshot: ghost teammate of a Starting 5 player gets +20% BONUS (replaces -15% penalty).
+- Example: TOR has Vlad (56 drafts) + Schneider (7 drafts) → S5 gets one, Moonshot gets the other.
+- New constants: `CORRELATION_GHOST_MIN_PLAYERS=2`, `CORRELATION_EV_BONUS=1.10`, `CORRELATION_EV_BONUS_3PLUS=1.15`, `MOONSHOT_CORRELATION_TEAMMATE_BONUS=1.20`.
+
+**Change 4 — Environmental Tiebreaker for Auto-Include Tier** (`app/services/filter_strategy.py`)
+- When condition_hv_rate >= 0.85, add up to +15% EV based on env_score.
+- Differentiates among ghost+max_boost candidates: confirmed lineup spot at Coors > unknown order at Petco.
+- Applied in both `_compute_filter_ev()` and `_compute_moonshot_filter_ev()`.
+- New constants: `ENV_TIEBREAKER_BONUS_MAX=0.15`, `ENV_TIEBREAKER_HV_THRESHOLD=0.85`.
+
+**Change 5 — Ghost+Boost Pitcher Cap Expansion** (`app/services/filter_strategy.py`)
+- `compute_dynamic_pitcher_cap()`: when ghost+boost pitcher exists (drafts < 100, boost >= 2.5), cap raised to 2 even in rich batter pools.
+- Captures Walker Buehler-type plays (low-tier pitcher with max boost, TV 29.5).
+- Without this, ghost+boost pitchers lose to ghost+boost batters and get excluded.
+
 ### V3.1 Changes (April 11 — Empirical Calibration from April 6-9 Data)
 
 **Fix 1 — Pitcher Exemption for Most-Drafted-3x Trap** (`app/routers/filter_strategy.py`)
@@ -311,16 +347,22 @@ Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. V3.0 uses dyn
 
 **Key functions (filter_strategy.py):**
 - `run_filter_strategy()` — Starting 5
-- `run_dual_filter_strategy()` — One call, two lineups
-- `_compute_filter_ev()` — Starting 5 EV with all V2.4 filters
-- `_compute_moonshot_filter_ev()` — Moonshot-specific EV
+- `run_dual_filter_strategy()` — One call, two lineups (V3.2: cross-lineup correlation)
+- `_compute_filter_ev()` — Starting 5 EV with env tiebreaker (V3.2)
+- `_compute_moonshot_filter_ev()` — Moonshot-specific EV with env tiebreaker (V3.2)
+- `_identify_correlation_groups()` — V3.2: finds teams with 2+ ghost players for cross-lineup distribution
+- `compute_dynamic_pitcher_cap()` — V3.2: allows 2 pitchers when ghost+boost SP exists
 - `_graduated_score_penalty()` — V2.2: linear score penalty (replaces binary cliff)
 - `_graduated_env_penalty()` — V2.2: linear env penalty (replaces binary cliff)
 - `_apply_ghost_boost_ev_floor()` — V2.4: env-independent floor (boost≥2.5, drafts<100, score=30)
-- `_build_team_stack()` — Ghost-pool team stacking for hitter/stack days
-- `_enforce_composition()` — V2 three-path construction (stack / EV / backfill)
+- `_build_team_stack()` — Ghost-pool team stacking (V3.2: skipped when MAX_PLAYERS_PER_TEAM=1)
+- `_enforce_composition()` — V3.2: three-tier (auto/soft_auto/rest) with team cap=1
 - `_validate_lineup_structure()` — Max 1 mega-chalk, min 1 ghost (V2.4: fallback to mega-ghost+3x)
 - `_smart_slot_assignment()` — Slot sequencing (unboosted first)
+
+**Key functions (condition_classifier.py):**
+- `is_auto_include()` — Ghost + boost >= 2.5 (primary edge)
+- `is_soft_auto_include()` — V3.2: Ghost + boost >= 2.0 (second tier, HV rate 0.75)
 
 **Key functions (routers/filter_strategy.py):**
 - `_resolve_candidates()` — Builds candidate pool; V2.4 dynamically sets `is_most_drafted_3x` for top-5 boost=3.0 players by draft count

@@ -128,14 +128,17 @@ ENV_PASS_THRESHOLD = 0.5           # env_score >= 0.5 = passes environmental fil
 # The cap applies to TEAMMATES from the same game.  Opponents in the same game
 # are restricted to 1 total (negative correlation: if one team's SP dominates,
 # the other team's batters suffer).  See MAX_OPPONENTS_SAME_GAME.
-MAX_PLAYERS_PER_GAME = 3         # max 3 teammates from any single game
+MAX_PLAYERS_PER_GAME = 2         # V3.2: max 2 players from any single game (was 3 in V3.1)
 MAX_OPPONENTS_SAME_GAME = 1      # max 1 player from the opposing side of the same game
 MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup
 SAME_GAME_EXCESS_PENALTY = 0.90  # 10% penalty for 4th+ player from same game
 
 # ---------------------------------------------------------------------------
 # Team stacking constants (V2 §2 Pillar 2 — dominant on 62% of winning days)
-# V3.1: Stacking re-enabled now that MAX_PLAYERS_PER_GAME = 3.
+# V3.2: Within-lineup stacking disabled (MAX_PLAYERS_PER_TEAM=1).
+# Correlation value now captured cross-lineup via CORRELATION_* constants.
+# These constants retained for _build_team_stack() which is skipped when
+# MAX_PLAYERS_PER_TEAM < STACK_MIN_PLAYERS.
 # ---------------------------------------------------------------------------
 STACK_MIN_PLAYERS = 3             # minimum players from same team to form a stack
 STACK_MAX_PLAYERS = 4             # typical stack size (1-2 diversifiers from other games)
@@ -267,7 +270,7 @@ MAX_MEGA_CHALK_IN_LINEUP = 1          # max 1 player with 2000+ drafts
 MIN_GHOST_IN_LINEUP = 1              # min 1 ghost player (< 100 drafts)
 # Ghost enforcement: replace worst lineup player with a ghost if ghost EV >= this fraction
 GHOST_ENFORCE_SWAP_THRESHOLD = 0.50  # was 0.70 — lowered so ghost inclusion actually fires
-MAX_PLAYERS_PER_TEAM = 3             # V3.1: raised from 1 to 3 to allow team stacking (62% of winning days)
+MAX_PLAYERS_PER_TEAM = 1             # V3.2: 1 per team per individual lineup; correlation handled cross-lineup
 # V3.0: Dynamic pitcher cap — replaces hard MAX_PITCHERS_IN_LINEUP = 1.
 # When the boosted batter pool is rich (>= BOOSTED_POOL_FULL_THRESHOLD quality
 # cards), cap at 1 pitcher — the ghost+boost batter edge outweighs a 2nd SP.
@@ -316,5 +319,30 @@ SLOT1_DIFFERENTIATOR_EV_THRESHOLD = 0.90  # Only swap if contrarian within 10% E
 #   At env=0.5 → 0.775 (22% haircut)
 #   At env=1.0 → 0.90 (10% haircut — ace with perfect environment)
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# V3.2 constants: Soft auto-include, correlation, env tiebreaker
+# ---------------------------------------------------------------------------
+
+# Soft auto-include: ghost players with mid_boost (2.0-2.5) get priority over
+# non-ghost candidates but after full auto-include (ghost + boost >= 2.5).
+# Historical ghost+mid_boost HV rate = 0.75 — excellent, but not auto-tier 1.00.
+# Captures players like James Wood (52 drafts, 2.0x, TV 16.8 on Apr 10).
+SOFT_AUTO_INCLUDE_BOOST_THRESHOLD = 2.0  # ghost + boost >= 2.0 = soft auto-include
+
+# Cross-lineup correlation: when a team has 2+ ghost players, they're likely
+# in the same game environment.  Distributing one to Starting 5 and one to
+# Moonshot captures correlated upside across both lineups.
+CORRELATION_GHOST_MIN_PLAYERS = 2        # min ghost players on same team to trigger
+CORRELATION_EV_BONUS = 1.10              # +10% EV for ghost players on correlation teams
+CORRELATION_EV_BONUS_3PLUS = 1.15        # +15% EV when 3+ ghost teammates exist
+MOONSHOT_CORRELATION_TEAMMATE_BONUS = 1.20  # +20% EV (replaces the -15% same-team penalty)
+
+# Environmental tiebreaker for auto-include tier (condition_hv_rate >= 0.85).
+# All ghost+max_boost look identical at condition_hv_rate=1.00.  This uses
+# env_score to differentiate: a ghost+max player confirmed batting 3rd in Coors
+# should rank above one with unknown batting order in Petco.
+ENV_TIEBREAKER_BONUS_MAX = 0.15          # up to +15% EV based on env_score
+ENV_TIEBREAKER_HV_THRESHOLD = 0.85       # only apply to high-HV-rate candidates
+
 UNBOOSTED_PITCHER_RICH_POOL_PENALTY = 0.65      # worst-case (env=0.0) — 35% haircut
 UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL = 0.90  # best-case (env=1.0) — 10% haircut
