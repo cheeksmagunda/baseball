@@ -131,6 +131,30 @@ async def _resolve_candidates(
         if game is None:
             game = team_to_game.get(card.team.upper())
 
+        # Two-way player detection (V2.5): if a non-pitcher is the confirmed
+        # starter for their game, treat them as a pitcher.  Ohtani is stored
+        # as "DH" but when he's on the mound he's an SP with elite batter
+        # upside — he needs to fill one of the two SP slots across both drafts.
+        if not is_pitcher and game:
+            _is_home = game.home_team.upper() == card.team.upper()
+            _starter_mlb_id = game.home_starter_mlb_id if _is_home else game.away_starter_mlb_id
+            _starter_name = game.home_starter if _is_home else game.away_starter
+            if _starter_mlb_id is not None and player.mlb_id == _starter_mlb_id:
+                is_pitcher = True
+                logger.info(
+                    "Two-way player detected: %s (%s) is confirmed starter — treating as SP",
+                    card.player_name, card.team,
+                )
+            elif _starter_name is not None:
+                _card_name = card.player_name.lower().strip()
+                _prob_name = _starter_name.lower().strip()
+                if _card_name in _prob_name or _prob_name in _card_name:
+                    is_pitcher = True
+                    logger.info(
+                        "Two-way player detected (name match): %s (%s) is confirmed starter — treating as SP",
+                        card.player_name, card.team,
+                    )
+
         # Build game-aware scoring context. Without this, batters default to
         # neutral scores on lineup_position, matchup_quality, and ballpark_factor,
         # causing unboosted pitchers (whose ERA/K-rate come from season stats) to
