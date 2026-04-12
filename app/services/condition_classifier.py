@@ -101,21 +101,21 @@ PITCHER_CONDITION_MATRIX: dict[str, dict[str, float]] = {
         "low_boost":   0.15,   # 0/1 small sample
         "mid_boost":   0.20,   # no data, interpolate
         "elite_boost": 0.25,   # no data, interpolate
-        "max_boost":   0.14,   # 1/7 = 14.3%
+        "max_boost":   0.11,   # 1/9 = 11.1% — Apr 11: Walker (NOT HV), Lopez (NOT HV)
     },
     "chalk": {
         "no_boost":    0.05,   # 0/21 = 0% — round up for small sample
         "low_boost":   0.67,   # 2/3 = 66.7% — boosted chalk SPs can hit
         "mid_boost":   0.40,   # no data, interpolate
         "elite_boost": 0.45,   # no data, interpolate
-        "max_boost":   0.50,   # 5/10 = 50% — better than batter chalk+max
+        "max_boost":   0.42,   # 5/12 = 41.7% — Apr 11: Sheehan (NOT HV), Bassitt (NOT HV)
     },
     "mega_chalk": {
-        "no_boost":    0.02,   # 0/34 = 0% — dead money
+        "no_boost":    0.02,   # 0/35 = 0% — dead money. Apr 11: Fried (NOT HV)
         "low_boost":   0.10,   # no data
         "mid_boost":   0.05,   # 0/2 = 0%
         "elite_boost": 0.10,   # no data
-        "max_boost":   0.67,   # 2/3 = 66.7% — small sample but boosted mega-chalk SPs survive
+        "max_boost":   0.75,   # 3/4 = 75% — Apr 11: Suarez (HV, TV 28.5)
     },
 }
 
@@ -123,11 +123,12 @@ PITCHER_CONDITION_MATRIX: dict[str, dict[str, float]] = {
 # Matrix version & training provenance (Bug 6 — survivorship bias guard)
 # ---------------------------------------------------------------------------
 # IMPORTANT: Update this version and date list whenever the matrix is retrained.
-CONDITION_MATRIX_VERSION = "1.0"
+CONDITION_MATRIX_VERSION = "1.1"
 CONDITION_MATRIX_TRAINING_DATES = [
     "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-28", "2026-03-29",
     "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-03",
     "2026-04-04", "2026-04-05", "2026-04-06", "2026-04-07", "2026-04-09",
+    "2026-04-11",
 ]
 
 # ---------------------------------------------------------------------------
@@ -211,21 +212,21 @@ PITCHER_CONDITION_OBSERVATIONS: dict[str, dict[str, tuple[int, int]]] = {
         "low_boost":   (0, 1),     # 0%
         "mid_boost":   (0, 0),     # no data
         "elite_boost": (0, 0),     # no data
-        "max_boost":   (1, 7),     # 14.3%
+        "max_boost":   (1, 9),     # 11.1% — Apr 11: Walker (NOT HV), Lopez (NOT HV)
     },
     "chalk": {
         "no_boost":    (0, 21),    # 0%
         "low_boost":   (2, 3),     # 66.7%
         "mid_boost":   (0, 0),     # no data
         "elite_boost": (0, 0),     # no data
-        "max_boost":   (5, 10),    # 50%
+        "max_boost":   (5, 12),    # 41.7% — Apr 11: Sheehan (NOT HV), Bassitt (NOT HV)
     },
     "mega_chalk": {
-        "no_boost":    (0, 34),    # 0%
+        "no_boost":    (0, 35),    # 0% — Apr 11: Fried (NOT HV)
         "low_boost":   (0, 0),     # no data
         "mid_boost":   (0, 2),     # 0%
         "elite_boost": (0, 0),     # no data
-        "max_boost":   (2, 3),     # 66.7%
+        "max_boost":   (3, 4),     # 75% — Apr 11: Suarez (HV, TV 28.5)
     },
 }
 

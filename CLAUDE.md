@@ -132,15 +132,16 @@ Ghost+boost players have 82–100% historical TV>15 rate. Medium/chalk+boost pla
 2. **Team Stacking:** Dominant winning pattern on 62% of days. On hitter/stack days, stack 3-4 from the favored team's ghost pool + 1-2 diversifiers.
 3. **Boost Leverage:** "Most drafted at 3x boost" busts 57% of the time — it's a SELL signal. The top-5 most-drafted 3x players are dynamically penalized each run. Ghost+boost is the buy signal.
 
-### EV Formula (V3.2 — 4-term condition-based, single source: `_compute_base_ev()`)
+### EV Formula (V3.4 — 4-term condition-based, single source: `_compute_base_ev()`)
 ```
 filter_ev = condition_hv_rate                    # Term 1: from CONDITION_MATRIX (primary signal)
   × rs_prob                                       # Term 2: P(RS >= 15/(2+boost)) from traits
   × stack_bonus (1.20 if blowout game, else 1.0)  # Term 3: blowout team bonus
-  × anti_crowd (FADE=0.75, TARGET=1.15)            # Term 4: popularity adjustment
+  × anti_crowd (FADE: pitcher=0.85/batter=0.75, TARGET=1.15) # Term 4: V3.4 pitcher-aware
   × debut_bonus (1.15 if first appearance)
   × dnp_adj (ghost=0.92, unknown=0.85, confirmed_bad=0.70)
   × env_tiebreaker (up to +15% for HV rate ≥ 0.85) # V3.2: differentiates among auto-includes
+  × draft_scarcity_tiebreaker (up to +10% for ultra-low drafts) # V3.4: within auto-include tier
   × correlation_bonus (1.10-1.15 for correlation teams) # V3.2: cross-lineup correlation
   × 100
 ```
@@ -149,6 +150,7 @@ Note: card_boost is NOT multiplied again — it's already captured in condition_
 Post-EV adjustments (applied in `run_filter_strategy`):
 - Unboosted pitcher penalty (`_apply_unboosted_pitcher_penalty`): 10-35% haircut when boosted pool is rich
 - Three-tier ordering: auto-include → soft_auto_include → rest by filter_ev
+- Dynamic pitcher cap: V3.4 — 3 when 3+ boosted pitchers, 2 when 2 boosted or ghost+boost, 1 otherwise
 
 ### V2.4 Changes (April 9 — April 8 Post-Mortem)
 
@@ -293,6 +295,61 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
 - Captures Walker Buehler-type plays (low-tier pitcher with max boost, TV 29.5).
 - Without this, ghost+boost pitchers lose to ghost+boost batters and get excluded.
 
+### V3.4 Changes (April 12 — Boosted Pitcher Expansion & Within-Tier Scarcity)
+
+**Context**: April 11th was the worst draft yet. The optimizer selected 5 ghost+3.0x batters (García RS 0, Dingler RS -0.1, Ballesteros RS 1.0, Valenzuela RS -0.4, De La Cruz RS 3.5) — 3 catchers, all busted. Meanwhile, the winning lineups (87.67 score) had 3 chalk pitchers with 3.0x boost (Suarez 2.2k drafts RS 5.7, Sheehan 1.9k RS 2.8, Bassitt 1.5k RS 2.3). Top 6 leaderboard entries ALL had 3+ pitchers.
+
+**Three root causes:**
+1. Pitcher cap (max 1-2) blocked chalk+boost pitchers — V3.2 only expanded for ghost+boost pitchers
+2. FADE popularity penalty (25%) hit chalk pitchers too hard — pitchers control their own environment, crowd is less wrong about them
+3. Zero within-tier differentiation — all ghost+max_boost had identical HV rate 1.00, so 15-draft catchers ranked equal to 1-draft outfielders
+
+**Fix 1 — Boosted Pitcher Cap Expansion** (`app/services/filter_strategy.py`, `app/core/constants.py`)
+- `compute_dynamic_pitcher_cap()` now checks ALL boosted pitchers (boost >= 2.5), not just ghost-tier.
+- 3+ boosted pitchers → cap = 3 (new `MAX_PITCHERS_BOOSTED_RICH`). Lets EV decide composition.
+- 2 boosted pitchers → cap = 2 even with rich batter pool.
+- 1 ghost+boost pitcher → cap = 2 (V3.2 preserved).
+- Apr 11 had 5 boosted pitchers (Suarez, Sheehan, Bassitt, Lopez, Walker) → cap would be 3 → allows Suarez, Sheehan, Bassitt to compete on EV.
+- New constants: `BOOSTED_PITCHER_CAP_EXPAND_MIN=3`, `MAX_PITCHERS_BOOSTED_RICH=3`.
+
+**Fix 2 — Pitcher-Specific FADE Moderation** (`app/services/filter_strategy.py`, `app/core/constants.py`)
+- `_popularity_ev_adjustment()` and `_moonshot_popularity_adj()` now accept `is_pitcher` parameter.
+- Pitchers classified FADE get 15% haircut (S5) / 30% haircut (Moonshot), vs 25%/40% for batters.
+- Rationale: pitchers control their own game — high draft count reflects real ERA/K-rate data, not media hype. Crowd is structurally less wrong about pitchers (one-player dependency vs team context for batters).
+- Evidence: Apr 11 Suarez (2.2k drafts, FADE) appeared in 6/6 top lineups with RS 5.7. Apr 7 Eovaldi in 11/12 top lineups. PITCHER_CONDITION_MATRIX chalk+max_boost=0.42 (5× batter chalk+max rate of 0.23).
+- New constants: `PITCHER_FADE_PENALTY=0.85`, `MOONSHOT_PITCHER_FADE_PENALTY=0.70`.
+
+**Fix 3 — Draft Scarcity Tiebreaker** (`app/services/filter_strategy.py`, `app/core/constants.py`)
+- Within auto-include tier (condition_hv_rate >= 0.85), fewer drafts → small EV bonus (up to +10%).
+- Uses log scale for meaningful differentiation: 1 draft → +10%, 5 → +6.5%, 15 → +4.1%, 50 → +1.5%.
+- Breaks ties among ghost+max_boost candidates where condition_hv_rate and env_score are similar.
+- Apr 11: would have ranked Moniak (1 draft, RS 6.5) above Dingler (15 drafts, RS -0.1).
+- Applied alongside existing env_tiebreaker in `_compute_base_ev()`.
+- New constant: `DRAFT_SCARCITY_TIEBREAKER_MAX=0.10`.
+
+**Fix 4 — Condition Matrix Updated with April 11 Data** (`app/services/condition_classifier.py`)
+- `CONDITION_MATRIX_VERSION` bumped to 1.1, April 11 added to training dates.
+- PITCHER_CONDITION_MATRIX updated: mega_chalk+max_boost 0.67 → 0.75 (Suarez HV), chalk+max_boost 0.50 → 0.42 (Sheehan/Bassitt NOT HV), medium+max_boost 0.14 → 0.11 (Walker/Lopez NOT HV).
+- PITCHER_CONDITION_OBSERVATIONS updated with 6 new pitcher appearances.
+
+**April 11 data (pitchers that dominated):**
+| Player | Drafts | Boost | RS | TV | Tier | HV? |
+|---|---|---|---|---|---|---|
+| Ranger Suarez | 2,200 | +3.0x | 5.7 | 28.5 | mega_chalk+max | ✓ |
+| Emmet Sheehan | 1,900 | +3.0x | 2.8 | 14.0 | chalk+max | ✗ |
+| Chris Bassitt | 1,500 | +3.0x | 2.3 | 11.5 | chalk+max | ✗ |
+| Max Fried | 3,000 | none | 6.0 | 12.0 | mega_chalk+no | ✗ |
+
+**April 11 data (ghost batters — winners vs our picks):**
+| Player | Drafts | Boost | RS | TV | Notes |
+|---|---|---|---|---|---|
+| Mickey Moniak | 1 | +3.0x | 6.5 | 32.5 | Winner — ultra-ghost |
+| Ramón Laureano | 4 | +3.0x | 6.1 | 30.3 | Winner — ultra-ghost |
+| Riley Greene | 3 | +3.0x | 5.8 | 28.8 | Winner — ultra-ghost |
+| Adolis García | 11 | +3.0x | 0.0 | 0.0 | Our pick — busted |
+| Dillon Dingler | 15 | +3.0x | -0.1 | -0.5 | Our pick — busted |
+| Brandon Valenzuela | 9 | +3.0x | -0.4 | -2.0 | Our pick — busted |
+
 ### V3.1 Changes (April 11 — Empirical Calibration from April 6-9 Data)
 
 **Fix 1 — Pitcher Exemption for Most-Drafted-3x Trap** (`app/routers/filter_strategy.py`)
@@ -357,7 +414,7 @@ Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. Dynamic cap: 
 - `_compute_dnp_adjustment()` — DRY: bifurcated DNP risk (ghost/unknown/confirmed)
 - `_apply_unboosted_pitcher_penalty()` — DRY: env-scaled pitcher haircut (shared by S5 and Moonshot)
 - `_identify_correlation_groups()` — V3.2: finds teams with 2+ ghost players for cross-lineup distribution
-- `compute_dynamic_pitcher_cap()` — V3.2: allows 2 pitchers when ghost+boost SP exists
+- `compute_dynamic_pitcher_cap()` — V3.4: cap=3 when 3+ boosted SPs, cap=2 when 2 boosted or ghost+boost, cap=1 otherwise
 - `_build_team_stack()` — Ghost-pool team stacking (V3.2: skipped when MAX_PLAYERS_PER_TEAM=1)
 - `_enforce_composition()` — V3.2: three-tier (auto/soft_auto/rest) with team cap=1
 - `_validate_lineup_structure()` — Max 1 mega-chalk, min 1 ghost (V2.4: fallback to mega-ghost+3x)

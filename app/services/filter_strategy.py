@@ -91,6 +91,12 @@ from app.core.constants import (
     MOONSHOT_CORRELATION_TEAMMATE_BONUS,
     ENV_TIEBREAKER_BONUS_MAX,
     ENV_TIEBREAKER_HV_THRESHOLD,
+    # V3.4 constants
+    BOOSTED_PITCHER_CAP_EXPAND_MIN,
+    MAX_PITCHERS_BOOSTED_RICH,
+    PITCHER_FADE_PENALTY,
+    MOONSHOT_PITCHER_FADE_PENALTY,
+    DRAFT_SCARCITY_TIEBREAKER_MAX,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score
 from app.services.popularity import PopularityClass
@@ -105,20 +111,26 @@ def compute_dynamic_pitcher_cap(candidates: list) -> int:
     approach based on "Boost Pool Richness."
 
     V3.2: When a ghost+boost pitcher exists (drafts < 100, boost >= 2.5),
-    raise cap to 2 even in rich batter pools.  Ghost+boost pitchers have the
-    same edge profile as ghost+boost batters (Walker Buehler Apr 10: 191 drafts
-    3.0x, TV 29.5; Slade Cecconi Apr 5: TV 31.5).  Allowing 2 pitchers means
-    one ghost+boost SP + 4 batters, capturing pitcher value without sacrificing
-    the batter edge.
+    raise cap to 2 even in rich batter pools.
+
+    V3.4: Boosted pitcher cap expansion (April 11 post-mortem).
+    When 3+ pitchers with boost >= 2.5 exist (ANY ownership tier), cap = 3.
+    When 2 boosted pitchers exist, cap = 2 even with rich batter pool.
+    April 11: winning lineups had 3 chalk pitchers with 3.0x boost (Suarez,
+    Sheehan, Bassitt) — all blocked by the V3.2 ghost-only exemption.
+    PITCHER_CONDITION_MATRIX: chalk+max_boost=0.50, mega_chalk+max_boost=0.67.
+    These rates justify competing on EV with ghost+boost batters.
+    Historical avg: 2.15 pitchers in rank-1 lineups, range 0-5.
 
     Logic:
-    1. Count quality-boosted batters (boost >= 1.0, env >= 0.5).
-    2. Check for ghost+boost pitchers (drafts < 100, boost >= 2.5).
-    3. Rich pool + ghost+boost pitcher: cap = 2 (new in V3.2).
-    4. Rich pool + no ghost pitcher: cap = 1 (ghost+boost batter edge dominates).
-    5. Thin pool: cap = 2 (unboosted pitchers are best unboosted option).
+    1. Count ALL boosted pitchers (boost >= 2.5, any ownership tier).
+    2. 3+ boosted pitchers → cap = 3 (let EV decide composition).
+    3. 2 boosted pitchers → cap = 2.
+    4. 1 ghost+boost pitcher → cap = 2 (V3.2 preserved).
+    5. Rich batter pool + 0 boosted pitchers → cap = 1.
+    6. Thin batter pool → cap = 2.
 
-    Returns: 1 or 2 (the dynamic pitcher cap for this slate).
+    Returns: 1, 2, or 3 (the dynamic pitcher cap for this slate).
     """
     quality_boosted_batters = sum(
         1 for c in candidates
@@ -127,7 +139,14 @@ def compute_dynamic_pitcher_cap(candidates: list) -> int:
         and c.env_score >= ENV_PASS_THRESHOLD
     )
 
-    # V3.2: Check for ghost+boost pitchers
+    # V3.4: Count ALL boosted pitchers (any ownership tier)
+    boosted_pitchers = sum(
+        1 for c in candidates
+        if c.is_pitcher
+        and c.card_boost >= GHOST_BOOST_SYNERGY_MIN_BOOST
+    )
+
+    # V3.2: Check for ghost+boost pitchers (subset of boosted_pitchers)
     ghost_boost_pitchers = sum(
         1 for c in candidates
         if c.is_pitcher
@@ -136,7 +155,24 @@ def compute_dynamic_pitcher_cap(candidates: list) -> int:
         and c.card_boost >= GHOST_BOOST_SYNERGY_MIN_BOOST
     )
 
+    # V3.4: 3+ boosted pitchers → cap = 3 regardless of batter pool
+    if boosted_pitchers >= BOOSTED_PITCHER_CAP_EXPAND_MIN:
+        logger.info(
+            "V3.4 dynamic pitcher cap: %d (%d boosted pitchers detected — "
+            "letting EV decide composition, quality batters: %d)",
+            MAX_PITCHERS_BOOSTED_RICH, boosted_pitchers, quality_boosted_batters,
+        )
+        return MAX_PITCHERS_BOOSTED_RICH  # 3
+
     if quality_boosted_batters >= BOOSTED_POOL_FULL_THRESHOLD:
+        # V3.4: 2 boosted pitchers → cap = 2 even with rich batter pool
+        if boosted_pitchers >= 2:
+            logger.info(
+                "V3.4 dynamic pitcher cap: 2 (rich pool: %d quality batters, "
+                "but %d boosted pitcher(s) — expanding cap)",
+                quality_boosted_batters, boosted_pitchers,
+            )
+            return MAX_PITCHERS_THIN_POOL  # 2
         if ghost_boost_pitchers > 0:
             logger.info(
                 "V3.2 dynamic pitcher cap: 2 (rich pool: %d quality batters, "
@@ -633,9 +669,19 @@ class FilterOptimizedLineup:
     warnings: list[str] = field(default_factory=list)
 
 
-def _popularity_ev_adjustment(popularity: PopularityClass) -> float:
-    """Return EV multiplier based on web-scraped popularity classification."""
+def _popularity_ev_adjustment(popularity: PopularityClass, is_pitcher: bool = False) -> float:
+    """Return EV multiplier based on web-scraped popularity classification.
+
+    V3.4: Pitchers get a lighter FADE penalty (15% vs 25%).  Pitchers control
+    their own environment — high draft count reflects real ERA/K-rate data,
+    not media hype.  The crowd is structurally less wrong about pitchers than
+    batters: pitcher outcomes depend on one player, batter outcomes depend on
+    team context.  Apr 11: Suarez (2.2k drafts, FADE) delivered RS 5.7 and
+    appeared in 6/6 top lineups.
+    """
     if popularity == PopularityClass.FADE:
+        if is_pitcher:
+            return PITCHER_FADE_PENALTY
         return POPULARITY_FADE_PENALTY
     if popularity == PopularityClass.TARGET:
         return POPULARITY_TARGET_BONUS
@@ -739,12 +785,33 @@ def _compute_base_ev(
         env_tiebreaker = 1.0 + candidate.env_score * ENV_TIEBREAKER_BONUS_MAX
         effective_score *= env_tiebreaker
 
+        # V3.4: Draft scarcity tiebreaker — within auto-include tier, fewer
+        # drafts = deeper crowd asymmetry = higher edge.  A player with 1 draft
+        # is more "unknown" than one with 15 — the crowd has priced in more
+        # information about the higher-draft player.
+        #
+        # April 11: optimizer picked 9-15 draft ghosts (García, Dingler,
+        # Ballesteros, Valenzuela — all busted) while 1-4 draft ghosts
+        # (Moniak RS 6.5, Laureano RS 6.1, Greene RS 5.8, Crawford RS 5.4)
+        # were the actual winners.
+        #
+        # Uses log scale: 1 draft → +10%, 5 → +6.5%, 15 → +4.1%, 50 → +1.5%
+        import math
+        if (
+            candidate.drafts is not None
+            and candidate.drafts < GHOST_DRAFT_THRESHOLD
+            and GHOST_DRAFT_THRESHOLD > 1
+        ):
+            scarcity = math.log(GHOST_DRAFT_THRESHOLD / max(1, candidate.drafts)) / math.log(GHOST_DRAFT_THRESHOLD)
+            draft_tiebreaker = 1.0 + scarcity * DRAFT_SCARCITY_TIEBREAKER_MAX
+            effective_score *= draft_tiebreaker
+
     return effective_score
 
 
 def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     """Compute Starting 5 EV via the shared 4-term condition-based formula."""
-    return _compute_base_ev(candidate, _popularity_ev_adjustment(candidate.popularity))
+    return _compute_base_ev(candidate, _popularity_ev_adjustment(candidate.popularity, is_pitcher=candidate.is_pitcher))
 
 
 def _build_team_stack(
@@ -1517,9 +1584,14 @@ def run_filter_strategy(
 # Moonshot — completely different 5, anti-crowd, sharp-signal, explosive
 # ---------------------------------------------------------------------------
 
-def _moonshot_popularity_adj(popularity: PopularityClass) -> float:
-    """Return Moonshot-specific popularity EV multiplier (heavier lean)."""
+def _moonshot_popularity_adj(popularity: PopularityClass, is_pitcher: bool = False) -> float:
+    """Return Moonshot-specific popularity EV multiplier (heavier lean).
+
+    V3.4: Pitchers get lighter FADE penalty in Moonshot too (30% vs 40%).
+    """
     if popularity == PopularityClass.FADE:
+        if is_pitcher:
+            return MOONSHOT_PITCHER_FADE_PENALTY
         return MOONSHOT_FADE_PENALTY
     if popularity == PopularityClass.TARGET:
         return MOONSHOT_TARGET_BONUS
@@ -1532,7 +1604,7 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     Delegates to _compute_base_ev() for the 4-term formula (DRY),
     then applies moonshot-specific sharp signal and explosive trait bonuses.
     """
-    base_ev = _compute_base_ev(candidate, _moonshot_popularity_adj(candidate.popularity))
+    base_ev = _compute_base_ev(candidate, _moonshot_popularity_adj(candidate.popularity, is_pitcher=candidate.is_pitcher))
 
     sharp_bonus = 1.0 + (candidate.sharp_score / 100.0) * MOONSHOT_SHARP_BONUS_MAX
     explosive_trait = get_trait_score(
