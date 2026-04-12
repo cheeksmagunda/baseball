@@ -347,3 +347,60 @@ ENV_TIEBREAKER_HV_THRESHOLD = 0.85       # only apply to high-HV-rate candidates
 
 UNBOOSTED_PITCHER_RICH_POOL_PENALTY = 0.65      # worst-case (env=0.0) — 35% haircut
 UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL = 0.90  # best-case (env=1.0) — 10% haircut
+
+# ---------------------------------------------------------------------------
+# V3.4: Boosted pitcher cap expansion (April 11 post-mortem)
+#
+# April 11: Winning lineups had 3 chalk pitchers with 3.0x boost (Suarez,
+# Sheehan, Bassitt).  The V3.2 pitcher cap only expanded for ghost+boost
+# pitchers, locking the cap at 1 when all boosted pitchers were chalk.
+# Historical pitcher data: avg 2.15 pitchers in rank-1 lineups, range 0-5.
+# The cap should reflect the number of quality boosted pitchers available,
+# not just their ownership tier.
+#
+# Logic:
+#   3+ boosted pitchers (boost >= 2.5) → cap = 3
+#   2 boosted pitchers → cap = 2 (even with rich batter pool)
+#   1 ghost+boost pitcher → cap = 2 (existing V3.2)
+#   0 boosted pitchers + rich pool → cap = 1 (existing V3.0)
+# ---------------------------------------------------------------------------
+BOOSTED_PITCHER_CAP_EXPAND_MIN = 3    # min boosted pitchers to raise cap to 3
+MAX_PITCHERS_BOOSTED_RICH = 3         # cap when 3+ boosted pitchers available
+
+# ---------------------------------------------------------------------------
+# V3.4: Pitcher-specific FADE moderation (April 11 post-mortem)
+#
+# Pitchers control their own environment — high draft count reflects real
+# ERA/K-rate performance data, not media hype.  The crowd is structurally
+# LESS wrong about pitchers than batters because pitcher outcomes are more
+# predictable (one player controls the game vs. batters needing team context).
+#
+# Historical evidence:
+#   - Apr 11: Suarez (2.2k drafts, RS 5.7), Sheehan (1.9k, RS 2.8),
+#     Bassitt (1.5k, RS 2.3) — all in 5/6 top lineups despite being FADE
+#   - Apr 7: Eovaldi (in 11/12 top lineups despite high ownership)
+#   - PITCHER_CONDITION_MATRIX chalk+max_boost = 0.50 HV rate (5x batter rate)
+#
+# Starting 5: 15% haircut (vs 25% for batters)
+# Moonshot: 30% haircut (vs 40% for batters)
+# ---------------------------------------------------------------------------
+PITCHER_FADE_PENALTY = 0.85           # S5: 15% haircut (batters: 0.75 = 25%)
+MOONSHOT_PITCHER_FADE_PENALTY = 0.70  # Moonshot: 30% haircut (batters: 0.60 = 40%)
+
+# ---------------------------------------------------------------------------
+# V3.4: Draft scarcity tiebreaker within auto-include tier
+#
+# April 11: All ghost+max_boost candidates had identical condition_hv_rate=1.00,
+# making within-tier differentiation dependent on noisy rs_prob alone.
+# The optimizer picked 9-15 draft players (García, Dingler, Ballesteros,
+# Valenzuela) while winners were 1-4 draft players (Moniak, Laureano, Greene,
+# Crawford, Bichette).
+#
+# Fewer drafts = deeper crowd asymmetry = higher edge.  A player with 1 draft
+# is more "unknown" than one with 15 drafts — the crowd has priced in more
+# information about the 15-draft player.
+#
+# Uses log scale for meaningful differentiation:
+#   1 draft → +10% bonus, 5 drafts → +6.5%, 15 drafts → +4.1%, 50 → +1.5%
+# ---------------------------------------------------------------------------
+DRAFT_SCARCITY_TIEBREAKER_MAX = 0.10  # up to +10% EV bonus for ultra-low drafts
