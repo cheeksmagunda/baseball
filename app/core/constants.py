@@ -16,6 +16,7 @@ TEAM_ABBR_ALIASES = {
     "TBR": "TB",
     "SDP": "SD",
     "SFG": "SF",
+    "OAK": "ATH",  # Athletics relocated to Sacramento; MLB API now returns ATH
 }
 
 
@@ -55,7 +56,7 @@ PARK_HR_FACTORS = {
     "SF": 0.92,   # Oracle Park
     "SEA": 0.91,  # T-Mobile
     "MIA": 0.90,  # loanDepot
-    "OAK": 0.90,  # Coliseum
+    "ATH": 0.90,  # Sacramento (Sutter Health Park) — using neutral estimate, no 2026 data yet
     "LAD": 0.89,  # Dodger Stadium
 }
 
