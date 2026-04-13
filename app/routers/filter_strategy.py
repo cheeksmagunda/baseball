@@ -139,7 +139,7 @@ async def _resolve_candidates(
         if game is None:
             game = team_to_game.get(card.team.upper())
 
-        # Two-way player detection (V2.5): if a non-pitcher is the confirmed
+        # Two-way player detection: if a non-pitcher is the confirmed
         # starter for their game, treat them as a pitcher.  Ohtani is stored
         # as "DH" but when he's on the mound he's an SP with elite batter
         # upside — he needs to fill one of the two SP slots across both drafts.
@@ -235,7 +235,7 @@ async def _resolve_candidates(
             is_home = game.home_team.upper() == card.team.upper()
             opp_era = game.away_starter_era if is_home else game.home_starter_era
             park_team = game.home_team.upper()
-            # V2: pass team's moneyline for favorite detection
+            # pass team's moneyline for favorite detection
             team_ml = game.home_moneyline if is_home else game.away_moneyline
 
             # Bullpen vulnerability: the opposing team's bullpen ERA
@@ -257,7 +257,7 @@ async def _resolve_candidates(
         else:
             env_score = 0.5
             env_factors = ["No game environment data available"]
-            env_unknown_count = 7  # V3.0: all factors unknown
+            env_unknown_count = 7  # all factors unknown
 
         game_id = card.game_id
         if game_id is None and game is not None:
@@ -336,12 +336,12 @@ async def _resolve_candidates(
 
     # Dynamic is_most_drafted_3x: the DB flag is only set retrospectively by post-game
     # analysis and is always False for today's live slate.  Compute it on the fly.
-    # V3.0: Scale with slate size — flag top 30% of the 3x-boost pool, clamped
+    # Scale with slate size — flag top 30% of the 3x-boost pool, clamped
     # between MIN_N and MAX_N.  On a thin 2-game slate with 10 3x players,
     # the 5th-most-drafted might have 80 drafts (a ghost being punished as chalk).
     # Proportional scaling prevents this.
     #
-    # V3.1: PITCHER EXEMPTION — Starting pitchers with 3x boost are unicorn events.
+    # PITCHER EXEMPTION — Starting pitchers with 3x boost are unicorn events.
     # Historical data: Mick Abel (Apr 9, TV 23.0), Eovaldi (Apr 7, in 11/12 top
     # lineups).  Pitchers inherently control their own environment (they ARE the
     # matchup), so the "crowd is wrong about boost" thesis doesn't apply the same
@@ -370,7 +370,7 @@ async def _resolve_candidates(
     ]
     for c in boost3_pitchers:
         logger.debug(
-            "V3.1 pitcher exemption: %s (drafts=%s, boost=%.1f) — NOT flagged as most_drafted_3x",
+            "Pitcher exemption: %s (drafts=%s, boost=%.1f) — NOT flagged as most_drafted_3x",
             c.player_name, c.drafts, c.card_boost,
         )
 
@@ -667,27 +667,25 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
         # If cache is cold, fall through to on-demand rebuild below.
         lock_time = lineup_cache.lock_time_utc
         if lock_time is None and lineup_cache.is_warm:
-            # Try to resolve first-pitch time so the UI can show
-            # "Picks available at HH:MM" instead of a generic message.
+            # Resolve first-pitch time so the UI can show "Picks available at
+            # HH:MM" instead of a generic message.  No fallback — if this
+            # raises, let it propagate rather than silently degrading.
+            from app.services.slate_monitor import _get_first_pitch_utc
+
             first_pitch_iso = None
             computed_lock_iso = None
             minutes_until = None
-            try:
-                from app.services.slate_monitor import _get_first_pitch_utc
-
-                active_date = _get_active_slate_date(db)
-                first_pitch = _get_first_pitch_utc(db, active_date)
-                if first_pitch is not None:
-                    # Publish it so subsequent requests skip this lookup
-                    lineup_cache.set_schedule(first_pitch)
-                    lock_time = lineup_cache.lock_time_utc
-                    first_pitch_iso = first_pitch.isoformat()
-                    if lock_time is not None:
-                        computed_lock_iso = lock_time.isoformat()
-                        now = datetime.now(timezone.utc)
-                        minutes_until = max(0, int((lock_time - now).total_seconds() / 60))
-            except Exception:
-                pass  # Best-effort; fall through to generic message
+            active_date = _get_active_slate_date(db)
+            first_pitch = _get_first_pitch_utc(db, active_date)
+            if first_pitch is not None:
+                # Publish it so subsequent requests skip this lookup
+                lineup_cache.set_schedule(first_pitch)
+                lock_time = lineup_cache.lock_time_utc
+                first_pitch_iso = first_pitch.isoformat()
+                if lock_time is not None:
+                    computed_lock_iso = lock_time.isoformat()
+                    now = datetime.now(timezone.utc)
+                    minutes_until = max(0, int((lock_time - now).total_seconds() / 60))
 
             phase = "before_lock" if computed_lock_iso else "initializing"
             detail = (

@@ -156,7 +156,7 @@ CONDITION_MATRIX_TRAINING_DATES = [
 ]
 
 # ---------------------------------------------------------------------------
-# Bayesian Laplace smoothing (V3.0) — replaces DEAD_CAPITAL hard-blocks.
+# Bayesian Laplace smoothing — replaces the legacy DEAD_CAPITAL hard-blocks.
 #
 # Instead of returning 0.0 (which destroys all signal), we compute a Bayesian
 # posterior using the Beta-Binomial conjugate prior:
@@ -303,7 +303,7 @@ def get_ownership_tier(
 ) -> str:
     """Map draft count to ownership tier.
 
-    V3.0: Primary path uses empirical CDF percentiles from the slate's actual
+    Primary path uses empirical CDF percentiles from the slate's actual
     draft distribution.  This is slate-size-invariant: a player at the 10th
     percentile of a 2-game slate is treated identically to the 10th percentile
     of a 15-game slate, even if their absolute draft counts differ 10x.
@@ -330,7 +330,7 @@ def get_ownership_tier(
     if drafts is None:
         return "medium"
 
-    # V3.1: Absolute draft-count floor — micro-drafted players are ALWAYS ghost.
+    # Absolute draft-count floor — micro-drafted players are ALWAYS ghost.
     # DFS draft distributions have extreme right tails.  It's common for 30-40%
     # of the player pool to have exactly 0 drafts.  When this happens, the 15th
     # percentile is mathematically 0, and players with 1-2 drafts (the exact
@@ -339,7 +339,7 @@ def get_ownership_tier(
     if drafts <= GHOST_ABSOLUTE_DRAFT_FLOOR:
         return "ghost"
 
-    # V3.0 Primary: Empirical CDF percentile from actual distribution
+    # Primary: Empirical CDF percentile from actual distribution
     if slate_draft_distribution is not None and len(slate_draft_distribution) >= 5:
         sorted_dist = sorted(slate_draft_distribution)
         n = len(sorted_dist)
@@ -363,7 +363,7 @@ def get_ownership_tier(
             return "mega_chalk"
         return "chalk"  # Top 10% but doesn't meet absolute floor → chalk
 
-    # V2 Secondary: percentage of total slate drafts
+    # Secondary: percentage of total slate drafts
     if total_slate_drafts is not None and total_slate_drafts > 0:
         pct = drafts / total_slate_drafts
         if pct < 0.001:
@@ -397,7 +397,7 @@ def get_ownership_tier(
 def compute_draft_entropy(draft_counts: list[int]) -> float:
     """Compute Shannon entropy of the draft distribution (meta-game monitor).
 
-    V3.0: Higher entropy = more evenly distributed drafts = crowd is getting
+    Higher entropy = more evenly distributed drafts = crowd is getting
     sharper (ghost edge compressing).  Lower entropy = concentrated drafts on
     a few stars = ghost edge intact.
 
@@ -424,7 +424,7 @@ def compute_draft_entropy(draft_counts: list[int]) -> float:
 def compute_gini_coefficient(draft_counts: list[int]) -> float:
     """Compute Gini coefficient of the draft distribution (meta-game monitor).
 
-    V3.0: Gini = 0 means perfectly equal (every player drafted the same
+    Gini = 0 means perfectly equal (every player drafted the same
     number of times).  Gini = 1 means maximum inequality (all drafts on one
     player).  The ghost edge thrives on high Gini (crowd concentrates on
     stars, ignoring ghosts).  Falling Gini = ghost edge compression.
@@ -467,7 +467,7 @@ def get_condition_hv_rate(
 ) -> float:
     """Look up historical HV rate from the condition matrix, blended with ML.
 
-    V3.0: Replaces DEAD_CAPITAL hard-blocks with Bayesian Laplace-smoothed
+    Replaces DEAD_CAPITAL hard-blocks with Bayesian Laplace-smoothed
     floors.  Formerly dead-capital conditions now receive a small but non-zero
     posterior rate (e.g. 0/34 → 0.028) instead of a hard 0.0.  This prevents
     the black-hole effect where zero HV rate destroys all upstream/downstream
@@ -506,7 +506,7 @@ def get_condition_hv_rate(
 
     # Compute effective HV rate from observations or matrix interpolation.
     #
-    # V3.5: When observations exist, trust the Bayesian posterior over the
+    # When observations exist, trust the Bayesian posterior over the
     # hand-interpolated matrix rate.  The old logic used max(matrix, bayesian)
     # which always picked the MORE GENEROUS value — this inflated dead-capital
     # conditions where empirical data showed 0% success but the matrix had an
@@ -525,7 +525,7 @@ def get_condition_hv_rate(
 
     if is_legacy_dead_capital:
         logger.info(
-            "Bayesian dead-capital rate (V3.5): drafts=%s (tier=%s), boost=%.1f (tier=%s), "
+            "Bayesian dead-capital rate: drafts=%s (tier=%s), boost=%.1f (tier=%s), "
             "obs=%d/%d, bayesian=%.4f, matrix=%.2f, effective=%.4f",
             drafts, ownership_tier, card_boost, boost_tier,
             successes, trials,
@@ -564,7 +564,7 @@ def is_soft_auto_include(
 ) -> bool:
     """Return True for ghost+mid_boost players — second-tier priority.
 
-    V3.2: Ghost players with boost >= 2.0 (but < 2.5) have a historical
+    Ghost players with boost >= 2.0 (but < 2.5) have a historical
     HV rate of 0.75 — excellent, but below auto-include's 0.88-1.00.
     These candidates get priority over non-ghost players but rank after
     full auto-includes in lineup construction.

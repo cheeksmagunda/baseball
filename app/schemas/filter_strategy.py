@@ -47,7 +47,7 @@ class FilterCard(BaseModel):
     platoon_advantage: bool = False
     is_debut_or_return: bool = False
     drafts: int | None = None  # ownership data
-    is_most_drafted_3x: bool = False  # V2: 57% bust rate trap signal
+    is_most_drafted_3x: bool = False  # 57% bust rate trap signal
 
 
 class FilterOptimizeRequest(BaseModel):

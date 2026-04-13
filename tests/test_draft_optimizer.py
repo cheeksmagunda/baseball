@@ -173,7 +173,7 @@ def test_fade_with_huge_boost_can_still_win():
 
 def test_low_score_penalty_prevents_boost_trap():
     """A truly terrible player with a huge boost should lose to a decent unboosted player.
-    V2.2: graduated penalty means score=10 with 3.0x boost is no longer automatically
+    Graduated penalty means score=10 with 3.0x boost is no longer automatically
     a trap (that was over-penalizing ghost+boost players). But a near-zero score player
     with boost should still lose to a decent alternative.
     Trap: score=3, boost=3.0 → raw EV=15, graduated penalty ≈ 0.52 → EV ≈ 7.8

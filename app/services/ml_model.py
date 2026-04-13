@@ -186,9 +186,9 @@ def get_blended_hv_rate(
 
     If the ML model isn't loaded, returns the matrix rate unchanged.
 
-    V3.0: The ML model can now contribute signal for all conditions, including
-    formerly dead-capital ones.  The Bayesian floor in condition_classifier
-    ensures matrix_rate is never 0.0, so the blend always operates.
+    The ML model contributes signal for all conditions, including formerly
+    dead-capital ones.  The Bayesian floor in condition_classifier ensures
+    matrix_rate is never 0.0, so the blend always operates.
     The ML model's contribution is still capped at ML_BLEND_WEIGHT (30%)
     to prevent a single model from dominating the proven matrix signal.
     """

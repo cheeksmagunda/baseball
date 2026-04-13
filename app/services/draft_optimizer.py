@@ -91,7 +91,7 @@ class DualLineup:
 def compute_expected_value(score_result: PlayerScoreResult, card_boost: float) -> float:
     """Compute ranking signal: total_score * (2 + card_boost). Not an RS prediction."""
     ev = compute_total_value(score_result.total_score, card_boost)
-    # Graduated low-score penalty (V2.2): linear from FLOOR at score=0 to 1.0 at threshold
+    # Graduated low-score penalty: linear from FLOOR at score=0 to 1.0 at threshold
     if score_result.total_score < MIN_SCORE_THRESHOLD:
         ratio = max(0.0, score_result.total_score) / MIN_SCORE_THRESHOLD
         ev *= MIN_SCORE_PENALTY_FLOOR + ratio * (1.0 - MIN_SCORE_PENALTY_FLOOR)

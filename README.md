@@ -117,7 +117,7 @@ Each lineup's anchor pitcher is the highest-EV pitcher in its candidate pool. Th
 **Key optimizer behaviors:**
 - **V5.0 pitcher anchor**: exactly 1 SP per lineup, pinned to Slot 1. The highest-EV pitcher in the pool wins the anchor — boosted or unboosted, ghost or chalk, treated uniformly.
 - **Game-blocking**: the anchor pitcher's `game_id` is excluded from all batter picks (prevents batter-vs-own-pitcher and teammate-of-opposing-pitcher conflicts).
-- Top-5 most-drafted boost=3.0 batters flagged each run as chalk+boost traps (57% bust rate; pitchers are exempt per V3.1).
+- Top-5 most-drafted boost=3.0 batters flagged each run as chalk+boost traps (57% bust rate; pitchers are exempt).
 - Mega-ghost+3x players (< 50 drafts) get 1.50× synergy bonus and env penalty cap of 20%
 - Ghost+boost EV floor at score=30 (env-independent) prevents data scarcity from burying ghost picks
 - Min 1 ghost batter in lineup enforced; fallback accepts mega-ghost+3x even without env data (anchor pitcher is exempt from the swap)

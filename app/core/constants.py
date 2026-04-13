@@ -85,13 +85,13 @@ MIN_SCORE_PENALTY_FLOOR = 0.40  # worst-case multiplier at score=0 (60% haircut)
 # ---------------------------------------------------------------------------
 
 # Slate classification thresholds (Filter 1)
-# V2: Pitcher Day = 23% of slates (not the default), Hitter/Stack Day = 38%
+# Historical distribution: Pitcher Day = 23% of slates, Hitter/Stack Day = 38%
 TINY_SLATE_MAX_GAMES = 3
-PITCHER_DAY_MIN_QUALITY_SP = 4   # 4+ quality SP matchups → pitcher day (V2 §3)
-HITTER_DAY_MIN_HIGH_TOTAL = 4    # 4+ games with O/U >= 9.0 → hitter day (V2 §3)
+PITCHER_DAY_MIN_QUALITY_SP = 4   # 4+ quality SP matchups → pitcher day (§3)
+HITTER_DAY_MIN_HIGH_TOTAL = 4    # 4+ games with O/U >= 9.0 → hitter day (§3)
 HITTER_DAY_VEGAS_TOTAL_THRESHOLD = 9.0
 
-# Blowout detection (V2 §2 Pillar 2 + §3 checklist)
+# Blowout detection (§2 Pillar 2 + §3 checklist)
 # Moneyline ≥ -200 for one side = projected blowout → stack candidate
 BLOWOUT_MONEYLINE_THRESHOLD = -200  # e.g. -210 means heavy favorite
 BLOWOUT_MIN_GAMES_FOR_STACK_DAY = 1  # 1+ blowout game → stack day eligible
@@ -118,27 +118,29 @@ BOOSTED_POOL_FULL_THRESHOLD = 5
 
 ENV_PASS_THRESHOLD = 0.5           # env_score >= 0.5 = passes environmental filter
 
-# Game diversification (Filter 5 — V2 Law 9)
+# Game diversification (Filter 5 — Law 9)
 #
-# V3.1: Raised from 1 to 3.  Historical data proves stacking wins:
+# Current rule (V5.0): max 1 player per game per lineup.  This is tighter than
+# the earlier V3.1 cap of 3, which was intended to exploit team-stack data:
 #   - Apr 6: Rank 1 = LAD+HOU stack (Ohtani, Freeman, Tucker, Hernandez, Rushing)
 #   - Apr 5: OAK ghost stack dominated
 #   - 62% of winning days featured team stacks of 3-4 players
-# Cap of 1 was mathematically preventing the winning lineup shape.
+# V3.2 tightened to 1 per team + 2 per game.  V3.3 dropped to 1 per game to
+# capture stack upside cross-lineup (Starting 5 + Moonshot) instead of within
+# a single lineup — see CORRELATION_* constants.
 #
-# The cap applies to TEAMMATES from the same game.  Opponents in the same game
-# are restricted to 1 total (negative correlation: if one team's SP dominates,
-# the other team's batters suffer).  See MAX_OPPONENTS_SAME_GAME.
-MAX_PLAYERS_PER_GAME = 1         # V3.3: max 1 player per game per lineup — full diversification on large slates
+# MAX_OPPONENTS_SAME_GAME also caps 1: negative correlation (if one team's SP
+# dominates, the other team's batters suffer) keeps opponents separated too.
+MAX_PLAYERS_PER_GAME = 1         # max 1 player per game per lineup — full diversification
 MAX_OPPONENTS_SAME_GAME = 1      # max 1 player from the opposing side of the same game
 MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup
 SAME_GAME_EXCESS_PENALTY = 0.90  # 10% penalty for 4th+ player from same game
 
 # ---------------------------------------------------------------------------
-# Team stacking constants (V2 §2 Pillar 2 — dominant on 62% of winning days)
-# V3.2: Within-lineup stacking disabled (MAX_PLAYERS_PER_TEAM=1).
-# Correlation value now captured cross-lineup via CORRELATION_* constants.
-# These constants retained for _build_team_stack() which is skipped when
+# Team stacking constants (§2 Pillar 2 — dominant on 62% of winning days)
+# Within-lineup stacking is disabled (MAX_PLAYERS_PER_TEAM=1).  Correlation
+# value is now captured cross-lineup via CORRELATION_* constants.  These
+# constants are retained for _build_team_stack(), which is skipped when
 # MAX_PLAYERS_PER_TEAM < STACK_MIN_PLAYERS.
 # ---------------------------------------------------------------------------
 STACK_MIN_PLAYERS = 3             # minimum players from same team to form a stack
@@ -155,14 +157,14 @@ PITCHER_ENV_FRIENDLY_PARK = 1.00      # park factor below this = pitcher-friendl
 # Batter environmental pass conditions
 BATTER_ENV_HIGH_VEGAS_TOTAL = 8.5     # O/U >= this = high-run environment
 BATTER_ENV_WEAK_PITCHER_ERA = 4.5     # opposing starter ERA above this = weak
-BATTER_ENV_TOP_LINEUP = 5             # batting 1-5 = top of lineup (V2 §4)
+BATTER_ENV_TOP_LINEUP = 5             # batting 1-5 = top of lineup (§4)
 BATTER_ENV_WEAK_BULLPEN_ERA = 4.5     # opposing bullpen ERA above this = vulnerable
 
 # Debut/return premium (§2.3 Condition C)
 DEBUT_RETURN_EV_BONUS = 1.15          # 15% EV bonus for debut/return players
 
 # ---------------------------------------------------------------------------
-# V3.0: Bifurcated missing-data handling
+# Bifurcated missing-data handling
 #
 # "Unknown environment" (missing data) ≠ "Bad environment" (confirmed bad).
 # In DFS with convex payouts, uncertainty widens variance without shifting
@@ -210,29 +212,29 @@ MOONSHOT_EXPLOSIVE_BONUS_MAX = 0.10
 MOONSHOT_SAME_TEAM_PENALTY = 0.85
 
 # ---------------------------------------------------------------------------
-# Draft-count ownership leverage (V2 §2 Pillar 1 + §9 Finding 1)
+# Draft-count ownership leverage (§2 Pillar 1 + §9 Finding 1)
 # Ghost ownership is THE #1 edge separating rank 1 from the field.
 # 12/13 rank-1 lineups had at least 1 ghost player.
 #
-# V3.0: These absolute thresholds are now FALLBACKS only.  When the slate's
-# draft distribution is available, ownership tiers are computed from empirical
-# CDF percentiles (see condition_classifier.get_ownership_tier).  This makes
-# the system slate-size-invariant: 100 drafts on a 2-game day is very
-# different from 100 drafts on a 15-game day.
+# These absolute thresholds are FALLBACKS only.  When the slate's draft
+# distribution is available, ownership tiers are computed from empirical CDF
+# percentiles (see condition_classifier.get_ownership_tier).  This makes the
+# system slate-size-invariant: 100 drafts on a 2-game day is very different
+# from 100 drafts on a 15-game day.
 # ---------------------------------------------------------------------------
 GHOST_DRAFT_THRESHOLD = 100           # FALLBACK: < 100 drafts = ghost player
 LOW_DRAFT_THRESHOLD = 200             # FALLBACK: < 200 drafts = low-ownership differentiator
 CHALK_DRAFT_THRESHOLD = 1500          # FALLBACK: >= 1500 drafts = chalk
 MEGA_CHALK_DRAFT_THRESHOLD = 2000     # FALLBACK: >= 2000 drafts = mega-chalk
 
-# V3.0 percentile-based ownership tier thresholds (empirical CDF)
+# Percentile-based ownership tier thresholds (empirical CDF)
 # "Ghost" = bottom 15% of the draft distribution
 # "Low" = 15th-35th percentile
 # "Medium" = 35th-65th percentile
 # "Chalk" = 65th-90th percentile
 # "Mega-chalk" = top 10% AND requires minimum absolute draft count
 OWNERSHIP_PERCENTILE_GHOST = 0.15     # bottom 15%
-# V3.1: Absolute draft-count floor for ghost classification.
+# Absolute draft-count floor for ghost classification.
 # When the slate has a massive zero-draft pool (common: 30-40% of players
 # have exactly 0 drafts), the 15th percentile can be 0, pushing players
 # with 1-2 drafts out of the ghost tier.  This floor ensures micro-drafted
@@ -248,14 +250,14 @@ MEGA_CHALK_MEDIAN_MULTIPLE = 3.0
 
 # "Most drafted at 3x boost" trap — still flagged dynamically each run in the router.
 # Historical bust rate: 57% with avg RS 0.72.
-# V3.0: Scales with slate size — floor of 3, ceiling of 7, proportional to
+# Scales with slate size — floor of 3, ceiling of 7, proportional to
 # the number of 3x-boost candidates on the slate.
 MOST_DRAFTED_3X_TOP_N = 5             # default (overridden dynamically)
 MOST_DRAFTED_3X_MIN_N = 3             # minimum (thin slates)
 MOST_DRAFTED_3X_MAX_N = 7             # maximum (large slates)
 MOST_DRAFTED_3X_PROPORTION = 0.30     # flag top 30% of 3x-boost pool
 
-# Most-drafted-3x EV penalty (V2.3 spec — wired into EV in V3.5).
+# Most-drafted-3x EV penalty.
 # Players flagged as is_most_drafted_3x have a 57% bust rate, avg RS 0.72.
 # Starting 5: env-aware — lighter when environmental support exists (crowd
 # might know something), heavier when it doesn't (hype without support).
@@ -273,14 +275,14 @@ GHOST_BOOST_SYNERGY_MIN_BOOST = 2.5   # minimum boost for ghost+boost stack prio
 MEGA_GHOST_BOOST_MAX_DRAFTS = 50      # < 50 drafts + boost >= 3.0 = mega-ghost-boost tier (fallback ghost in validation)
 
 # ---------------------------------------------------------------------------
-# Lineup structure validation (V2 §5 + §9 Finding 4)
+# Lineup structure validation (§5 + §9 Finding 4)
 # Every rank-1 lineup: 1 anchor + 2-3 differentiators + 1 flex
 # ---------------------------------------------------------------------------
 MAX_MEGA_CHALK_IN_LINEUP = 1          # max 1 player with 2000+ drafts
 MIN_GHOST_IN_LINEUP = 1              # min 1 ghost player (< 100 drafts)
 # Ghost enforcement: replace worst lineup player with a ghost if ghost EV >= this fraction
 GHOST_ENFORCE_SWAP_THRESHOLD = 0.50  # was 0.70 — lowered so ghost inclusion actually fires
-MAX_PLAYERS_PER_TEAM = 1             # V3.2: 1 per team per individual lineup; correlation handled cross-lineup
+MAX_PLAYERS_PER_TEAM = 1             # 1 per team per individual lineup; correlation handled cross-lineup
 # V5.0: Hard pitcher-anchor rule — exactly 1 pitcher per lineup, always in Slot 1.
 # The V3.0-V3.4 dynamic pitcher cap (1/2/3 based on boosted-pool richness) is
 # retired.  Every lineup is a 1 SP + 4 batter construction, and the pitcher's
@@ -324,7 +326,7 @@ BOOST_CONCENTRATION_PENALTY = 0.85    # 15% penalty for 3rd+ boosted in same gam
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# V3.2 constants: Soft auto-include, correlation, env tiebreaker
+# Soft auto-include, correlation, env tiebreaker
 # ---------------------------------------------------------------------------
 
 # Soft auto-include: ghost players with mid_boost (2.0-2.5) get priority over
@@ -361,7 +363,7 @@ ENV_TIEBREAKER_HV_THRESHOLD = 0.85       # only apply to high-HV-rate candidates
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# V3.4: Pitcher-specific FADE moderation (April 11 post-mortem)
+# Pitcher-specific FADE moderation
 #
 # Pitchers control their own environment — high draft count reflects real
 # ERA/K-rate performance data, not media hype.  The crowd is structurally
@@ -381,7 +383,7 @@ PITCHER_FADE_PENALTY = 0.85           # S5: 15% haircut (batters: 0.75 = 25%)
 MOONSHOT_PITCHER_FADE_PENALTY = 0.70  # Moonshot: 30% haircut (batters: 0.60 = 40%)
 
 # ---------------------------------------------------------------------------
-# V3.4: Draft scarcity tiebreaker within auto-include tier
+# Draft scarcity tiebreaker within auto-include tier
 #
 # April 11: All ghost+max_boost candidates had identical condition_hv_rate=1.00,
 # making within-tier differentiation dependent on noisy rs_prob alone.
