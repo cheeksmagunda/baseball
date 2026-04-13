@@ -148,9 +148,9 @@ filter_ev = condition_hv_rate                    # Term 1: from CONDITION_MATRIX
 Note: card_boost is NOT multiplied again — it's already captured in condition_hv_rate (ghost+3.0x → HV rate 1.00) and rs_prob (higher boost → lower RS threshold).
 
 Post-EV adjustments (applied in `run_filter_strategy`):
-- Unboosted pitcher penalty (`_apply_unboosted_pitcher_penalty`): 10-35% haircut when boosted pool is rich
 - Three-tier ordering: auto-include → soft_auto_include → rest by filter_ev
 - Dynamic pitcher cap: V3.4 — 3 when 3+ boosted pitchers, 2 when 2 boosted or ghost+boost, 1 otherwise
+- V4.1: Unboosted pitcher penalty removed — matrix now encodes empirical HV rates per (ownership × boost) cell, so stacking a second penalty double-counted
 
 ### V2.4 Changes (April 9 — April 8 Post-Mortem)
 
@@ -370,12 +370,11 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
 - Applied BEFORE the percentile check as an `OR` condition.
 
 **Fix 4 — Env-Scaled Unboosted Pitcher Penalty** (`app/services/filter_strategy.py`)
-- `UNBOOSTED_PITCHER_RICH_POOL_PENALTY` now scales with `env_score`:
-  - env=0.0 → 0.65 (35% haircut, same as V2)
-  - env=0.5 → 0.775 (22% haircut)
-  - env=1.0 → 0.90 (10% haircut — ace with perfect environment barely penalized)
-- New constant: `UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL = 0.90`.
-- Historical counter-examples: Nolan McLean (Apr 9, 0 boost, biggest overperformer), Sandy Alcantara (Apr 7, RS 7.5).
+- **Superseded by V4.1**: the penalty has been removed entirely. The V4.0
+  condition matrix retrain now encodes empirical HV rates per (ownership ×
+  boost) cell directly (e.g. chalk+no_boost pitcher 0.33, mega_chalk+no_boost
+  pitcher 0.19). Stacking a second 10–35% haircut on top double-counted the
+  unboosted-ness and buried anchor plays like Alcantara/McLean/Fried.
 
 ### Lineup Construction (V3.2 — Three-Tier EV, dynamic pitcher cap)
 Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. Dynamic cap: 1 SP when boosted pool is rich (V3.2: 2 SP if ghost+boost pitcher exists), 2 SP when thin. **No "day types" force composition.**
@@ -412,7 +411,6 @@ Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. Dynamic cap: 
 - `_compute_filter_ev()` — Starting 5 EV (delegates to `_compute_base_ev`)
 - `_compute_moonshot_filter_ev()` — Moonshot EV (delegates to `_compute_base_ev` + sharp/explosive bonuses)
 - `_compute_dnp_adjustment()` — DRY: bifurcated DNP risk (ghost/unknown/confirmed)
-- `_apply_unboosted_pitcher_penalty()` — DRY: env-scaled pitcher haircut (shared by S5 and Moonshot)
 - `_identify_correlation_groups()` — V3.2: finds teams with 2+ ghost players for cross-lineup distribution
 - `compute_dynamic_pitcher_cap()` — V3.4: cap=3 when 3+ boosted SPs, cap=2 when 2 boosted or ghost+boost, cap=1 otherwise
 - `_build_team_stack()` — Ghost-pool team stacking (V3.2: skipped when MAX_PLAYERS_PER_TEAM=1)

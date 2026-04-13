@@ -312,23 +312,16 @@ BOOST_CONCENTRATION_PENALTY = 0.85    # 15% penalty for 3rd+ boosted in same gam
 SLOT1_DIFFERENTIATOR_EV_THRESHOLD = 0.90  # Only swap if contrarian within 10% EV
 
 # ---------------------------------------------------------------------------
-# Rich-pool pitcher correction (V2 §4.3 dynamic composition rule)
-# When the boosted pool is full (≥ BOOSTED_POOL_FULL_THRESHOLD quality cards),
-# unboosted pitchers get de-prioritized.
-#
-# V3.1: Scaled inversely by env_score. A generational ace with env_score=1.0
-# (facing bottom-10 offense, high K/9, pitcher park) should NOT get a 35%
-# haircut just because boosted batters exist. Historical counter-examples:
-#   - Apr 9: Nolan McLean (NYM, 0 boost, 2.6k drafts) = biggest overperformer
-#   - Apr 7: Sandy Alcantara (0 boost, RS 7.5) = elite anchor
-#
-# Scaling: penalty interpolates from FLOOR (full haircut at env=0) to
-# CEILING (mild haircut at env=1.0). Formula:
-#   effective_penalty = FLOOR + (CEILING - FLOOR) * env_score
-#   At env=0.0 → 0.65 (35% haircut, same as V2)
-#   At env=0.5 → 0.775 (22% haircut)
-#   At env=1.0 → 0.90 (10% haircut — ace with perfect environment)
+# V4.1: Rich-pool unboosted pitcher penalty REMOVED.
+# The recalibrated condition matrix (V4.0) encodes empirical HV rates per
+# (ownership × boost) cell.  Elite unboosted aces (Sale/Alcantara/Fried class)
+# now rate 0.19–0.43 on the pitcher matrix — the matrix already accounts for
+# their unboosted-ness.  Stacking a 10–35% haircut on top double-counted and
+# buried the anchor plays those aces provide.  Historical counter-examples
+# (Nolan McLean Apr 9, Sandy Alcantara Apr 7, Max Fried recurring) all surface
+# correctly through the recalibrated matrix alone.
 # ---------------------------------------------------------------------------
+
 # ---------------------------------------------------------------------------
 # V3.2 constants: Soft auto-include, correlation, env tiebreaker
 # ---------------------------------------------------------------------------
@@ -353,9 +346,6 @@ MOONSHOT_CORRELATION_TEAMMATE_BONUS = 1.20  # +20% EV (replaces the -15% same-te
 # should rank above one with unknown batting order in Petco.
 ENV_TIEBREAKER_BONUS_MAX = 0.15          # up to +15% EV based on env_score
 ENV_TIEBREAKER_HV_THRESHOLD = 0.85       # only apply to high-HV-rate candidates
-
-UNBOOSTED_PITCHER_RICH_POOL_PENALTY = 0.65      # worst-case (env=0.0) — 35% haircut
-UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL = 0.90  # best-case (env=1.0) — 10% haircut
 
 # ---------------------------------------------------------------------------
 # V3.4: Boosted pitcher cap expansion (April 11 post-mortem)
