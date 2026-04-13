@@ -54,12 +54,12 @@ date,player_name,team_actual,position,real_score,card_boost,game_result,ab,r,h,h
 2026-03-28,Jake Meyers,HOU,OF,3.0,3.0,HOU 11 LAA 9,~5,~2,2,0,2,,,,,,,2-run double in 6th during 8-run rally + SB
 2026-03-28,Ezequiel Tovar,COL,SS,2.9,3.0,COL 3 MIA 4,4,1,1,1,2,0,,,,,,2-run HR in 4th (1st of season)
 2026-03-28,Christian Walker,HOU,1B,2.6,3.0,HOU 11 LAA 9,~5,~1,2,0,1,,,,,,,RBI single in 6th + double; part of comeback
-2026-03-28,Royce Lewis,MIN,SS,4.1,3.0,MIN 4 BAL 1,3,2,1,1,2,1,1,,,,,,2-run HR off Bradish + BB + SB
+2026-03-28,Royce Lewis,MIN,SS,4.1,3.0,MIN 4 BAL 1,3,2,1,1,2,1,1,,,,,2-run HR off Bradish + BB + SB
 2026-03-29,Yandy Diaz,TB,1B,7.5,1.9,TB 11 STL 7,6,~3,5,0,4,0,,,,,,5-for-6 career-high 5 hits 4 singles + 1 double
 2026-03-29,Colson Montgomery,CWS,SS,6.3,3.0,CWS 7 MIL 9,5,~1,2,1,5,0,,,,,,Grand slam 405ft 103.6mph EV + RBI single
 2026-03-29,Eugenio Suarez,CIN,3B,5.4,3.0,CIN 3 BOS 2,~3,1,1,1,3,0,,,,,,Go-ahead 3-run HR off Weissert on 0-2 count
 2026-03-29,Jordan Walker,STL,OF,5.4,3.0,STL 7 TB 11,~4,3,3,1,3,,,,,,,3-run HR + double; batting .400 thru 3 games
-2026-03-29,Christian Yelich,MIL,OF,5.2,1.3,MIL 9 CWS 7,1,1,1,1,3,0,0,,,,,,Pinch-hit 3-run HR 421ft 111.1mph EV - first career PH HR
+2026-03-29,Christian Yelich,MIL,OF,5.2,1.3,MIL 9 CWS 7,1,1,1,1,3,0,0,,,,,Pinch-hit 3-run HR 421ft 111.1mph EV - first career PH HR
 2026-03-29,Wilyer Abreu,BOS,OF,4.8,1.8,BOS 2 CIN 3,4,1,3,1,2,0,,,,,,2-run HR in 4th + single + double; 6-for-13 series
 2026-03-29,Brendan Donovan,SEA,2B,4.7,2.3,SEA 8 CLE 0,~4,1,1,1,3,0,,,,,,3-run HR line drive over wall + 2 HBP
 2026-03-29,Owen Caissie,MIA,OF,4.6,1.1,MIA 4 COL 3,~2,1,1,1,2,0,,,,,,Pinch-hit walk-off 2-run HR 393ft 107.9mph EV
@@ -82,7 +82,7 @@ date,player_name,team_actual,position,real_score,card_boost,game_result,ab,r,h,h
 2026-03-30,Gunnar Henderson,BAL,SS,3.0,3.0,TEX 5 BAL 2,,,2,1,2,,,,,,,Solo HR + hit; 2 errors in field
 2026-03-30,TJ Rumfield,COL,OF,3.0,3.0,COL 14 TOR 5,,,3,0,2,,,,,,,3 hits incl 2B in blowout
 2026-03-30,Colt Keith,DET,2B,2.8,3.0,ARI 9 DET 6,,,2,0,2,,,,,,,2 doubles 2 RBI
-2026-03-30,Jackson Merrill,SD,OF,2.6,3.0,SF 3 SD 2,4,1,1,1,2,0,0,,,,,,2-run HR
+2026-03-30,Jackson Merrill,SD,OF,2.6,3.0,SF 3 SD 2,4,1,1,1,2,0,0,,,,,2-run HR
 2026-03-31,Shohei Ohtani,LAD,DH,5.8,3.0,LAD 4 CLE 1,3,,1,0,0,2,1,,0,6,W,Two-way: 6 IP 1H 0ER 3BB 6K pitching + 1-for-3 2BB batting
 2026-03-31,Oneil Cruz,PIT,SS,5.7,3.0,PIT 8 CIN 3,,3,3,2,3,,,,,,,2 HR (444ft + 403ft) 3 RBI
 2026-03-31,Willy Adames,SF,SS,5.5,3.0,SF 9 SD 3,5,,4,1,2,,,,,,,4-for-5 w/HR + 2 doubles (near cycle)
@@ -91,11 +91,11 @@ date,player_name,team_actual,position,real_score,card_boost,game_result,ab,r,h,h
 2026-03-31,Jung Hoo Lee,SF,OF,4.2,3.0,SF 9 SD 3,,,3,0,3,,,,,,,2-run 2B + RBI single
 2026-03-31,Yordan Alvarez,HOU,DH,4.2,1.8,HOU 9 BOS 2,3,2,2,1,2,1,,,,,,HR + 2B
 2026-03-31,Logan Webb,SF,P,3.7,3.0,SF 9 SD 3,,,,,,,,,3,5,W,6 IP 3H 3ER 4BB 5K - got run support
-2026-03-31,Corey Seager,TEX,SS,3.4,2.8,TEX 8 BAL 5,,,2+,1,1+,1,1,,,,,,Solo HR in 9th + RBI single
+2026-03-31,Corey Seager,TEX,SS,3.4,2.8,TEX 8 BAL 5,,,2+,1,1+,1,1,,,,,Solo HR in 9th + RBI single
 2026-03-31,Jake Bauers,MIL,1B,3.1,3.0,MIL 6 TB 2,,,2,1,1,,,,,,,Solo HR + SB
 2026-03-31,Ben Rice,NYY,1B,3.1,3.0,NYY 5 SEA 0,,2,1+,0,1+,2,,,,,,2B + BB + BB
 2026-03-31,Carlos Correa,HOU,SS,3.0,3.0,HOU 9 BOS 2,,,2,0,2,,,,,,,2 hits 2 RBI
-2026-03-31,Max Muncy,LAD,3B,2.9,3.0,LAD 4 CLE 1,3,2,2,1,1,1,0,,,,,,Solo HR 410ft
+2026-03-31,Max Muncy,LAD,3B,2.9,3.0,LAD 4 CLE 1,3,2,2,1,1,1,0,,,,,Solo HR 410ft
 2026-03-31,Jacob Wilson,OAK,SS,2.9,3.0,OAK 5 ATL 2,4,,2,0,2,,,,,,,2B + hit 2 RBI
 2026-04-02,Matt Olson,ATL,1B,5.6,3.0,ATL 17 ARI 2,4,2,3,1,3,1,0,,,,,"HR + 2 doubles + RBI single; 8-run 5th inning"
 2026-04-02,Cole Ragans,KCR,P,5.3,3.0,MIN 5 KC 1,,,,,,,,,1,8,L,"6 IP 4H 1ER 1BB 8K - outdueled by Bradley despite strong outing"
@@ -137,7 +137,7 @@ date,player_name,team_actual,position,real_score,card_boost,game_result,ab,r,h,h
 2026-04-05,Logan Webb,SF,P,5.2,0.3,SF win,,,,,,,,~7,~1,~6,W,~7 IP 1ER 6K efficient start
 2026-04-05,Jackson Merrill,SD,OF,4.7,3.0,SD game,~4,~1,~2,1,~2,0,~1,,,,,solid multi-hit game at 1 draft
 2026-04-05,Corbin Carroll,ARI,OF,4.6,2.1,ARI game,~4,~1,~2,1,~2,1,~1,,,,,strong day; most popular HV performer 1.6k drafts
-2026-04-05,Chris Bassitt,BAL,P,-4.0,3.0,BAL loss,,,,,,,,,,~5,~6,,L,~2.1 IP 6ER disaster start — 1.4k drafts -20 total_value bust
+2026-04-05,Chris Bassitt,BAL,P,-4.0,3.0,BAL loss,,,,,,,,~5,~6,,L,~2.1 IP 6ER disaster start — 1.4k drafts -20 total_value bust
 2026-04-06,James Wood,WSH,OF,5.5,3.0,WSH 9 STL 6,~4,~2,~3,1,~3,1,~1,,,,, ghost player (3 drafts) multi-hit game with HR; WSH big win
 2026-04-06,Teoscar Hernández,LAD,OF,5.2,3.0,LAD 14 TOR 2,~4,~2,~3,1,~3,0,~1,,,,,LAD blowout winner; only 3 drafts at +3.0x — pure ghost HV
 2026-04-06,Willson Contreras,BOS,1B,5.0,3.0,MIL 8 BOS 6,~4,~1,~2,1,~3,1,~1,,,,,strong individual game in BOS loss; 1 draft
@@ -146,8 +146,8 @@ date,player_name,team_actual,position,real_score,card_boost,game_result,ab,r,h,h
 2026-04-06,Dalton Rushing,LAD,C,4.7,2.2,LAD 14 TOR 2,~3,~2,~2,1,~2,1,0,,,,,LAD blowout; backup catcher 1 draft; slotted slot 5 in rank 1
 2026-04-06,Jonathan India,KC,2B,4.3,2.9,KC 4 CLE 2,~4,~1,~2,1,~2,1,~1,,,,,productive in KC road win; 1 draft
 2026-04-06,Troy Johnston,COL,1B,4.5,3.0,COL 9 HOU 7,~4,~2,~2,1,~3,0,~1,,,,,COL high-scoring win vs HOU; 4 drafts
-2026-04-06,José Soriano,LAA,P,8.2,0.0,LAA 6 ATL 2,,,,,,,,,~7,~1,~9,W,dominant start in LAA win; 142 drafts but no boost — best pitcher RS of the day
-2026-04-06,Justin Wrobleski,LAD,P,3.9,0.4,LAD 14 TOR 2,,,,,,,,,~6,~1,~6,W,quality start in blowout win; appeared in ranks 3 and 9
-2026-04-06,Zack Littell,WSH,P,3.7,3.0,WSH 9 STL 6,,,,,,,,,~6,~1,~7,W,quality start; 1.5k drafts at +3.0x but env supported (WSH home win)
+2026-04-06,José Soriano,LAA,P,8.2,0.0,LAA 6 ATL 2,,,,,,,,~7,~1,~9,W,"dominant start in LAA win; 142 drafts but no boost — best pitcher RS of the day"
+2026-04-06,Justin Wrobleski,LAD,P,3.9,0.4,LAD 14 TOR 2,,,,,,,,~6,~1,~6,W,"quality start in blowout win; appeared in ranks 3 and 9"
+2026-04-06,Zack Littell,WSH,P,3.7,3.0,WSH 9 STL 6,,,,,,,,~6,~1,~7,W,"quality start; 1.5k drafts at +3.0x but env supported (WSH home win)"
 2026-04-06,Freddie Freeman,LAD,1B,4.0,2.3,LAD 14 TOR 2,~4,~2,~2,1,~3,1,0,,,,,multi-hit in LAD blowout; appeared in 8 of 12 top lineups
-2026-04-06,Brayan Bello,BOS,P,0.3,3.0,MIL 8 BOS 6,,,,,,,,,~4,~4,~4,ND,struggled as BOS lost 8-6; boost trap — 2.1k drafts at +3.0x = RS 0.3 disaster
+2026-04-06,Brayan Bello,BOS,P,0.3,3.0,MIL 8 BOS 6,,,,,,,,~4,~4,~4,ND,"struggled as BOS lost 8-6; boost trap — 2.1k drafts at +3.0x = RS 0.3 disaster"
