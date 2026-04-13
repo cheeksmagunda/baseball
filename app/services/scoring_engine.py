@@ -503,7 +503,15 @@ def estimate_rs_probability(
     """
     from app.core.utils import get_trait_score
 
-    threshold = 15.0 / (2.0 + card_boost)
+    # Live Real Sports slates do not expose card_boost via any API.  When the
+    # caller has no real boost signal (input is 0.0, which is the sentinel
+    # populate_slate_players writes for every live SlatePlayer), fall back to
+    # a neutral threshold equivalent to ~1.3x boost.  Historical slates still
+    # flow through the boost-weighted threshold normally (non-zero inputs).
+    if card_boost <= 0.0:
+        threshold = 4.5
+    else:
+        threshold = 15.0 / (2.0 + card_boost)
 
     # Base probability from decision tree (calibrated for threshold <= 3.0)
     if is_pitcher:
