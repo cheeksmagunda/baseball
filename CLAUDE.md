@@ -46,10 +46,10 @@ Rule-based scoring + external-variables filtering (NOT ML). The goal is to **win
 
 | File | Purpose |
 |---|---|
-| `historical_players.csv` | Master player ledger (1 row per player/day). Contains total_value, card_boost, drafts, leaderboard flags |
-| `historical_winning_drafts.csv` | Top 20 lineups (5 rows per lineup) |
+| `historical_players.csv` | Master player ledger (1 row per player/day). Contains total_value, card_boost, drafts, leaderboard flags. **Null `real_score` / `total_value` indicates a DNP / scratch — there is no separate flag.** |
+| `historical_winning_drafts.csv` | Top-ranked lineups per date (5 rows per lineup). Collection depth varies by date (4–12 ranks observed); the collector aspires to rank-20 but does not always reach it. |
 | `historical_slate_results.json` | MLB game outcomes by date |
-| `hv_player_game_stats.csv` | Actual box score stats for 98 Highest Value player appearances |
+| `hv_player_game_stats.csv` | Actual box score stats for every Highest-Value player appearance to date (grows each slate; currently 290 rows across 19 dates). |
 
 ## Database Models (9 tables)
 
