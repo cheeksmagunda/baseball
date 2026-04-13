@@ -82,6 +82,23 @@ async def _resolve_candidates(
     """
     game_by_id, team_to_game = _build_game_lookup(games)
 
+    # Stage -1: exclude off-leaderboard cards (drafts=None).
+    # The condition classifier requires a real draft count to bucket a player
+    # into an ownership tier — there is no fallback tier for missing data
+    # (no-fallback rule, CLAUDE.md). Off-leaderboard cards must be filtered
+    # out upstream rather than substituting a synthetic tier downstream.
+    filtered_cards: list[FilterCard] = []
+    for card in cards:
+        if card.drafts is None:
+            logger.warning(
+                "Excluding %s (%s) — drafts=None (off-leaderboard, no "
+                "ownership-tier signal available)",
+                card.player_name, card.team,
+            )
+            continue
+        filtered_cards.append(card)
+    cards = filtered_cards
+
     # Stage 0: ensure every card has a Player record with real stats.
     # Mega-ghost players (1-3 drafts) are the least likely to have existing
     # records AND the most valuable — silently dropping them is catastrophic.
