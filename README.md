@@ -93,14 +93,16 @@ A fifth signal source used exclusively by the Moonshot lineup:
 
 If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +25% EV boost in Moonshot only.
 
-## Dual-Lineup Optimizer (V2.4 "Anchor, Differentiate, Stack")
+## Dual-Lineup Optimizer (V5.0 "Pitcher-Anchor Rule")
 
-The optimizer produces **two lineups** from the same ranked candidate pool:
+The optimizer produces **two lineups** from the same ranked candidate pool. Each lineup is structurally fixed at **exactly 1 starting pitcher + 4 batters**, with the pitcher pinned to Slot 1 (2.0x multiplier):
 
-| Lineup | Strategy | Popularity | Edge |
-|---|---|---|---|
-| **Starting 5** | Best EV | FADE=0.75, TARGET=1.15 | Primary win probability |
-| **Moonshot** | Completely different 5 | FADE=0.60, TARGET=1.30 | Anti-crowd, sharp signal, HR power |
+| Lineup | Structure | Strategy | Popularity | Edge |
+|---|---|---|---|---|
+| **Starting 5** | 1 SP (Slot 1) + 4 batters (Slots 2–5) | Best EV | FADE=0.75, TARGET=1.15 | Primary win probability |
+| **Moonshot** | 1 SP (Slot 1) + 4 batters (Slots 2–5) | Completely different 5 | FADE=0.60, TARGET=1.30 | Anti-crowd, sharp signal, HR power |
+
+Each lineup's anchor pitcher is the highest-EV pitcher in its candidate pool. The anchor's `game_id` is blocked for batter selection so no batter (teammate or opponent) in that game can appear — no negative correlation between the pitcher and the rest of the lineup.
 
 **The primary signal is draft tier × boost**, not trait score:
 
@@ -112,19 +114,20 @@ The optimizer produces **two lineups** from the same ranked candidate pool:
 | chalk (1500+ drafts) | 6.4 | 25% |
 
 **Key optimizer behaviors:**
-- Top-5 most-drafted boost=3.0 players flagged each run as chalk+boost traps (57% bust rate)
+- **V5.0 pitcher anchor**: exactly 1 SP per lineup, pinned to Slot 1. The highest-EV pitcher in the pool wins the anchor — boosted or unboosted, ghost or chalk, treated uniformly.
+- **Game-blocking**: the anchor pitcher's `game_id` is excluded from all batter picks (prevents batter-vs-own-pitcher and teammate-of-opposing-pitcher conflicts).
+- Top-5 most-drafted boost=3.0 batters flagged each run as chalk+boost traps (57% bust rate; pitchers are exempt per V3.1).
 - Mega-ghost+3x players (< 50 drafts) get 1.50× synergy bonus and env penalty cap of 20%
 - Ghost+boost EV floor at score=30 (env-independent) prevents data scarcity from burying ghost picks
-- Min 1 ghost in lineup enforced; fallback accepts mega-ghost+3x even without env data
-- Max 1 starting pitcher per lineup (ghost+boost batters outweigh a 2nd pitcher slot)
-- Moonshot: zero overlap with Starting 5; heavier anti-crowd lean; underground sharp signal (+25% EV max)
+- Min 1 ghost batter in lineup enforced; fallback accepts mega-ghost+3x even without env data (anchor pitcher is exempt from the swap)
+- Moonshot: zero player overlap with Starting 5 (normally forces a different anchor pitcher); heavier anti-crowd lean; underground sharp signal (+25% EV max)
 
 ## Strategy Insights
 
 - **Primary edge**: Ghost+high-boost (< 100 drafts, boost ≥ 2.5) wins 82–100% of the time historically. Picking this tier correctly matters more than any trait score.
 - **Boost trap**: Medium/chalk-draft players with high boost (200–1499 drafts, boost ≥ 2.0) win only 0–12% of the time. The crowd sees the boost and piles in, but RS doesn't follow.
 - **Card boost math**: A ghost with RS 3.0 and +3.0x boost (TV 15.0) decisively beats an unboosted chalk player with RS 5.0 (TV 10.0).
-- **Slot sequencing**: Unboosted players in Slot 1 (67% value loss from Slot 1→5). Boosted players are slot-flexible (only 16% loss at +3.0x).
+- **Slot sequencing (V5.0)**: Slot 1 is always the anchor pitcher. Among batters in Slots 2–5, unboosted batters take the highest available slot (Slot 2 first) because of the 67% value loss from Slot 1→5; boosted batters tail into the lower slots (only 16% loss at +3.0x).
 
 ## API Endpoints
 
