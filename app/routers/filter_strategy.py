@@ -679,47 +679,33 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
             if cached is not None:
                 return cached
 
-        # Cache warm but schedule not yet published → system still initializing
-        # (startup pipeline stored picks but slate_monitor hasn't called set_schedule)
-        # If cache is cold, fall through to on-demand rebuild below.
+        # Cache warm but schedule not yet published → resolve it on-the-fly so
+        # the T-65 gate below can decide correctly.  (Startup pipeline stored
+        # picks but slate_monitor hasn't yet called set_schedule.)
         lock_time = lineup_cache.lock_time_utc
         if lock_time is None and lineup_cache.is_warm:
-            # Resolve first-pitch time so the UI can show "Picks available at
-            # HH:MM" instead of a generic message.  No fallback — if this
-            # raises, let it propagate rather than silently degrading.
+            # Resolve first-pitch time.  No fallback — if this raises, let it
+            # propagate rather than silently degrading.
             from app.services.slate_monitor import _get_first_pitch_utc
 
-            first_pitch_iso = None
-            computed_lock_iso = None
-            minutes_until = None
             active_date = _get_active_slate_date(db)
             first_pitch = _get_first_pitch_utc(db, active_date)
             if first_pitch is not None:
                 # Publish it so subsequent requests skip this lookup
                 lineup_cache.set_schedule(first_pitch)
                 lock_time = lineup_cache.lock_time_utc
-                first_pitch_iso = first_pitch.isoformat()
-                if lock_time is not None:
-                    computed_lock_iso = lock_time.isoformat()
-                    now = datetime.now(timezone.utc)
-                    minutes_until = max(0, int((lock_time - now).total_seconds() / 60))
-
-            phase = "before_lock" if computed_lock_iso else "initializing"
-            detail = (
-                f"Picks lock at T-65 ({minutes_until} min). Come back closer to game time."
-                if phase == "before_lock"
-                else "Pipeline initializing — picks will be available soon."
-            )
-            return JSONResponse(
-                status_code=425,
-                content={
-                    "detail": detail,
-                    "phase": phase,
-                    "first_pitch_utc": first_pitch_iso,
-                    "lock_time_utc": computed_lock_iso,
-                    "minutes_until_lock": minutes_until,
-                },
-            )
+            else:
+                # No schedule resolvable yet — pipeline still initializing.
+                return JSONResponse(
+                    status_code=425,
+                    content={
+                        "detail": "Pipeline initializing — picks will be available soon.",
+                        "phase": "initializing",
+                        "first_pitch_utc": None,
+                        "lock_time_utc": None,
+                        "minutes_until_lock": None,
+                    },
+                )
 
         # Schedule is set → enforce T-65 gate
         if lock_time is not None:
