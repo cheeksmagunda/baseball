@@ -281,15 +281,16 @@ MIN_GHOST_IN_LINEUP = 1              # min 1 ghost player (< 100 drafts)
 # Ghost enforcement: replace worst lineup player with a ghost if ghost EV >= this fraction
 GHOST_ENFORCE_SWAP_THRESHOLD = 0.50  # was 0.70 — lowered so ghost inclusion actually fires
 MAX_PLAYERS_PER_TEAM = 1             # V3.2: 1 per team per individual lineup; correlation handled cross-lineup
-# V3.0: Dynamic pitcher cap — replaces hard MAX_PITCHERS_IN_LINEUP = 1.
-# When the boosted batter pool is rich (>= BOOSTED_POOL_FULL_THRESHOLD quality
-# cards), cap at 1 pitcher — the ghost+boost batter edge outweighs a 2nd SP.
-# When the pool is thin (< BOOSTED_POOL_FULL_THRESHOLD), relax to 2 pitchers —
-# unboosted pitchers have the highest RS floor (93% positive, avg RS 5.4) and
-# are the best alternative when quality boosted batters are scarce.
-MAX_PITCHERS_IN_LINEUP = 1           # V2.3 default (overridden dynamically in V3.0)
-MAX_PITCHERS_THIN_POOL = 2           # V3.0: allowed when boosted pool is thin
-PITCHER_CAP_EV_THRESHOLD = 0.0       # V3.0: cumulative EV floor for top-5 batters (see compute_dynamic_pitcher_cap)
+# V5.0: Hard pitcher-anchor rule — exactly 1 pitcher per lineup, always in Slot 1.
+# The V3.0-V3.4 dynamic pitcher cap (1/2/3 based on boosted-pool richness) is
+# retired.  Every lineup is a 1 SP + 4 batter construction, and the pitcher's
+# game is blocked for all batter picks in the same lineup (no negative
+# correlation between our SP and our batters).  The best-EV pitcher anchors
+# Slot 1 (2.0x), regardless of boost.  This sacrifices the multi-SP upside
+# surfaced on April 11 in favor of a cleaner, more disciplined shape.
+REQUIRED_PITCHERS_IN_LINEUP = 1      # V5.0: exactly this many pitchers per lineup
+MAX_PITCHERS_IN_LINEUP = 1           # V5.0: identical to REQUIRED; kept for legacy validation paths
+PITCHER_ANCHOR_SLOT = 1              # V5.0: pitcher always goes in Slot 1 (2.0x multiplier)
 
 # ---------------------------------------------------------------------------
 # Blowout game stack bonus (4-term EV formula)
@@ -306,10 +307,10 @@ BOOST_CONCENTRATION_THRESHOLD = 3     # 3+ boosted in same game triggers penalty
 BOOST_CONCENTRATION_PENALTY = 0.85    # 15% penalty for 3rd+ boosted in same game
 
 # ---------------------------------------------------------------------------
-# Slot 1 Differentiator Principle (§4.2 Filter 5, §3.4)
-# When the field converges on an obvious Slot 1, put the contrarian there.
+# V5.0: Slot 1 Differentiator Principle RETIRED.
+# Slot 1 is permanently reserved for the anchor pitcher (see PITCHER_ANCHOR_SLOT).
+# The contrarian-swap heuristic no longer applies.
 # ---------------------------------------------------------------------------
-SLOT1_DIFFERENTIATOR_EV_THRESHOLD = 0.90  # Only swap if contrarian within 10% EV
 
 # ---------------------------------------------------------------------------
 # V4.1: Rich-pool unboosted pitcher penalty REMOVED.
@@ -348,23 +349,16 @@ ENV_TIEBREAKER_BONUS_MAX = 0.15          # up to +15% EV based on env_score
 ENV_TIEBREAKER_HV_THRESHOLD = 0.85       # only apply to high-HV-rate candidates
 
 # ---------------------------------------------------------------------------
-# V3.4: Boosted pitcher cap expansion (April 11 post-mortem)
+# V5.0: Dynamic pitcher cap RETIRED.
 #
-# April 11: Winning lineups had 3 chalk pitchers with 3.0x boost (Suarez,
-# Sheehan, Bassitt).  The V3.2 pitcher cap only expanded for ghost+boost
-# pitchers, locking the cap at 1 when all boosted pitchers were chalk.
-# Historical pitcher data: avg 2.15 pitchers in rank-1 lineups, range 0-5.
-# The cap should reflect the number of quality boosted pitchers available,
-# not just their ownership tier.
-#
-# Logic:
-#   3+ boosted pitchers (boost >= 2.5) → cap = 3
-#   2 boosted pitchers → cap = 2 (even with rich batter pool)
-#   1 ghost+boost pitcher → cap = 2 (existing V3.2)
-#   0 boosted pitchers + rich pool → cap = 1 (existing V3.0)
+# The V3.0-V3.4 dynamic pitcher cap (1/2/3 based on boosted-pool richness) is
+# replaced by a hard 1-pitcher anchor rule.  See REQUIRED_PITCHERS_IN_LINEUP
+# and PITCHER_ANCHOR_SLOT above.  Deprecated constants removed:
+#   - MAX_PITCHERS_THIN_POOL
+#   - MAX_PITCHERS_BOOSTED_RICH
+#   - BOOSTED_PITCHER_CAP_EXPAND_MIN
+#   - PITCHER_CAP_EV_THRESHOLD
 # ---------------------------------------------------------------------------
-BOOSTED_PITCHER_CAP_EXPAND_MIN = 3    # min boosted pitchers to raise cap to 3
-MAX_PITCHERS_BOOSTED_RICH = 3         # cap when 3+ boosted pitchers available
 
 # ---------------------------------------------------------------------------
 # V3.4: Pitcher-specific FADE moderation (April 11 post-mortem)
