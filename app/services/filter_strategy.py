@@ -97,6 +97,9 @@ from app.core.constants import (
     PITCHER_FADE_PENALTY,
     MOONSHOT_PITCHER_FADE_PENALTY,
     DRAFT_SCARCITY_TIEBREAKER_MAX,
+    # V3.5 constants
+    MOST_DRAFTED_3X_PENALTY,
+    MOST_DRAFTED_3X_ENV_PASS_PENALTY,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score
 from app.services.popularity import PopularityClass
@@ -810,8 +813,24 @@ def _compute_base_ev(
 
 
 def _compute_filter_ev(candidate: FilteredCandidate) -> float:
-    """Compute Starting 5 EV via the shared 4-term condition-based formula."""
-    return _compute_base_ev(candidate, _popularity_ev_adjustment(candidate.popularity, is_pitcher=candidate.is_pitcher))
+    """Compute Starting 5 EV via the shared 4-term condition-based formula.
+
+    V3.5: Applies is_most_drafted_3x trap penalty (V2.3 spec, previously
+    dead code — flag was computed but never read).  57% bust rate, avg RS 0.72.
+    Env-aware: lighter penalty when environmental support exists.
+    """
+    ev = _compute_base_ev(candidate, _popularity_ev_adjustment(candidate.popularity, is_pitcher=candidate.is_pitcher))
+    if candidate.is_most_drafted_3x:
+        if candidate.env_score >= ENV_PASS_THRESHOLD:
+            ev *= MOST_DRAFTED_3X_ENV_PASS_PENALTY
+        else:
+            ev *= MOST_DRAFTED_3X_PENALTY
+        logger.debug(
+            "Most-drafted-3x penalty (S5): %s env=%.2f penalty=%.2f",
+            candidate.player_name, candidate.env_score,
+            MOST_DRAFTED_3X_ENV_PASS_PENALTY if candidate.env_score >= ENV_PASS_THRESHOLD else MOST_DRAFTED_3X_PENALTY,
+        )
+    return ev
 
 
 def _build_team_stack(
@@ -906,11 +925,17 @@ def _enforce_composition(
     all_sorted = sorted(candidates, key=lambda c: c.filter_ev, reverse=True)
 
     # V3.2: Three-tier ordering: auto → soft_auto → rest
-    auto = [c for c in all_sorted if is_auto_include(c.drafts, c.card_boost)]
-    soft_auto = [c for c in all_sorted if is_soft_auto_include(c.drafts, c.card_boost)]
+    # V3.5: Pass total_slate_drafts so ownership tier classification matches
+    # the EV computation path (get_condition_hv_rate also receives it).
+    # Without this, is_auto_include uses absolute thresholds (<100=ghost)
+    # while the EV formula uses percentage-based thresholds — a player
+    # with 120 drafts could get ghost HV rate (1.00) but NOT be treated
+    # as auto-include, or vice versa.
+    auto = [c for c in all_sorted if is_auto_include(c.drafts, c.card_boost, c.total_slate_drafts)]
+    soft_auto = [c for c in all_sorted if is_soft_auto_include(c.drafts, c.card_boost, c.total_slate_drafts)]
     rest = [c for c in all_sorted
-            if not is_auto_include(c.drafts, c.card_boost)
-            and not is_soft_auto_include(c.drafts, c.card_boost)]
+            if not is_auto_include(c.drafts, c.card_boost, c.total_slate_drafts)
+            and not is_soft_auto_include(c.drafts, c.card_boost, c.total_slate_drafts)]
     ordered = auto + soft_auto + rest
 
     if soft_auto:
@@ -1603,8 +1628,17 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
 
     Delegates to _compute_base_ev() for the 4-term formula (DRY),
     then applies moonshot-specific sharp signal and explosive trait bonuses.
+
+    V3.5: Applies is_most_drafted_3x penalty — always full 40% for Moonshot
+    (max contrarian stance, no env leniency).
     """
     base_ev = _compute_base_ev(candidate, _moonshot_popularity_adj(candidate.popularity, is_pitcher=candidate.is_pitcher))
+    if candidate.is_most_drafted_3x:
+        base_ev *= MOST_DRAFTED_3X_PENALTY
+        logger.debug(
+            "Most-drafted-3x penalty (Moonshot): %s penalty=%.2f",
+            candidate.player_name, MOST_DRAFTED_3X_PENALTY,
+        )
 
     sharp_bonus = 1.0 + (candidate.sharp_score / 100.0) * MOONSHOT_SHARP_BONUS_MAX
     explosive_trait = get_trait_score(
