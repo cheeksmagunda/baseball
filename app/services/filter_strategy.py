@@ -81,8 +81,6 @@ from app.core.constants import (
     ENV_UNKNOWN_COUNT_THRESHOLD,
     BOOST_QUALITY_THRESHOLD,
     BOOSTED_POOL_FULL_THRESHOLD,
-    UNBOOSTED_PITCHER_RICH_POOL_PENALTY,
-    UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL,
     MAX_PITCHERS_THIN_POOL,
     # V3.2 constants
     CORRELATION_GHOST_MIN_PLAYERS,
@@ -707,43 +705,6 @@ def _compute_dnp_adjustment(candidate: FilteredCandidate) -> float:
     if candidate.env_unknown_count >= ENV_UNKNOWN_COUNT_THRESHOLD:
         return DNP_UNKNOWN_PENALTY
     return DNP_RISK_PENALTY
-
-
-def _apply_unboosted_pitcher_penalty(
-    candidates: list[FilteredCandidate],
-    log_prefix: str = "",
-) -> None:
-    """Apply env-scaled penalty to unboosted pitchers when the boosted pool is rich.
-
-    V3.1: Penalty scales inversely by env_score.  An ace with env=1.0 gets only
-    10% haircut, while a mediocre pitcher with env=0.0 gets the full 35%.
-
-    Shared by run_filter_strategy (Starting 5) and run_dual_filter_strategy (Moonshot).
-    """
-    quality_boosted_count = sum(
-        1 for c in candidates
-        if c.card_boost >= BOOST_QUALITY_THRESHOLD
-        and c.env_score >= ENV_PASS_THRESHOLD
-        and not c.is_pitcher
-    )
-    if quality_boosted_count < BOOSTED_POOL_FULL_THRESHOLD:
-        return
-
-    for c in candidates:
-        if c.is_pitcher and c.card_boost < BOOST_QUALITY_THRESHOLD:
-            env_adj = min(1.0, max(0.0, c.env_score))
-            penalty = (
-                UNBOOSTED_PITCHER_RICH_POOL_PENALTY
-                + (UNBOOSTED_PITCHER_RICH_POOL_PENALTY_CEIL - UNBOOSTED_PITCHER_RICH_POOL_PENALTY)
-                * env_adj
-            )
-            old_ev = c.filter_ev
-            c.filter_ev *= penalty
-            logger.debug(
-                "Unboosted pitcher penalty (%srich pool, V3.1 env-scaled): "
-                "%s env=%.2f penalty=%.2f EV %.2f → %.2f",
-                log_prefix, c.player_name, c.env_score, penalty, old_ev, c.filter_ev,
-            )
 
 
 def _compute_base_ev(
@@ -1575,8 +1536,11 @@ def run_filter_strategy(
     # V3.0: Compute dynamic pitcher cap before composition enforcement
     dynamic_pitcher_cap = compute_dynamic_pitcher_cap(candidates)
 
-    # Step 1b: Unboosted pitcher penalty when boosted pool is rich (V2 §4.3).
-    _apply_unboosted_pitcher_penalty(candidates, log_prefix="S5 ")
+    # V4.1: Unboosted pitcher penalty removed.  The recalibrated condition
+    # matrix (V4.0) now encodes empirical HV rates per (ownership, boost) cell
+    # — elite unboosted aces (Sale, Alcantara, Fried-class) rate 0.19–0.43,
+    # which the matrix surfaces correctly.  Stacking a second penalty on top
+    # double-counted the unboosted-ness and buried anchor plays.
 
     # Step 2: Enforce composition (pitcher/hitter counts) with dynamic pitcher cap
     lineup = _enforce_composition(candidates, slate_classification, pitcher_cap=dynamic_pitcher_cap)
@@ -1741,8 +1705,7 @@ def run_dual_filter_strategy(
             # Standard same-team penalty for non-correlation overlaps
             c.filter_ev *= MOONSHOT_SAME_TEAM_PENALTY
 
-    # Unboosted pitcher penalty for moonshot too (shared helper, same as Starting 5)
-    _apply_unboosted_pitcher_penalty(moonshot_pool, log_prefix="Moonshot ")
+    # V4.1: Unboosted pitcher penalty removed (see Starting 5 for rationale).
 
     # V3.0: Dynamic pitcher cap for moonshot pool (independent of Starting 5)
     moonshot_pitcher_cap = compute_dynamic_pitcher_cap(moonshot_pool)
