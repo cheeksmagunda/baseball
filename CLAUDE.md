@@ -109,7 +109,7 @@ Web-scraping signal aggregator that estimates which players the crowd will over-
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V3.3 "Correlate, Differentiate, Distribute"** — V3.3: cross-lineup correlation, three-tier composition, env tiebreaker, MAX_PLAYERS_PER_TEAM=1, MAX_PLAYERS_PER_GAME=1.
+**Strategy Version: V5.0 "Pitcher-Anchor Rule"** — V5.0: every lineup is exactly 1 SP + 4 batters. The highest-EV pitcher is pinned to Slot 1 (2.0x multiplier) and the pitcher's game_id is blocked for all batter picks (no negative correlation). Supersedes the V3.x dynamic pitcher cap and the Slot 1 Differentiator contrarian swap. Starting 5 and Moonshot each anchor on their own best pitcher; Moonshot's pitcher must differ from Starting 5's (player-overlap exclusion).
 
 The active optimizer produces **two lineups** from the same candidate pool via `run_dual_filter_strategy`.
 
@@ -148,9 +148,47 @@ filter_ev = condition_hv_rate                    # Term 1: from CONDITION_MATRIX
 Note: card_boost is NOT multiplied again — it's already captured in condition_hv_rate (ghost+3.0x → HV rate 1.00) and rs_prob (higher boost → lower RS threshold).
 
 Post-EV adjustments (applied in `run_filter_strategy`):
-- Three-tier ordering: auto-include → soft_auto_include → rest by filter_ev
-- Dynamic pitcher cap: V3.4 — 3 when 3+ boosted pitchers, 2 when 2 boosted or ghost+boost, 1 otherwise
+- Three-tier ordering for batters: auto-include → soft_auto_include → rest by filter_ev
+- **V5.0 pitcher anchor**: exactly 1 pitcher per lineup, pinned to Slot 1. The highest-EV pitcher in the pool is chosen; its `game_id` is added to a blocked set so no batter from the same game is drafted.
 - V4.1: Unboosted pitcher penalty removed — matrix now encodes empirical HV rates per (ownership × boost) cell, so stacking a second penalty double-counted
+
+### V5.0 Changes (April 13 — Pitcher-Anchor Rule)
+
+**Design change:** Every lineup (both Starting 5 and Moonshot) is now structurally fixed at **exactly 1 SP + 4 batters**, with the pitcher pinned to **Slot 1 (2.0x multiplier)**. The V3.x dynamic pitcher cap (1/2/3 based on boosted-pool richness) and the Slot 1 Differentiator contrarian swap are both retired.
+
+**Rationale (user directive):**
+- Every draft anchors on a pitcher in the 2.0x primary slot. The best-conditions pitcher gets the top multiplier regardless of whether they are boosted or unboosted.
+- Batters and pitchers should not compete against each other within a lineup — block the pitcher's `game_id` so no batter in that game (teammate or opponent) can be drafted.
+- Starting 5 and Moonshot each anchor on their own best pitcher; Moonshot still excludes Starting 5 player names, which forces a different pitcher in the vast majority of slates.
+
+**Changes:**
+
+1. **New constants (`app/core/constants.py`)**
+   - `REQUIRED_PITCHERS_IN_LINEUP = 1` — exactly this many pitchers per lineup
+   - `MAX_PITCHERS_IN_LINEUP = 1` — kept identical to REQUIRED for legacy validation paths
+   - `PITCHER_ANCHOR_SLOT = 1` — pitcher always goes in Slot 1 (2.0x)
+   - **Removed:** `MAX_PITCHERS_THIN_POOL`, `PITCHER_CAP_EV_THRESHOLD`, `BOOSTED_PITCHER_CAP_EXPAND_MIN`, `MAX_PITCHERS_BOOSTED_RICH`, `SLOT1_DIFFERENTIATOR_EV_THRESHOLD`
+
+2. **`compute_dynamic_pitcher_cap()` deleted** (`app/services/filter_strategy.py`)
+   - Replaced by a single-pitcher-anchor flow. Both `run_filter_strategy` and `run_dual_filter_strategy` no longer compute or pass a pitcher cap.
+
+3. **`_enforce_composition()` rewritten** — new signature `_enforce_composition(candidates, slate_class)` (no `pitcher_cap` param).
+   - **Phase 1:** select the highest-EV pitcher as the anchor. If the pool has no pitcher, raise `ValueError` (no-fallback rule).
+   - **Phase 2:** sort batters into three tiers (auto-include → soft_auto → rest by filter_ev).
+   - **Phase 3:** fill 4 batter slots while blocking the anchor pitcher's `game_id` (no teammates or opponents in the pitcher's game).
+   - Team cap (1) and overall game cap (1) still apply.
+
+4. **`_validate_lineup_structure()` rewritten** — new signature accepts `anchor_pitcher`.
+   - Uses `_protected(idx)` helper so the anchor pitcher is exempt from every swap rule (ghost enforcement, mega-chalk cap, team/game caps, unboosted-dominance checks).
+   - Ghost-enforcement replacement candidates are filtered to `not c.is_pitcher` and exclude the anchor's game.
+   - Final sanity check asserts `pitcher_count_final == REQUIRED_PITCHERS_IN_LINEUP`.
+
+5. **`_smart_slot_assignment()` rewritten** — the anchor pitcher is pinned to `PITCHER_ANCHOR_SLOT` (Slot 1). Batters are distributed across Slots 2–5 with unboosted batters getting the highest available slots (Slot 2 → Slot 5 tail for boosted). The Slot 1 Differentiator contrarian swap is gone — Slot 1 is reserved for the anchor pitcher in every lineup.
+
+**Implications for prior strategy text:**
+- Any CLAUDE.md / README statement that the optimizer may produce 0, 2, or 3 pitchers is **obsolete**. The count is now fixed at 1.
+- The "unboosted players MUST go in Slot 1" guidance now applies only to batters — and only within Slots 2–5. Slot 1 is the pitcher anchor.
+- The "ghost+boost batters outweigh a 2nd pitcher slot" reasoning is no longer a dynamic comparison; the structure is pre-committed.
 
 ### V2.4 Changes (April 9 — April 8 Post-Mortem)
 
@@ -376,27 +414,30 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
   pitcher 0.19). Stacking a second 10–35% haircut on top double-counted the
   unboosted-ness and buried anchor plays like Alcantara/McLean/Fried.
 
-### Lineup Construction (V3.2 — Three-Tier EV, dynamic pitcher cap)
-Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. Dynamic cap: 1 SP when boosted pool is rich (V3.2: 2 SP if ghost+boost pitcher exists), 2 SP when thin. **No "day types" force composition.**
+### Lineup Construction (V5.0 — Pitcher-Anchor + Three-Tier Batters)
+Every lineup is **exactly 1 SP + 4 batters**. The count is fixed, not data-driven.
 
-1. **Three-tier ordering**: auto-include (ghost+boost ≥ 2.5) → soft_auto_include (ghost+boost ≥ 2.0) → rest by filter_ev
-2. **MAX_PLAYERS_PER_TEAM = 1, MAX_PLAYERS_PER_GAME = 1**: No within-lineup stacking, no same-game pairing. Each of the 5 players comes from a different game. Correlation captured cross-lineup.
-3. **Blowout game detected**: Stack path skipped (requires MAX_PLAYERS_PER_TEAM ≥ 3, currently 1).
-4. **All slates**: Pure three-tier EV ranking with team cap (1), game cap (1), pitcher cap.
+1. **Pitcher anchor (Phase 1)**: pick the highest-EV pitcher in the pool as the anchor. Pin to Slot 1 (`PITCHER_ANCHOR_SLOT = 1`, 2.0x multiplier). Add the anchor's `game_id` to a blocked set.
+2. **Three-tier batter ordering (Phase 2)**: auto-include (ghost+boost ≥ 2.5) → soft_auto_include (ghost+boost ≥ 2.0) → rest by filter_ev
+3. **Fill 4 batter slots (Phase 3)**: honour `MAX_PLAYERS_PER_TEAM = 1`, `MAX_PLAYERS_PER_GAME = 1`, and the blocked pitcher-game. Each batter comes from a distinct game, none in the pitcher's game.
+4. **No-fallback rule**: if the pool contains no pitcher, raise `ValueError` — do not substitute.
 
-### Lineup Validation (V3.2)
-- Max 1 mega-chalk (top 10% percentile + 3x median drafts) player
-- Min 1 ghost (bottom 15% percentile) player: first seek env-passing ghost, fallback to mega-ghost+3x boost even without env pass
-- **Max 1 player per team** per individual lineup (V3.2)
-- **Max 1 player per game** per individual lineup (V3.3) — each pick from a distinct game
-- **Dynamic pitcher cap** (1 or 2) — V3.2: 2 allowed when ghost+boost SP exists
-- Slot 1 Differentiator: swap consensus Slot 1 for contrarian if EV loss <10%
+### Lineup Validation (V5.0)
+- Max 1 mega-chalk (top 10% percentile + 3x median drafts) player — anchor pitcher exempt
+- Min 1 ghost (bottom 15% percentile) player: first seek env-passing ghost, fallback to mega-ghost+3x boost. Replacement pool is batters-only and excludes the anchor's game. Anchor pitcher is never swapped out.
+- **Max 1 player per team** per individual lineup — anchor pitcher exempt
+- **Max 1 player per game** per individual lineup — anchor pitcher is the seed, 4 batters come from 4 different non-anchor games
+- **Exactly 1 pitcher** (`REQUIRED_PITCHERS_IN_LINEUP = 1`) — enforced by final assertion in `_validate_lineup_structure`
+- Slot 1 Differentiator contrarian swap **retired** — Slot 1 is always the anchor pitcher
 
 ### Slate Classification (informational only — does NOT force composition)
 - Classification exists for blowout detection and display only
 - **No slate type forces pitcher/hitter counts.** `SLATE_COMPOSITION` dict was removed in V2.1.
 
 **Moonshot** — Completely different 5 players. Heavier anti-crowd lean:
+- Same structural shape as Starting 5: **1 SP anchor in Slot 1 + 4 batters in Slots 2–5** (V5.0)
+- The Moonshot anchor is the highest-EV pitcher in the Moonshot pool; since the Moonshot pool excludes Starting 5 player names, this is normally a different pitcher than the Starting 5 anchor
+- Moonshot's anchor game_id is blocked for Moonshot batters independently
 - FADE=0.60, NEUTRAL=0.95, TARGET=1.30
 - Sharp signal bonus: up to +25% EV from underground buzz
 - Explosive bonus: up to +10% EV from power_profile (batters) or k_rate (pitchers)
@@ -405,18 +446,18 @@ Historical data (13 rank-1 winners): avg 2.15 pitchers, range 0-5. Dynamic cap: 
 - All V2 penalties (most_drafted_3x, mega-chalk, ghost+boost synergy) apply
 
 **Key functions (filter_strategy.py):**
-- `run_filter_strategy()` — Starting 5
-- `run_dual_filter_strategy()` — One call, two lineups (V3.2: cross-lineup correlation)
+- `run_filter_strategy()` — Starting 5 (V5.0: pitcher-anchor flow, no pitcher cap)
+- `run_dual_filter_strategy()` — One call, two lineups (V3.2: cross-lineup correlation; V5.0: each lineup anchored on its own best pitcher)
 - `_compute_base_ev()` — DRY: shared 4-term formula (condition_hv_rate × rs_prob × stack × crowd × dnp × env_tiebreaker)
 - `_compute_filter_ev()` — Starting 5 EV (delegates to `_compute_base_ev`)
 - `_compute_moonshot_filter_ev()` — Moonshot EV (delegates to `_compute_base_ev` + sharp/explosive bonuses)
 - `_compute_dnp_adjustment()` — DRY: bifurcated DNP risk (ghost/unknown/confirmed)
 - `_identify_correlation_groups()` — V3.2: finds teams with 2+ ghost players for cross-lineup distribution
-- `compute_dynamic_pitcher_cap()` — V3.4: cap=3 when 3+ boosted SPs, cap=2 when 2 boosted or ghost+boost, cap=1 otherwise
 - `_build_team_stack()` — Ghost-pool team stacking (V3.2: skipped when MAX_PLAYERS_PER_TEAM=1)
-- `_enforce_composition()` — V3.2: three-tier (auto/soft_auto/rest) with team cap=1
-- `_validate_lineup_structure()` — Max 1 mega-chalk, min 1 ghost (V2.4: fallback to mega-ghost+3x)
-- `_smart_slot_assignment()` — Slot sequencing (unboosted first)
+- `_enforce_composition()` — **V5.0**: Phase 1 picks highest-EV pitcher as anchor and blocks its `game_id`; Phase 2 applies three-tier (auto/soft_auto/rest) to batters only; Phase 3 fills 4 batter slots honouring team cap=1, game cap=1, and the blocked anchor-game. Raises `ValueError` if pool has no pitcher.
+- `_validate_lineup_structure()` — **V5.0**: protects the anchor pitcher via `_protected(idx)`; ghost-enforcement replacements filtered to batters only; final assertion `pitcher_count_final == REQUIRED_PITCHERS_IN_LINEUP`.
+- `_smart_slot_assignment()` — **V5.0**: pins pitcher to Slot 1 (`PITCHER_ANCHOR_SLOT`); distributes batters across Slots 2–5 (unboosted first). Slot 1 Differentiator swap removed.
+- `compute_dynamic_pitcher_cap()` — **Deleted in V5.0**. Replaced by the hard-coded 1-pitcher anchor flow.
 
 **Key functions (condition_classifier.py):**
 - `is_auto_include()` — Ghost + boost >= 2.5 (primary edge)
@@ -461,7 +502,7 @@ Player Slot Value = RS × (slot_multiplier + card_boost)
 Not multiplicative. Proven from historical data. This means:
 - Unboosted player: Slot 1 → Slot 5 = **67% value loss** (2.0x → 1.2x)
 - 3.0x boosted player: Slot 1 → Slot 5 = **16% value loss** (5.0x → 4.2x)
-- Implication: unboosted players MUST go in Slot 1. Boosted players are slot-flexible.
+- Implication (V5.0): Slot 1 is reserved for the anchor pitcher. Among batters in Slots 2–5, unboosted batters take the highest available slot (Slot 2 first) and boosted batters tail into the lower slots since they are more slot-flexible.
 
 ### The Five Filters (Sequential)
 
@@ -492,19 +533,19 @@ Not multiplicative. Proven from historical data. This means:
 - **Ghost+boost floor (boost ≥ 2.5, drafts < 100):** EV floor at score=30, no env penalty on the floor.
 - Never assign a boost without environmental support — except for mega-ghost tier where env_score is suppressed by data scarcity rather than bad conditions.
 
-**Filter 5 — Slot Sequencing**
-- Unboosted players → highest available slots (67% loss if misplaced)
-- Boosted players → fill remaining slots (only 16% loss at max boost)
-- Slot 1 Differentiator: when the field converges on an obvious Slot 1 (high-ownership player), the winning move is to put the contrarian play in Slot 1.
+**Filter 5 — Slot Sequencing (V5.0 pitcher-anchor)**
+- **Slot 1 (2.0x) is always the anchor pitcher.** The Slot 1 Differentiator contrarian swap is retired.
+- Slots 2–5 are batters. Among them, unboosted batters take the highest available slots (Slot 2 first) because the additive formula punishes unboosted cards in lower slots; boosted batters tail into the remaining slots (only 16% loss at max boost).
 
-### Dynamic Composition: Boost Drives Position Mix
-Starting pitchers typically receive 0.0 card_boost (the app doesn't boost them because they get more plays). This means composition should be driven by **boost availability**, not fixed position counts:
+### Fixed Composition (V5.0): 1 SP + 4 Batters, Always
+V5.0 replaces the V3.x boost-driven dynamic composition with a hard structural rule: **every lineup is 1 pitcher + 4 batters, and the pitcher is pinned to Slot 1.** The position mix is no longer contingent on how rich the boosted pool is or whether a ghost+boost pitcher exists.
 
-- **Rich boosted pool** (5+ quality boosted cards with env support): Pure EV ranking determines composition. No positional constraints. Historical data from 4/2 onward shows zero unboosted pitchers in rank-1 lineups when quality boosted alternatives existed.
-- **Thin boosted pool** (< 5 quality boosted cards): Slate-type composition guides backfill. Unboosted pitchers have the highest RS floor (93% positive, avg RS 5.4 in winning lineups) and are the best unboosted option.
-- **Boosted pitchers are elite**: When pitchers DO get boosts, they combine high RS floor with boost amplification (e.g., Cole Ragans +3.0 → TV 26.5, Slade Cecconi +3.0 → TV 31.5). Treat them like any other boosted card.
+- **Anchor selection**: the highest-EV pitcher in the pool is chosen — boosted or unboosted, ghost or chalk, treated uniformly. Pitchers still benefit from the pitcher-specific FADE moderation (V3.4) and pitcher condition matrix.
+- **Batters**: the remaining 4 slots are filled from the three-tier batter ordering (auto → soft_auto → rest). The pitcher's `game_id` is blocked, so no batter in that game — teammate or opponent — may appear.
+- **Boosted pitchers**: still elite when they exist (e.g., Cole Ragans +3.0 → TV 26.5). V5.0 changes nothing about their EV — they simply win the anchor slot when their filter_ev is highest.
+- **Unboosted pitchers**: historically have the highest RS floor (93% positive, avg RS 5.4 in winning lineups). Under V5.0 they are just as eligible for the anchor slot as any other pitcher.
 
-Key constants: `BOOST_QUALITY_THRESHOLD` (1.0) and `BOOSTED_POOL_FULL_THRESHOLD` (5) in `app/core/constants.py`.
+`BOOST_QUALITY_THRESHOLD` (1.0) and `BOOSTED_POOL_FULL_THRESHOLD` (5) in `app/core/constants.py` remain defined but are no longer consulted for composition decisions — the 1-pitcher rule is pre-committed.
 
 ### The Ghost Player Edge
 The single most consistent edge: players with < 100 drafts with high boost. Historical data across 15 dates: **82% of mega-ghost+boost players (< 50 drafts, boost ≥ 2.0) deliver TV > 15**, vs 0–12% for medium/chalk-tier players with the same boost. Trait scores are unreliable for data-scarce ghost players — use the draft tier as the primary signal, not the score.
