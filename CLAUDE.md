@@ -44,12 +44,74 @@ Rule-based scoring + external-variables filtering (NOT ML). The goal is to **win
 
 ## Data Files (`/data/`)
 
-| File | Purpose |
-|---|---|
-| `historical_players.csv` | Master player ledger (1 row per player/day). Contains total_value, card_boost, drafts, leaderboard flags. **Null `real_score` / `total_value` indicates a DNP / scratch — there is no separate flag.** |
-| `historical_winning_drafts.csv` | Top-ranked lineups per date (5 rows per lineup). Collection depth varies by date (4–12 ranks observed); the collector aspires to rank-20 but does not always reach it. |
-| `historical_slate_results.json` | MLB game outcomes by date |
-| `hv_player_game_stats.csv` | Actual box score stats for every Highest-Value player appearance to date (grows each slate; currently 290 rows across 19 dates). |
+Current coverage (as of 2026-04-12): **19 consecutive dates, 2026-03-25 → 2026-04-12**. All four files stay in lockstep — every date present in one is present in all four.
+
+| File | Format | Current size | Purpose |
+|---|---|---|---|
+| `historical_players.csv` | CSV | 677 rows / 19 dates | Master player ledger (1 row per player/day). Contains total_value, card_boost, drafts, leaderboard flags. **Null `real_score` / `total_value` indicates a DNP / scratch — there is no separate flag.** Avg ~35 rows/date (range 22–56). |
+| `historical_winning_drafts.csv` | CSV | 655 rows / 19 dates | Top-ranked lineups per date (5 rows per lineup = one per slot). Collection depth varies by date (4–12 ranks observed); the collector aspires to rank-20 but does not always reach it. |
+| `historical_slate_results.json` | JSON array | 19 entries | Per-date MLB slate outcome envelope: `date`, `game_count`, `games[]`, `season_stage`, `source`, `saved_at`, `notes`. One object per slate day. |
+| `hv_player_game_stats.csv` | CSV | 290 rows / 19 dates | Actual box score stats for every Highest-Value player appearance to date (grows each slate). Batting columns (ab, r, h, hr, rbi, bb, so) and pitching columns (ip, er, k_pitching, decision) coexist in one table — blanks indicate the column does not apply to that player. |
+
+## Ingesting New Slate Data
+
+New slates are ingested **manually by appending rows** to the four files above — there is no automated collector. After a slate completes, capture the platform's leaderboards and append to each file. The canonical column-by-column reference lives in `.claude/hooks/session-start.sh` (reproduced below). Keep all four files in lockstep — a date missing from any one of them will break cross-validation.
+
+### Per-slate ingest checklist
+
+- [ ] Append player rows to `historical_players.csv`
+  - Columns: `date, player_name, team, position, real_score, card_boost, drafts, total_value, is_highest_value, is_most_popular, is_most_drafted_3x`
+  - One row per player per slate day. Most Popular + Most Drafted 3x leaderboards are mandatory; Highest Value is optional (set `is_highest_value=1` only if captured).
+  - A player in multiple leaderboards = one row with multiple flags set.
+  - `total_value = real_score × (2 + card_boost)` — verify manually for each row.
+  - `card_boost` blank if no boost card; `"—"` in the UI = 0.0.
+  - `drafts`: total draft count shown on the platform (e.g., "1.5k" → 1500).
+- [ ] Append winning-lineup rows to `historical_winning_drafts.csv`
+  - Columns: `date, winner_rank, slot_index, player_name, team, position, real_score, slot_mult, card_boost`
+  - 5 rows per lineup (one per slot 1–5). Target top-20 ranks → 100 rows/day, but capture what is available.
+  - `slot_mult`: 2.0 (slot 1), 1.8, 1.6, 1.4, 1.2 (slot 5).
+- [ ] Append slate envelope to `historical_slate_results.json`
+  - Top-level array — push one object per slate day.
+  - Required fields: `date`, `game_count`, `games` (may be `[]`), `season_stage` ("regular-season"), `source` ("screenshot_ingest"), `saved_at` (ISO timestamp), `notes` (free text capturing ghost wins, boost traps, 3x busts, crowd overreactions — the V2 strategy validation raw material).
+  - Per-game shape when scores are captured: `{"home": "NYY", "away": "BOS", "home_score": 5, "away_score": 2, "winner": "NYY", "loser": "BOS", "winner_score": 5, "loser_score": 2}`.
+- [ ] Append HV box-score rows to `hv_player_game_stats.csv`
+  - Columns: `date, player_name, team_actual, position, real_score, card_boost, game_result, ab, r, h, hr, rbi, bb, so, ip, er, k_pitching, decision, notes`
+  - One row per Highest-Value-leaderboard player appearance. Batters fill the `ab…so` columns; pitchers fill `ip/er/k_pitching/decision`. Leave non-applicable columns blank.
+  - `game_result`: free-form ("SF 0 NYY 7"). `notes`: short summary ("2-for-3 | vs SF (away)").
+
+### Platform → CSV column mapping (historical_players.csv)
+
+| Platform table | "Value" (1st) | "Multiplier" | "Drafts" | "Value" (2nd) |
+|---|---|---|---|---|
+| Most Popular | `real_score` | `card_boost` | `drafts` | — |
+| Highest Value | `real_score` | `card_boost` | `drafts` (HV leaderboard count) | `total_value` (verify vs formula) |
+| Most Drafted 3x | `real_score` | `card_boost` | `drafts` | — |
+
+### Reloading the database after ingest
+
+The CSV/JSON files are the source of truth; the SQLite DB is rebuilt from them via `app/seed.py`. `run_seed()` is **idempotency-guarded on an empty DB** — it only seeds if `players` is empty. To pick up freshly appended rows:
+
+```bash
+rm db/baseball.db              # or DROP TABLE in Postgres
+python -m app.seed             # re-seeds from /data/
+```
+
+On Railway, the seed runs automatically via the FastAPI lifespan hook on a fresh DB. There is no incremental seeder — append-and-reseed is the supported workflow.
+
+### Example rows
+
+```
+# historical_players.csv
+2026-04-09,Aaron Judge,NYY,OF,-0.7,2.3,3900,-3.01,0,1,0
+2026-04-09,Mick Abel,BAL,P,4.6,3.0,1700,23.0,0,1,1
+
+# historical_winning_drafts.csv
+2026-04-09,1,1,Mick Abel,BAL,P,4.6,2.0,3.0
+2026-04-09,1,2,Seth Lugo,KC,P,4.1,1.8,0.0
+
+# hv_player_game_stats.csv
+2026-03-25,Austin Wells,NYY,C,1.2,,SF 0 NYY 7,3.0,1.0,2.0,0.0,0.0,1.0,0.0,,,,,2-for-3 | vs SF (away)
+```
 
 ## Database Models (9 tables)
 

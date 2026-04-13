@@ -220,11 +220,13 @@ app/
     ├── pipeline.py         # Fetch → Score → Rank orchestrator
     └── calibration.py      # Prediction vs actual feedback loop
 data/
-├── historical_players.csv
-├── historical_winning_drafts.csv
-├── historical_slate_results.json
-└── hv_player_game_stats.csv
+├── historical_players.csv           # 677 rows / 19 dates — master player ledger
+├── historical_winning_drafts.csv    # 655 rows / 19 dates — top-ranked lineups (5 slots/lineup)
+├── historical_slate_results.json    # 19 entries            — per-date slate envelope
+└── hv_player_game_stats.csv         # 290 rows / 19 dates — box scores for HV players
 ```
+
+Current coverage: 2026-03-25 → 2026-04-12 (19 consecutive slates). All four files stay in lockstep.
 
 ## Getting Started
 
@@ -244,6 +246,17 @@ uvicorn app.main:app --reload
 # Run tests
 pytest tests/
 ```
+
+## Ingesting a New Slate
+
+New slates are added **manually** — there is no automated collector. After a slate completes, append rows to the four files in `/data/` (see the **"Ingesting New Slate Data"** section in [CLAUDE.md](CLAUDE.md) for the full column-by-column reference and platform → CSV mapping). The short version:
+
+1. Append player rows to `historical_players.csv` (Most Popular + Most Drafted 3x mandatory; HV optional).
+2. Append winning-lineup rows to `historical_winning_drafts.csv` (5 rows per lineup, target top-20 ranks).
+3. Append one slate envelope object to `historical_slate_results.json`.
+4. Append HV box-score rows to `hv_player_game_stats.csv`.
+5. Verify `total_value = real_score × (2 + card_boost)` for each player row.
+6. Reload the DB: `rm db/baseball.db && python -m app.seed` (the seeder is idempotency-guarded on an empty DB — there is no incremental mode).
 
 ## Deployment (Railway)
 
