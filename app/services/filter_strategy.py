@@ -82,18 +82,18 @@ from app.core.constants import (
     ENV_UNKNOWN_COUNT_THRESHOLD,
     BOOST_QUALITY_THRESHOLD,
     BOOSTED_POOL_FULL_THRESHOLD,
-    # V3.2 constants
+    # Cross-lineup correlation + tiebreaker constants
     CORRELATION_GHOST_MIN_PLAYERS,
     CORRELATION_EV_BONUS,
     CORRELATION_EV_BONUS_3PLUS,
     MOONSHOT_CORRELATION_TEAMMATE_BONUS,
     ENV_TIEBREAKER_BONUS_MAX,
     ENV_TIEBREAKER_HV_THRESHOLD,
-    # V3.4 constants
+    # Pitcher-specific FADE moderation + scarcity tiebreaker
     PITCHER_FADE_PENALTY,
     MOONSHOT_PITCHER_FADE_PENALTY,
     DRAFT_SCARCITY_TIEBREAKER_MAX,
-    # V3.5 constants
+    # Most-drafted-3x trap penalty
     MOST_DRAFTED_3X_PENALTY,
     MOST_DRAFTED_3X_ENV_PASS_PENALTY,
 )
@@ -114,7 +114,7 @@ def _identify_correlation_groups(
 ) -> dict[str, list]:
     """Identify teams with multiple ghost players for cross-lineup correlation.
 
-    V3.2: When MAX_PLAYERS_PER_TEAM=1, within-lineup stacking is impossible.
+    With MAX_PLAYERS_PER_TEAM=1, within-lineup stacking is impossible.
     Instead, we identify teams with 2+ ghost players and distribute them across
     Starting 5 and Moonshot lineups.  Both lineups gain correlated exposure
     to the same game environment.
@@ -176,13 +176,13 @@ def classify_slate(
     """
     Classify the slate BEFORE looking at any individual player.
 
-    V2 §3 Slate Classification (revised):
+    §3 Slate Classification:
     - Tiny (1-3 games): limited pool, heavy team-stack
     - Pitcher Day (4+ quality SP matchups): go 4-5 pitchers
     - Hitter/Stack Day (4+ high O/U OR 1+ blowout game): stack the favorite
     - Standard: 2-3P + 2-3 hitters
 
-    V2 key insight: "Read the slate, don't default to pitchers."
+    Key insight: "Read the slate, don't default to pitchers."
     Hitter/stack days are 38% of slates (most common winning type).
     Blowout games (moneyline ≥ -200) are prime stacking candidates.
     """
@@ -198,7 +198,7 @@ def classify_slate(
         if vt is not None and vt >= HITTER_DAY_VEGAS_TOTAL_THRESHOLD:
             high_total += 1
 
-        # Blowout detection (V2 §2 Pillar 2): moneyline ≥ -200 = projected blowout
+        # Blowout detection (§2 Pillar 2): moneyline ≥ -200 = projected blowout
         home_ml = g.get("home_moneyline")
         away_ml = g.get("away_moneyline")
         if home_ml is not None and home_ml <= BLOWOUT_MONEYLINE_THRESHOLD:
@@ -243,7 +243,7 @@ def classify_slate(
     # Sort stackable games by moneyline strength (most negative = biggest favorite)
     stackable.sort(key=lambda s: s.moneyline if s.moneyline is not None else 0)
 
-    # Classification logic — V2: check hitter/stack BEFORE pitcher day
+    # Classification logic — check hitter/stack BEFORE pitcher day
     # because hitter/stack days are 38% vs pitcher days 23%
     if game_count <= TINY_SLATE_MAX_GAMES:
         return SlateClassification(
@@ -256,7 +256,7 @@ def classify_slate(
             reason=f"Tiny slate ({game_count} games). Stack the favorite.",
         )
 
-    # V2: Blowout games trigger hitter/stack day even without high O/U counts
+    # Blowout games trigger hitter/stack day even without high O/U counts
     if (high_total >= HITTER_DAY_MIN_HIGH_TOTAL
             or blowout_games >= BLOWOUT_MIN_GAMES_FOR_STACK_DAY):
         stack_reason = []
@@ -310,7 +310,7 @@ class EnvironmentalProfile:
     is_pitcher: bool = False
     env_score: float = 0.5  # 0-1.0; >0.5 = passes environmental filter
     env_factors: list[str] = field(default_factory=list)
-    env_unknown_count: int = 0  # V3.0: how many factors were missing (unknown vs bad)
+    env_unknown_count: int = 0  # how many factors were missing (unknown vs bad)
 
     # Pitcher-specific
     opp_team_ops: float | None = None
@@ -415,23 +415,23 @@ def compute_batter_env_score(
     """
     Compute environmental score for a batter (0-1.0).
 
-    V3.0: Returns a third value, `unknown_count`, tracking how many environmental
+    Returns a third value, `unknown_count`, tracking how many environmental
     factors were missing (None) vs. confirmed bad.  This enables the pipeline to
     distinguish "data scarcity" from "genuinely bad conditions" — critical for
     ghost-tier players where missing data is expected, not a negative signal.
 
-    V2 §4 batter filters:
+    §4 batter filters:
     - Playing in high Vegas total game (O/U >= 8.5)
     - Facing a weak opposing starter (high ERA)
     - Having a platoon advantage
-    - Batting in top 5 of lineup (V2 says top 5, not top 4)
+    - Batting in top 5 of lineup
     - Hitter-friendly park or favorable weather
-    - Team is moneyline favorite (V2 addition)
+    - Team is moneyline favorite
     - Vulnerable opposing bullpen (high bullpen ERA)
     """
     score = 0.0
     factors = []
-    unknown_count = 0  # V3.0: track missing data factors
+    unknown_count = 0  # track missing data factors
     max_score = 7.0  # 7 factors (added bullpen vulnerability)
 
     # 1. High Vegas total (run environment)
@@ -459,8 +459,8 @@ def compute_batter_env_score(
         score += 1.0
         factors.append("Platoon advantage")
 
-    # 4. Top of lineup (V2 says top 5)
-    # V3.0: Missing batting order is tracked as unknown, not penalized as bad.
+    # 4. Top of lineup (top 5)
+    # Missing batting order is tracked as unknown, not penalized as bad.
     # The DNP risk penalty in _compute_filter_ev() handles the lineup risk
     # separately with ghost-awareness (DNP_GHOST_UNKNOWN_PENALTY).
     if batting_order is not None:
@@ -494,7 +494,7 @@ def compute_batter_env_score(
 
     score += f5
 
-    # 6. Team is moneyline favorite (V2 §4 batter filter addition)
+    # 6. Team is moneyline favorite
     if team_moneyline is not None:
         if team_moneyline <= BLOWOUT_MONEYLINE_THRESHOLD:
             score += 1.0
@@ -522,7 +522,7 @@ def compute_batter_env_score(
         factors.append("Debut/return premium")
 
     if unknown_count > 0:
-        factors.append(f"V3.0: {unknown_count} unknown factor(s) (data scarcity, not bad env)")
+        factors.append(f"{unknown_count} unknown factor(s) (data scarcity, not bad env)")
 
     env_score = min(1.0, score / max_score)
     return env_score, factors, unknown_count
@@ -544,19 +544,19 @@ class FilteredCandidate:
     total_score: float  # 0-100 from scoring engine
     env_score: float    # 0-1.0 from environmental filter
     env_factors: list[str] = field(default_factory=list)
-    env_unknown_count: int = 0  # V3.0: how many env factors were missing data
+    env_unknown_count: int = 0  # how many env factors were missing data
     popularity: PopularityClass = PopularityClass.NEUTRAL  # web-scraped
     is_debut_or_return: bool = False
     game_id: int | str | None = None  # for diversification tracking
     is_pitcher: bool = False
     sharp_score: float = 0.0
     drafts: int | None = None
-    is_most_drafted_3x: bool = False  # V2: 57% bust rate trap signal
+    is_most_drafted_3x: bool = False  # 57% bust rate trap signal
     traits: list = field(default_factory=list)  # TraitScore list from scoring engine
-    batting_order: int | None = None  # 1-9 if confirmed in lineup, None = DNP risk (V2.5)
+    batting_order: int | None = None  # 1-9 if confirmed in lineup, None = DNP risk
     is_in_blowout_game: bool = False  # set by run_filter_strategy before EV computation
     total_slate_drafts: int | None = None  # sum of all drafts on the slate (for dynamic thresholds)
-    correlation_bonus: float = 1.0  # V3.2: cross-lineup correlation multiplier (set pre-EV)
+    correlation_bonus: float = 1.0  # cross-lineup correlation multiplier (set pre-EV)
 
     # Computed by the optimizer
     filter_ev: float = 0.0
@@ -588,7 +588,7 @@ class FilterOptimizedLineup:
 def _popularity_ev_adjustment(popularity: PopularityClass, is_pitcher: bool = False) -> float:
     """Return EV multiplier based on web-scraped popularity classification.
 
-    V3.4: Pitchers get a lighter FADE penalty (15% vs 25%).  Pitchers control
+    Pitchers get a lighter FADE penalty (15% vs 25%).  Pitchers control
     their own environment — high draft count reflects real ERA/K-rate data,
     not media hype.  The crowd is structurally less wrong about pitchers than
     batters: pitcher outcomes depend on one player, batter outcomes depend on
@@ -605,7 +605,7 @@ def _popularity_ev_adjustment(popularity: PopularityClass, is_pitcher: bool = Fa
 
 
 def _compute_dnp_adjustment(candidate: FilteredCandidate) -> float:
-    """Compute bifurcated DNP risk adjustment (V3.0).
+    """Compute bifurcated DNP risk adjustment.
 
     Separates "confirmed bad" (lineup published, player absent) from "unknown"
     (data not yet available).  Ghost players missing batting order face data
@@ -656,7 +656,7 @@ def _compute_base_ev(
 
     effective_score = condition_hv_rate * rs_prob * stack_bonus * anti_crowd * debut_bonus * dnp_adj * 100.0
 
-    # V3.2: Environmental tiebreaker for auto-include tier.
+    # Environmental tiebreaker for auto-include tier.
     # All ghost+max_boost candidates have condition_hv_rate=1.00, making them
     # indistinguishable by the primary signal.  env_score differentiates:
     # a ghost+max batting 3rd at Coors > one with unknown order at Petco.
@@ -664,7 +664,7 @@ def _compute_base_ev(
         env_tiebreaker = 1.0 + candidate.env_score * ENV_TIEBREAKER_BONUS_MAX
         effective_score *= env_tiebreaker
 
-        # V3.4: Draft scarcity tiebreaker — within auto-include tier, fewer
+        # Draft scarcity tiebreaker — within auto-include tier, fewer
         # drafts = deeper crowd asymmetry = higher edge.  A player with 1 draft
         # is more "unknown" than one with 15 — the crowd has priced in more
         # information about the higher-draft player.
@@ -691,8 +691,7 @@ def _compute_base_ev(
 def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     """Compute Starting 5 EV via the shared 4-term condition-based formula.
 
-    V3.5: Applies is_most_drafted_3x trap penalty (V2.3 spec, previously
-    dead code — flag was computed but never read).  57% bust rate, avg RS 0.72.
+    Applies is_most_drafted_3x trap penalty.  57% bust rate, avg RS 0.72.
     Env-aware: lighter penalty when environmental support exists.
     """
     ev = _compute_base_ev(candidate, _popularity_ev_adjustment(candidate.popularity, is_pitcher=candidate.is_pitcher))
@@ -716,7 +715,7 @@ def _build_team_stack(
     """
     Build a team stack from ghost-ownership players on the favored team.
 
-    V2 §2 Pillar 2: "Stack FROM THE GHOST POOL."
+    §2 Pillar 2: "Stack FROM THE GHOST POOL."
     The winning OAK stack on 4/5 worked because the entire lineup was ghost-tier.
     The winning LAD stack on 4/6 worked because ghosts (Hernández 3, Rushing 1)
     were the differentiators — Ohtani (4900) was just the anchor everyone had.
@@ -740,7 +739,7 @@ def _build_team_stack(
         if len(team_candidates) < STACK_MIN_PLAYERS:
             continue
 
-        # Sort by filter_ev but prioritize ghost+boost players (V2 ghost-stack principle)
+        # Sort by filter_ev but prioritize ghost+boost players (ghost-stack principle)
         def stack_sort_key(c: FilteredCandidate) -> tuple:
             is_ghost = c.drafts is not None and c.drafts < LOW_DRAFT_THRESHOLD
             has_boost = c.card_boost >= GHOST_BOOST_SYNERGY_MIN_BOOST
@@ -818,7 +817,7 @@ def _enforce_composition(
 
     if soft_auto:
         logger.info(
-            "V3.2 three-tier (batters): %d auto-include, %d soft-auto-include, %d rest",
+            "Three-tier (batters): %d auto-include, %d soft-auto-include, %d rest",
             len(auto), len(soft_auto), len(rest),
         )
 
@@ -1021,7 +1020,7 @@ def _validate_lineup_structure(
                 None,
             )
             if best_ghost is None:
-                # No env-passing ghost — try mega-ghost+boost (env gate waived per V2.4)
+                # No env-passing ghost — try mega-ghost+boost (env gate waived for data-scarce tier)
                 best_ghost = next(
                     (c for c in all_candidates_sorted
                      if _ghost_ok(c)
@@ -1153,9 +1152,9 @@ def _apply_game_diversification(
     lineup: list[FilteredCandidate],
 ) -> list[str]:
     """
-    Check game diversification (V2.5).
+    Check game diversification.
 
-    V2.5: max 1 player per game enforced during composition and validation.
+    Max 1 player per game is enforced during composition and validation.
     This function now serves as a safety-net warning if any violations leaked
     through, plus reports game spread for diagnostics.
     """
@@ -1331,20 +1330,20 @@ def run_filter_strategy(
             slate_classification=slate_classification,
         )
 
-    # V3.0: Compute slate draft distribution for percentile-based ownership tiers.
+    # Compute slate draft distribution for percentile-based ownership tiers.
     # The full distribution enables empirical CDF classification instead of
     # arbitrary absolute thresholds.  Also compute meta-game health metrics.
     draft_counts = [c.drafts for c in candidates if c.drafts is not None]
     total_slate_drafts = sum(draft_counts) if draft_counts else None
 
-    # V3.0: Meta-game monitoring — log distribution health metrics.
+    # Meta-game monitoring — log distribution health metrics.
     # Sustained entropy increase over consecutive slates = ghost edge compression.
     if draft_counts:
         from app.services.condition_classifier import compute_draft_entropy, compute_gini_coefficient
         entropy = compute_draft_entropy(draft_counts)
         gini = compute_gini_coefficient(draft_counts)
         logger.info(
-            "V3.0 meta-game monitor: entropy=%.3f bits, gini=%.3f, "
+            "Meta-game monitor: entropy=%.3f bits, gini=%.3f, "
             "slate_players=%d, total_drafts=%s",
             entropy, gini, len(draft_counts), total_slate_drafts,
         )
@@ -1364,7 +1363,7 @@ def run_filter_strategy(
     for c in candidates:
         c.filter_ev = _compute_filter_ev(c)
 
-    # Step 1a (V3.2): Apply cross-lineup correlation bonus.
+    # Step 1a: Apply cross-lineup correlation bonus.
     # Candidates on teams with 2+ ghost players get a modest EV lift,
     # increasing their probability of selection in both lineups.
     # The correlation_bonus field is set by run_dual_filter_strategy.
@@ -1413,7 +1412,7 @@ def run_filter_strategy(
 def _moonshot_popularity_adj(popularity: PopularityClass, is_pitcher: bool = False) -> float:
     """Return Moonshot-specific popularity EV multiplier (heavier lean).
 
-    V3.4: Pitchers get lighter FADE penalty in Moonshot too (30% vs 40%).
+    Pitchers get lighter FADE penalty in Moonshot too (30% vs 40%).
     """
     if popularity == PopularityClass.FADE:
         if is_pitcher:
@@ -1430,7 +1429,7 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     Delegates to _compute_base_ev() for the 4-term formula (DRY),
     then applies moonshot-specific sharp signal and explosive trait bonuses.
 
-    V3.5: Applies is_most_drafted_3x penalty — always full 40% for Moonshot
+    Applies is_most_drafted_3x penalty — always full 40% for Moonshot
     (max contrarian stance, no env leniency).
     """
     base_ev = _compute_base_ev(candidate, _moonshot_popularity_adj(candidate.popularity, is_pitcher=candidate.is_pitcher))
@@ -1463,7 +1462,7 @@ def run_dual_filter_strategy(
     """
     Produce both Starting 5 and Moonshot from the same candidate pool.
 
-    V3.2: Cross-lineup correlation awareness.  With MAX_PLAYERS_PER_TEAM=1,
+    Cross-lineup correlation awareness.  With MAX_PLAYERS_PER_TEAM=1,
     within-lineup stacking is impossible.  Instead, when a team has 2+ ghost
     players, the system:
     1. Applies a correlation EV bonus to all ghost players on that team
@@ -1476,14 +1475,14 @@ def run_dual_filter_strategy(
     Moonshot: Completely different 5 players, heavier anti-crowd lean,
               sharp signal boost, explosive trait bonus, correlation bonuses.
     """
-    # V3.2: Identify correlation groups and set correlation_bonus on candidates
+    # Identify correlation groups and set correlation_bonus on candidates
     # BEFORE building either lineup.  run_filter_strategy reads correlation_bonus
     # from each candidate and applies it after computing base EV.
     correlation_teams = _identify_correlation_groups(candidates)
     correlation_boosted: set[str] = set()
     if correlation_teams:
         corr_summary = {t: len(ps) for t, ps in correlation_teams.items()}
-        logger.info("V3.2 correlation groups: %s", corr_summary)
+        logger.info("Correlation groups: %s", corr_summary)
 
         for team, ghost_players in correlation_teams.items():
             bonus = CORRELATION_EV_BONUS_3PLUS if len(ghost_players) >= 3 else CORRELATION_EV_BONUS
@@ -1491,7 +1490,7 @@ def run_dual_filter_strategy(
                 c.correlation_bonus = bonus
                 correlation_boosted.add(c.player_name)
                 logger.debug(
-                    "V3.2 correlation bonus: %s (%s) → %.0f%% EV boost (%d ghost teammates)",
+                    "Correlation bonus: %s (%s) → %.0f%% EV boost (%d ghost teammates)",
                     c.player_name, team, (bonus - 1.0) * 100, len(ghost_players),
                 )
 
@@ -1503,7 +1502,7 @@ def run_dual_filter_strategy(
     s5_names = {s.candidate.player_name for s in starting_5.slots}
     s5_teams = {s.candidate.team.upper() for s in starting_5.slots}
 
-    # V3.2: Identify which correlation teams have a player in Starting 5
+    # Identify which correlation teams have a player in Starting 5
     # (these teams' remaining ghosts should get a BONUS in Moonshot, not a penalty)
     s5_correlation_teams = {
         team for team in correlation_teams
@@ -1526,14 +1525,14 @@ def run_dual_filter_strategy(
     for c in moonshot_pool:
         c.filter_ev = _compute_moonshot_filter_ev(c)
 
-        # V3.2: Cross-lineup correlation logic replaces blanket same-team penalty.
+        # Cross-lineup correlation logic replaces blanket same-team penalty.
         # If this candidate is a ghost teammate on a correlation team that's already
         # in Starting 5, they get a BONUS (correlated upside across both lineups).
         # Otherwise, the standard same-team penalty applies.
         if c.team.upper() in s5_correlation_teams and c.player_name in correlation_boosted:
             c.filter_ev *= MOONSHOT_CORRELATION_TEAMMATE_BONUS
             logger.debug(
-                "V3.2 moonshot correlation bonus: %s (%s) gets +%.0f%% "
+                "Moonshot correlation bonus: %s (%s) gets +%.0f%% "
                 "(teammate in Starting 5, correlated upside)",
                 c.player_name, c.team,
                 (MOONSHOT_CORRELATION_TEAMMATE_BONUS - 1.0) * 100,
@@ -1558,7 +1557,7 @@ def run_dual_filter_strategy(
     moonshot_pitcher_count = sum(1 for s in moonshot_slots if s.candidate.is_pitcher)
     moonshot_hitter_count = len(moonshot_slots) - moonshot_pitcher_count
 
-    # V3.2: Log cross-lineup correlation result
+    # Log cross-lineup correlation result
     if s5_correlation_teams:
         moonshot_names = {s.candidate.player_name for s in moonshot_slots}
         for team in s5_correlation_teams:
@@ -1574,7 +1573,7 @@ def run_dual_filter_strategy(
             )
             if moon_player:
                 logger.info(
-                    "V3.2 cross-lineup correlation: %s → S5=%s, Moonshot=%s",
+                    "Cross-lineup correlation: %s → S5=%s, Moonshot=%s",
                     team, s5_player, moon_player,
                 )
 
