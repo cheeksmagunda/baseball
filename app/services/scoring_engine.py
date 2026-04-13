@@ -219,8 +219,10 @@ def score_batter_matchup(
     if not opp_pitcher_stats:
         return TraitResult("matchup_quality", max_pts * 0.5, max_pts, "matchup unknown")
 
-    opp_era = opp_pitcher_stats.get("era", 4.0)
-    opp_whip = opp_pitcher_stats.get("whip", 1.3)
+    opp_era = opp_pitcher_stats.get("era")
+    opp_whip = opp_pitcher_stats.get("whip")
+    if opp_era is None or opp_whip is None:
+        return TraitResult("matchup_quality", max_pts * 0.5, max_pts, "matchup unknown")
 
     # Opponent ERA: >5 = great for batter (max), <2.5 = terrible (0)
     era_score = max(0, min(1, (opp_era - 2.5) / 2.5))
@@ -501,7 +503,15 @@ def estimate_rs_probability(
     """
     from app.core.utils import get_trait_score
 
-    threshold = 15.0 / (2.0 + card_boost)
+    # Live Real Sports slates do not expose card_boost via any API.  When the
+    # caller has no real boost signal (input is 0.0, which is the sentinel
+    # populate_slate_players writes for every live SlatePlayer), fall back to
+    # a neutral threshold equivalent to ~1.3x boost.  Historical slates still
+    # flow through the boost-weighted threshold normally (non-zero inputs).
+    if card_boost <= 0.0:
+        threshold = 4.5
+    else:
+        threshold = 15.0 / (2.0 + card_boost)
 
     # Base probability from decision tree (calibrated for threshold <= 3.0)
     if is_pitcher:

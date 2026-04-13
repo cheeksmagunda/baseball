@@ -13,15 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.core.constants import (
-    PITCHER_POSITIONS,
-    GHOST_DRAFT_THRESHOLD,
-    MOST_DRAFTED_3X_TOP_N,
-    MOST_DRAFTED_3X_MIN_N,
-    MOST_DRAFTED_3X_MAX_N,
-    MOST_DRAFTED_3X_PROPORTION,
-)
-from app.services.condition_classifier import AUTO_INCLUDE_BOOST_THRESHOLD
+from app.core.constants import PITCHER_POSITIONS
 from app.core.utils import find_player_by_name, get_trait_score
 from app.models.player import Player, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
@@ -82,22 +74,13 @@ async def _resolve_candidates(
     """
     game_by_id, team_to_game = _build_game_lookup(games)
 
-    # Stage -1: exclude off-leaderboard cards (drafts=None).
-    # The condition classifier requires a real draft count to bucket a player
-    # into an ownership tier — there is no fallback tier for missing data
-    # (no-fallback rule, CLAUDE.md). Off-leaderboard cards must be filtered
-    # out upstream rather than substituting a synthetic tier downstream.
-    filtered_cards: list[FilterCard] = []
-    for card in cards:
-        if card.drafts is None:
-            logger.warning(
-                "Excluding %s (%s) — drafts=None (off-leaderboard, no "
-                "ownership-tier signal available)",
-                card.player_name, card.team,
-            )
-            continue
-        filtered_cards.append(card)
-    cards = filtered_cards
+    # Stage -1: filter out pre-game scratches only.  Draft counts come from
+    # the Real Sports platform leaderboard and are only available after
+    # manual ingest, so live slates routinely have cards with drafts=None.
+    # Those cards now flow through — the condition classifier maps
+    # drafts=None to the "medium" neutral tier, and ranking falls back onto
+    # popularity, env, and trait signals (see get_ownership_tier).
+    cards = [c for c in cards if c.player_name]
 
     # Stage 0: ensure every card has a Player record with real stats.
     # Mega-ghost players (1-3 drafts) are the least likely to have existing
@@ -338,58 +321,21 @@ async def _resolve_candidates(
             batting_order=card.batting_order,
         ))
 
-    # Candidate pool health summary
+    # Candidate pool health summary.  Ownership-only auto-include after
+    # card_boost was dropped from the optimizer input — ghost tier alone is
+    # the edge (see is_auto_include / condition_classifier).
     ghost_count = sum(1 for c in candidates if c.is_ghost)
-    auto_include_count = sum(
-        1 for c in candidates
-        if c.is_ghost and c.card_boost >= AUTO_INCLUDE_BOOST_THRESHOLD
-    )
     logger.info(
         "Candidate pool: %d cards in → %d candidates out "
-        "(ghosts: %d, auto-include ghost+boost: %d, dropped: %d)",
-        len(cards), len(candidates), ghost_count, auto_include_count,
+        "(ghosts: %d, dropped: %d)",
+        len(cards), len(candidates), ghost_count,
         len(cards) - len(candidates),
     )
 
-    # Dynamic is_most_drafted_3x: the DB flag is only set retrospectively by post-game
-    # analysis and is always False for today's live slate.  Compute it on the fly.
-    # Scale with slate size — flag top 30% of the 3x-boost pool, clamped
-    # between MIN_N and MAX_N.  On a thin 2-game slate with 10 3x players,
-    # the 5th-most-drafted might have 80 drafts (a ghost being punished as chalk).
-    # Proportional scaling prevents this.
-    #
-    # PITCHER EXEMPTION — Starting pitchers with 3x boost are unicorn events.
-    # Historical data: Mick Abel (Apr 9, TV 23.0), Eovaldi (Apr 7, in 11/12 top
-    # lineups).  Pitchers inherently control their own environment (they ARE the
-    # matchup), so the "crowd is wrong about boost" thesis doesn't apply the same
-    # way.  A 3x-boosted pitcher's edge is causal, not just information asymmetry.
-    # Only flag non-pitcher batters as most_drafted_3x traps.
-    boost3_batters_by_drafts = sorted(
-        [c for c in candidates
-         if c.card_boost >= 3.0 and c.drafts is not None and not c.is_pitcher],
-        key=lambda c: c.drafts,
-        reverse=True,
-    )
-    dynamic_top_n = max(
-        MOST_DRAFTED_3X_MIN_N,
-        min(MOST_DRAFTED_3X_MAX_N, int(len(boost3_batters_by_drafts) * MOST_DRAFTED_3X_PROPORTION)),
-    )
-    for c in boost3_batters_by_drafts[:dynamic_top_n]:
-        c.is_most_drafted_3x = True
-        logger.debug(
-            "Dynamic is_most_drafted_3x: %s (drafts=%s, boost=%.1f) [top_n=%d of %d 3x batters]",
-            c.player_name, c.drafts, c.card_boost, dynamic_top_n, len(boost3_batters_by_drafts),
-        )
-    # Log any pitchers that would have been flagged under the old rule
-    boost3_pitchers = [
-        c for c in candidates
-        if c.card_boost >= 3.0 and c.drafts is not None and c.is_pitcher
-    ]
-    for c in boost3_pitchers:
-        logger.debug(
-            "Pitcher exemption: %s (drafts=%s, boost=%.1f) — NOT flagged as most_drafted_3x",
-            c.player_name, c.drafts, c.card_boost,
-        )
+    # is_most_drafted_3x was a boost-dependent trap flag (top-N drafted players
+    # with boost >= 3.0).  Live Real Sports slates don't expose card_boost, so
+    # the flag can't fire reliably.  The FADE + chalk/mega_chalk hard-exclusion
+    # in _apply_s5_hard_exclusions is the live-signal replacement.
 
     return candidates
 
@@ -679,47 +625,34 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
             if cached is not None:
                 return cached
 
-        # Cache warm but schedule not yet published → system still initializing
-        # (startup pipeline stored picks but slate_monitor hasn't called set_schedule)
-        # If cache is cold, fall through to on-demand rebuild below.
+        # Cache warm but schedule not yet published → resolve first_pitch now
+        # and publish it so the T-65 gate below can evaluate correctly.  The
+        # old code unconditionally returned 425 "before_lock" here, which
+        # caused the frontend to render WaitState with a 0-min countdown even
+        # when the cache already had warm picks past lock time.  After
+        # resolving, fall through to the real T-65 gate so post-lock cache
+        # requests serve the stored picks.
         lock_time = lineup_cache.lock_time_utc
         if lock_time is None and lineup_cache.is_warm:
-            # Resolve first-pitch time so the UI can show "Picks available at
-            # HH:MM" instead of a generic message.  No fallback — if this
-            # raises, let it propagate rather than silently degrading.
             from app.services.slate_monitor import _get_first_pitch_utc
 
-            first_pitch_iso = None
-            computed_lock_iso = None
-            minutes_until = None
             active_date = _get_active_slate_date(db)
             first_pitch = _get_first_pitch_utc(db, active_date)
             if first_pitch is not None:
-                # Publish it so subsequent requests skip this lookup
                 lineup_cache.set_schedule(first_pitch)
                 lock_time = lineup_cache.lock_time_utc
-                first_pitch_iso = first_pitch.isoformat()
-                if lock_time is not None:
-                    computed_lock_iso = lock_time.isoformat()
-                    now = datetime.now(timezone.utc)
-                    minutes_until = max(0, int((lock_time - now).total_seconds() / 60))
-
-            phase = "before_lock" if computed_lock_iso else "initializing"
-            detail = (
-                f"Picks lock at T-65 ({minutes_until} min). Come back closer to game time."
-                if phase == "before_lock"
-                else "Pipeline initializing — picks will be available soon."
-            )
-            return JSONResponse(
-                status_code=425,
-                content={
-                    "detail": detail,
-                    "phase": phase,
-                    "first_pitch_utc": first_pitch_iso,
-                    "lock_time_utc": computed_lock_iso,
-                    "minutes_until_lock": minutes_until,
-                },
-            )
+            else:
+                # No first_pitch resolvable — still initializing, short-circuit
+                return JSONResponse(
+                    status_code=425,
+                    content={
+                        "detail": "Pipeline initializing — picks will be available soon.",
+                        "phase": "initializing",
+                        "first_pitch_utc": None,
+                        "lock_time_utc": None,
+                        "minutes_until_lock": None,
+                    },
+                )
 
         # Schedule is set → enforce T-65 gate
         if lock_time is not None:

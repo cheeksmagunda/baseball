@@ -347,15 +347,14 @@ def get_ownership_tier(
     )
 
     if drafts is None:
-        # No-fallback rule: off-leaderboard players should never reach this
-        # classifier — they have no draft count, so we can't classify them.
-        # Upstream must filter drafts=None out of the candidate pool rather
-        # than substituting a tier here.
-        raise ValueError(
-            "get_ownership_tier called with drafts=None — off-leaderboard "
-            "players must be excluded from the candidate pool upstream; "
-            "no fallback tier will be substituted."
-        )
+        # Live Real Sports slates do not expose draft counts via any API.
+        # When the platform leaderboard hasn't been ingested yet, every
+        # live SlatePlayer has drafts=None.  Previously this raised — which
+        # left today's optimizer empty-handed and blocked live picks.
+        # Classify the player into the "medium" neutral bucket: neither a
+        # ghost-tier auto-include nor a mega-chalk trap.  Ranking then
+        # leans on popularity + env + trait signals rather than ownership.
+        return "medium"
 
     # Absolute draft-count floor — micro-drafted players are ALWAYS ghost.
     # DFS draft distributions have extreme right tails.  It's common for 30-40%
@@ -570,35 +569,27 @@ def is_auto_include(
     card_boost: float,
     total_slate_drafts: int | None = None,
 ) -> bool:
-    """Return True for the primary historical edge cells.
+    """Return True for the primary historical edge cells — ownership-only.
 
-    Two auto-include paths (either qualifies):
+    Live Real Sports slates do not expose card_boost via any API, so the
+    optimizer cannot depend on it as an input (see CLAUDE.md pipeline notes).
+    Auto-include is therefore driven purely by ownership tier:
 
-    1. Classic ghost+elite-boost: ghost tier AND boost >= 2.5.
-       Retrained V5.0 matrix shows 96-97% HV rate for ghost+elite/max_boost
-       (n=24 and n=140 across 19 slates).
+      ghost tier (bottom 15 pct or drafts <= GHOST_ABSOLUTE_DRAFT_FLOOR)
+        → V5.0 retrain shows 0.917+ HV rate even in the no_boost column
+          (ghost × no_boost = 10/10, the rest of the ghost row is 8/8, 11/11,
+          24/24, 137/140).  Ghost ownership alone is the edge.
 
-    2. Mega-ghost any-boost (drafts <= GHOST_ABSOLUTE_DRAFT_FLOOR = 25):
-       Retrained matrix shows 100% HV rate for the ghost row at every boost
-       tier (no_boost 10/10, low 8/8, mid 11/11, elite 24/24, max 137/140).
-       The boost gate was an artefact of small early samples — mega-ghosts
-       win the HV leaderboard at a near-ceiling rate regardless of boost.
-       Widening to unboosted mega-ghosts catches plays the V4.x optimizer
-       was systematically skipping.
-
-    Uses dynamic ownership thresholds when total_slate_drafts is provided.
+    The `card_boost` argument is retained for signature compatibility with
+    legacy callers; it is ignored.
     """
     from app.core.constants import GHOST_ABSOLUTE_DRAFT_FLOOR
 
     if drafts is None:
         return False
-    tier = get_ownership_tier(drafts, total_slate_drafts)
-    if tier == "ghost" and card_boost >= AUTO_INCLUDE_BOOST_THRESHOLD:
-        return True
-    # Path 2: mega-ghost (drafts <= 25), all boost tiers.
     if drafts <= GHOST_ABSOLUTE_DRAFT_FLOOR:
         return True
-    return False
+    return get_ownership_tier(drafts, total_slate_drafts) == "ghost"
 
 
 def is_soft_auto_include(
@@ -606,25 +597,18 @@ def is_soft_auto_include(
     card_boost: float,
     total_slate_drafts: int | None = None,
 ) -> bool:
-    """Return True for ghost+mid_boost players — second-tier priority.
+    """Return True for low-ownership players — second-tier priority.
 
-    Ghost players with boost >= 2.0 (but < 2.5) have a historical
-    HV rate of 0.75 — excellent, but below auto-include's 0.88-1.00.
-    These candidates get priority over non-ghost players but rank after
-    full auto-includes in lineup construction.
+    With boost unavailable as an input, soft auto-include collapses to the
+    next ownership bucket below ghost: the "low" tier (15th–35th percentile).
+    Retrained V5.0 matrix: low × no_boost = 0.667 HV rate (1/1 observed
+    sample, Bayesian-smoothed).  These players rank after auto-includes but
+    ahead of medium/chalk/mega_chalk.
 
-    Captures players like James Wood (Apr 10: 52 drafts, 2.0x, TV 16.8)
-    who fall below the 2.5 auto-include threshold but still have strong
-    condition signals.
-
-    Returns False for players that already qualify as auto_include.
+    `card_boost` is ignored (retained for signature compatibility).
     """
-    from app.core.constants import SOFT_AUTO_INCLUDE_BOOST_THRESHOLD
-
     if drafts is None:
         return False
-    # Already auto_include → not soft_auto
-    if card_boost >= AUTO_INCLUDE_BOOST_THRESHOLD:
+    if is_auto_include(drafts, card_boost, total_slate_drafts):
         return False
-    tier = get_ownership_tier(drafts, total_slate_drafts)
-    return tier == "ghost" and card_boost >= SOFT_AUTO_INCLUDE_BOOST_THRESHOLD
+    return get_ownership_tier(drafts, total_slate_drafts) == "low"

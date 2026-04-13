@@ -385,7 +385,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
         elif not is_pitcher and game:
             is_home = game.home_team == player.team
             opp_era = game.away_starter_era if is_home else game.home_starter_era
-            env_score, env_factors = compute_batter_env_score(
+            env_score, env_factors, _unknown = compute_batter_env_score(
                 vegas_total=game.vegas_total,
                 opp_pitcher_era=opp_era,
                 platoon_advantage=sp.platoon_advantage or False,

@@ -93,9 +93,6 @@ from app.core.constants import (
     PITCHER_FADE_PENALTY,
     MOONSHOT_PITCHER_FADE_PENALTY,
     DRAFT_SCARCITY_TIEBREAKER_MAX,
-    # Most-drafted-3x trap penalty
-    MOST_DRAFTED_3X_PENALTY,
-    MOST_DRAFTED_3X_ENV_PASS_PENALTY,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score
 from app.services.popularity import PopularityClass
@@ -689,27 +686,17 @@ def _compute_base_ev(
 
 
 def _compute_filter_ev(candidate: FilteredCandidate) -> float:
-    """Compute Starting 5 EV via the shared 4-term condition-based formula.
+    """Compute Starting 5 EV via the shared condition-based formula.
 
-    Applies is_most_drafted_3x trap penalty.  V5.0 retrain: 92% batter bust
-    rate across 19 slates (not the 57% figure cited in pre-V5 docs).  Batters
-    flagged is_most_drafted_3x are hard-excluded from S5 upstream in
-    _apply_s5_hard_exclusions, so this penalty is a belt-and-suspenders
-    fallback for any surviving flag (pitchers: never flagged).  Env-aware:
-    lighter penalty when environmental support exists.
+    With card_boost removed as an optimizer input, the is_most_drafted_3x
+    trap penalty is gone — that flag depended on boost >= 3.0 which isn't
+    knowable at live-slate time.  The FADE + chalk/mega_chalk hard-exclusion
+    in _apply_s5_hard_exclusions covers the live-signal replacement.
     """
-    ev = _compute_base_ev(candidate, _popularity_ev_adjustment(candidate.popularity, is_pitcher=candidate.is_pitcher))
-    if candidate.is_most_drafted_3x:
-        if candidate.env_score >= ENV_PASS_THRESHOLD:
-            ev *= MOST_DRAFTED_3X_ENV_PASS_PENALTY
-        else:
-            ev *= MOST_DRAFTED_3X_PENALTY
-        logger.debug(
-            "Most-drafted-3x penalty (S5): %s env=%.2f penalty=%.2f",
-            candidate.player_name, candidate.env_score,
-            MOST_DRAFTED_3X_ENV_PASS_PENALTY if candidate.env_score >= ENV_PASS_THRESHOLD else MOST_DRAFTED_3X_PENALTY,
-        )
-    return ev
+    return _compute_base_ev(
+        candidate,
+        _popularity_ev_adjustment(candidate.popularity, is_pitcher=candidate.is_pitcher),
+    )
 
 
 def _build_team_stack(
@@ -801,35 +788,34 @@ def _is_s5_batter_hard_exclusion(candidate: FilteredCandidate) -> tuple[bool, st
 
     Pitchers are never hard-excluded here:
       - Pitchers control their own environment (K-rate, ERA, opponent)
-      - is_most_drafted_3x is not applied to pitchers (see _resolve_candidates)
       - Pitcher FADE already gets the lighter PITCHER_FADE_PENALTY (15%)
+
+    Note: the boost-dependent exclusions from prior versions (is_most_drafted_3x,
+    medium+max_boost) were removed when card_boost was dropped as an optimizer
+    input.  Live Real Sports slates do not expose boost values, so those rules
+    could not fire reliably anyway.  The FADE + chalk/mega_chalk rule is the
+    remaining live signal — popularity + ownership alone.
     """
     if candidate.is_pitcher:
         return (False, "")
 
-    # Rule 1 — is_most_drafted_3x batter trap
-    if candidate.is_most_drafted_3x:
-        return (True, "is_most_drafted_3x batter (92% historical bust rate)")
-
-    # Rule 2 & 3 require an ownership tier — if the candidate has no drafts
-    # it should have been filtered upstream in _resolve_candidates; belt &
-    # suspenders, we skip the exclusion here (no tier → no rule match).
+    # Need an ownership tier to apply the popularity + chalk rule.  Candidates
+    # without draft counts should have been filtered upstream; belt-and-
+    # suspenders, we simply skip the exclusion for them here.
     if candidate.drafts is None:
         return (False, "")
 
     from app.services.condition_classifier import get_ownership_tier
     tier = get_ownership_tier(candidate.drafts, candidate.total_slate_drafts)
 
-    # Rule 2 — FADE + chalk/mega_chalk batter (live is_most_popular proxy)
+    # FADE + chalk/mega_chalk batter (live is_most_popular proxy).
+    # Chalk/mega_chalk × no_boost = 0.80 / 0.136 HV; when FADE confirms the
+    # crowd is piling on, the conditional rate collapses.  Free signal.
     if (
         candidate.popularity == PopularityClass.FADE
         and tier in ("chalk", "mega_chalk")
     ):
-        return (True, f"FADE + {tier} batter (crowd-confirmed chalk, 4-9% HV)")
-
-    # Rule 3 — Medium tier + max_boost batter (boost trap masked by rs_prob)
-    if tier == "medium" and candidate.card_boost >= 2.5:
-        return (True, "medium+max_boost batter (boost-trap cell)")
+        return (True, f"FADE + {tier} batter (crowd-confirmed chalk)")
 
     return (False, "")
 
@@ -1100,21 +1086,23 @@ def _validate_lineup_structure(
                 return True
 
             # First preference: ghost with full env support.
-            # Fallback: mega-ghost+boost even without env — their EV floor already
-            # compensates for data-scarcity-driven low env scores (see _apply_ghost_boost_ev_floor).
+            # Fallback: mega-ghost (drafts < MEGA_GHOST_BOOST_MAX_DRAFTS) even
+            # without env — data scarcity (unknown batting order etc.) naturally
+            # suppresses env_score for these players; penalizing them for it
+            # double-counts the gap.  Boost dependency removed (live slates
+            # don't expose boost).
             best_ghost = next(
                 (c for c in all_candidates_sorted
                  if _ghost_ok(c) and c.env_score >= ENV_PASS_THRESHOLD),
                 None,
             )
             if best_ghost is None:
-                # No env-passing ghost — try mega-ghost+boost (env gate waived for data-scarce tier)
+                # No env-passing ghost — try mega-ghost (env gate waived for data-scarce tier)
                 best_ghost = next(
                     (c for c in all_candidates_sorted
                      if _ghost_ok(c)
                      and c.drafts is not None
-                     and c.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS
-                     and c.card_boost >= 3.0),
+                     and c.drafts < MEGA_GHOST_BOOST_MAX_DRAFTS),
                     None,
                 )
             if best_ghost and best_ghost.filter_ev >= removing.filter_ev * GHOST_ENFORCE_SWAP_THRESHOLD:
@@ -1526,19 +1514,13 @@ def _moonshot_popularity_adj(popularity: PopularityClass, is_pitcher: bool = Fal
 def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     """Compute Moonshot EV: shared base formula + sharp/explosive bonuses.
 
-    Delegates to _compute_base_ev() for the 4-term formula (DRY),
+    Delegates to _compute_base_ev() for the condition-based formula (DRY),
     then applies moonshot-specific sharp signal and explosive trait bonuses.
 
-    Applies is_most_drafted_3x penalty — always full 40% for Moonshot
-    (max contrarian stance, no env leniency).
+    is_most_drafted_3x penalty was removed when card_boost dropped out of the
+    optimizer input — live slates cannot identify that trap without boost.
     """
     base_ev = _compute_base_ev(candidate, _moonshot_popularity_adj(candidate.popularity, is_pitcher=candidate.is_pitcher))
-    if candidate.is_most_drafted_3x:
-        base_ev *= MOST_DRAFTED_3X_PENALTY
-        logger.debug(
-            "Most-drafted-3x penalty (Moonshot): %s penalty=%.2f",
-            candidate.player_name, MOST_DRAFTED_3X_PENALTY,
-        )
 
     sharp_bonus = 1.0 + (candidate.sharp_score / 100.0) * MOONSHOT_SHARP_BONUS_MAX
     explosive_trait = get_trait_score(
