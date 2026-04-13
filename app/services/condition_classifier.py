@@ -4,22 +4,41 @@ Condition Classifier — primary ranking signal for the filter pipeline.
 Maps each player's (ownership_tier × boost_tier) to their historical HV rate.
 This rate, not the trait score, is the first term in the 4-term composite EV formula.
 
-Historical evidence (220 appearances, 11 slates):
-  Ghost + Elite Boost (<100 drafts, boost ≥ 2.5): 100% HV rate, avg TV 20.45
-  Chalk + Elite Boost (500+ drafts, boost ≥ 2.5):  23% HV rate, avg TV  5.12
+V4.0 — Empirical Recalibration (2026-04-13):
+  Retrained both CONDITION_MATRIX and PITCHER_CONDITION_MATRIX from the
+  505 player-appearances in historical_players.csv across 16 slates
+  (2026-03-25 through 2026-04-10).  The previous matrices were hand-asserted
+  from a curated summary of "220 appearances, 11 slates" and contained
+  systematic errors vs. the actual data:
 
-The 4× gap is captured directly in the matrix rather than via multiplicative modifiers
-that fight the base_ev = total_score × (2 + boost) starting point.
+  Batter corrections (selected):
+    ghost+elite_boost:     0.88 → 0.50  (16/32 observed, was overstated)
+    ghost+max_boost:       1.00 → 0.79  (106/133 observed, 82% thesis confirmed
+                                          but not 100%)
+    medium+max_boost:      0.23 → 0.13  (was overstated)
+    chalk+max_boost:       0.23 → 0.10  (0/8 observed, genuine dead capital)
+    mega_chalk+no_boost:   0.15 → 0.15  (1/11 observed, roughly correct)
 
-V3.0 changes:
-  - Replaced DEAD_CAPITAL hard-blocks (0.0) with Bayesian Laplace-smoothed floors.
-    A 0/34 observation yields posterior 1/36 ≈ 0.028 under Beta(1,1) prior,
-    not a hard 0.0.  This prevents the black-hole effect where zero HV rate
-    destroys all upstream/downstream signal, while still heavily discounting
-    these conditions.
-  - ML model can now contribute signal even for formerly dead-capital conditions.
-  - Added CONDITION_OBSERVATIONS matrix tracking (successes, trials) per cell
-    for principled Bayesian updating.
+  Pitcher corrections (selected):
+    ghost+no_boost:        0.12 → 0.43  (8/19 observed — unboosted ghost
+                                          pitchers HV far more often than
+                                          assumed)
+    chalk+no_boost:        0.05 → 0.33  (4/13 observed — Sale/Gausman/Skubal
+                                          class elite chalk arms without boost)
+    mega_chalk+no_boost:   0.02 → 0.19  (6/34 observed — Fried/Alcantara class
+                                          aces against weak offenses)
+    medium+no_boost:       0.10 → 0.31  (3/11 observed)
+
+  Bayesian Laplace smoothing with Beta(1,1) prior is applied to every observed
+  cell: rate = (successes + 1) / (trials + 2).  This protects against 0/N
+  outliers (prevents hard zeros) and pulls tiny samples toward the prior mean.
+  Cells with no observations are linearly interpolated from neighbors on the
+  same ownership row.
+
+V3.0 changes (retained):
+  - Bayesian Laplace-smoothed floors replace DEAD_CAPITAL hard-blocks (0.0).
+  - ML model can contribute signal even for formerly dead-capital conditions.
+  - CONDITION_OBSERVATIONS tracks (successes, trials) per cell for updating.
 """
 
 import logging
@@ -31,91 +50,95 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 CONDITION_MATRIX: dict[str, dict[str, float]] = {
+    # Values are Bayesian posterior means with Beta(1,1) prior over empirical
+    # observations in historical_players.csv.  Comment shows raw observed rate.
     "ghost": {
-        "no_boost":    0.35,
-        "low_boost":   0.55,
-        "mid_boost":   0.75,
-        "elite_boost": 0.88,
-        "max_boost":   1.00,
+        "no_boost":    0.611,  # 10/16   = 62.5% (notable ghost bats w/o boost)
+        "low_boost":   0.682,  # 14/20   = 70.0%
+        "mid_boost":   0.812,  # 12/14   = 85.7%
+        "elite_boost": 0.500,  # 16/32   = 50.0% (audit: "88%" claim was wrong)
+        "max_boost":   0.793,  # 106/133 = 79.7% (audit: "100%" claim was wrong)
     },
     "low": {
-        "no_boost":    0.28,
-        "low_boost":   0.42,
-        "mid_boost":   0.55,
-        "elite_boost": 0.62,
-        "max_boost":   0.70,
+        "no_boost":    0.750,  # 2/2   = 100.0% (small sample — smoothed)
+        "low_boost":   0.667,  # 1/1   = 100.0%
+        "mid_boost":   0.800,  # 3/3   = 100.0%
+        "elite_boost": 0.700,  # interpolated
+        "max_boost":   0.700,  # interpolated
     },
     "medium": {
-        "no_boost":    0.22,
-        "low_boost":   0.35,
-        "mid_boost":   0.38,
-        "elite_boost": 0.28,
-        "max_boost":   0.23,
+        "no_boost":    0.538,  # 6/11  = 54.5%
+        "low_boost":   0.094,  # 2/30  = 6.7%
+        "mid_boost":   0.250,  # 0/2   = 0.0%  (small sample — smoothed)
+        "elite_boost": 0.500,  # 2/2   = 100.0% (small sample — smoothed)
+        "max_boost":   0.125,  # 3/30  = 10.0%
     },
     "chalk": {
-        "no_boost":    0.18,
-        "low_boost":   0.25,
-        "mid_boost":   0.28,
-        "elite_boost": 0.25,
-        "max_boost":   0.23,
+        "no_boost":    0.200,  # 0/3   = 0.0%  (small sample — smoothed)
+        "low_boost":   0.031,  # 0/30  = 0.0%  (genuine dead capital)
+        "mid_boost":   0.286,  # 1/5   = 20.0%
+        "elite_boost": 0.500,  # 1/2   = 50.0% (small sample — smoothed)
+        "max_boost":   0.100,  # 0/8   = 0.0%  (genuine dead capital)
     },
     "mega_chalk": {
-        "no_boost":    0.15,
-        "low_boost":   0.18,
-        "mid_boost":   0.20,
-        "elite_boost": 0.15,
-        "max_boost":   0.12,
+        "no_boost":    0.154,  # 1/11  = 9.1%
+        "low_boost":   0.087,  # 1/21  = 4.8%
+        "mid_boost":   0.222,  # 1/7   = 14.3%
+        "elite_boost": 0.200,  # interpolated
+        "max_boost":   0.200,  # 1/8   = 12.5%
     },
 }
 
 # ---------------------------------------------------------------------------
-# Pitcher-specific condition matrix (V2.5)
+# Pitcher-specific condition matrix
 #
 # SPs structurally get low/no boost from Real Sports because they accumulate
 # more game time and stats. An SP with 0 boost is not the same signal as a
-# batter with 0 boost — pitchers have a higher RS floor (93% positive RS
-# historically) and generate TV through raw RS alone.
+# batter with 0 boost — pitchers have a higher RS floor and generate TV
+# through raw RS alone.  Elite aces (Sale, Alcantara, Fried, Gausman, Skubal)
+# frequently HV with 0 boost against weak offenses — the matrix must reflect
+# this or those anchor plays get buried by the unboosted-pitcher penalty.
 #
-# Trained on 112 pitcher appearances across 15 dates.
-# Key data:  ghost+no_boost=12.5%, low+no_boost=40%, medium+no_boost=0%,
-#            ghost+low_boost=100%, ghost+elite_boost=100%.
-#            chalk+max_boost=50%, mega_chalk+no_boost=0%.
+# V4.0: Retrained on 114 pitcher appearances across 16 dates (2026-03-25
+# through 2026-04-10) from historical_players.csv.  Bayesian smoothed with
+# Beta(1,1) prior.
 # ---------------------------------------------------------------------------
 PITCHER_CONDITION_MATRIX: dict[str, dict[str, float]] = {
     "ghost": {
-        "no_boost":    0.12,   # 1/8 = 12.5% — low but NOT zero
-        "low_boost":   1.00,   # 2/2 = 100%
-        "mid_boost":   0.75,   # no data, interpolate
-        "elite_boost": 1.00,   # 2/2 = 100%
-        "max_boost":   1.00,   # 1/1 = 100%
+        "no_boost":    0.429,  # 8/19  = 42.1% (was 0.12 — big correction)
+        "low_boost":   0.600,  # 2/3   = 66.7%
+        "mid_boost":   0.675,  # interpolated
+        "elite_boost": 0.750,  # 2/2   = 100.0% (small sample — smoothed)
+        "max_boost":   0.500,  # 2/4   = 50.0%
     },
     "low": {
-        "no_boost":    0.40,   # 2/5 = 40% — Imanaga's tier, strong
-        "low_boost":   1.00,   # 1/1 = 100%
-        "mid_boost":   0.60,   # no data, interpolate
-        "elite_boost": 0.70,   # no data, interpolate
-        "max_boost":   0.50,   # 0/1 small sample, conservative
+        "no_boost":    0.750,  # 2/2   = 100.0% (small sample — smoothed)
+        "low_boost":   0.729,  # interpolated
+        "mid_boost":   0.708,  # interpolated
+        "elite_boost": 0.688,  # interpolated
+        "max_boost":   0.667,  # 1/1   = 100.0% (small sample — smoothed)
     },
     "medium": {
-        "no_boost":    0.10,   # 0/11 = 0% — round up slightly for small sample
-        "low_boost":   0.15,   # 0/1 small sample
-        "mid_boost":   0.20,   # no data, interpolate
-        "elite_boost": 0.25,   # no data, interpolate
-        "max_boost":   0.11,   # 1/9 = 11.1% — Apr 11: Walker (NOT HV), Lopez (NOT HV)
+        "no_boost":    0.308,  # 3/11  = 27.3%
+        "low_boost":   0.667,  # 1/1   = 100.0% (small sample — smoothed)
+        "mid_boost":   0.521,  # interpolated
+        "elite_boost": 0.376,  # interpolated
+        "max_boost":   0.231,  # 2/11  = 18.2%
     },
     "chalk": {
-        "no_boost":    0.05,   # 0/21 = 0% — round up for small sample
-        "low_boost":   0.67,   # 2/3 = 66.7% — boosted chalk SPs can hit
-        "mid_boost":   0.40,   # no data, interpolate
-        "elite_boost": 0.45,   # no data, interpolate
-        "max_boost":   0.42,   # 5/12 = 41.7% — Apr 11: Sheehan (NOT HV), Bassitt (NOT HV)
+        "no_boost":    0.333,  # 4/13  = 30.8% (was 0.05 — big correction)
+        "low_boost":   0.400,  # 1/3   = 33.3%
+        "mid_boost":   0.457,  # interpolated
+        "elite_boost": 0.514,  # interpolated
+        "max_boost":   0.571,  # 3/5   = 60.0%
     },
     "mega_chalk": {
-        "no_boost":    0.02,   # 0/35 = 0% — dead money. Apr 11: Fried (NOT HV)
-        "low_boost":   0.10,   # no data
-        "mid_boost":   0.05,   # 0/2 = 0%
-        "elite_boost": 0.10,   # no data
-        "max_boost":   0.75,   # 3/4 = 75% — Apr 11: Suarez (HV, TV 28.5)
+        "no_boost":    0.194,  # 6/34  = 17.6% (was 0.02 — big correction;
+                               #                Fried/Alcantara/Sale class)
+        "low_boost":   0.222,  # interpolated
+        "mid_boost":   0.250,  # 0/2   = 0.0% (small sample — smoothed)
+        "elite_boost": 0.425,  # interpolated
+        "max_boost":   0.600,  # 2/3   = 66.7% (small sample — smoothed)
     },
 }
 
@@ -123,12 +146,13 @@ PITCHER_CONDITION_MATRIX: dict[str, dict[str, float]] = {
 # Matrix version & training provenance (Bug 6 — survivorship bias guard)
 # ---------------------------------------------------------------------------
 # IMPORTANT: Update this version and date list whenever the matrix is retrained.
-CONDITION_MATRIX_VERSION = "1.1"
+# Recalibrate with: python3 scripts/recalibrate_condition_matrix.py
+CONDITION_MATRIX_VERSION = "2.0"
 CONDITION_MATRIX_TRAINING_DATES = [
     "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-28", "2026-03-29",
     "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-03",
     "2026-04-04", "2026-04-05", "2026-04-06", "2026-04-07", "2026-04-09",
-    "2026-04-11",
+    "2026-04-10",
 ]
 
 # ---------------------------------------------------------------------------
@@ -155,78 +179,80 @@ BAYESIAN_PRIOR_BETA = 1.0
 # (0, 0) which yields the prior mean (alpha / (alpha + beta) = 0.5), but
 # the matrix interpolation value takes precedence for those.
 CONDITION_OBSERVATIONS: dict[str, dict[str, tuple[int, int]]] = {
+    # V4.0: Retrained from historical_players.csv (391 batter appearances).
     "ghost": {
-        "no_boost":    (5, 14),    # ~35%
-        "low_boost":   (6, 11),    # ~55%
-        "mid_boost":   (9, 12),    # ~75%
-        "elite_boost": (7, 8),     # ~88%
-        "max_boost":   (8, 8),     # 100%
+        "no_boost":    ( 10,  16),  # 62.5%
+        "low_boost":   ( 14,  20),  # 70.0%
+        "mid_boost":   ( 12,  14),  # 85.7%
+        "elite_boost": ( 16,  32),  # 50.0%
+        "max_boost":   (106, 133),  # 79.7%
     },
     "low": {
-        "no_boost":    (7, 25),    # ~28%
-        "low_boost":   (5, 12),    # ~42%
-        "mid_boost":   (6, 11),    # ~55%
-        "elite_boost": (5, 8),     # ~62%
-        "max_boost":   (7, 10),    # ~70%
+        "no_boost":    (  2,   2),  # 100.0%
+        "low_boost":   (  1,   1),  # 100.0%
+        "mid_boost":   (  3,   3),  # 100.0%
+        "elite_boost": (  0,   0),  # no data → interpolated
+        "max_boost":   (  0,   0),  # no data → interpolated
     },
     "medium": {
-        "no_boost":    (4, 18),    # ~22%
-        "low_boost":   (4, 11),    # ~35%
-        "mid_boost":   (3, 8),     # ~38%
-        "elite_boost": (2, 7),     # ~28%
-        "max_boost":   (2, 9),     # ~23%
+        "no_boost":    (  6,  11),  # 54.5%
+        "low_boost":   (  2,  30),  # 6.7%
+        "mid_boost":   (  0,   2),  # 0.0%
+        "elite_boost": (  2,   2),  # 100.0%
+        "max_boost":   (  3,  30),  # 10.0%
     },
     "chalk": {
-        "no_boost":    (5, 28),    # ~18%
-        "low_boost":   (0, 12),    # 0% observed → Bayesian floor ~0.07
-        "mid_boost":   (3, 11),    # ~28%
-        "elite_boost": (0, 15),    # 0% observed → Bayesian floor ~0.06
-        "max_boost":   (0, 18),    # 0% observed → Bayesian floor ~0.05
+        "no_boost":    (  0,   3),  # 0.0% (small sample)
+        "low_boost":   (  0,  30),  # 0.0% — Bayesian floor ~0.031
+        "mid_boost":   (  1,   5),  # 20.0%
+        "elite_boost": (  1,   2),  # 50.0% (small sample)
+        "max_boost":   (  0,   8),  # 0.0% — Bayesian floor ~0.100
     },
     "mega_chalk": {
-        "no_boost":    (0, 34),    # 0% observed → Bayesian floor ~0.028
-        "low_boost":   (0, 8),     # 0% observed → Bayesian floor ~0.10
-        "mid_boost":   (2, 10),    # ~20%
-        "elite_boost": (1, 7),     # ~15%
-        "max_boost":   (1, 8),     # ~12%
+        "no_boost":    (  1,  11),  # 9.1%
+        "low_boost":   (  1,  21),  # 4.8%
+        "mid_boost":   (  1,   7),  # 14.3%
+        "elite_boost": (  0,   0),  # no data → interpolated
+        "max_boost":   (  1,   8),  # 12.5%
     },
 }
 
 PITCHER_CONDITION_OBSERVATIONS: dict[str, dict[str, tuple[int, int]]] = {
+    # V4.0: Retrained from historical_players.csv (114 pitcher appearances).
     "ghost": {
-        "no_boost":    (1, 8),     # 12.5%
-        "low_boost":   (2, 2),     # 100%
-        "mid_boost":   (0, 0),     # no data
-        "elite_boost": (2, 2),     # 100%
-        "max_boost":   (1, 1),     # 100%
+        "no_boost":    (  8,  19),  # 42.1%
+        "low_boost":   (  2,   3),  # 66.7%
+        "mid_boost":   (  0,   0),  # no data → interpolated
+        "elite_boost": (  2,   2),  # 100.0%
+        "max_boost":   (  2,   4),  # 50.0%
     },
     "low": {
-        "no_boost":    (2, 5),     # 40%
-        "low_boost":   (1, 1),     # 100%
-        "mid_boost":   (0, 0),     # no data
-        "elite_boost": (0, 0),     # no data
-        "max_boost":   (0, 1),     # 0%
+        "no_boost":    (  2,   2),  # 100.0%
+        "low_boost":   (  0,   0),  # no data → interpolated
+        "mid_boost":   (  0,   0),  # no data → interpolated
+        "elite_boost": (  0,   0),  # no data → interpolated
+        "max_boost":   (  1,   1),  # 100.0%
     },
     "medium": {
-        "no_boost":    (0, 11),    # 0%
-        "low_boost":   (0, 1),     # 0%
-        "mid_boost":   (0, 0),     # no data
-        "elite_boost": (0, 0),     # no data
-        "max_boost":   (1, 9),     # 11.1% — Apr 11: Walker (NOT HV), Lopez (NOT HV)
+        "no_boost":    (  3,  11),  # 27.3%
+        "low_boost":   (  1,   1),  # 100.0%
+        "mid_boost":   (  0,   0),  # no data → interpolated
+        "elite_boost": (  0,   0),  # no data → interpolated
+        "max_boost":   (  2,  11),  # 18.2%
     },
     "chalk": {
-        "no_boost":    (0, 21),    # 0%
-        "low_boost":   (2, 3),     # 66.7%
-        "mid_boost":   (0, 0),     # no data
-        "elite_boost": (0, 0),     # no data
-        "max_boost":   (5, 12),    # 41.7% — Apr 11: Sheehan (NOT HV), Bassitt (NOT HV)
+        "no_boost":    (  4,  13),  # 30.8%
+        "low_boost":   (  1,   3),  # 33.3%
+        "mid_boost":   (  0,   0),  # no data → interpolated
+        "elite_boost": (  0,   0),  # no data → interpolated
+        "max_boost":   (  3,   5),  # 60.0%
     },
     "mega_chalk": {
-        "no_boost":    (0, 35),    # 0% — Apr 11: Fried (NOT HV)
-        "low_boost":   (0, 0),     # no data
-        "mid_boost":   (0, 2),     # 0%
-        "elite_boost": (0, 0),     # no data
-        "max_boost":   (3, 4),     # 75% — Apr 11: Suarez (HV, TV 28.5)
+        "no_boost":    (  6,  34),  # 17.6% — Fried/Alcantara/Sale class aces
+        "low_boost":   (  0,   0),  # no data → interpolated
+        "mid_boost":   (  0,   2),  # 0.0%
+        "elite_boost": (  0,   0),  # no data → interpolated
+        "max_boost":   (  2,   3),  # 66.7%
     },
 }
 
@@ -246,12 +272,16 @@ def bayesian_hv_rate(successes: int, trials: int) -> float:
 
 # Legacy constant — retained for reference and logging.  No longer used as a
 # hard-block.  These conditions now receive Bayesian floor rates instead of 0.0.
+#
+# V4.0: chalk+elite_boost removed (1/2 observed → 0.50 Bayesian, not dead).
+# mega_chalk+no_boost retained as "legacy" for logging purposes even though
+# empirical rate is 0.194 — elite aces without boost still have variance worth
+# tracking.
 LEGACY_DEAD_CAPITAL_CONDITIONS: set[tuple[str, str]] = {
-    ("chalk", "elite_boost"),
-    ("chalk", "max_boost"),
-    ("chalk", "low_boost"),
-    ("mega_chalk", "low_boost"),
-    ("mega_chalk", "no_boost"),
+    ("chalk", "max_boost"),      # 0/8 observed → Bayesian 0.10
+    ("chalk", "low_boost"),      # 0/30 observed → Bayesian 0.031
+    ("mega_chalk", "low_boost"), # 1/21 observed → Bayesian 0.087
+    ("mega_chalk", "no_boost"),  # 1/11 observed → Bayesian 0.154
 }
 
 # ---------------------------------------------------------------------------
