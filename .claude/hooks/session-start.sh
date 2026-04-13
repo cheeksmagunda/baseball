@@ -5,7 +5,12 @@ set -euo pipefail
 # HISTORICAL DATA INGEST GUIDE
 # =============================================================================
 #
-# After each slate, add results to these three files in data/:
+# Canonical reference: see "Ingesting New Slate Data" in CLAUDE.md. This
+# comment block is a startup cheat-sheet — keep it in sync with CLAUDE.md.
+#
+# Current coverage (2026-04-12): 19 consecutive dates, 2026-03-25 → 2026-04-12.
+# All four files stay in lockstep — a date present in one must be present in
+# all four. After each slate, append to these four files in data/:
 #
 # ── 1. data/historical_players.csv ──────────────────────────────────────────
 #
@@ -78,13 +83,36 @@ set -euo pipefail
 #   Notes should capture: biggest RS values, ghost wins, boost traps, 3x busts,
 #   crowd overreactions, and any patterns relevant to V2 strategy validation.
 #
+# ── 4. data/hv_player_game_stats.csv ────────────────────────────────────────
+#
+#   Columns (in order):
+#     date, player_name, team_actual, position, real_score, card_boost,
+#     game_result, ab, r, h, hr, rbi, bb, so, ip, er, k_pitching,
+#     decision, notes
+#
+#   Rules:
+#   • One row per Highest-Value-leaderboard player appearance (grows each slate).
+#   • Batters fill ab/r/h/hr/rbi/bb/so; pitchers fill ip/er/k_pitching/decision.
+#     Leave non-applicable columns blank — do NOT zero-fill across roles.
+#   • card_boost blank if no boost card (same convention as file 1).
+#   • game_result: free-form score string ("SF 0 NYY 7").
+#   • notes: short summary ("2-for-3 | vs SF (away)", "Minimal contribution").
+#
+#   Example rows:
+#     2026-03-25,Austin Wells,NYY,C,1.2,,SF 0 NYY 7,3.0,1.0,2.0,0.0,0.0,1.0,0.0,,,,,2-for-3 | vs SF (away)
+#     2026-03-25,Ben Rice,NYY,1B,0.2,,SF 0 NYY 7,4.0,1.0,1.0,0.0,0.0,1.0,2.0,,,,,Minimal contribution | vs SF (away)
+#
 # ── Quick checklist when ingesting a new slate ───────────────────────────────
 #   [ ] Append player rows to historical_players.csv (MP + MD3x mandatory;
 #       HV optional — set is_highest_value=1 only if recording HV leaderboard)
 #   [ ] Append winning lineup rows to historical_winning_drafts.csv if available
 #   [ ] Append slate entry to historical_slate_results.json
+#   [ ] Append HV box-score rows to hv_player_game_stats.csv (one row per HV
+#       leaderboard appearance, batter vs pitcher columns mutually exclusive)
 #   [ ] Verify total_value = real_score × (2 + card_boost) for each row
 #   [ ] Players appearing in multiple leaderboards → single row, multiple flags
+#   [ ] Reload DB: rm db/baseball.db && python -m app.seed
+#       (the seeder is idempotency-guarded on an empty DB — no incremental mode)
 # =============================================================================
 
 # Only run in remote (Claude Code on the web) environments
