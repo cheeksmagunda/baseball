@@ -175,18 +175,19 @@ Web-scraping signal aggregator that estimates which players the crowd will over-
 
 The active optimizer produces **two lineups** from the same candidate pool via `run_dual_filter_strategy`.
 
-### The Primary Signal: Draft Tier × Boost (Proven from 15 dates)
+### The Primary Signal: Draft Tier × Boost (Proven across 19 dates)
 
 The optimizer's job is NOT to predict RS. It is to identify which players are in the **ghost+high-boost category** — that category's historical win rate is itself the signal:
 
 | Draft tier | n | Avg TV | % TV>15 |
 |---|---|---|---|
-| mega-ghost (<50 drafts) + boost ≥ 2.0 | 119 | 19.9 | **82%** |
-| ghost (50–99 drafts) + boost ≥ 2.0 | 4 | 20.7 | **100%** |
-| medium (200–499 drafts) + boost ≥ 2.0 | 9 | 2.5 | 0% |
-| mid-chalk (500–1499 drafts) + boost ≥ 2.0 | 34 | 3.1 | 12% |
+| mega-ghost (<50 drafts) + boost ≥ 2.0 | 181 | 20.2 | **82%** |
+| ghost (50–99 drafts) + boost ≥ 2.0 | 8 | 19.3 | **100%** |
+| medium (200–499 drafts) + boost ≥ 2.0 | 17 | 6.2 | 18% |
+| mid-chalk (500–1499 drafts) + boost ≥ 2.0 | 46 | 3.4 | 11% |
+| mega-chalk (1500+ drafts) + boost ≥ 2.0 | 48 | 8.7 | 29% |
 
-Ghost+boost players have 82–100% historical TV>15 rate. Medium/chalk+boost players have 0–12%. **The trait score matters far less than which tier the player sits in.**
+Ghost+boost players have 82–100% historical TV>15 rate. Medium/mid-chalk+boost sit at 11–18%. Mega-chalk+boost (1500+ drafts) has crept up to 29% on the expanded sample — still unfavourable relative to ghost, but not a dead-capital cell. **The trait score matters far less than which tier the player sits in.**
 
 ### Three Pillars (V2)
 
@@ -610,7 +611,7 @@ V5.0 replaces the V3.x boost-driven dynamic composition with a hard structural r
 `BOOST_QUALITY_THRESHOLD` (1.0) and `BOOSTED_POOL_FULL_THRESHOLD` (5) in `app/core/constants.py` remain defined but are no longer consulted for composition decisions — the 1-pitcher rule is pre-committed.
 
 ### The Ghost Player Edge
-The single most consistent edge: players with < 100 drafts with high boost. Historical data across 15 dates: **82% of mega-ghost+boost players (< 50 drafts, boost ≥ 2.0) deliver TV > 15**, vs 0–12% for medium/chalk-tier players with the same boost. Trait scores are unreliable for data-scarce ghost players — use the draft tier as the primary signal, not the score.
+The single most consistent edge: players with < 100 drafts with high boost. Historical data across 19 dates: **82% of mega-ghost+boost players (< 50 drafts, boost ≥ 2.0) deliver TV > 15** (n=181), and the ghost tier (50–99 drafts) hits 100% on a small n=8 sample. Medium/mid-chalk+boost sit at 11–18%. Trait scores are unreliable for data-scarce ghost players — use the draft tier as the primary signal, not the score.
 
 Examples: Miguel Vargas (1 draft, RS 6.2), Colson Montgomery (5 drafts, RS 6.3), Oneil Cruz (2 drafts, RS 5.7), Angel Martínez (2 drafts, RS 6.9), Edouard Julien (1 draft, RS 3.6). The crowd chases Ohtani/Judge/Soto regardless of conditions — those three are chronically over-drafted.
 

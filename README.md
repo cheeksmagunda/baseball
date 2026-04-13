@@ -106,12 +106,13 @@ Each lineup's anchor pitcher is the highest-EV pitcher in its candidate pool. Th
 
 **The primary signal is draft tier × boost**, not trait score:
 
-| Draft tier + boost ≥ 2.0 | Avg TV | % TV>15 (15 dates) |
-|---|---|---|
-| mega-ghost (<50 drafts) | 19.9 | **82%** |
-| ghost (50–99 drafts) | 20.7 | **100%** |
-| medium (200–499 drafts) | 2.5 | 0% |
-| chalk (1500+ drafts) | 6.4 | 25% |
+| Draft tier + boost ≥ 2.0 | n | Avg TV | % TV>15 (19 dates) |
+|---|---|---|---|
+| mega-ghost (<50 drafts) | 181 | 20.2 | **82%** |
+| ghost (50–99 drafts) | 8 | 19.3 | **100%** |
+| medium (200–499 drafts) | 17 | 6.2 | 18% |
+| mid-chalk (500–1499 drafts) | 46 | 3.4 | 11% |
+| mega-chalk (1500+ drafts) | 48 | 8.7 | 29% |
 
 **Key optimizer behaviors:**
 - **V5.0 pitcher anchor**: exactly 1 SP per lineup, pinned to Slot 1. The highest-EV pitcher in the pool wins the anchor — boosted or unboosted, ghost or chalk, treated uniformly.
