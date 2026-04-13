@@ -106,12 +106,13 @@ Each lineup's anchor pitcher is the highest-EV pitcher in its candidate pool. Th
 
 **The primary signal is draft tier × boost**, not trait score:
 
-| Draft tier + boost ≥ 2.0 | Avg TV | % TV>15 (15 dates) |
-|---|---|---|
-| mega-ghost (<50 drafts) | 19.9 | **82%** |
-| ghost (50–99 drafts) | 20.7 | **100%** |
-| medium (200–499 drafts) | 2.5 | 0% |
-| chalk (1500+ drafts) | 6.4 | 25% |
+| Draft tier + boost ≥ 2.0 | n | Avg TV | % TV>15 (19 dates) |
+|---|---|---|---|
+| mega-ghost (<50 drafts) | 181 | 20.2 | **82%** |
+| ghost (50–99 drafts) | 8 | 19.3 | **100%** |
+| medium (200–499 drafts) | 17 | 6.2 | 18% |
+| mid-chalk (500–1499 drafts) | 46 | 3.4 | 11% |
+| mega-chalk (1500+ drafts) | 48 | 8.7 | 29% |
 
 **Key optimizer behaviors:**
 - **V5.0 pitcher anchor**: exactly 1 SP per lineup, pinned to Slot 1. The highest-EV pitcher in the pool wins the anchor — boosted or unboosted, ghost or chalk, treated uniformly.
@@ -220,11 +221,13 @@ app/
     ├── pipeline.py         # Fetch → Score → Rank orchestrator
     └── calibration.py      # Prediction vs actual feedback loop
 data/
-├── historical_players.csv
-├── historical_winning_drafts.csv
-├── historical_slate_results.json
-└── hv_player_game_stats.csv
+├── historical_players.csv           # 677 rows / 19 dates — master player ledger
+├── historical_winning_drafts.csv    # 655 rows / 19 dates — top-ranked lineups (5 slots/lineup)
+├── historical_slate_results.json    # 19 entries            — per-date slate envelope
+└── hv_player_game_stats.csv         # 290 rows / 19 dates — box scores for HV players
 ```
+
+Current coverage: 2026-03-25 → 2026-04-12 (19 consecutive slates). All four files stay in lockstep.
 
 ## Getting Started
 
@@ -244,6 +247,17 @@ uvicorn app.main:app --reload
 # Run tests
 pytest tests/
 ```
+
+## Ingesting a New Slate
+
+New slates are added **manually** — there is no automated collector. After a slate completes, append rows to the four files in `/data/` (see the **"Ingesting New Slate Data"** section in [CLAUDE.md](CLAUDE.md) for the full column-by-column reference and platform → CSV mapping). The short version:
+
+1. Append player rows to `historical_players.csv` (Most Popular + Most Drafted 3x mandatory; HV optional).
+2. Append winning-lineup rows to `historical_winning_drafts.csv` (5 rows per lineup, target top-20 ranks).
+3. Append one slate envelope object to `historical_slate_results.json`.
+4. Append HV box-score rows to `hv_player_game_stats.csv`.
+5. Verify `total_value = real_score × (2 + card_boost)` for each player row.
+6. Reload the DB: `rm db/baseball.db && python -m app.seed` (the seeder is idempotency-guarded on an empty DB — there is no incremental mode).
 
 ## Deployment (Railway)
 

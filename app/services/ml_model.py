@@ -33,7 +33,7 @@ HV_THRESHOLD = 15.0
 
 # Blend weight: how much influence the ML model has vs the static matrix.
 # 0.0 = pure matrix (status quo), 1.0 = pure ML.
-# Start conservative — the matrix is proven over 15 dates.
+# Start conservative — the matrix is proven over 19 dates.
 ML_BLEND_WEIGHT = 0.30
 
 # Cache the loaded model in-process so we don't re-read from disk every call.
