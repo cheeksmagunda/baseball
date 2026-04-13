@@ -474,29 +474,34 @@ def get_condition_hv_rate(
         if (ownership_tier, boost_tier) in LEGACY_DEAD_CAPITAL_CONDITIONS:
             is_legacy_dead_capital = True
 
-    # Compute Bayesian posterior floor from observed data
+    # Compute effective HV rate from observations or matrix interpolation.
+    #
+    # V3.5: When observations exist, trust the Bayesian posterior over the
+    # hand-interpolated matrix rate.  The old logic used max(matrix, bayesian)
+    # which always picked the MORE GENEROUS value — this inflated dead-capital
+    # conditions where empirical data showed 0% success but the matrix had an
+    # interpolated rate of 20-28% (e.g. chalk+low_boost: 0/12 obs but matrix
+    # said 0.25, allowing Yelich-type chalk picks to pass the filter).
+    #
+    # The Bayesian posterior with Beta(1,1) prior handles small samples
+    # gracefully: 0/12 → 0.071, 8/8 → 0.90, 1/1 → 0.667.  For cells with
+    # no observations, the matrix interpolation is all we have.
     successes, trials = obs
     if trials > 0:
-        bayesian_floor = bayesian_hv_rate(successes, trials)
+        effective_rate = bayesian_hv_rate(successes, trials)
     else:
         # No observations — trust the matrix interpolation
-        bayesian_floor = matrix_rate
+        effective_rate = matrix_rate
 
-    # For legacy dead-capital conditions: use the Bayesian posterior as the
-    # effective rate (small but non-zero).  The matrix may have been manually
-    # set higher for some of these cells, so take the max.
     if is_legacy_dead_capital:
-        effective_rate = max(matrix_rate, bayesian_floor)
         logger.info(
-            "Bayesian dead-capital floor (V3.0): drafts=%s (tier=%s), boost=%.1f (tier=%s), "
+            "Bayesian dead-capital rate (V3.5): drafts=%s (tier=%s), boost=%.1f (tier=%s), "
             "obs=%d/%d, bayesian=%.4f, matrix=%.2f, effective=%.4f",
             drafts, ownership_tier, card_boost, boost_tier,
-            successes, trials, bayesian_floor, matrix_rate, effective_rate,
+            successes, trials,
+            bayesian_hv_rate(successes, trials) if trials > 0 else 0.0,
+            matrix_rate, effective_rate,
         )
-    else:
-        # For normal conditions: use the matrix rate but floor at the Bayesian
-        # posterior to prevent small-sample overconfidence in low rates.
-        effective_rate = max(matrix_rate, bayesian_floor)
 
     # Blend with ML prediction when model is available
     from app.services.ml_model import get_blended_hv_rate

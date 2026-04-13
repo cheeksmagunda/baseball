@@ -255,6 +255,14 @@ MOST_DRAFTED_3X_MIN_N = 3             # minimum (thin slates)
 MOST_DRAFTED_3X_MAX_N = 7             # maximum (large slates)
 MOST_DRAFTED_3X_PROPORTION = 0.30     # flag top 30% of 3x-boost pool
 
+# Most-drafted-3x EV penalty (V2.3 spec — wired into EV in V3.5).
+# Players flagged as is_most_drafted_3x have a 57% bust rate, avg RS 0.72.
+# Starting 5: env-aware — lighter when environmental support exists (crowd
+# might know something), heavier when it doesn't (hype without support).
+# Moonshot: always full penalty (max contrarian stance).
+MOST_DRAFTED_3X_ENV_PASS_PENALTY = 0.80  # S5: 20% haircut when env >= ENV_PASS_THRESHOLD
+MOST_DRAFTED_3X_PENALTY = 0.60            # S5: 40% haircut when env fails; Moonshot: always
+
 # ---------------------------------------------------------------------------
 # Ghost + Boost synergy constants
 # Used for stack-building sort priority in _build_team_stack().
