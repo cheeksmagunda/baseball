@@ -47,7 +47,7 @@ class FilterCard(BaseModel):
     platoon_advantage: bool = False
     is_debut_or_return: bool = False
     drafts: int | None = None  # ownership data
-    is_most_drafted_3x: bool = False  # 57% bust rate trap signal
+    is_most_drafted_3x: bool = False  # 92% batter bust rate (V5.0 retrain) — hard-excluded from S5
 
 
 class FilterOptimizeRequest(BaseModel):
