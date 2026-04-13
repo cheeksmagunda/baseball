@@ -551,7 +551,7 @@ class FilteredCandidate:
     is_pitcher: bool = False
     sharp_score: float = 0.0
     drafts: int | None = None
-    is_most_drafted_3x: bool = False  # 57% bust rate trap signal
+    is_most_drafted_3x: bool = False  # 92% batter bust rate (V5.0 retrain) — hard-excluded from S5
     traits: list = field(default_factory=list)  # TraitScore list from scoring engine
     batting_order: int | None = None  # 1-9 if confirmed in lineup, None = DNP risk
     is_in_blowout_game: bool = False  # set by run_filter_strategy before EV computation
@@ -691,8 +691,12 @@ def _compute_base_ev(
 def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     """Compute Starting 5 EV via the shared 4-term condition-based formula.
 
-    Applies is_most_drafted_3x trap penalty.  57% bust rate, avg RS 0.72.
-    Env-aware: lighter penalty when environmental support exists.
+    Applies is_most_drafted_3x trap penalty.  V5.0 retrain: 92% batter bust
+    rate across 19 slates (not the 57% figure cited in pre-V5 docs).  Batters
+    flagged is_most_drafted_3x are hard-excluded from S5 upstream in
+    _apply_s5_hard_exclusions, so this penalty is a belt-and-suspenders
+    fallback for any surviving flag (pitchers: never flagged).  Env-aware:
+    lighter penalty when environmental support exists.
     """
     ev = _compute_base_ev(candidate, _popularity_ev_adjustment(candidate.popularity, is_pitcher=candidate.is_pitcher))
     if candidate.is_most_drafted_3x:
@@ -766,6 +770,90 @@ def _build_team_stack(
             return stack
 
     return None
+
+
+def _is_s5_batter_hard_exclusion(candidate: FilteredCandidate) -> tuple[bool, str]:
+    """Return (True, reason) if this batter should be hard-excluded from Starting 5.
+
+    These exclusions are derived from empirical historical bust rates.  They
+    apply ONLY to the Starting 5 lineup — Moonshot still considers these
+    players (with the existing EV penalties intact) because it's deliberately
+    anti-correlated with Starting 5 and benefits from contrarian variance.
+
+    Exclusion rules (batters only, pitchers never hard-excluded by this helper):
+
+    1. is_most_drafted_3x batter — 92% bust rate on 3x-boost chalk batters
+       across 19 slates.  The penalty-only treatment leaves them near the
+       S5 pool's EV mean, and they still sneak in when the rest of the pool
+       is thin.  Hard-exclusion removes that failure mode entirely.
+
+    2. FADE + (chalk | mega_chalk) batter — the live proxy for the historical
+       is_most_popular leaderboard.  Chalk/mega_chalk batters have 4-9% HV
+       rate from the retrained V5.0 matrix; when the crowd FADE signal
+       confirms they are over-drafted, the conditional HV rate collapses
+       further.  Free FADE signal — use it.
+
+    3. Medium tier + max_boost batter — the only remaining boost-trap cell
+       that still scores respectably under rs_prob * condition_hv_rate.
+       Historical HV rate is low while boost inflates rs_prob, masking the
+       trap.  Excluding from S5 protects the lineup; Moonshot can still
+       take the contrarian shot.
+
+    Pitchers are never hard-excluded here:
+      - Pitchers control their own environment (K-rate, ERA, opponent)
+      - is_most_drafted_3x is not applied to pitchers (see _resolve_candidates)
+      - Pitcher FADE already gets the lighter PITCHER_FADE_PENALTY (15%)
+    """
+    if candidate.is_pitcher:
+        return (False, "")
+
+    # Rule 1 — is_most_drafted_3x batter trap
+    if candidate.is_most_drafted_3x:
+        return (True, "is_most_drafted_3x batter (92% historical bust rate)")
+
+    # Rule 2 & 3 require an ownership tier — if the candidate has no drafts
+    # it should have been filtered upstream in _resolve_candidates; belt &
+    # suspenders, we skip the exclusion here (no tier → no rule match).
+    if candidate.drafts is None:
+        return (False, "")
+
+    from app.services.condition_classifier import get_ownership_tier
+    tier = get_ownership_tier(candidate.drafts, candidate.total_slate_drafts)
+
+    # Rule 2 — FADE + chalk/mega_chalk batter (live is_most_popular proxy)
+    if (
+        candidate.popularity == PopularityClass.FADE
+        and tier in ("chalk", "mega_chalk")
+    ):
+        return (True, f"FADE + {tier} batter (crowd-confirmed chalk, 4-9% HV)")
+
+    # Rule 3 — Medium tier + max_boost batter (boost trap masked by rs_prob)
+    if tier == "medium" and candidate.card_boost >= 2.5:
+        return (True, "medium+max_boost batter (boost-trap cell)")
+
+    return (False, "")
+
+
+def _apply_s5_hard_exclusions(
+    candidates: list[FilteredCandidate],
+) -> list[FilteredCandidate]:
+    """Filter the candidate pool for the Starting 5 path only.
+
+    Logs each exclusion so pool health is auditable.  Returns a new list.
+    """
+    kept: list[FilteredCandidate] = []
+    for c in candidates:
+        excluded, reason = _is_s5_batter_hard_exclusion(c)
+        if excluded:
+            logger.info(
+                "S5 hard-exclude: %s (%s, drafts=%s, boost=%.1f, pop=%s) — %s",
+                c.player_name, c.team, c.drafts, c.card_boost,
+                c.popularity.value if hasattr(c.popularity, "value") else c.popularity,
+                reason,
+            )
+            continue
+        kept.append(c)
+    return kept
 
 
 def _enforce_composition(
@@ -1377,9 +1465,21 @@ def run_filter_strategy(
     # which the matrix surfaces correctly.  Stacking a second penalty on top
     # double-counted the unboosted-ness and buried anchor plays.
 
+    # Step 1b: Apply Starting-5-only hard exclusions derived from the V5.0
+    # matrix retrain: batter is_most_drafted_3x (92% bust), FADE+chalk/mega_chalk
+    # batter (crowd-confirmed trap), medium+max_boost batter (boost-trap).
+    # Moonshot does NOT get this filter — it deliberately embraces contrarian
+    # variance against Starting 5.
+    s5_candidates = _apply_s5_hard_exclusions(candidates)
+    if len(s5_candidates) < len(candidates):
+        logger.info(
+            "S5 hard-exclusions removed %d candidates (pool: %d → %d)",
+            len(candidates) - len(s5_candidates), len(candidates), len(s5_candidates),
+        )
+
     # Step 2: Enforce composition — exactly 1 pitcher anchoring Slot 1 + 4 batters
     # (V5.0).  The pitcher's game is blocked for all batter picks.
-    lineup = _enforce_composition(candidates, slate_classification)
+    lineup = _enforce_composition(s5_candidates, slate_classification)
 
     # Step 3: Game diversification check
     warnings = _apply_game_diversification(lineup)

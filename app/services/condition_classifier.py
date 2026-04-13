@@ -570,18 +570,35 @@ def is_auto_include(
     card_boost: float,
     total_slate_drafts: int | None = None,
 ) -> bool:
-    """Return True for ghost+elite boost players — the primary historical edge.
+    """Return True for the primary historical edge cells.
 
-    These candidates (ghost tier, boost >= 2.5) have 82-100% HV rate
-    historically and should fill the lineup before lower-tier candidates
-    are considered, regardless of trait score.
+    Two auto-include paths (either qualifies):
+
+    1. Classic ghost+elite-boost: ghost tier AND boost >= 2.5.
+       Retrained V5.0 matrix shows 96-97% HV rate for ghost+elite/max_boost
+       (n=24 and n=140 across 19 slates).
+
+    2. Mega-ghost any-boost (drafts <= GHOST_ABSOLUTE_DRAFT_FLOOR = 25):
+       Retrained matrix shows 100% HV rate for the ghost row at every boost
+       tier (no_boost 10/10, low 8/8, mid 11/11, elite 24/24, max 137/140).
+       The boost gate was an artefact of small early samples — mega-ghosts
+       win the HV leaderboard at a near-ceiling rate regardless of boost.
+       Widening to unboosted mega-ghosts catches plays the V4.x optimizer
+       was systematically skipping.
 
     Uses dynamic ownership thresholds when total_slate_drafts is provided.
     """
+    from app.core.constants import GHOST_ABSOLUTE_DRAFT_FLOOR
+
     if drafts is None:
         return False
     tier = get_ownership_tier(drafts, total_slate_drafts)
-    return tier == "ghost" and card_boost >= AUTO_INCLUDE_BOOST_THRESHOLD
+    if tier == "ghost" and card_boost >= AUTO_INCLUDE_BOOST_THRESHOLD:
+        return True
+    # Path 2: mega-ghost (drafts <= 25), all boost tiers.
+    if drafts <= GHOST_ABSOLUTE_DRAFT_FLOOR:
+        return True
+    return False
 
 
 def is_soft_auto_include(
