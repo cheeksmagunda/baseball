@@ -163,7 +163,18 @@ Web-scraping signal aggregator that estimates which players the crowd will over-
 - Low attention + mid performance → **TARGET** (value pick)
 - Otherwise → **NEUTRAL**
 
-**Optimizer integration:** FADE players get 25% EV penalty, TARGET players get 15% EV bonus. Constants in `app/core/constants.py`. Boost math still dominates — a FADE with +3.0x boost still beats a TARGET with no boost.
+**V6.0 Optimizer integration:** The popularity classification is the **dominant EV signal**, not a modifier. The RS Condition Matrix (`app/services/condition_classifier.py`) maps (position_type × popularity_class) → RS factor, empirically calibrated from 20 dates:
+
+| Group | RS Factor | Avg RS | HV Rate |
+|---|---|---|---|
+| Batter+TARGET | 1.000 | 3.57 | 73.6% |
+| Batter+NEUTRAL | 0.650 | (interp) | (interp) |
+| Batter+FADE | 0.275 | 0.98 | 9.6% |
+| Pitcher+TARGET | 1.000 | 4.36 | 44.7% |
+| Pitcher+NEUTRAL | 0.850 | (interp) | (interp) |
+| Pitcher+FADE | 0.710 | 3.09 | 19.3% |
+
+A FADE batter starts at 27.5% of a TARGET batter's EV — trait and env scores (compressed to narrow ranges) cannot overcome this gap. This is intentional: the 20-date evidence shows the crowd-avoidance signal is 4x more predictive than any trait-based metric.
 
 **Key distinction:** "Trending" ≠ "popular." A breakout rookie trending upward (TARGET) is different from a slumping star trending on ESPN (FADE). The aggregator distinguishes by cross-referencing attention volume against performance score.
 
@@ -171,7 +182,34 @@ Web-scraping signal aggregator that estimates which players the crowd will over-
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V5.0 "Pitcher-Anchor Rule"** — V5.0: every lineup is exactly 1 SP + 4 batters. The highest-EV pitcher is pinned to Slot 1 (2.0x multiplier) and the pitcher's game_id is blocked for all batter picks (no negative correlation). Supersedes the V3.x dynamic pitcher cap and the Slot 1 Differentiator contrarian swap. Starting 5 and Moonshot each anchor on their own best pitcher; Moonshot's pitcher must differ from Starting 5's (player-overlap exclusion).
+**Strategy Version: V6.0 "Popularity-First Side Analysis"** — The optimizer does side analysis using external signals (MLB stats, matchups, web-scraped popularity) rather than direct prediction. Card boosts and platform draft counts are NOT optimizer inputs — they are unknowable pre-game. The user overlays boost information at draft time.
+
+### V6.0 Core Architecture
+
+**The EV formula:**
+```
+base_ev = pop_factor × env_factor × trait_factor × context × 100
+```
+
+| Signal | Source | Range | Role |
+|---|---|---|---|
+| pop_factor | RS_CONDITION_MATRIX (web-scraped FADE/TARGET/NEUTRAL) | 0.275–1.00 (batters), 0.71–1.00 (pitchers) | **Primary** — 3.6x swing for batters |
+| env_factor | Pre-game conditions (Vegas, ERA, park, weather, order) | 0.60–1.40 | **Secondary** — 2.3x swing |
+| trait_factor | Scoring engine (season stats × matchup context, 0-100) | 0.75–1.25 | **Tiebreaker** — 1.67x swing |
+| context | stack_bonus × debut_bonus × dnp_adj | varies | Situational modifiers |
+
+**Why trait is compressed:** High trait scores correlate with fame — exactly the players the crowd over-drafts. Across 20 dates, the top-5 RS players are 75% non-popular. Average RS for Most Popular = 1.69 vs non-popular = 3.37. Letting traits dominate would rank FADEs above TARGETs, which is the losing strategy.
+
+### V6.0 Lineup Composition: 1P + 4B (retained from V5.0)
+
+V6.0 retains the V5.0 composition shape: exactly 1 pitcher + 4 batters. The pitcher anchors Slot 1 (2.0x). The popularity-first EV formula determines WHICH pitcher and WHICH 4 batters.
+
+Structural constraints:
+- `REQUIRED_PITCHERS_IN_LINEUP = 1` (exactly 1 pitcher per lineup)
+- `MAX_PLAYERS_PER_TEAM = 1` (team diversification)
+- `MAX_PLAYERS_PER_GAME = 1` (game diversification)
+- Pitcher's `game_id` is blocked for all batter picks (no negative correlation)
+- Slot 1 = pitcher anchor, Slots 2-5 = batters by filter_ev descending
 
 The active optimizer produces **two lineups** from the same candidate pool via `run_dual_filter_strategy`.
 

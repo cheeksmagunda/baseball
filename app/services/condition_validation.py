@@ -26,9 +26,39 @@ from pathlib import Path
 from app.services.condition_classifier import (
     CONDITION_MATRIX_VERSION,
     CONDITION_MATRIX_TRAINING_DATES,
-    get_ownership_tier,
-    get_boost_tier,
 )
+
+# V6.0: get_ownership_tier and get_boost_tier were removed — the V6.0 matrix
+# is keyed on (position_type × popularity_class), not (ownership × boost).
+# This validation module needs a rewrite for V6.0; stubs prevent import errors.
+
+
+def get_ownership_tier(drafts, total_slate_drafts=None, slate_draft_distribution=None):
+    """V5.0 legacy stub — validation module needs rewrite for V6.0."""
+    if drafts is None:
+        return "medium"
+    if drafts < 100:
+        return "ghost"
+    if drafts < 200:
+        return "low"
+    if drafts < 1500:
+        return "medium"
+    if drafts < 2000:
+        return "chalk"
+    return "mega_chalk"
+
+
+def get_boost_tier(card_boost):
+    """V5.0 legacy stub — validation module needs rewrite for V6.0."""
+    if card_boost < 1.0:
+        return "no_boost"
+    if card_boost < 2.0:
+        return "low_boost"
+    if card_boost < 2.5:
+        return "mid_boost"
+    if card_boost < 3.0:
+        return "elite_boost"
+    return "max_boost"
 
 logger = logging.getLogger(__name__)
 
