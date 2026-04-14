@@ -186,40 +186,47 @@ DNP_GHOST_UNKNOWN_PENALTY = 0.92      # GHOST UNKNOWN: 8% haircut (data scarcity
 ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data not published" (not "bad env")
 
 # ---------------------------------------------------------------------------
-# V6.0 Popularity-First Signal Architecture
+# V7.0 Pre-Game Signal Architecture
 #
-# The popularity signal is the DOMINANT ranking factor.  Empirical evidence
-# across 20 dates: non-popular players hit HV at 63.6% vs 16.0% for popular
-# ones.  The crowd-avoidance signal produces a 3.6x RS differential for
-# batters (TARGET avg RS 3.57 vs FADE avg RS 0.98).
+# Ownership counts and card boosts are only revealed during/after the draft
+# and CANNOT be used as predictive inputs.  The EV formula is built entirely
+# on signals that are knowable before any draft begins.
 #
-# The RS condition matrix (condition_classifier.py) provides calibrated
-# factors, but these constants control the EV formula's structure:
-#   pop_factor × env_factor × trait_factor × context × 100
+# Signal hierarchy:
+#   1. env_factor   — PRIMARY: game conditions available before first pitch
+#                    (Vegas O/U, opposing starter ERA, park, weather, platoon,
+#                     batting order, moneyline, bullpen ERA).  3.0x swing.
+#   2. trait_factor — SECONDARY: season-level player quality (K/9, ISO,
+#                    barrel%, SB pace, ERA, WHIP, recent form).  1.86x swing.
+#   3. pop_factor   — TERTIARY: media attention from pre-game web signals
+#                    (Google Trends, ESPN RSS, Reddit).  1.35x swing.
+#                    DFS platform ownership data EXCLUDED (during-draft only).
 #
-# Popularity factor comes from the RS_CONDITION_MATRIX lookup.
-# Env and trait factors are bounded to prevent them from overwhelming
-# the popularity signal.
+# Formula: base_ev = env_factor × trait_factor × pop_factor × context × 100
 # ---------------------------------------------------------------------------
 
-# Trait modifier bounds: trait scores are TIEBREAKERS, not drivers.
-# Range: 0.75–1.25 (1.67x swing) — prevents a high-trait FADE from
-# overtaking a low-trait TARGET.  The old 0.15–1.0 range (6.7x swing)
-# let trait scores drown the popularity signal completely.
-TRAIT_MODIFIER_FLOOR = 0.75
-TRAIT_MODIFIER_CEILING = 1.25
+# Trait modifier bounds — SECONDARY signal.
+# Range: 0.70–1.30 (1.86x swing) — season stats differentiate within an
+# environment tier.  Cannot override a great or terrible matchup on its own.
+TRAIT_MODIFIER_FLOOR = 0.70
+TRAIT_MODIFIER_CEILING = 1.30
 
-# Env modifier bounds: second-strongest signal after popularity.
-# Range: 0.60–1.40 (2.3x swing) — a great matchup can elevate a TARGET
-# and a terrible matchup can sink one, but env can't rescue a FADE.
-ENV_MODIFIER_FLOOR = 0.60
-ENV_MODIFIER_CEILING = 1.40
+# Env modifier bounds — PRIMARY signal (expanded from V6.0 0.60–1.40).
+# Range: 0.50–1.50 (3.0x swing) — the game environment is the strongest
+# pre-game predictor: Vegas O/U, opposing ERA, park, weather, batting order.
+ENV_MODIFIER_FLOOR = 0.50
+ENV_MODIFIER_CEILING = 1.50
 
-# Legacy popularity constants — retained for backward compatibility.
-# V6.0 uses the RS_CONDITION_MATRIX factors directly instead of these
-# flat multipliers, but they remain for any code paths still referencing them.
-POPULARITY_FADE_PENALTY = 0.75        # LEGACY: S5 FADE penalty
-POPULARITY_TARGET_BONUS = 1.15        # LEGACY: S5 TARGET bonus
+# Pop modifier bounds — TERTIARY signal.
+# The RS_CONDITION_MATRIX raw factor (0.275–1.00) is compressed into this
+# narrower range so crowd-avoidance context modulates rather than dominates.
+# Range: 0.85–1.15 (1.35x swing).
+# DFS platform ownership (RotoGrinders, NumberFire) is NOT included —
+# it is only visible during the draft, not before.
+POP_MODIFIER_FLOOR = 0.85
+POP_MODIFIER_CEILING = 1.15
+POP_FACTOR_RAW_MIN = 0.275   # min raw value from RS_CONDITION_MATRIX (batter FADE)
+POP_FACTOR_RAW_MAX = 1.00    # max raw value from RS_CONDITION_MATRIX (TARGET)
 
 # ---------------------------------------------------------------------------
 # Moonshot constants (dual-lineup optimizer)
@@ -244,77 +251,21 @@ MOONSHOT_EXPLOSIVE_BONUS_MAX = 0.10
 MOONSHOT_SAME_TEAM_PENALTY = 0.85
 
 # ---------------------------------------------------------------------------
-# Draft-count ownership leverage (§2 Pillar 1 + §9 Finding 1)
-# Ghost ownership is THE #1 edge separating rank 1 from the field.
-# 12/13 rank-1 lineups had at least 1 ghost player.
+# Draft-count reference values (INFORMATIONAL ONLY — not EV inputs)
 #
-# These absolute thresholds are FALLBACKS only.  When the slate's draft
-# distribution is available, ownership tiers are computed from empirical CDF
-# percentiles (see condition_classifier.get_ownership_tier).  This makes the
-# system slate-size-invariant: 100 drafts on a 2-game day is very different
-# from 100 drafts on a 15-game day.
+# Ownership counts and card boosts are only revealed during/after the draft
+# and are NOT used as predictive inputs in the EV formula.
+# These constants are retained solely for logging/display purposes so the
+# response payload can label players by draft tier for the user's context.
 # ---------------------------------------------------------------------------
-GHOST_DRAFT_THRESHOLD = 100           # FALLBACK: < 100 drafts = ghost player
-LOW_DRAFT_THRESHOLD = 200             # FALLBACK: < 200 drafts = low-ownership differentiator
-CHALK_DRAFT_THRESHOLD = 1500          # FALLBACK: >= 1500 drafts = chalk
-MEGA_CHALK_DRAFT_THRESHOLD = 2000     # FALLBACK: >= 2000 drafts = mega-chalk
-
-# Percentile-based ownership tier thresholds (empirical CDF)
-# "Ghost" = bottom 15% of the draft distribution
-# "Low" = 15th-35th percentile
-# "Medium" = 35th-65th percentile
-# "Chalk" = 65th-90th percentile
-# "Mega-chalk" = top 10% AND requires minimum absolute draft count
-OWNERSHIP_PERCENTILE_GHOST = 0.15     # bottom 15%
-# Absolute draft-count floor for ghost classification.
-# When the slate has a massive zero-draft pool (common: 30-40% of players
-# have exactly 0 drafts), the 15th percentile can be 0, pushing players
-# with 1-2 drafts out of the ghost tier.  This floor ensures micro-drafted
-# players (the exact mega-ghosts we're hunting) are always classified ghost.
-GHOST_ABSOLUTE_DRAFT_FLOOR = 25       # drafts <= 25 = always ghost, regardless of percentile
-OWNERSHIP_PERCENTILE_LOW = 0.35       # 15th-35th
-OWNERSHIP_PERCENTILE_MEDIUM = 0.65    # 35th-65th
-OWNERSHIP_PERCENTILE_CHALK = 0.90     # 65th-90th
-# Mega-chalk activation floor: even if a player is in the top 10% by
-# percentile, they must also exceed this multiple of the median draft count
-# to be classified mega-chalk.  Prevents false mega-chalk on thin slates.
-MEGA_CHALK_MEDIAN_MULTIPLE = 3.0
-
-# "Most drafted at 3x boost" trap — still flagged dynamically each run in the router.
-# Historical bust rate: 57% with avg RS 0.72.
-# Scales with slate size — floor of 3, ceiling of 7, proportional to
-# the number of 3x-boost candidates on the slate.
-MOST_DRAFTED_3X_TOP_N = 5             # default (overridden dynamically)
-MOST_DRAFTED_3X_MIN_N = 3             # minimum (thin slates)
-MOST_DRAFTED_3X_MAX_N = 7             # maximum (large slates)
-MOST_DRAFTED_3X_PROPORTION = 0.30     # flag top 30% of 3x-boost pool
-
-# Most-drafted-3x EV penalty.
-# Players flagged as is_most_drafted_3x have a 57% bust rate, avg RS 0.72.
-# Starting 5: env-aware — lighter when environmental support exists (crowd
-# might know something), heavier when it doesn't (hype without support).
-# Moonshot: always full penalty (max contrarian stance).
-MOST_DRAFTED_3X_ENV_PASS_PENALTY = 0.80  # S5: 20% haircut when env >= ENV_PASS_THRESHOLD
-MOST_DRAFTED_3X_PENALTY = 0.60            # S5: 40% haircut when env fails; Moonshot: always
+GHOST_DRAFT_THRESHOLD = 100           # < 100 drafts = ghost (display label only)
+CHALK_DRAFT_THRESHOLD = 1500          # >= 1500 drafts = chalk (display label only)
+MEGA_CHALK_DRAFT_THRESHOLD = 2000     # >= 2000 drafts = mega-chalk (display label only)
 
 # ---------------------------------------------------------------------------
-# Ghost + Boost synergy constants
-# Used for stack-building sort priority in _build_team_stack().
-# The EV adjustments themselves are now in the condition matrix
-# (app/services/condition_classifier.py).
+# Lineup structure validation
 # ---------------------------------------------------------------------------
-GHOST_BOOST_SYNERGY_MIN_BOOST = 2.5   # minimum boost for ghost+boost stack priority
-MEGA_GHOST_BOOST_MAX_DRAFTS = 50      # < 50 drafts + boost >= 3.0 = mega-ghost-boost tier (fallback ghost in validation)
-
-# ---------------------------------------------------------------------------
-# Lineup structure validation (§5 + §9 Finding 4)
-# Every rank-1 lineup: 1 anchor + 2-3 differentiators + 1 flex
-# ---------------------------------------------------------------------------
-MAX_MEGA_CHALK_IN_LINEUP = 1          # max 1 player with 2000+ drafts
-MIN_GHOST_IN_LINEUP = 1              # min 1 ghost player (< 100 drafts)
-# Ghost enforcement: replace worst lineup player with a ghost if ghost EV >= this fraction
-GHOST_ENFORCE_SWAP_THRESHOLD = 0.50  # was 0.70 — lowered so ghost inclusion actually fires
-MAX_PLAYERS_PER_TEAM = 1             # 1 per team per individual lineup; correlation handled cross-lineup
+MAX_PLAYERS_PER_TEAM = 1             # 1 per team per individual lineup
 # V6.0: retains V5.0 composition — exactly 1 pitcher + 4 batters.
 # The pitcher anchors Slot 1 (2.0x multiplier).  The popularity-first EV
 # formula determines WHICH pitcher and WHICH 4 batters, but the 1P+4B
@@ -354,30 +305,6 @@ BOOST_CONCENTRATION_PENALTY = 0.85    # 15% penalty for 3rd+ boosted in same gam
 # correctly through the recalibrated matrix alone.
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Soft auto-include, correlation, env tiebreaker
-# ---------------------------------------------------------------------------
-
-# Soft auto-include: ghost players with mid_boost (2.0-2.5) get priority over
-# non-ghost candidates but after full auto-include (ghost + boost >= 2.5).
-# Historical ghost+mid_boost HV rate = 0.75 — excellent, but not auto-tier 1.00.
-# Captures players like James Wood (52 drafts, 2.0x, TV 16.8 on Apr 10).
-SOFT_AUTO_INCLUDE_BOOST_THRESHOLD = 2.0  # ghost + boost >= 2.0 = soft auto-include
-
-# Cross-lineup correlation: when a team has 2+ ghost players, they're likely
-# in the same game environment.  Distributing one to Starting 5 and one to
-# Moonshot captures correlated upside across both lineups.
-CORRELATION_GHOST_MIN_PLAYERS = 2        # min ghost players on same team to trigger
-CORRELATION_EV_BONUS = 1.10              # +10% EV for ghost players on correlation teams
-CORRELATION_EV_BONUS_3PLUS = 1.15        # +15% EV when 3+ ghost teammates exist
-MOONSHOT_CORRELATION_TEAMMATE_BONUS = 1.20  # +20% EV (replaces the -15% same-team penalty)
-
-# Environmental tiebreaker for auto-include tier (condition_hv_rate >= 0.85).
-# All ghost+max_boost look identical at condition_hv_rate=1.00.  This uses
-# env_score to differentiate: a ghost+max player confirmed batting 3rd in Coors
-# should rank above one with unknown batting order in Petco.
-ENV_TIEBREAKER_BONUS_MAX = 0.15          # up to +15% EV based on env_score
-ENV_TIEBREAKER_HV_THRESHOLD = 0.85       # only apply to high-HV-rate candidates
 
 # ---------------------------------------------------------------------------
 # V5.0: Dynamic pitcher cap RETIRED.
@@ -411,20 +338,3 @@ ENV_TIEBREAKER_HV_THRESHOLD = 0.85       # only apply to high-HV-rate candidates
 PITCHER_FADE_PENALTY = 0.85           # S5: 15% haircut (batters: 0.75 = 25%)
 MOONSHOT_PITCHER_FADE_PENALTY = 0.70  # Moonshot: 30% haircut (batters: 0.60 = 40%)
 
-# ---------------------------------------------------------------------------
-# Draft scarcity tiebreaker within auto-include tier
-#
-# April 11: All ghost+max_boost candidates had identical condition_hv_rate=1.00,
-# making within-tier differentiation dependent on noisy rs_prob alone.
-# The optimizer picked 9-15 draft players (García, Dingler, Ballesteros,
-# Valenzuela) while winners were 1-4 draft players (Moniak, Laureano, Greene,
-# Crawford, Bichette).
-#
-# Fewer drafts = deeper crowd asymmetry = higher edge.  A player with 1 draft
-# is more "unknown" than one with 15 drafts — the crowd has priced in more
-# information about the 15-draft player.
-#
-# Uses log scale for meaningful differentiation:
-#   1 draft → +10% bonus, 5 drafts → +6.5%, 15 drafts → +4.1%, 50 → +1.5%
-# ---------------------------------------------------------------------------
-DRAFT_SCARCITY_TIEBREAKER_MAX = 0.10  # up to +10% EV bonus for ultra-low drafts

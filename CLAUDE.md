@@ -149,60 +149,50 @@ All shared formulas and lookups live here. **Always use these instead of reimple
 
 ## Popularity Signal Aggregator (`app/services/popularity.py`)
 
-Web-scraping signal aggregator that estimates which players the crowd will over-draft. This is NOT rule-based — it's dynamic, fetching real-time external signals.
+Web-scraping signal aggregator that estimates crowd media attention. This is NOT rule-based — it's dynamic, fetching real-time public signals from sources knowable before the draft begins.
 
-**Signal sources (weighted):**
-- Social trending (40%): Google Trends autocomplete + daily trends
-- Sports news (20%): ESPN and MLB.com RSS feeds
-- DFS ownership (20%): RotoGrinders, NumberFire cross-platform ownership
-- Search volume (20%): Google autocomplete context terms
+**Signal sources (weighted) — pre-game public signals only:**
+- Social trending (45%): Google Trends autocomplete + daily trends
+- Sports news (25%): ESPN and MLB.com RSS feeds
+- Search volume (30%): Google autocomplete context terms
+
+**Intentionally excluded:** DFS platform ownership data (RotoGrinders, NumberFire). Platform ownership is only visible during the draft — using it would violate the pre-game signals constraint.
 
 **Classification logic:**
-- High attention + any performance level → **FADE** (crowd is already here)
+- High media attention + any performance level → **FADE** (crowd is already here)
 - High performance + low attention → **TARGET** (under the radar)
 - Low attention + mid performance → **TARGET** (value pick)
 - Otherwise → **NEUTRAL**
 
-**V6.0 Optimizer integration:** The popularity classification is the **dominant EV signal**, not a modifier. The RS Condition Matrix (`app/services/condition_classifier.py`) maps (position_type × popularity_class) → RS factor, empirically calibrated from 20 dates:
+**V7.0 Optimizer integration:** The popularity classification is a **tertiary contextual modifier** (±15% swing). It contextualises the primary game-environment signal but cannot override it. DFS platform ownership was never pre-game knowable and is fully excluded.
 
-| Group | RS Factor | Avg RS | HV Rate |
-|---|---|---|---|
-| Batter+TARGET | 1.000 | 3.57 | 73.6% |
-| Batter+NEUTRAL | 0.650 | (interp) | (interp) |
-| Batter+FADE | 0.275 | 0.98 | 9.6% |
-| Pitcher+TARGET | 1.000 | 4.36 | 44.7% |
-| Pitcher+NEUTRAL | 0.850 | (interp) | (interp) |
-| Pitcher+FADE | 0.710 | 3.09 | 19.3% |
-
-A FADE batter starts at 27.5% of a TARGET batter's EV — trait and env scores (compressed to narrow ranges) cannot overcome this gap. This is intentional: the 20-date evidence shows the crowd-avoidance signal is 4x more predictive than any trait-based metric.
-
-**Key distinction:** "Trending" ≠ "popular." A breakout rookie trending upward (TARGET) is different from a slumping star trending on ESPN (FADE). The aggregator distinguishes by cross-referencing attention volume against performance score.
-
-**Sharp signal (underground):** A 5th source scraped from Reddit (r/fantasybaseball, r/baseball), FanGraphs community blogs, and Prospects Live. Used exclusively by the Moonshot lineup. If niche smart accounts are on a player but mainstream isn't, that's a Moonshot BUY. `sharp_score` is 0-100, separate from the composite score.
+**Sharp signal (underground):** A 4th source scraped from Reddit (r/fantasybaseball, r/baseball), FanGraphs community blogs, and Prospects Live. Used exclusively by the Moonshot lineup. `sharp_score` is 0-100, separate from the composite score.
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V6.0 "Popularity-First Side Analysis"** — The optimizer does side analysis using external signals (MLB stats, matchups, web-scraped popularity) rather than direct prediction. Card boosts and platform draft counts are NOT optimizer inputs — they are unknowable pre-game. The user overlays boost information at draft time.
+**Strategy Version: V7.0 "Pre-Game Signals Only"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs** — they are only revealed during/after the draft and the user overlays them at draft time.
 
-### V6.0 Core Architecture
+### V7.0 Core Architecture
 
 **The EV formula:**
 ```
-base_ev = pop_factor × env_factor × trait_factor × context × 100
+base_ev = env_factor × trait_factor × pop_factor × context × 100
 ```
 
 | Signal | Source | Range | Role |
 |---|---|---|---|
-| pop_factor | RS_CONDITION_MATRIX (web-scraped FADE/TARGET/NEUTRAL) | 0.275–1.00 (batters), 0.71–1.00 (pitchers) | **Primary** — 3.6x swing for batters |
-| env_factor | Pre-game conditions (Vegas, ERA, park, weather, order) | 0.60–1.40 | **Secondary** — 2.3x swing |
-| trait_factor | Scoring engine (season stats × matchup context, 0-100) | 0.75–1.25 | **Tiebreaker** — 1.67x swing |
+| env_factor | Pre-game conditions (Vegas O/U, ERA, bullpen ERA, park, weather, platoon, batting order, moneyline) | 0.50–1.50 | **Primary** — 3.0× swing |
+| trait_factor | Scoring engine (K/9, ISO, barrel%, SB pace, ERA, WHIP, recent form, 0-100) | 0.70–1.30 | **Secondary** — 1.86× swing |
+| pop_factor | RS_CONDITION_MATRIX compressed from raw (Google Trends, ESPN, Reddit) | 0.85–1.15 | **Tertiary** — 1.35× swing |
 | context | stack_bonus × debut_bonus × dnp_adj | varies | Situational modifiers |
 
-**Why trait is compressed:** High trait scores correlate with fame — exactly the players the crowd over-drafts. Across 20 dates, the top-5 RS players are 75% non-popular. Average RS for Most Popular = 1.69 vs non-popular = 3.37. Letting traits dominate would rank FADEs above TARGETs, which is the losing strategy.
+**Why env is primary:** Vegas O/U, opposing ERA, park, and weather are the sharpest pre-game predictors of offensive output. A pitcher with a K/9 ≥ 9.0 facing a weak lineup in a pitcher's park is the most projectable floor-and-ceiling combination available before first pitch.
 
-### V6.0 Lineup Composition: 1P + 4B (retained from V5.0)
+**Why pop is tertiary:** The raw FADE/TARGET/NEUTRAL signal has an empirical 3.6× RS differential, but the signal sources include crowd psychology that mirrors DFS ownership patterns. Compressing it to ±15% ensures it functions as context without overriding the game-environment signal.
 
-V6.0 retains the V5.0 composition shape: exactly 1 pitcher + 4 batters. The pitcher anchors Slot 1 (2.0x). The popularity-first EV formula determines WHICH pitcher and WHICH 4 batters.
+### V7.0 Lineup Composition: 1P + 4B
+
+Exactly 1 pitcher + 4 batters. The pitcher anchors Slot 1 (2.0×). The pre-game EV formula determines WHICH pitcher and WHICH 4 batters.
 
 Structural constraints:
 - `REQUIRED_PITCHERS_IN_LINEUP = 1` (exactly 1 pitcher per lineup)
@@ -213,45 +203,27 @@ Structural constraints:
 
 The active optimizer produces **two lineups** from the same candidate pool via `run_dual_filter_strategy`.
 
-### The Primary Signal: Draft Tier × Boost (Proven across 19 dates)
-
-The optimizer's job is NOT to predict RS. It is to identify which players are in the **ghost+high-boost category** — that category's historical win rate is itself the signal:
-
-| Draft tier | n | Avg TV | % TV>15 |
-|---|---|---|---|
-| mega-ghost (<50 drafts) + boost ≥ 2.0 | 181 | 20.2 | **82%** |
-| ghost (50–99 drafts) + boost ≥ 2.0 | 8 | 19.3 | **100%** |
-| medium (200–499 drafts) + boost ≥ 2.0 | 17 | 6.2 | 18% |
-| mid-chalk (500–1499 drafts) + boost ≥ 2.0 | 46 | 3.4 | 11% |
-| mega-chalk (1500+ drafts) + boost ≥ 2.0 | 48 | 8.7 | 29% |
-
-Ghost+boost players have 82–100% historical TV>15 rate. Medium/mid-chalk+boost sit at 11–18%. Mega-chalk+boost (1500+ drafts) has crept up to 29% on the expanded sample — still unfavourable relative to ghost, but not a dead-capital cell. **The trait score matters far less than which tier the player sits in.**
-
-### Three Pillars (V2)
-
-1. **Ghost Ownership (#1 edge):** 12/13 rank-1 lineups had ≥1 ghost player (<100 drafts). Mega-ghost+boost (<50 drafts + boost ≥ 3.0) gets auto-include-level EV bonus — env gate removed (see V2.4).
-2. **Team Stacking:** Dominant winning pattern on 62% of days. On hitter/stack days, stack 3-4 from the favored team's ghost pool + 1-2 diversifiers.
-3. **Boost Leverage:** "Most drafted at 3x boost" busts 57% of the time — it's a SELL signal. The top-5 most-drafted 3x players are dynamically penalized each run. Ghost+boost is the buy signal.
-
-### EV Formula (V3.4 — 4-term condition-based, single source: `_compute_base_ev()`)
+### EV Formula (V7.0 — pre-game signals only, single source: `_compute_base_ev()`)
 ```
-filter_ev = condition_hv_rate                    # Term 1: from CONDITION_MATRIX (primary signal)
-  × rs_prob                                       # Term 2: P(RS >= 15/(2+boost)) from traits
-  × stack_bonus (1.20 if blowout game, else 1.0)  # Term 3: blowout team bonus
-  × anti_crowd (FADE: pitcher=0.85/batter=0.75, TARGET=1.15) # Term 4: V3.4 pitcher-aware
+filter_ev = env_factor                           # PRIMARY: 0.50–1.50 (3.0× swing)
+  × trait_factor                                 # SECONDARY: 0.70–1.30 (1.86× swing)
+  × pop_factor_compressed                        # TERTIARY: 0.85–1.15 (1.35× swing)
+  × stack_bonus (1.20 if blowout game, else 1.0)
   × debut_bonus (1.15 if first appearance)
-  × dnp_adj (ghost=0.92, unknown=0.85, confirmed_bad=0.70)
-  × env_tiebreaker (up to +15% for HV rate ≥ 0.85) # V3.2: differentiates among auto-includes
-  × draft_scarcity_tiebreaker (up to +10% for ultra-low drafts) # V3.4: within auto-include tier
-  × correlation_bonus (1.10-1.15 for correlation teams) # V3.2: cross-lineup correlation
+  × dnp_adj (unknown=0.85, confirmed_bad=0.70)
   × 100
 ```
-Note: card_boost is NOT multiplied again — it's already captured in condition_hv_rate (ghost+3.0x → HV rate 1.00) and rs_prob (higher boost → lower RS threshold).
 
-Post-EV adjustments (applied in `run_filter_strategy`):
-- Three-tier ordering for batters: auto-include → soft_auto_include → rest by filter_ev
-- **V5.0 pitcher anchor**: exactly 1 pitcher per lineup, pinned to Slot 1. The highest-EV pitcher in the pool is chosen; its `game_id` is added to a blocked set so no batter from the same game is drafted.
-- V4.1: Unboosted pitcher penalty removed — matrix now encodes empirical HV rates per (ownership × boost) cell, so stacking a second penalty double-counted
+**What each term uses (pre-game data only):**
+- `env_factor`: Vegas O/U, opposing starter ERA, bullpen ERA, platoon advantage, batting order (1-5), park factor, weather (wind/temp), moneyline
+- `trait_factor`: K/9, ISO, barrel%, SB pace, ERA, WHIP, recent form (L7 games)
+- `pop_factor_compressed`: Google Trends, ESPN RSS, Reddit buzz — NOT DFS platform ownership
+
+card_boost and draft counts are **display-only** fields stored on `FilteredCandidate`. They are not inputs to the EV formula.
+
+Post-EV composition (applied in `_enforce_composition`):
+- **Pitcher anchor (Phase 1):** highest-EV pitcher selected, pinned to Slot 1. Its `game_id` is blocked for all batter picks.
+- **Batter fill (Phase 2):** top-4 batters by filter_ev, honouring MAX_PLAYERS_PER_TEAM=1 and MAX_PLAYERS_PER_GAME=1.
 
 ### V5.0 Changes (April 13 — Pitcher-Anchor Rule)
 
@@ -515,59 +487,50 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
   pitcher 0.19). Stacking a second 10–35% haircut on top double-counted the
   unboosted-ness and buried anchor plays like Alcantara/McLean/Fried.
 
-### Lineup Construction (V5.0 — Pitcher-Anchor + Three-Tier Batters)
+### Lineup Construction (V7.0 — Pitcher-Anchor + Pure EV Batters)
 Every lineup is **exactly 1 SP + 4 batters**. The count is fixed, not data-driven.
 
-1. **Pitcher anchor (Phase 1)**: pick the highest-EV pitcher in the pool as the anchor. Pin to Slot 1 (`PITCHER_ANCHOR_SLOT = 1`, 2.0x multiplier). Add the anchor's `game_id` to a blocked set.
-2. **Three-tier batter ordering (Phase 2)**: auto-include (ghost+boost ≥ 2.5) → soft_auto_include (ghost+boost ≥ 2.0) → rest by filter_ev
-3. **Fill 4 batter slots (Phase 3)**: honour `MAX_PLAYERS_PER_TEAM = 1`, `MAX_PLAYERS_PER_GAME = 1`, and the blocked pitcher-game. Each batter comes from a distinct game, none in the pitcher's game.
-4. **No-fallback rule**: if the pool contains no pitcher, raise `ValueError` — do not substitute.
+1. **Pitcher anchor (Phase 1)**: pick the highest-EV pitcher (by pre-game EV: K/9 + opponent K% + OPS + park + home + moneyline). Pin to Slot 1 (`PITCHER_ANCHOR_SLOT = 1`, 2.0× multiplier). Block its `game_id`.
+2. **Fill 4 batter slots (Phase 2)**: fill from batters sorted by filter_ev descending, honouring `MAX_PLAYERS_PER_TEAM = 1`, `MAX_PLAYERS_PER_GAME = 1`, and the blocked pitcher-game.
+3. **No-fallback rule**: if the pool contains no pitcher, raise `ValueError` — do not substitute.
 
-### Lineup Validation (V5.0)
-- Max 1 mega-chalk (top 10% percentile + 3x median drafts) player — anchor pitcher exempt
-- Min 1 ghost (bottom 15% percentile) player: first seek env-passing ghost, fallback to mega-ghost+3x boost. Replacement pool is batters-only and excludes the anchor's game. Anchor pitcher is never swapped out.
+### Lineup Validation (V7.0)
 - **Max 1 player per team** per individual lineup — anchor pitcher exempt
 - **Max 1 player per game** per individual lineup — anchor pitcher is the seed, 4 batters come from 4 different non-anchor games
 - **Exactly 1 pitcher** (`REQUIRED_PITCHERS_IN_LINEUP = 1`) — enforced by final assertion in `_validate_lineup_structure`
-- Slot 1 Differentiator contrarian swap **retired** — Slot 1 is always the anchor pitcher
 
 ### Slate Classification (informational only — does NOT force composition)
 - Classification exists for blowout detection and display only
-- **No slate type forces pitcher/hitter counts.** `SLATE_COMPOSITION` dict was removed in V2.1.
+- **No slate type forces pitcher/hitter counts.**
 
 **Moonshot** — Completely different 5 players. Heavier anti-crowd lean:
-- Same structural shape as Starting 5: **1 SP anchor in Slot 1 + 4 batters in Slots 2–5** (V5.0)
-- The Moonshot anchor is the highest-EV pitcher in the Moonshot pool; since the Moonshot pool excludes Starting 5 player names, this is normally a different pitcher than the Starting 5 anchor
+- Same structural shape: **1 SP anchor in Slot 1 + 4 batters in Slots 2–5**
+- Moonshot pool excludes Starting 5 player names, so the anchor is normally a different pitcher
 - Moonshot's anchor game_id is blocked for Moonshot batters independently
-- FADE=0.60, NEUTRAL=0.95, TARGET=1.30
-- Sharp signal bonus: up to +25% EV from underground buzz
+- Contrarian multipliers: FADE further penalised (×0.50), TARGET further rewarded (×1.25)
+- Sharp signal bonus: up to +25% EV from underground analyst buzz (Reddit, FanGraphs, Prospects Live)
 - Explosive bonus: up to +10% EV from power_profile (batters) or k_rate (pitchers)
-- Game diversification: 0.85x soft penalty for same-team overlap with Starting 5, EXCEPT ghost teammates on correlation teams (2+ ghosts same team) get +20% BONUS instead (V3.2)
+- Game diversification: 0.85× soft penalty for same-team overlap with Starting 5
 - Zero player overlap with Starting 5
-- All V2 penalties (most_drafted_3x, mega-chalk, ghost+boost synergy) apply
 
 **Key functions (filter_strategy.py):**
-- `run_filter_strategy()` — Starting 5 (V5.0: pitcher-anchor flow, no pitcher cap)
-- `run_dual_filter_strategy()` — One call, two lineups (V3.2: cross-lineup correlation; V5.0: each lineup anchored on its own best pitcher)
-- `_compute_base_ev()` — DRY: shared 4-term formula (condition_hv_rate × rs_prob × stack × crowd × dnp × env_tiebreaker)
+- `run_filter_strategy()` — Starting 5 (V7.0: pure EV ranking, pitcher-anchor)
+- `run_dual_filter_strategy()` — One call, two lineups
+- `_compute_base_ev()` — Shared formula: env × trait × pop_compressed × context × 100
 - `_compute_filter_ev()` — Starting 5 EV (delegates to `_compute_base_ev`)
-- `_compute_moonshot_filter_ev()` — Moonshot EV (delegates to `_compute_base_ev` + sharp/explosive bonuses)
-- `_compute_dnp_adjustment()` — DRY: bifurcated DNP risk (ghost/unknown/confirmed)
-- `_identify_correlation_groups()` — V3.2: finds teams with 2+ ghost players for cross-lineup distribution
-- `_build_team_stack()` — Ghost-pool team stacking (V3.2: skipped when MAX_PLAYERS_PER_TEAM=1)
-- `_enforce_composition()` — **V5.0**: Phase 1 picks highest-EV pitcher as anchor and blocks its `game_id`; Phase 2 applies three-tier (auto/soft_auto/rest) to batters only; Phase 3 fills 4 batter slots honouring team cap=1, game cap=1, and the blocked anchor-game. Raises `ValueError` if pool has no pitcher.
-- `_validate_lineup_structure()` — **V5.0**: protects the anchor pitcher via `_protected(idx)`; ghost-enforcement replacements filtered to batters only; final assertion `pitcher_count_final == REQUIRED_PITCHERS_IN_LINEUP`.
-- `_smart_slot_assignment()` — **V5.0**: pins pitcher to Slot 1 (`PITCHER_ANCHOR_SLOT`); distributes batters across Slots 2–5 (unboosted first). Slot 1 Differentiator swap removed.
-- `compute_dynamic_pitcher_cap()` — **Deleted in V5.0**. Replaced by the hard-coded 1-pitcher anchor flow.
+- `_compute_moonshot_filter_ev()` — Moonshot EV (delegates to `_compute_base_ev` + contrarian multipliers + sharp/explosive bonuses)
+- `_compute_dnp_adjustment()` — Bifurcated DNP risk (unknown=0.85, confirmed_bad=0.70)
+- `_enforce_composition()` — Phase 1 picks highest-EV pitcher; Phase 2 fills 4 batters by filter_ev with team/game caps. Raises `ValueError` if pool has no pitcher.
+- `_validate_lineup_structure()` — Enforces team/game caps; anchor pitcher protected; final pitcher-count assertion.
+- `_smart_slot_assignment()` — Pitcher → Slot 1; batters → Slots 2-5 by filter_ev descending.
 
 **Key functions (condition_classifier.py):**
-- `is_auto_include()` — Ghost + boost >= 2.5 (primary edge)
-- `is_soft_auto_include()` — V3.2: Ghost + boost >= 2.0 (second tier, HV rate 0.75)
+- `get_rs_condition_factor()` — (position_type, popularity_class) → RS factor (used as tertiary pop signal)
 
 **Key functions (routers/filter_strategy.py):**
-- `_resolve_candidates()` — Builds candidate pool; V2.4 dynamically sets `is_most_drafted_3x` for top-5 boost=3.0 players by draft count
+- `_resolve_candidates()` — Builds candidate pool from DB, scores env + traits, fetches web-scraped popularity (no platform ownership sources)
 
-**Dead code:** `app/services/draft_optimizer.py` — functions are not wired to any router except `evaluate_lineup`. The filter_strategy path supersedes it entirely.
+**Dead code:** `app/services/draft_optimizer.py` — not wired to any router except `evaluate_lineup`. The filter_strategy path supersedes it entirely.
 
 ## API Structure (8 routers under `/api/`)
 
@@ -620,53 +583,27 @@ Not multiplicative. Proven from historical data. This means:
 - env_score > 0.5 = passes. Stored on SlatePlayer. SlateGame holds the raw data (vegas_total, home/away_starter_era, etc.)
 - If a field is NULL (data not yet available), scoring defaults to neutral — not fabricated
 
-**Filter 3 — Ownership Leverage**
-- FADE = crowd has found this player. 25% EV penalty (Moonshot: 40%).
-- TARGET = crowd is ignoring this player. 15% EV bonus (Moonshot: 30%).
-- Ghost players (< 100 drafts) with high boost are the highest-EV pool (82% TV>15 rate historically).
-- `is_most_drafted_3x` — dynamically computed each run: top-5 most-drafted players with boost ≥ 3.0. These get 20–40% EV penalty (env-aware). Historical bust rate: 57%.
-- Historical: most-drafted players chronically underperform. The crowd chases names.
+**Filter 3 — Media Attention Signal** (pre-game web sources only)
+- FADE = media attention high → tertiary penalty (±15% swing in V7.0)
+- TARGET = low media attention → tertiary bonus
+- Source: Google Trends, ESPN RSS, Reddit — **not** DFS platform ownership
+- draft counts and card boosts are NOT available pre-game and are NOT EV inputs
 
-**Filter 4 — Boost Optimization**
-- Boost is a multiplier on an unknown outcome — it amplifies downside equally.
-- card_boost ≥ 1.0 with env_score < 0.5 → **graduated** EV penalty (V2.2: 0% at env=0.5, up to 40% at env=0.0)
-- **Mega-ghost-boost (drafts < 50, boost ≥ 3.0):** env penalty capped at 20% (`MEGA_GHOST_ENV_PENALTY_FLOOR`), synergy bonus (1.50×) applied WITHOUT env requirement, EV floor at score=30 (env-independent). Data scarcity makes env_score unreliable for these players.
-- **Ghost+boost floor (boost ≥ 2.5, drafts < 100):** EV floor at score=30, no env penalty on the floor.
-- Never assign a boost without environmental support — except for mega-ghost tier where env_score is suppressed by data scarcity rather than bad conditions.
+**Filter 4 — Individual Explosive Traits**
+- Power upside: ISO ≥ .250, barrel% high, HR/PA ≥ 6% → elevated power_profile score
+- Speed upside: SB pace ≥ 30/season → elevated speed_component score
+- Pitcher K upside: K/9 ≥ 9.0 → elevated k_rate score
+- These flow through the trait_factor (secondary signal) — they differentiate within the same game environment
 
-**Filter 5 — Slot Sequencing (V5.0 pitcher-anchor)**
-- **Slot 1 (2.0x) is always the anchor pitcher.** The Slot 1 Differentiator contrarian swap is retired.
-- Slots 2–5 are batters. Among them, unboosted batters take the highest available slots (Slot 2 first) because the additive formula punishes unboosted cards in lower slots; boosted batters tail into the remaining slots (only 16% loss at max boost).
+**Filter 5 — Slot Sequencing (V7.0 pitcher-anchor)**
+- **Slot 1 (2.0×) is always the anchor pitcher.** Pitcher is selected by highest pre-game EV.
+- Slots 2–5 are batters, ordered by filter_ev descending. Batters from different games, each from a unique team.
 
-### Fixed Composition (V5.0): 1 SP + 4 Batters, Always
-V5.0 replaces the V3.x boost-driven dynamic composition with a hard structural rule: **every lineup is 1 pitcher + 4 batters, and the pitcher is pinned to Slot 1.** The position mix is no longer contingent on how rich the boosted pool is or whether a ghost+boost pitcher exists.
-
-- **Anchor selection**: the highest-EV pitcher in the pool is chosen — boosted or unboosted, ghost or chalk, treated uniformly. Pitchers still benefit from the pitcher-specific FADE moderation (V3.4) and pitcher condition matrix.
-- **Batters**: the remaining 4 slots are filled from the three-tier batter ordering (auto → soft_auto → rest). The pitcher's `game_id` is blocked, so no batter in that game — teammate or opponent — may appear.
-- **Boosted pitchers**: still elite when they exist (e.g., Cole Ragans +3.0 → TV 26.5). V5.0 changes nothing about their EV — they simply win the anchor slot when their filter_ev is highest.
-- **Unboosted pitchers**: historically have the highest RS floor (93% positive, avg RS 5.4 in winning lineups). Under V5.0 they are just as eligible for the anchor slot as any other pitcher.
-
-`BOOST_QUALITY_THRESHOLD` (1.0) and `BOOSTED_POOL_FULL_THRESHOLD` (5) in `app/core/constants.py` remain defined but are no longer consulted for composition decisions — the 1-pitcher rule is pre-committed.
-
-### The Ghost Player Edge
-The single most consistent edge: players with < 100 drafts with high boost. Historical data across 19 dates: **82% of mega-ghost+boost players (< 50 drafts, boost ≥ 2.0) deliver TV > 15** (n=181), and the ghost tier (50–99 drafts) hits 100% on a small n=8 sample. Medium/mid-chalk+boost sit at 11–18%. Trait scores are unreliable for data-scarce ghost players — use the draft tier as the primary signal, not the score.
-
-Examples: Miguel Vargas (1 draft, RS 6.2), Colson Montgomery (5 drafts, RS 6.3), Oneil Cruz (2 drafts, RS 5.7), Angel Martínez (2 drafts, RS 6.9), Edouard Julien (1 draft, RS 3.6). The crowd chases Ohtani/Judge/Soto regardless of conditions — those three are chronically over-drafted.
+### Fixed Composition (V7.0): 1 SP + 4 Batters, Always
+Every lineup is 1 pitcher + 4 batters. The pitcher is the best-condition pre-game SP. The 4 batters are the highest-EV independent batters across the slate, drawn from different games.
 
 ### Debut/Return Premium
-First MLB game or return from 30+ day absence = near-zero ownership + historically elite RS. Always flag `is_debut_or_return = True` when known. 15% EV bonus applied.
-
-### The Boost Trap (Historical Disasters)
-| Date | Player | Boost | Drafts | RS | total_value |
-|---|---|---|---|---|---|
-| 4/3 | Michael Lorenzen | 3.0 | 674 | -6.4 | **-32.0** |
-| 4/1 | Shane Smith | 3.0 | 1,300 | -3.5 | **-17.5** |
-| 3/30 | Shohei Ohtani | 3.0 | 4,400 | 0.0 | 0.0 |
-
-Boost amplifies negative RS just as aggressively as positive RS. Never boost without environmental support.
-
-### Team Stacking (Condition E)
-When one hitter on a team has a big game, teammates follow (runs require baserunners). Historical winning lineups exploit this (MIL stack 3/28, ATL stack 4/2, NYY stack 3/25). The optimizer does NOT explicitly enforce team stacking — this is intentional (the environmental filter naturally surfaces the best team). Do not add stacking as a hard constraint.
+First MLB game or return from 30+ day absence = typically low media buzz + historically strong RS. Always flag `is_debut_or_return = True` when known. 15% EV bonus applied.
 
 ## Deployment
 
