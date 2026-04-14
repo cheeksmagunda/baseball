@@ -24,6 +24,9 @@ total_value = real_score × (2 + card_boost)
 - Substitute probable pitchers when a boxscore returns no players
 - Use seed/historical data as a substitute for live data
 - Return stale cached results when fresh data fails
+- Silently swallow pipeline exceptions and serve old data
+- Guess MLB IDs when no exact team match exists
+- Substitute `card_boost` as a scoring input (it's during-draft only)
 
 The pipeline either works with real data or it fails loudly. Fallbacks mask bugs, corrupt optimization with wrong data, and violate the "Filter, Not Forecast" philosophy — you cannot filter on yesterday's environment.
 
@@ -137,15 +140,40 @@ On Railway, the seed runs automatically via the FastAPI lifespan hook on a fresh
 
 Weights are configurable via the weights API (`GET/PUT /api/calibration/weights`).
 
+**card_boost must NEVER appear in the scoring engine.** The scoring engine runs pre-game; card_boost is only revealed during/after the draft. `compute_total_value()` in `app/core/utils.py` is the only place that uses card_boost — for computing historical total_value from CSV data, not for prediction or scoring.
+
+**League-average defaults** for missing stats are centralized in `app/core/constants.py` (`DEFAULT_PITCHER_ERA`, `DEFAULT_PITCHER_WHIP`, `DEFAULT_OPP_OPS`, `DEFAULT_OPP_K_PCT`). Never hardcode these values inline.
+
+**Scaling thresholds** (K/9 floor/ceiling, ERA ranges, OPS ranges, etc.) are also centralized in `app/core/constants.py` (`SCORING_K9_FLOOR`, `SCORING_K9_CEILING`, etc.). The scoring engine uses `scale_score()` from `app/core/utils.py` for all linear scaling — never inline `max(0, min(...))`.
+
+**Graduated env-score thresholds** for both pitcher and batter env functions are in `app/core/constants.py` (`PITCHER_ENV_OPS_FLOOR`, `BATTER_ENV_VEGAS_CEILING`, etc.). The service layer uses `_graduated_scale()` and `_graduated_scale_moneyline()` helpers in `app/services/filter_strategy.py`.
+
 ## Shared Utilities (`app/core/utils.py`)
 
 All shared formulas and lookups live here. **Always use these instead of reimplementing:**
 
-- `compute_total_value(real_score, card_boost)` — The core formula
+- `compute_total_value(real_score, card_boost)` — The core formula (historical data only — NOT for scoring/prediction)
 - `find_player_by_name(db, name, team)` — Accent-insensitive player lookup
 - `get_latest_player_score(db, slate_player_id)` — Most recent PlayerScore
 - `get_recent_games(game_logs, n)` — N most recent games sorted by date
-- `scale_score(value, floor, ceiling, max_pts)` — Linear scaling helper
+- `scale_score(value, floor, ceiling, max_pts)` — Linear scaling helper (use this, never inline `max(0, min(...))`)
+
+## Shared Constants (`app/core/constants.py`)
+
+All magic numbers, thresholds, and league-average defaults are centralized here. **Never hardcode these inline:**
+
+- **League-average defaults:** `DEFAULT_OPP_OPS`, `DEFAULT_OPP_K_PCT`, `DEFAULT_PITCHER_ERA`, `DEFAULT_PITCHER_WHIP`
+- **Scoring thresholds:** `SCORING_K9_FLOOR/CEILING`, `SCORING_ERA_CEILING/RANGE`, `SCORING_PITCHER_OPS_CEILING/RANGE`, etc.
+- **Pitcher env thresholds:** `PITCHER_ENV_OPS_FLOOR/CEILING`, `PITCHER_ENV_K9_FLOOR/CEILING`, `PITCHER_ENV_ML_FLOOR/CEILING`, etc.
+- **Batter env thresholds:** `BATTER_ENV_VEGAS_FLOOR/CEILING`, `BATTER_ENV_ERA_FLOOR/CEILING`, `BATTER_ENV_WIND_OUT_DIRECTIONS`, etc.
+- **Unknown-data neutral:** `UNKNOWN_SCORE_RATIO = 0.5` — used when trait data is missing
+
+## Graduated Scaling Helpers (`app/services/filter_strategy.py`)
+
+The env-score functions use shared helpers instead of duplicated inline patterns:
+
+- `_graduated_scale(value, floor, ceiling)` → 0.0–1.0 (works for ascending and descending ranges)
+- `_graduated_scale_moneyline(moneyline, ml_floor, ml_ceiling)` → 0.0–1.0 (negative-number-aware)
 
 ## Popularity Signal Aggregator (`app/services/popularity.py`)
 
@@ -573,12 +601,14 @@ Every lineup is **exactly 1 SP + 4 batters**. The count is fixed, not data-drive
 ## Core Rules & Business Logic
 
 1. **Sport-Specific:** This is MLB only. Do NOT add NBA/NFL/etc. logic.
-2. **No fallbacks ever.** See "ABSOLUTE RULE" section above.
-3. **total_value is absolute:** Always `real_score * (2 + card_boost)`. Never null.
-4. **Enrichment:** Real Sports data does NOT provide Team or Position. The seed script and AI must append standard 3-letter MLB team abbreviations and positions.
-5. **Volume:** Ownership volume uses `drafts` column with boolean flags (`is_most_popular`, `is_highest_value`, `is_most_drafted_3x`). Note: `is_most_drafted_3x` is retrospective in the DB — the optimizer recomputes it dynamically each run (top-5 most-drafted with boost ≥ 3.0) so the V2.3 trap penalty fires for live slates.
-6. **DRY:** The total_value formula, player lookups, score queries, and game log sorting are centralized in `app/core/utils.py`.
-7. **is_highest_value / is_most_popular flags are retrospective labels.** Never use them as inputs to prediction or optimization — that is a data leak. They reflect post-hoc outcomes only.
+2. **No fallbacks ever.** See "ABSOLUTE RULE" section above. If the pipeline fails, raise an error — never silently serve stale data.
+3. **total_value is absolute:** Always `real_score * (2 + card_boost)`. Never null. Computed only via `compute_total_value()` in `app/core/utils.py`.
+4. **card_boost is during-draft only.** It must NEVER appear as an input to the scoring engine, EV formula, or any pre-game prediction. `card_boost` exists only in: (a) `compute_total_value()` for historical CSV data, (b) display-only fields on `FilteredCandidate`, (c) data models for storage. The scoring engine runs pre-game and cannot use card_boost.
+5. **Enrichment:** Real Sports data does NOT provide Team or Position. The seed script and AI must append standard 3-letter MLB team abbreviations and positions.
+6. **Volume:** Ownership volume uses `drafts` column with boolean flags (`is_most_popular`, `is_highest_value`, `is_most_drafted_3x`). Note: `is_most_drafted_3x` is retrospective in the DB — the optimizer recomputes it dynamically each run (top-5 most-drafted with boost ≥ 3.0) so the V2.3 trap penalty fires for live slates.
+7. **DRY:** The total_value formula, player lookups, score queries, game log sorting, and linear scaling are centralized in `app/core/utils.py`. League-average defaults and all graduated-scaling thresholds are in `app/core/constants.py`. Never hardcode magic numbers inline.
+8. **is_highest_value / is_most_popular flags are retrospective labels.** Never use them as inputs to prediction or optimization — that is a data leak. They reflect post-hoc outcomes only.
+9. **No guessing MLB IDs.** If a player name search returns no exact team match, return `None` — never assign the first result as a fallback. Wrong MLB IDs corrupt all downstream stats.
 
 ## Strategy: V2 "Anchor, Differentiate, Stack" (Master Strategy Document)
 

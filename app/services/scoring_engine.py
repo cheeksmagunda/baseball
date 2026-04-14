@@ -10,7 +10,29 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.core.constants import PARK_HR_FACTORS, PITCHER_POSITIONS
+from app.core.constants import (
+    DEFAULT_OPP_K_PCT,
+    DEFAULT_OPP_OPS,
+    DEFAULT_PITCHER_ERA,
+    DEFAULT_PITCHER_WHIP,
+    PARK_HR_FACTORS,
+    PITCHER_POSITIONS,
+    SCORING_BATTER_ERA_FLOOR,
+    SCORING_BATTER_ERA_RANGE,
+    SCORING_BATTER_WHIP_FLOOR,
+    SCORING_BATTER_WHIP_RANGE,
+    SCORING_ERA_CEILING,
+    SCORING_ERA_RANGE,
+    SCORING_K9_CEILING,
+    SCORING_K9_FLOOR,
+    SCORING_PITCHER_K_PCT_FLOOR,
+    SCORING_PITCHER_K_PCT_RANGE,
+    SCORING_PITCHER_OPS_CEILING,
+    SCORING_PITCHER_OPS_RANGE,
+    SCORING_WHIP_CEILING,
+    SCORING_WHIP_RANGE,
+    UNKNOWN_SCORE_RATIO,
+)
 from app.core.utils import get_recent_games, scale_score
 from app.core.weights import ScoringWeights, get_current_weights
 from app.models.player import Player, PlayerGameLog, PlayerStats
@@ -43,7 +65,7 @@ def score_ace_status(stats: PlayerStats | None, max_pts: float) -> TraitResult:
         return TraitResult("ace_status", 0, max_pts, "no stats")
 
     # Use ERA as proxy: <2.5 = ace, <3.5 = solid, <4.5 = average, >4.5 = back-end
-    era = stats.era or 5.0
+    era = stats.era or DEFAULT_PITCHER_ERA
     if era < 2.5:
         score = max_pts
     elif era < 3.0:
@@ -66,8 +88,7 @@ def score_pitcher_k_rate(stats: PlayerStats | None, max_pts: float) -> TraitResu
         return TraitResult("k_rate", 0, max_pts, "no K/9 data")
 
     k9 = stats.k_per_9
-    # Linear scale: 6 = 0%, 12 = 100%
-    score = max(0, min(max_pts, (k9 - 6.0) / 6.0 * max_pts))
+    score = scale_score(k9, SCORING_K9_FLOOR, SCORING_K9_CEILING, max_pts)
     return TraitResult("k_rate", round(score, 1), max_pts, f"K/9={k9:.1f}")
 
 
@@ -76,17 +97,15 @@ def score_pitcher_matchup(
 ) -> TraitResult:
     """Score based on opponent offensive quality. Weaker opponent = higher score."""
     if not opp_team or not opp_stats:
-        # Default to middle score when matchup unknown
-        return TraitResult("matchup_quality", max_pts * 0.5, max_pts, "matchup unknown")
+        return TraitResult("matchup_quality", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "matchup unknown")
 
-    # Use opponent team OPS; lower is better for pitcher
-    opp_ops = opp_stats.get("ops", 0.730)
-    opp_k_pct = opp_stats.get("k_pct", 0.22)
+    opp_ops = opp_stats.get("ops", DEFAULT_OPP_OPS)
+    opp_k_pct = opp_stats.get("k_pct", DEFAULT_OPP_K_PCT)
 
-    # OPS component: .650 or below = max, .800+ = 0
-    ops_score = max(0, min(1, (0.800 - opp_ops) / 0.150))
-    # K% component: .28+ = max, .18 or below = 0
-    k_score = max(0, min(1, (opp_k_pct - 0.18) / 0.10))
+    # OPS component: lower is better for pitcher (inverted scale)
+    ops_score = scale_score(SCORING_PITCHER_OPS_CEILING - opp_ops, 0, SCORING_PITCHER_OPS_RANGE, 1.0)
+    # K% component: higher K% is better for pitcher
+    k_score = scale_score(opp_k_pct - SCORING_PITCHER_K_PCT_FLOOR, 0, SCORING_PITCHER_K_PCT_RANGE, 1.0)
 
     combined = (ops_score * 0.6 + k_score * 0.4) * max_pts
     return TraitResult(
@@ -149,13 +168,13 @@ def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitRe
     if not stats:
         return TraitResult("era_whip", 0, max_pts, "no stats")
 
-    era = stats.era or 5.0
-    whip = stats.whip or 1.5
+    era = stats.era or DEFAULT_PITCHER_ERA
+    whip = stats.whip or DEFAULT_PITCHER_WHIP
 
-    # ERA component: <2 = max, >5 = 0
-    era_score = max(0, min(1, (5.0 - era) / 3.0))
-    # WHIP component: <0.9 = max, >1.5 = 0
-    whip_score = max(0, min(1, (1.5 - whip) / 0.6))
+    # ERA component: lower is better (inverted scale)
+    era_score = scale_score(SCORING_ERA_CEILING - era, 0, SCORING_ERA_RANGE, 1.0)
+    # WHIP component: lower is better (inverted scale)
+    whip_score = scale_score(SCORING_WHIP_CEILING - whip, 0, SCORING_WHIP_RANGE, 1.0)
 
     combined = (era_score * 0.6 + whip_score * 0.4) * max_pts
     return TraitResult(
@@ -198,7 +217,7 @@ def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResul
 def score_lineup_position(batting_order: int | None, max_pts: float) -> TraitResult:
     """Score based on where they bat. 2-4 = best RBI spots."""
     if batting_order is None:
-        return TraitResult("lineup_position", max_pts * 0.5, max_pts, "lineup unknown")
+        return TraitResult("lineup_position", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "lineup unknown")
 
     if batting_order in (2, 3, 4):
         score = max_pts
@@ -217,17 +236,17 @@ def score_batter_matchup(
 ) -> TraitResult:
     """Score matchup vs opposing starter. Higher opponent ERA = better for batter."""
     if not opp_pitcher_stats:
-        return TraitResult("matchup_quality", max_pts * 0.5, max_pts, "matchup unknown")
+        return TraitResult("matchup_quality", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "matchup unknown")
 
     opp_era = opp_pitcher_stats.get("era")
     opp_whip = opp_pitcher_stats.get("whip")
     if opp_era is None or opp_whip is None:
-        return TraitResult("matchup_quality", max_pts * 0.5, max_pts, "matchup unknown")
+        return TraitResult("matchup_quality", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "matchup unknown")
 
-    # Opponent ERA: >5 = great for batter (max), <2.5 = terrible (0)
-    era_score = max(0, min(1, (opp_era - 2.5) / 2.5))
-    # Opponent WHIP: >1.5 = great (max), <0.9 = terrible (0)
-    whip_score = max(0, min(1, (opp_whip - 0.9) / 0.6))
+    # Opponent ERA: higher is better for batter
+    era_score = scale_score(opp_era - SCORING_BATTER_ERA_FLOOR, 0, SCORING_BATTER_ERA_RANGE, 1.0)
+    # Opponent WHIP: higher is better for batter
+    whip_score = scale_score(opp_whip - SCORING_BATTER_WHIP_FLOOR, 0, SCORING_BATTER_WHIP_RANGE, 1.0)
 
     combined = (era_score * 0.6 + whip_score * 0.4) * max_pts
     return TraitResult(
@@ -320,7 +339,7 @@ def score_ballpark_factor(
       - Wind blowing in 15 mph → effective ~0.96 (pitcher's park)
     """
     if not park_team:
-        return TraitResult("ballpark_factor", max_pts * 0.5, max_pts, "park unknown")
+        return TraitResult("ballpark_factor", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "park unknown")
 
     base_factor = PARK_HR_FACTORS.get(park_team, 1.0)
     adjustment = 0.0
@@ -472,85 +491,11 @@ def score_batter(
     )
 
 
-def estimate_rs_probability(
-    card_boost: float,
-    traits: list,
-    is_pitcher: bool,
-) -> float:
-    """Estimate P(RS >= threshold) where threshold = 15.0 / (2.0 + card_boost).
 
-    Instead of predicting "how good," answers a simpler question:
-    will this player cross the TV=15 bar given their boost?
-
-    The threshold varies dramatically with boost:
-      - 3.0x boost → RS >= 3.0 (easy — ~50-65% of starters hit this)
-      - 1.5x boost → RS >= 4.3 (moderate)
-      - 0.0x boost → RS >= 7.5 (very hard — only aces/sluggers)
-
-    The base decision tree was calibrated for threshold <= 3.0 (high boost).
-    Lower boost levels apply a reduction since higher RS is harder to achieve:
-      - threshold <= 3.0: base values as-is
-      - threshold 3.0-5.0: ~30% reduction
-      - threshold 5.0-7.5: ~60% reduction
-      - threshold >= 7.5: near-zero for batters, still possible for ace pitchers
-
-    Trait proxies used (all from scoring_engine, so no extra DB calls):
-      - is_pitcher: k_rate trait (0-25) → proxy for K/9
-          k_rate >= 4.0 ↔ K/9 >= 7.0  [scale_score(7, 6, 12, 25) = 4.17]
-      - batter: lineup_position (0-15) and matchup_quality (0-20)
-          lineup_position >= 12 → batting 1-5 (max is 15 for spots 2-4)
-          matchup_quality >= 12 → opposing ERA >= 4.5 (weak starter)
-    """
-    from app.core.utils import get_trait_score
-
-    # Live Real Sports slates do not expose card_boost via any API.  When the
-    # caller has no real boost signal (input is 0.0, which is the sentinel
-    # populate_slate_players writes for every live SlatePlayer), fall back to
-    # a neutral threshold equivalent to ~1.3x boost.  Historical slates still
-    # flow through the boost-weighted threshold normally (non-zero inputs).
-    if card_boost <= 0.0:
-        threshold = 4.5
-    else:
-        threshold = 15.0 / (2.0 + card_boost)
-
-    # Base probability from decision tree (calibrated for threshold <= 3.0)
-    if is_pitcher:
-        k_rate = get_trait_score(traits, "k_rate")  # 0-25
-        base_prob = 0.65 if k_rate >= 4.0 else 0.50
-    elif not traits:
-        base_prob = 0.40  # no data — default to near-league-average
-    else:
-        lineup_pos = get_trait_score(traits, "lineup_position")  # 0-15
-        matchup = get_trait_score(traits, "matchup_quality")     # 0-20
-
-        if lineup_pos >= 12.0 and matchup >= 12.0:
-            base_prob = 0.60  # top of order facing weak starter
-        elif lineup_pos >= 7.5:
-            base_prob = 0.45  # mid-order or quality arm
-        else:
-            base_prob = 0.30  # bottom of order
-
-    # Adjust based on threshold difficulty (how much RS is needed for TV=15)
-    if threshold <= 3.0:
-        # Easy threshold (boost >= 3.0) — use base values as-is
-        return base_prob
-    elif threshold <= 5.0:
-        # Moderate threshold (boost ~1.0-3.0) — ~30% harder to reach
-        return base_prob * 0.70
-    elif threshold < 7.5:
-        # Hard threshold (boost < 1.0) — ~60% harder to reach
-        return base_prob * 0.40
-    else:
-        # Very hard threshold (no/minimal boost) — only elite players hit this.
-        # Historical data: zero unboosted pitchers in rank-1 lineups when quality
-        # boosted alternatives existed (CLAUDE.md V2 §4.3). Pitchers have a high
-        # RS floor (93% positive, avg RS 5.4) but RS >= 7.5 is rare for anyone.
-        # The old values (pitcher 0.25/0.15 vs batter 0.10) gave pitchers a
-        # systematic 2.5× EV advantage that caused all-pitcher lineups.
-        if is_pitcher:
-            k_rate = get_trait_score(traits, "k_rate")
-            return 0.12 if k_rate >= 4.0 else 0.08
-        return 0.10
+# estimate_rs_probability REMOVED — it accepted card_boost as an input,
+# but card_boost is only revealed during/after the draft.  The scoring
+# engine runs pre-game and must not depend on during-draft variables.
+# The function was also dead code (never called anywhere in the codebase).
 
 
 def score_player(

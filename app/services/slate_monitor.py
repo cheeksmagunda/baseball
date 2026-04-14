@@ -433,23 +433,21 @@ async def targeted_slate_monitor(
                 LOCK_MINUTES_BEFORE_PITCH, exc,
             )
 
-        try:
-            cached = await build_and_cache_lineups(db)
-            if cached:
-                lineup_cache.freeze(first_pitch_utc=first_pitch_utc)
-                logger.info(
-                    "Cache FROZEN. First pitch: %s UTC. Picks are locked.",
-                    first_pitch_utc.strftime("%H:%M"),
-                )
-            else:
-                raise RuntimeError(
-                    f"T-{LOCK_MINUTES_BEFORE_PITCH} lineup build returned nothing — "
-                    "no slate data available; pipeline must fail loudly"
-                )
-        except Exception as exc:
-            logger.error(
-                "T-%d lineup build raised: %s — cache NOT frozen",
-                LOCK_MINUTES_BEFORE_PITCH, exc,
+        # No try/except — if the build fails, the exception propagates and
+        # the monitor task crashes loudly.  The old code caught the exception
+        # (including RuntimeError("fail loudly")) and silently continued to
+        # _post_lock_monitor, leaving the cache unfrozen.
+        cached = await build_and_cache_lineups(db, slate_date=monitor_date)
+        if cached:
+            lineup_cache.freeze(first_pitch_utc=first_pitch_utc)
+            logger.info(
+                "Cache FROZEN. First pitch: %s UTC. Picks are locked.",
+                first_pitch_utc.strftime("%H:%M"),
+            )
+        else:
+            raise RuntimeError(
+                f"T-{LOCK_MINUTES_BEFORE_PITCH} lineup build returned nothing — "
+                "no slate data available; pipeline must fail loudly"
             )
     finally:
         db.close()

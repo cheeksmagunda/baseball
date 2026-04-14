@@ -13,7 +13,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.core.constants import PITCHER_POSITIONS
+from app.core.constants import (
+    DEFAULT_OPP_K_PCT,
+    DEFAULT_OPP_OPS,
+    PITCHER_POSITIONS,
+    SCORING_K9_CEILING,
+    SCORING_K9_FLOOR,
+)
 from app.core.utils import find_player_by_name, get_trait_score
 from app.models.player import Player, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
@@ -175,8 +181,8 @@ async def _resolve_candidates(
                 _opp_k_pct = game.away_team_k_pct if _is_home else game.home_team_k_pct
                 if _opp_ops is not None or _opp_k_pct is not None:
                     score_kwargs["opp_team_stats"] = {
-                        "ops": _opp_ops if _opp_ops is not None else 0.730,
-                        "k_pct": _opp_k_pct if _opp_k_pct is not None else 0.22,
+                        "ops": _opp_ops if _opp_ops is not None else DEFAULT_OPP_OPS,
+                        "k_pct": _opp_k_pct if _opp_k_pct is not None else DEFAULT_OPP_K_PCT,
                     }
             else:
                 _opp_era = game.away_starter_era if _is_home else game.home_starter_era
@@ -217,10 +223,9 @@ async def _resolve_candidates(
 
             k_rate_score = get_trait_score(score_result.traits, "k_rate")
             k_rate_max = next((t.max_score for t in score_result.traits if t.name == "k_rate"), 25.0)
-            # The scoring engine maps K/9 linearly: 6.0 K/9 → 0 pts, 12.0 K/9 → max pts.
-            # Reverse: K/9 = 6.0 + (score/max) * 6.0.  The old formula (score/max * 12)
-            # ignored the 6.0 floor, compressing a 10 K/9 pitcher down to 8.0 K/9.
-            pitcher_k9 = (6.0 + k_rate_score / k_rate_max * 6.0) if k_rate_max > 0 else None
+            # Reverse the scoring engine's linear K/9 scale (floor → 0 pts, ceiling → max pts).
+            k9_range = SCORING_K9_CEILING - SCORING_K9_FLOOR
+            pitcher_k9 = (SCORING_K9_FLOOR + k_rate_score / k_rate_max * k9_range) if k_rate_max > 0 else None
 
             # V8.0: pass moneyline for Win bonus probability scoring
             team_ml = game.home_moneyline if is_home else game.away_moneyline
@@ -413,6 +418,14 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
     ]
     remaining_game_ids = {g.id for g in remaining_games}
 
+    filtered_count = len(slate.games) - len(remaining_games)
+    if filtered_count > 0:
+        logger.warning(
+            "_load_active_slate: %d of %d games already started/final for %s — "
+            "only %d remaining games included in candidate pool",
+            filtered_count, len(slate.games), slate_date, len(remaining_games),
+        )
+
     games: list[GameEnvironment] = [
         GameEnvironment(
             game_id=g.id,
@@ -551,14 +564,19 @@ def _build_response(dual, candidates) -> FilterOptimizeResponse:
     )
 
 
-async def build_and_cache_lineups(db: Session) -> FilterOptimizeResponse | None:
+async def build_and_cache_lineups(db: Session, slate_date: date | None = None) -> FilterOptimizeResponse | None:
     """
     Pre-compute today's dual-lineup result and store it in the in-process cache.
 
     Called by the startup pipeline so the first frontend request is instant.
     Returns the response object, or None if no slate data is available.
+
+    Args:
+        slate_date: Explicit target date. When called from the T-65 monitor,
+                    pass the monitor's locked date so it cannot drift if
+                    _get_active_slate_date flips mid-build.
     """
-    active_date = _get_active_slate_date(db)
+    active_date = slate_date or _get_active_slate_date(db)
     cards, games = _load_active_slate(db, active_date)
     if not cards:
         logger.warning("build_and_cache_lineups: no slate data available, skipping cache warm")
@@ -635,6 +653,7 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
     """
     cards = req.cards
     games = req.games
+    active_date = None  # resolved once below when needed
 
     if not cards:
         from fastapi.responses import JSONResponse
@@ -644,6 +663,11 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
             cached = lineup_cache.get()
             if cached is not None:
                 return cached
+
+        # Resolve active_date once for all downstream logic in this request.
+        # Calling _get_active_slate_date multiple times risks inconsistency
+        # if game state changes between calls.
+        active_date = _get_active_slate_date(db)
 
         # Cache warm but schedule not yet published → resolve first_pitch now
         # and publish it so the T-65 gate below can evaluate correctly.  The
@@ -656,7 +680,6 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
         if lock_time is None and lineup_cache.is_warm:
             from app.services.slate_monitor import _get_first_pitch_utc
 
-            active_date = _get_active_slate_date(db)
             first_pitch = _get_first_pitch_utc(db, active_date)
             if first_pitch is not None:
                 lineup_cache.set_schedule(first_pitch)
@@ -699,19 +722,34 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
             if cached is not None:
                 return cached
 
+            # Past T-65 but no cache — T-65 freeze didn't complete.
+            # Computing on-the-fly is unsafe: _load_active_slate filters
+            # out Live/Final games, so a lineup built now would exclude
+            # started games and produce an incomplete candidate pool.
+            raise HTTPException(
+                503,
+                "T-65 lineup not available — the freeze did not complete. "
+                "Check pipeline logs.",
+            )
+
     if not cards:
-        active_date = _get_active_slate_date(db)
+        if active_date is None:
+            active_date = _get_active_slate_date(db)
         cards, games = _load_active_slate(db, active_date)
 
-    # If no slate data, trigger pipeline on-demand (handles mid-slate redeploys)
+    # If no slate data, trigger pipeline on-demand (handles first-request
+    # before startup pipeline finishes).  This path is unreachable past T-65
+    # because the gate above either serves cached picks or raises 503.
     if len(cards) < 1:
-        active_date = _get_active_slate_date(db)
+        if active_date is None:
+            active_date = _get_active_slate_date(db)
         logger.info("No slate data found — triggering on-demand pipeline for %s", active_date)
         try:
             await run_full_pipeline(db, active_date)
             cards, games = _load_active_slate(db, active_date)
         except Exception as exc:
-            logger.warning("On-demand pipeline failed: %s", exc)
+            logger.error("On-demand pipeline failed — refusing to serve stale data: %s", exc)
+            raise HTTPException(503, f"Pipeline failed for {active_date}: {exc}") from exc
 
     if len(cards) < 1:
         raise HTTPException(404, "No slate data available for today")
@@ -731,7 +769,9 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
 
     # Cache the result for subsequent frontend requests
     if not req.cards:
-        lineup_cache.store(response, slate_date=_get_active_slate_date(db))
+        if active_date is None:
+            active_date = _get_active_slate_date(db)
+        lineup_cache.store(response, slate_date=active_date)
 
     return response
 

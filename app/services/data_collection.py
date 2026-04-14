@@ -370,10 +370,12 @@ async def resolve_mlb_id(db: Session, player: Player) -> int | None:
                 db.commit()
                 return player.mlb_id
 
-        # Fallback: first result
-        player.mlb_id = results[0]["id"]
-        db.commit()
-        return player.mlb_id
+        # No exact team match — refuse to guess.  Assigning the wrong
+        # player's MLB ID would corrupt all downstream stats for this player.
+        logger.warning(
+            "MLB ID lookup for %s (%s): %d results but no team match — skipping",
+            player.name, player.team, len(results),
+        )
 
     return None
 

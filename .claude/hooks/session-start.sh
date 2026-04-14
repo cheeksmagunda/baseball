@@ -25,7 +25,8 @@ set -euo pipefail
 #   • real_score = the RS shown on the platform (can be negative)
 #   • card_boost = the multiplier shown (+1.5x → 1.5). No boost = 0.0 or blank
 #   • drafts = total draft count shown on the platform (1.5k → 1500)
-#   • total_value = real_score × (2 + card_boost)  ← always compute this way
+#   • total_value = real_score × (2 + card_boost)  ← compute via compute_total_value() only
+#   •   card_boost is for historical total_value ONLY — never a scoring/prediction input
 #   • is_highest_value = 1 if player is in the Highest Value leaderboard
 #   • is_most_popular = 1 if player is in the Most Popular leaderboard
 #   • is_most_drafted_3x = 1 if player is in the Most Drafted 3x leaderboard
@@ -110,6 +111,7 @@ set -euo pipefail
 #   [ ] Append HV box-score rows to hv_player_game_stats.csv (one row per HV
 #       leaderboard appearance, batter vs pitcher columns mutually exclusive)
 #   [ ] Verify total_value = real_score × (2 + card_boost) for each row
+#       (card_boost is for historical data ONLY — never used in scoring/prediction)
 #   [ ] Players appearing in multiple leaderboards → single row, multiple flags
 #   [ ] Reload DB: rm db/baseball.db && python -m app.seed
 #       (the seeder is idempotency-guarded on an empty DB — no incremental mode)
