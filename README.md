@@ -68,6 +68,8 @@ It's not a machine learning model — it's a **rule-based scoring engine** backe
 
 The scoring engine outputs a **0-100 ranking signal**, not an RS prediction. We don't pretend to know Real Score — we rank players by pre-game indicators and let the optimizer do the rest.
 
+**Important:** `card_boost` is revealed during/after the draft and must NEVER be used as a scoring engine input. League-average defaults (ERA, WHIP, OPS, K%) and all scaling thresholds are centralized in `app/core/constants.py`. Env-score functions use shared `_graduated_scale()` helpers in `app/services/filter_strategy.py`.
+
 ## Popularity Signal Aggregator
 
 The optimizer automatically fades over-hyped players and targets under-the-radar picks using real-time web signals:
@@ -256,7 +258,7 @@ New slates are added **manually** — there is no automated collector. After a s
 2. Append winning-lineup rows to `historical_winning_drafts.csv` (5 rows per lineup, target top-20 ranks).
 3. Append one slate envelope object to `historical_slate_results.json`.
 4. Append HV box-score rows to `hv_player_game_stats.csv`.
-5. Verify `total_value = real_score × (2 + card_boost)` for each player row.
+5. Verify `total_value = real_score × (2 + card_boost)` for each player row. (Note: `card_boost` is used only for computing historical total_value — never as a scoring/prediction input.)
 6. Reload the DB: `rm db/baseball.db && python -m app.seed` (the seeder is idempotency-guarded on an empty DB — there is no incremental mode).
 
 ## Deployment (Railway)

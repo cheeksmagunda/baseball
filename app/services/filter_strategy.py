@@ -67,6 +67,34 @@ from app.core.constants import (
     POP_MODIFIER_CEILING,
     POP_FACTOR_RAW_MIN,
     POP_FACTOR_RAW_MAX,
+    # Graduated env-score scaling thresholds
+    PITCHER_ENV_OPS_CEILING,
+    PITCHER_ENV_OPS_FLOOR,
+    PITCHER_ENV_K_PCT_FLOOR,
+    PITCHER_ENV_K_PCT_CEILING,
+    PITCHER_ENV_K9_FLOOR,
+    PITCHER_ENV_K9_CEILING,
+    PITCHER_ENV_PARK_FLOOR,
+    PITCHER_ENV_PARK_CEILING,
+    PITCHER_ENV_ML_FLOOR,
+    PITCHER_ENV_ML_CEILING,
+    PITCHER_ENV_MAX_SCORE,
+    BATTER_ENV_VEGAS_FLOOR,
+    BATTER_ENV_VEGAS_CEILING,
+    BATTER_ENV_ERA_FLOOR,
+    BATTER_ENV_ERA_CEILING,
+    BATTER_ENV_ML_FLOOR,
+    BATTER_ENV_ML_CEILING,
+    BATTER_ENV_BULLPEN_ERA_FLOOR,
+    BATTER_ENV_BULLPEN_ERA_CEILING,
+    BATTER_ENV_PARK_HITTER_FRIENDLY,
+    BATTER_ENV_PARK_NEUTRAL,
+    BATTER_ENV_WIND_SPEED_MIN,
+    BATTER_ENV_WARM_TEMP_THRESHOLD,
+    BATTER_ENV_WARM_TEMP_BONUS,
+    BATTER_ENV_WIND_OUT_BONUS,
+    BATTER_ENV_WIND_OUT_DIRECTIONS,
+    BATTER_ENV_MAX_SCORE,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score
 from app.services.popularity import PopularityClass
@@ -78,6 +106,37 @@ logger = logging.getLogger(__name__)
 # REQUIRED_PITCHERS_IN_LINEUP pitchers (see app/core/constants.py).  The
 # pitcher is selected first (highest filter_ev), anchors Slot 1, and its
 # game is blocked for all batter picks in the same lineup.
+
+
+# ---------------------------------------------------------------------------
+# Shared graduated scaling helper
+# ---------------------------------------------------------------------------
+
+def _graduated_scale(value: float, floor: float, ceiling: float) -> float:
+    """Linearly scale *value* between *floor* and *ceiling* to 0.0–1.0.
+
+    Returns 0.0 when value is at or beyond the floor (worse end),
+    1.0 when at or beyond the ceiling (better end).  Works for both
+    ascending ranges (floor < ceiling, e.g. K/9 6→10) and descending
+    ranges (floor > ceiling, e.g. OPS 0.780→0.650).
+    """
+    span = ceiling - floor
+    if span == 0:
+        return 1.0 if value == ceiling else 0.0
+    ratio = (value - floor) / span
+    return max(0.0, min(1.0, ratio))
+
+
+def _graduated_scale_moneyline(moneyline: int, ml_floor: int, ml_ceiling: int) -> float:
+    """Graduated moneyline scale: ml_floor (e.g. -110) → 0, ml_ceiling (e.g. -250) → 1.0.
+
+    Moneylines are negative, so "more negative = stronger favorite".
+    """
+    if moneyline <= ml_ceiling:
+        return 1.0
+    if moneyline >= ml_floor:
+        return 0.0
+    return (-moneyline - (-ml_floor)) / float(-ml_ceiling - (-ml_floor))
 
 
 # ---------------------------------------------------------------------------
@@ -299,60 +358,48 @@ def compute_pitcher_env_score(
     """
     score = 0.0
     factors = []
-    max_score = 6.0  # 5 main factors (1.0 each) + home (0.5) + debut (0.5)
+    max_score = PITCHER_ENV_MAX_SCORE
 
-    # 1. Weak opponent offense — graduated: full at OPS ≤ 0.650, zero at ≥ 0.780
+    # 1. Weak opponent offense — graduated (lower OPS = better for pitcher)
     if opp_team_ops is not None:
-        if opp_team_ops <= 0.650:
-            score += 1.0
-            factors.append(f"Weak opponent OPS ({opp_team_ops:.3f})")
-        elif opp_team_ops < 0.780:
-            contrib = (0.780 - opp_team_ops) / 0.130
-            score += contrib
-            factors.append(f"Below-avg opponent OPS ({opp_team_ops:.3f})")
+        contrib = _graduated_scale(opp_team_ops, PITCHER_ENV_OPS_CEILING, PITCHER_ENV_OPS_FLOOR)
+        score += contrib
+        if contrib > 0:
+            label = "Weak" if contrib >= 0.9 else "Below-avg"
+            factors.append(f"{label} opponent OPS ({opp_team_ops:.3f})")
 
-    # 2. High-K opponent — graduated: full at K% ≥ 0.26, zero at ≤ 0.20
+    # 2. High-K opponent — graduated (higher K% = better for pitcher)
     if opp_team_k_pct is not None:
-        if opp_team_k_pct >= 0.26:
-            score += 1.0
-            factors.append(f"High-K opponent ({opp_team_k_pct:.1%})")
-        elif opp_team_k_pct > 0.20:
-            contrib = (opp_team_k_pct - 0.20) / 0.06
-            score += contrib
-            factors.append(f"Above-avg K opponent ({opp_team_k_pct:.1%})")
+        contrib = _graduated_scale(opp_team_k_pct, PITCHER_ENV_K_PCT_FLOOR, PITCHER_ENV_K_PCT_CEILING)
+        score += contrib
+        if contrib > 0:
+            label = "High-K" if contrib >= 0.9 else "Above-avg K"
+            factors.append(f"{label} opponent ({opp_team_k_pct:.1%})")
 
-    # 3. K upside (pitcher's own K/9) — graduated: full at K/9 ≥ 10, zero at ≤ 6
+    # 3. K upside (pitcher's own K/9) — graduated (higher = better)
     if pitcher_k_per_9 is not None:
-        if pitcher_k_per_9 >= 10.0:
-            score += 1.0
-            factors.append(f"Elite K upside (K/9={pitcher_k_per_9:.1f})")
-        elif pitcher_k_per_9 > 6.0:
-            contrib = (pitcher_k_per_9 - 6.0) / 4.0
-            score += contrib
-            factors.append(f"K upside (K/9={pitcher_k_per_9:.1f})")
+        contrib = _graduated_scale(pitcher_k_per_9, PITCHER_ENV_K9_FLOOR, PITCHER_ENV_K9_CEILING)
+        score += contrib
+        if contrib > 0:
+            label = "Elite K upside" if contrib >= 0.9 else "K upside"
+            factors.append(f"{label} (K/9={pitcher_k_per_9:.1f})")
 
-    # 4. Pitcher-friendly park — graduated: full at PF ≤ 0.90, zero at ≥ 1.05
+    # 4. Pitcher-friendly park — graduated (lower park factor = better)
     if park_team:
         pf = PARK_HR_FACTORS.get(park_team, 1.0)
-        if pf <= 0.90:
-            score += 1.0
-            factors.append(f"Pitcher-friendly park ({park_team}, factor={pf:.2f})")
-        elif pf < 1.05:
-            contrib = (1.05 - pf) / 0.15
-            score += contrib
-            factors.append(f"Neutral-to-friendly park ({park_team}, factor={pf:.2f})")
+        contrib = _graduated_scale(pf, PITCHER_ENV_PARK_CEILING, PITCHER_ENV_PARK_FLOOR)
+        score += contrib
+        if contrib > 0:
+            label = "Pitcher-friendly" if contrib >= 0.9 else "Neutral-to-friendly"
+            factors.append(f"{label} park ({park_team}, factor={pf:.2f})")
 
-    # 5. Moneyline favorite — graduated: full at ML ≤ -250, zero at ≥ -110
-    #    Win bonus is a major pitcher RS component; heavy favorites have
-    #    higher Win probability.
+    # 5. Moneyline favorite — graduated (more negative = stronger favorite)
     if team_moneyline is not None:
-        if team_moneyline <= -250:
-            score += 1.0
-            factors.append(f"Heavy favorite (ML={team_moneyline}) — high Win prob")
-        elif team_moneyline < -110:
-            contrib = (-team_moneyline - 110) / 140.0
-            score += contrib
-            factors.append(f"Favorite (ML={team_moneyline}) — Win bonus likely")
+        contrib = _graduated_scale_moneyline(team_moneyline, PITCHER_ENV_ML_FLOOR, PITCHER_ENV_ML_CEILING)
+        score += contrib
+        if contrib > 0:
+            label = "Heavy favorite" if contrib >= 0.9 else "Favorite"
+            factors.append(f"{label} (ML={team_moneyline}) — Win bonus likely")
 
     # 6. Home field
     if is_home:
@@ -410,51 +457,43 @@ def compute_batter_env_score(
     # ---------------------------------------------------------------
     run_env = 0.0
 
-    # A1. Vegas O/U — graduated: 7.0→0, 9.5→1.0
+    # A1. Vegas O/U — graduated
     if vegas_total is not None:
-        if vegas_total >= 9.5:
-            run_env += 1.0
-            factors.append(f"High-run environment (O/U={vegas_total:.1f})")
-        elif vegas_total > 7.0:
-            contrib = (vegas_total - 7.0) / 2.5
-            run_env += contrib
-            factors.append(f"Run environment (O/U={vegas_total:.1f})")
+        contrib = _graduated_scale(vegas_total, BATTER_ENV_VEGAS_FLOOR, BATTER_ENV_VEGAS_CEILING)
+        run_env += contrib
+        if contrib > 0:
+            label = "High-run environment" if contrib >= 0.9 else "Run environment"
+            factors.append(f"{label} (O/U={vegas_total:.1f})")
     else:
         unknown_count += 1
 
-    # A2. Weak opposing starter — graduated: 3.5→0, 5.5→1.0
+    # A2. Weak opposing starter — graduated
     if opp_pitcher_era is not None:
-        if opp_pitcher_era >= 5.5:
-            run_env += 1.0
-            factors.append(f"Weak opposing starter (ERA={opp_pitcher_era:.2f})")
-        elif opp_pitcher_era > 3.5:
-            contrib = (opp_pitcher_era - 3.5) / 2.0
-            run_env += contrib
-            factors.append(f"Vulnerable starter (ERA={opp_pitcher_era:.2f})")
+        contrib = _graduated_scale(opp_pitcher_era, BATTER_ENV_ERA_FLOOR, BATTER_ENV_ERA_CEILING)
+        run_env += contrib
+        if contrib > 0:
+            label = "Weak opposing starter" if contrib >= 0.9 else "Vulnerable starter"
+            factors.append(f"{label} (ERA={opp_pitcher_era:.2f})")
     else:
         unknown_count += 1
 
-    # A3. Moneyline favorite — graduated: -110→0, -250→1.0
+    # A3. Moneyline favorite — graduated
     if team_moneyline is not None:
-        if team_moneyline <= -250:
-            run_env += 1.0
-            factors.append(f"Heavy favorite (ML={team_moneyline})")
-        elif team_moneyline < -110:
-            contrib = (-team_moneyline - 110) / 140.0
-            run_env += contrib
-            factors.append(f"Moneyline favorite (ML={team_moneyline})")
+        contrib = _graduated_scale_moneyline(team_moneyline, BATTER_ENV_ML_FLOOR, BATTER_ENV_ML_CEILING)
+        run_env += contrib
+        if contrib > 0:
+            label = "Heavy favorite" if contrib >= 0.9 else "Moneyline favorite"
+            factors.append(f"{label} (ML={team_moneyline})")
     else:
         unknown_count += 1
 
-    # A4. Vulnerable bullpen — graduated: 3.5→0, 5.5→1.0
+    # A4. Vulnerable bullpen — graduated
     if opp_bullpen_era is not None:
-        if opp_bullpen_era >= 5.5:
-            run_env += 1.0
-            factors.append(f"Vulnerable bullpen (ERA={opp_bullpen_era:.2f})")
-        elif opp_bullpen_era > 3.5:
-            contrib = (opp_bullpen_era - 3.5) / 2.0
-            run_env += contrib
-            factors.append(f"Below-avg bullpen (ERA={opp_bullpen_era:.2f})")
+        contrib = _graduated_scale(opp_bullpen_era, BATTER_ENV_BULLPEN_ERA_FLOOR, BATTER_ENV_BULLPEN_ERA_CEILING)
+        run_env += contrib
+        if contrib > 0:
+            label = "Vulnerable bullpen" if contrib >= 0.9 else "Below-avg bullpen"
+            factors.append(f"{label} (ERA={opp_bullpen_era:.2f})")
     else:
         unknown_count += 1
 
@@ -499,20 +538,20 @@ def compute_batter_env_score(
     venue = 0.0
     if park_team:
         pf = PARK_HR_FACTORS.get(park_team, 1.0)
-        if pf >= 1.05:
+        if pf >= BATTER_ENV_PARK_HITTER_FRIENDLY:
             venue = 1.0
             factors.append(f"Hitter-friendly park ({park_team}, factor={pf:.2f})")
-        elif pf >= 1.0:
+        elif pf >= BATTER_ENV_PARK_NEUTRAL:
             venue = 0.5
 
-    if wind_speed_mph is not None and wind_speed_mph >= 10 and wind_direction:
+    if wind_speed_mph is not None and wind_speed_mph >= BATTER_ENV_WIND_SPEED_MIN and wind_direction:
         direction_upper = wind_direction.upper()
-        if any(d in direction_upper for d in ("OUT", "L TO R", "R TO L", "OUT TO CF")):
-            venue = min(1.0, venue + 0.5)
+        if any(d in direction_upper for d in BATTER_ENV_WIND_OUT_DIRECTIONS):
+            venue = min(1.0, venue + BATTER_ENV_WIND_OUT_BONUS)
             factors.append(f"Wind blowing out ({wind_speed_mph:.0f} mph)")
 
-    if temperature_f is not None and temperature_f >= 80:
-        venue = min(1.0, venue + 0.2)
+    if temperature_f is not None and temperature_f >= BATTER_ENV_WARM_TEMP_THRESHOLD:
+        venue = min(1.0, venue + BATTER_ENV_WARM_TEMP_BONUS)
         factors.append(f"Warm conditions ({temperature_f}°F)")
 
     # ---------------------------------------------------------------
@@ -527,7 +566,7 @@ def compute_batter_env_score(
     # Final score: sum of capped groups / max_score
     # ---------------------------------------------------------------
     total = run_env + situation + venue + debut
-    max_score = 5.5  # 2.0 (run env cap) + 2.0 (situation) + 1.0 (venue) + 0.5 (debut)
+    max_score = BATTER_ENV_MAX_SCORE
 
     if unknown_count > 0:
         factors.append(f"{unknown_count} unknown factor(s) (data scarcity, not bad env)")
@@ -668,10 +707,11 @@ def _compute_base_ev(
 
     # trait_score is 0-100 from the scoring engine.  Compress to
     # TRAIT_MODIFIER_FLOOR–TRAIT_MODIFIER_CEILING (TERTIARY: 0.85–1.15).
-    raw_trait = max(candidate.total_score, 15.0) / 100.0  # 0.15–1.0
-    trait_factor = TRAIT_MODIFIER_FLOOR + (raw_trait - 0.15) * (
+    trait_floor = MIN_SCORE_THRESHOLD / 100.0
+    raw_trait = max(candidate.total_score, float(MIN_SCORE_THRESHOLD)) / 100.0
+    trait_factor = TRAIT_MODIFIER_FLOOR + (raw_trait - trait_floor) * (
         TRAIT_MODIFIER_CEILING - TRAIT_MODIFIER_FLOOR
-    ) / (1.0 - 0.15)
+    ) / (1.0 - trait_floor)
     trait_factor = max(TRAIT_MODIFIER_FLOOR, min(TRAIT_MODIFIER_CEILING, trait_factor))
 
     # Scale pop_factor from raw RS matrix range (0.275–1.00) into the

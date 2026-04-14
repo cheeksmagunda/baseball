@@ -343,3 +343,82 @@ BOOST_CONCENTRATION_PENALTY = 0.85    # 15% penalty for 3rd+ boosted in same gam
 PITCHER_FADE_PENALTY = 0.85           # S5: 15% haircut (batters: 0.75 = 25%)
 MOONSHOT_PITCHER_FADE_PENALTY = 0.70  # Moonshot: 30% haircut (batters: 0.60 = 40%)
 
+# ---------------------------------------------------------------------------
+# League-average defaults for missing opponent / pitcher stats
+#
+# When a stat is None (not fetched or unavailable), scoring uses these
+# league-average baselines.  A single constant controls each value so
+# recalibrating for a new season only requires one change.
+# ---------------------------------------------------------------------------
+DEFAULT_OPP_OPS = 0.730               # 2026 league-average team OPS
+DEFAULT_OPP_K_PCT = 0.22              # 2026 league-average team K%
+DEFAULT_PITCHER_ERA = 5.0             # league-worst-tier ERA (conservative)
+DEFAULT_PITCHER_WHIP = 1.5            # league-worst-tier WHIP (conservative)
+
+# ---------------------------------------------------------------------------
+# Graduated env-score scaling thresholds
+#
+# Every env factor uses the same pattern:
+#   _graduated_scale(value, floor, ceiling) → 0.0–1.0
+# These constants define the floor/ceiling for each factor so they are
+# not scattered as magic numbers across filter_strategy.py.
+# ---------------------------------------------------------------------------
+
+# Pitcher env factors
+PITCHER_ENV_OPS_CEILING = 0.780       # OPS at or above this → 0 contribution
+PITCHER_ENV_OPS_FLOOR = 0.650         # OPS at or below this → full contribution
+PITCHER_ENV_K_PCT_FLOOR = 0.20        # K% at or below this → 0 contribution
+PITCHER_ENV_K_PCT_CEILING = 0.26      # K% at or above this → full contribution
+PITCHER_ENV_K9_FLOOR = 6.0            # K/9 at or below this → 0 contribution
+PITCHER_ENV_K9_CEILING = 10.0         # K/9 at or above this → full contribution
+PITCHER_ENV_PARK_FLOOR = 0.90         # park factor at or below this → full contribution (pitcher-friendly)
+PITCHER_ENV_PARK_CEILING = 1.05       # park factor at or above this → 0 contribution
+PITCHER_ENV_ML_FLOOR = -110           # moneyline at or above this → 0 contribution
+PITCHER_ENV_ML_CEILING = -250         # moneyline at or below this → full contribution
+PITCHER_ENV_MAX_SCORE = 6.0           # 5 main factors (1.0) + home (0.5) + debut (0.5)
+
+# Batter env factors — Group A (run environment, capped at 2.0)
+BATTER_ENV_VEGAS_FLOOR = 7.0          # O/U at or below this → 0 contribution
+BATTER_ENV_VEGAS_CEILING = 9.5        # O/U at or above this → full contribution
+BATTER_ENV_ERA_FLOOR = 3.5            # opposing starter ERA at or below → 0
+BATTER_ENV_ERA_CEILING = 5.5          # opposing starter ERA at or above → full
+BATTER_ENV_ML_FLOOR = -110            # same as pitcher (shared graduation)
+BATTER_ENV_ML_CEILING = -250          # same as pitcher (shared graduation)
+BATTER_ENV_BULLPEN_ERA_FLOOR = 3.5    # bullpen ERA at or below → 0
+BATTER_ENV_BULLPEN_ERA_CEILING = 5.5  # bullpen ERA at or above → full
+
+# Batter env factors — Group C (venue)
+BATTER_ENV_PARK_HITTER_FRIENDLY = 1.05   # park factor at or above → full venue credit
+BATTER_ENV_PARK_NEUTRAL = 1.0            # park factor at or above → partial credit
+BATTER_ENV_WIND_SPEED_MIN = 10           # mph minimum for wind bonus
+BATTER_ENV_WARM_TEMP_THRESHOLD = 80      # °F at or above → warm-weather bonus
+BATTER_ENV_WARM_TEMP_BONUS = 0.2         # venue bonus for warm conditions
+BATTER_ENV_WIND_OUT_BONUS = 0.5          # venue bonus for wind blowing out
+BATTER_ENV_WIND_OUT_DIRECTIONS = ("OUT", "L TO R", "R TO L", "OUT TO CF")
+BATTER_ENV_MAX_SCORE = 5.5               # 2.0 (run env cap) + 2.0 (situation) + 1.0 (venue) + 0.5 (debut)
+
+# Scoring engine scaling (K/9 shared between scoring_engine and filter_strategy)
+SCORING_K9_FLOOR = 6.0                # K/9 at or below → 0 pts
+SCORING_K9_CEILING = 12.0             # K/9 at or above → max pts
+
+# Unknown-data neutral score ratio (used when trait data is missing)
+UNKNOWN_SCORE_RATIO = 0.5             # default to mid-range when data unavailable
+
+# Scoring engine — pitcher matchup thresholds
+SCORING_PITCHER_OPS_CEILING = 0.800   # opponent OPS at or above → 0 score
+SCORING_PITCHER_OPS_RANGE = 0.150     # OPS scoring range
+SCORING_PITCHER_K_PCT_FLOOR = 0.18    # opponent K% at or below → 0 score
+SCORING_PITCHER_K_PCT_RANGE = 0.10    # K% scoring range
+
+# Scoring engine — pitcher ERA/WHIP thresholds
+SCORING_ERA_CEILING = 5.0             # ERA at or above → 0 score
+SCORING_ERA_RANGE = 3.0               # ERA scoring range (5.0 - 2.0)
+SCORING_WHIP_CEILING = 1.5            # WHIP at or above → 0 score
+SCORING_WHIP_RANGE = 0.6              # WHIP scoring range (1.5 - 0.9)
+
+# Scoring engine — batter matchup thresholds
+SCORING_BATTER_ERA_FLOOR = 2.5        # opposing ERA at or below → 0 score
+SCORING_BATTER_ERA_RANGE = 2.5        # ERA scoring range (5.0 - 2.5)
+SCORING_BATTER_WHIP_FLOOR = 0.9       # opposing WHIP at or below → 0 score
+SCORING_BATTER_WHIP_RANGE = 0.6       # WHIP scoring range (1.5 - 0.9)
+

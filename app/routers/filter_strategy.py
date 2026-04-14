@@ -13,7 +13,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.core.constants import PITCHER_POSITIONS
+from app.core.constants import (
+    DEFAULT_OPP_K_PCT,
+    DEFAULT_OPP_OPS,
+    PITCHER_POSITIONS,
+    SCORING_K9_CEILING,
+    SCORING_K9_FLOOR,
+)
 from app.core.utils import find_player_by_name, get_trait_score
 from app.models.player import Player, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
@@ -175,8 +181,8 @@ async def _resolve_candidates(
                 _opp_k_pct = game.away_team_k_pct if _is_home else game.home_team_k_pct
                 if _opp_ops is not None or _opp_k_pct is not None:
                     score_kwargs["opp_team_stats"] = {
-                        "ops": _opp_ops if _opp_ops is not None else 0.730,
-                        "k_pct": _opp_k_pct if _opp_k_pct is not None else 0.22,
+                        "ops": _opp_ops if _opp_ops is not None else DEFAULT_OPP_OPS,
+                        "k_pct": _opp_k_pct if _opp_k_pct is not None else DEFAULT_OPP_K_PCT,
                     }
             else:
                 _opp_era = game.away_starter_era if _is_home else game.home_starter_era
@@ -217,10 +223,9 @@ async def _resolve_candidates(
 
             k_rate_score = get_trait_score(score_result.traits, "k_rate")
             k_rate_max = next((t.max_score for t in score_result.traits if t.name == "k_rate"), 25.0)
-            # The scoring engine maps K/9 linearly: 6.0 K/9 → 0 pts, 12.0 K/9 → max pts.
-            # Reverse: K/9 = 6.0 + (score/max) * 6.0.  The old formula (score/max * 12)
-            # ignored the 6.0 floor, compressing a 10 K/9 pitcher down to 8.0 K/9.
-            pitcher_k9 = (6.0 + k_rate_score / k_rate_max * 6.0) if k_rate_max > 0 else None
+            # Reverse the scoring engine's linear K/9 scale (floor → 0 pts, ceiling → max pts).
+            k9_range = SCORING_K9_CEILING - SCORING_K9_FLOOR
+            pitcher_k9 = (SCORING_K9_FLOOR + k_rate_score / k_rate_max * k9_range) if k_rate_max > 0 else None
 
             # V8.0: pass moneyline for Win bonus probability scoring
             team_ml = game.home_moneyline if is_home else game.away_moneyline
@@ -711,7 +716,8 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
             await run_full_pipeline(db, active_date)
             cards, games = _load_active_slate(db, active_date)
         except Exception as exc:
-            logger.warning("On-demand pipeline failed: %s", exc)
+            logger.error("On-demand pipeline failed — refusing to serve stale data: %s", exc)
+            raise HTTPException(503, f"Pipeline failed for {active_date}: {exc}") from exc
 
     if len(cards) < 1:
         raise HTTPException(404, "No slate data available for today")
