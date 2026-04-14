@@ -186,47 +186,52 @@ DNP_GHOST_UNKNOWN_PENALTY = 0.92      # GHOST UNKNOWN: 8% haircut (data scarcity
 ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data not published" (not "bad env")
 
 # ---------------------------------------------------------------------------
-# V7.0 Pre-Game Signal Architecture
+# V8.0 Pre-Game Signal Architecture
 #
 # Ownership counts and card boosts are only revealed during/after the draft
 # and CANNOT be used as predictive inputs.  The EV formula is built entirely
 # on signals that are knowable before any draft begins.
 #
-# Signal hierarchy:
-#   1. env_factor   — PRIMARY: game conditions available before first pitch
-#                    (Vegas O/U, opposing starter ERA, park, weather, platoon,
-#                     batting order, moneyline, bullpen ERA).  3.0x swing.
-#   2. trait_factor — SECONDARY: season-level player quality (K/9, ISO,
-#                    barrel%, SB pace, ERA, WHIP, recent form).  1.86x swing.
-#   3. pop_factor   — TERTIARY: media attention from pre-game web signals
-#                    (Google Trends, ESPN RSS, Reddit).  1.35x swing.
+# Signal hierarchy (V8.0 — empirically calibrated):
+#   1. pop_factor   — PRIMARY: media-attention crowd-avoidance signal from
+#                    pre-game web sources (Google Trends, ESPN RSS, Reddit).
+#                    3.0x swing.  Empirical basis: TARGET batters avg RS 3.57
+#                    vs FADE batters avg RS 0.98 = 3.6x differential (20 dates).
+#                    This is the sharpest pre-game predictor of RS — the crowd
+#                    is structurally wrong about batters.  FADE aggressively.
 #                    DFS platform ownership data EXCLUDED (during-draft only).
+#   2. env_factor   — SECONDARY: game conditions available before first pitch
+#                    (Vegas O/U, opposing starter ERA, park, weather, platoon,
+#                     batting order, moneyline, bullpen ERA).  1.86x swing.
+#   3. trait_factor — TERTIARY: season-level player quality (K/9, ISO,
+#                    barrel%, SB pace, ERA, WHIP, recent form).  1.35x swing.
 #
-# Formula: base_ev = env_factor × trait_factor × pop_factor × context × 100
+# Formula: base_ev = pop_factor × env_factor × trait_factor × context × 100
 # ---------------------------------------------------------------------------
 
-# Trait modifier bounds — SECONDARY signal.
-# Range: 0.70–1.30 (1.86x swing) — season stats differentiate within an
-# environment tier.  Cannot override a great or terrible matchup on its own.
-TRAIT_MODIFIER_FLOOR = 0.70
-TRAIT_MODIFIER_CEILING = 1.30
-
-# Env modifier bounds — PRIMARY signal (expanded from V6.0 0.60–1.40).
-# Range: 0.50–1.50 (3.0x swing) — the game environment is the strongest
-# pre-game predictor: Vegas O/U, opposing ERA, park, weather, batting order.
-ENV_MODIFIER_FLOOR = 0.50
-ENV_MODIFIER_CEILING = 1.50
-
-# Pop modifier bounds — TERTIARY signal.
-# The RS_CONDITION_MATRIX raw factor (0.275–1.00) is compressed into this
-# narrower range so crowd-avoidance context modulates rather than dominates.
-# Range: 0.85–1.15 (1.35x swing).
+# Pop modifier bounds — PRIMARY signal (V8.0: elevated from tertiary).
+# The RS_CONDITION_MATRIX raw factor (0.275–1.00) is scaled to this range.
+# Range: 0.50–1.50 (3.0x swing) — matching the empirical 3.6x RS differential.
+# A FADE batter now starts at 0.50x, meaning they need 3x better env+trait
+# to match a TARGET batter.  This is the dominant edge in the system.
 # DFS platform ownership (RotoGrinders, NumberFire) is NOT included —
 # it is only visible during the draft, not before.
-POP_MODIFIER_FLOOR = 0.85
-POP_MODIFIER_CEILING = 1.15
+POP_MODIFIER_FLOOR = 0.50
+POP_MODIFIER_CEILING = 1.50
 POP_FACTOR_RAW_MIN = 0.275   # min raw value from RS_CONDITION_MATRIX (batter FADE)
 POP_FACTOR_RAW_MAX = 1.00    # max raw value from RS_CONDITION_MATRIX (TARGET)
+
+# Env modifier bounds — SECONDARY signal (V8.0: demoted from primary).
+# Range: 0.70–1.30 (1.86x swing) — game environment differentiates within
+# a popularity tier.  Cannot override a strong FADE/TARGET signal on its own.
+ENV_MODIFIER_FLOOR = 0.70
+ENV_MODIFIER_CEILING = 1.30
+
+# Trait modifier bounds — TERTIARY signal (V8.0: demoted from secondary).
+# Range: 0.85–1.15 (1.35x swing) — season stats provide fine-grained
+# differentiation within the same env+pop tier.
+TRAIT_MODIFIER_FLOOR = 0.85
+TRAIT_MODIFIER_CEILING = 1.15
 
 # ---------------------------------------------------------------------------
 # Moonshot constants (dual-lineup optimizer)
