@@ -164,33 +164,35 @@ Web-scraping signal aggregator that estimates crowd media attention. This is NOT
 - Low attention + mid performance → **TARGET** (value pick)
 - Otherwise → **NEUTRAL**
 
-**V7.0 Optimizer integration:** The popularity classification is a **tertiary contextual modifier** (±15% swing). It contextualises the primary game-environment signal but cannot override it. DFS platform ownership was never pre-game knowable and is fully excluded.
+**V8.0 Optimizer integration:** The popularity classification is the **primary EV signal** (3.0× swing, 0.50–1.50). It drives the core FADE/TARGET decision — the crowd is structurally wrong about batters (3.6× RS differential). Environmental and trait signals differentiate within popularity tiers. DFS platform ownership was never pre-game knowable and is fully excluded.
 
 **Sharp signal (underground):** A 4th source scraped from Reddit (r/fantasybaseball, r/baseball), FanGraphs community blogs, and Prospects Live. Used exclusively by the Moonshot lineup. `sharp_score` is 0-100, separate from the composite score.
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V7.0 "Pre-Game Signals Only"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs** — they are only revealed during/after the draft and the user overlays them at draft time.
+**Strategy Version: V8.0 "Popularity-First — Fade the Crowd"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs** — they are only revealed during/after the draft and the user overlays them at draft time. The dominant signal is the pre-game popularity/media-attention classification (FADE/TARGET/NEUTRAL), which produces a 3.6× RS differential for batters. Environmental and trait signals differentiate within popularity tiers.
 
-### V7.0 Core Architecture
+### V8.0 Core Architecture (Popularity-First — "Fade the Crowd")
 
 **The EV formula:**
 ```
-base_ev = env_factor × trait_factor × pop_factor × context × 100
+base_ev = pop_factor × env_factor × trait_factor × context × 100
 ```
 
 | Signal | Source | Range | Role |
 |---|---|---|---|
-| env_factor | Pre-game conditions (Vegas O/U, ERA, bullpen ERA, park, weather, platoon, batting order, moneyline) | 0.50–1.50 | **Primary** — 3.0× swing |
-| trait_factor | Scoring engine (K/9, ISO, barrel%, SB pace, ERA, WHIP, recent form, 0-100) | 0.70–1.30 | **Secondary** — 1.86× swing |
-| pop_factor | RS_CONDITION_MATRIX compressed from raw (Google Trends, ESPN, Reddit) | 0.85–1.15 | **Tertiary** — 1.35× swing |
+| pop_factor | RS_CONDITION_MATRIX from web-scraped pre-game signals (Google Trends, ESPN, Reddit) | 0.50–1.50 | **Primary** — 3.0× swing |
+| env_factor | Pre-game conditions (Vegas O/U, ERA, bullpen ERA, park, weather, platoon, batting order, moneyline) | 0.70–1.30 | **Secondary** — 1.86× swing |
+| trait_factor | Scoring engine (K/9, ISO, barrel%, SB pace, ERA, WHIP, recent form, 0-100) | 0.85–1.15 | **Tertiary** — 1.35× swing |
 | context | stack_bonus × debut_bonus × dnp_adj | varies | Situational modifiers |
 
-**Why env is primary:** Vegas O/U, opposing ERA, park, and weather are the sharpest pre-game predictors of offensive output. A pitcher with a K/9 ≥ 9.0 facing a weak lineup in a pitcher's park is the most projectable floor-and-ceiling combination available before first pitch.
+**Why pop is primary (V8.0 — empirical evidence from 20 dates):** The crowd-avoidance signal is the sharpest pre-game predictor of RS. TARGET batters (low media attention) average RS 3.57 with a 73.6% Highest-Value rate. FADE batters (high media attention) average RS 0.98 with a 9.6% HV rate — a **3.6× RS differential**. This dominates any other pre-game signal. A FADE batter in a perfect game environment still averages RS ~1.0. A TARGET batter in a mediocre environment still averages RS ~3.5. **The crowd is structurally wrong about batters. Fade them hard.** For pitchers the differential is smaller (1.4×) because the crowd is less wrong about one-player environments.
 
-**Why pop is tertiary:** The raw FADE/TARGET/NEUTRAL signal has an empirical 3.6× RS differential, but the signal sources include crowd psychology that mirrors DFS ownership patterns. Compressing it to ±15% ensures it functions as context without overriding the game-environment signal.
+**Why env is secondary:** Game conditions (Vegas lines, opposing ERA, park, weather) are meaningful for differentiating within a popularity tier — they tell you WHICH target to draft. But they cannot override the pop signal: no amount of environmental advantage rescues a FADE batter from RS ~1.0.
 
-### V7.0 Lineup Composition: 1P + 4B
+**Why trait is tertiary:** Season-level stats (K/9, ISO, etc.) are the finest-grained signal. They break ties when pop and env are similar.
+
+### V8.0 Lineup Composition: 1P + 4B
 
 Exactly 1 pitcher + 4 batters. The pitcher anchors Slot 1 (2.0×). The pre-game EV formula determines WHICH pitcher and WHICH 4 batters.
 
@@ -203,11 +205,11 @@ Structural constraints:
 
 The active optimizer produces **two lineups** from the same candidate pool via `run_dual_filter_strategy`.
 
-### EV Formula (V7.0 — pre-game signals only, single source: `_compute_base_ev()`)
+### EV Formula (V8.0 — popularity-first, single source: `_compute_base_ev()`)
 ```
-filter_ev = env_factor                           # PRIMARY: 0.50–1.50 (3.0× swing)
-  × trait_factor                                 # SECONDARY: 0.70–1.30 (1.86× swing)
-  × pop_factor_compressed                        # TERTIARY: 0.85–1.15 (1.35× swing)
+filter_ev = pop_factor_scaled                    # PRIMARY: 0.50–1.50 (3.0× swing)
+  × env_factor                                   # SECONDARY: 0.70–1.30 (1.86× swing)
+  × trait_factor                                 # TERTIARY: 0.85–1.15 (1.35× swing)
   × stack_bonus (1.20 if blowout game, else 1.0)
   × debut_bonus (1.15 if first appearance)
   × dnp_adj (unknown=0.85, confirmed_bad=0.70)
@@ -215,15 +217,38 @@ filter_ev = env_factor                           # PRIMARY: 0.50–1.50 (3.0× s
 ```
 
 **What each term uses (pre-game data only):**
-- `env_factor`: Vegas O/U, opposing starter ERA, bullpen ERA, platoon advantage, batting order (1-5), park factor, weather (wind/temp), moneyline
+- `pop_factor_scaled`: FADE/TARGET/NEUTRAL classification from Google Trends, ESPN RSS, Reddit buzz. Raw RS matrix factor (0.275–1.00) scaled to 0.50–1.50. **NOT** DFS platform ownership. **This is the dominant signal — a FADE batter starts at 0.50× regardless of environment.**
+- `env_factor`: Vegas O/U, opposing starter ERA, bullpen ERA, platoon advantage, batting order (graduated 1-9), park factor, weather (wind/temp), moneyline. Batter env groups correlated run-scoring signals (O/U, ERA, moneyline, bullpen) and caps them at 2.0 to prevent redundancy inflation. Pitcher env now includes moneyline for Win bonus probability.
 - `trait_factor`: K/9, ISO, barrel%, SB pace, ERA, WHIP, recent form (L7 games)
-- `pop_factor_compressed`: Google Trends, ESPN RSS, Reddit buzz — NOT DFS platform ownership
 
 card_boost and draft counts are **display-only** fields stored on `FilteredCandidate`. They are not inputs to the EV formula.
 
 Post-EV composition (applied in `_enforce_composition`):
 - **Pitcher anchor (Phase 1):** highest-EV pitcher selected, pinned to Slot 1. Its `game_id` is blocked for all batter picks.
 - **Batter fill (Phase 2):** top-4 batters by filter_ev, honouring MAX_PLAYERS_PER_TEAM=1 and MAX_PLAYERS_PER_GAME=1.
+
+### V8.0 Changes (April 14 — Popularity-First Signal Hierarchy & Env Refinements)
+
+**Design change:** The signal hierarchy is inverted based on 20-date empirical analysis. The crowd-avoidance signal (FADE/TARGET/NEUTRAL) is now the **primary** EV driver with a 3.0× swing, replacing environment (demoted to secondary, 1.86× swing) and trait (demoted to tertiary, 1.35× swing). This matches the observed 3.6× RS differential between TARGET and FADE batters.
+
+**Six changes:**
+
+1. **Signal hierarchy inversion** (`app/core/constants.py`) — `POP_MODIFIER` range expanded to 0.50–1.50 (PRIMARY). `ENV_MODIFIER` compressed to 0.70–1.30 (SECONDARY). `TRAIT_MODIFIER` compressed to 0.85–1.15 (TERTIARY). The RS_CONDITION_MATRIX raw factor (0.275 for FADE batters, 1.00 for TARGET) now maps to the full 3.0× swing instead of being compressed to ±15%.
+
+2. **Pitcher moneyline added** (`app/services/filter_strategy.py`) — `compute_pitcher_env_score()` now accepts `team_moneyline`. Win bonus probability is a major pitcher RS component; heavy favorites (-250+) get full credit. Graduated from -110 (0) to -250 (1.0). `max_score` raised from 5.5 to 6.0.
+
+3. **Batter env correlated-signal cap** (`app/services/filter_strategy.py`) — `compute_batter_env_score()` restructured into three signal groups. Group A (run environment: O/U, opposing ERA, moneyline, bullpen) **capped at 2.0** to prevent 4 correlated signals from inflating env score. Group B (player situation: platoon, batting order) up to 2.0. Group C (venue: park + weather) up to 1.0. `max_score` reduced from 7.5 to 5.5.
+
+4. **Batting order graduated** — Hard top-5 gate replaced with graduated scale: order 1-3 → 1.0, 4-5 → 0.75, 6-7 → 0.50, 8-9 → 0.25. **Unknown batting order gets 0.40 baseline** (neutral assumption) instead of 0, removing the structural penalty on ghost players whose orders are unpublished pre-game.
+
+5. **All thresholds graduated** — Binary thresholds replaced with linear interpolation across both pitcher and batter env functions. Examples: K/9 from 6.0 (0) to 10.0 (1.0); opposing OPS from 0.780 (0) to 0.650 (1.0); park factor from 1.05 (0) to 0.90 (1.0). Eliminates false-precision cliffs on early-season sample sizes.
+
+6. **Strategy documentation updated** — Filter 2 (now "Popularity / Crowd-Avoidance") formalized as the primary filter with empirical basis. Filter 3 (now "Environmental Advantage") demoted to secondary with correlated-signal grouping documented.
+
+**New constants:**
+- `POP_MODIFIER_FLOOR = 0.50`, `POP_MODIFIER_CEILING = 1.50` (was 0.85/1.15)
+- `ENV_MODIFIER_FLOOR = 0.70`, `ENV_MODIFIER_CEILING = 1.30` (was 0.50/1.50)
+- `TRAIT_MODIFIER_FLOOR = 0.85`, `TRAIT_MODIFIER_CEILING = 1.15` (was 0.70/1.30)
 
 ### V5.0 Changes (April 13 — Pitcher-Anchor Rule)
 
@@ -487,14 +512,14 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
   pitcher 0.19). Stacking a second 10–35% haircut on top double-counted the
   unboosted-ness and buried anchor plays like Alcantara/McLean/Fried.
 
-### Lineup Construction (V7.0 — Pitcher-Anchor + Pure EV Batters)
+### Lineup Construction (V8.0 — Pitcher-Anchor + Popularity-First EV)
 Every lineup is **exactly 1 SP + 4 batters**. The count is fixed, not data-driven.
 
 1. **Pitcher anchor (Phase 1)**: pick the highest-EV pitcher (by pre-game EV: K/9 + opponent K% + OPS + park + home + moneyline). Pin to Slot 1 (`PITCHER_ANCHOR_SLOT = 1`, 2.0× multiplier). Block its `game_id`.
 2. **Fill 4 batter slots (Phase 2)**: fill from batters sorted by filter_ev descending, honouring `MAX_PLAYERS_PER_TEAM = 1`, `MAX_PLAYERS_PER_GAME = 1`, and the blocked pitcher-game.
 3. **No-fallback rule**: if the pool contains no pitcher, raise `ValueError` — do not substitute.
 
-### Lineup Validation (V7.0)
+### Lineup Validation (V8.0)
 - **Max 1 player per team** per individual lineup — anchor pitcher exempt
 - **Max 1 player per game** per individual lineup — anchor pitcher is the seed, 4 batters come from 4 different non-anchor games
 - **Exactly 1 pitcher** (`REQUIRED_PITCHERS_IN_LINEUP = 1`) — enforced by final assertion in `_validate_lineup_structure`
@@ -514,9 +539,9 @@ Every lineup is **exactly 1 SP + 4 batters**. The count is fixed, not data-drive
 - Zero player overlap with Starting 5
 
 **Key functions (filter_strategy.py):**
-- `run_filter_strategy()` — Starting 5 (V7.0: pure EV ranking, pitcher-anchor)
+- `run_filter_strategy()` — Starting 5 (V8.0: popularity-first EV ranking, pitcher-anchor)
 - `run_dual_filter_strategy()` — One call, two lineups
-- `_compute_base_ev()` — Shared formula: env × trait × pop_compressed × context × 100
+- `_compute_base_ev()` — Shared formula: pop_scaled × env × trait × context × 100
 - `_compute_filter_ev()` — Starting 5 EV (delegates to `_compute_base_ev`)
 - `_compute_moonshot_filter_ev()` — Moonshot EV (delegates to `_compute_base_ev` + contrarian multipliers + sharp/explosive bonuses)
 - `_compute_dnp_adjustment()` — Bifurcated DNP risk (unknown=0.85, confirmed_bad=0.70)
@@ -577,29 +602,33 @@ Not multiplicative. Proven from historical data. This means:
 - Standard (10+ games, mixed): no special classification
 - Classification is used for blowout detection and display only. Pure EV ranking determines actual composition. `SLATE_COMPOSITION` was removed in V2.1.
 
-**Filter 2 — Environmental Advantage** (pre-game data only)
-- Pitchers: weak opponent (OPS < .700), high K/9 (≥ 8.0), pitcher-friendly park, home field
-- Batters: high Vegas total (O/U ≥ 8.5), weak opposing starter (ERA ≥ 4.5), platoon advantage, batting 1-4, hitter-friendly park
-- env_score > 0.5 = passes. Stored on SlatePlayer. SlateGame holds the raw data (vegas_total, home/away_starter_era, etc.)
-- If a field is NULL (data not yet available), scoring defaults to neutral — not fabricated
+**Filter 2 — Popularity / Crowd-Avoidance (PRIMARY EV SIGNAL — V8.0)**
+- **This is the dominant filter.** The crowd is structurally wrong about batters.
+- FADE = high media attention → **PRIMARY penalty (3.0× swing in V8.0)**. FADE batters average RS 0.98, HV rate 9.6%. Raw matrix factor 0.275 → scaled to 0.50× in EV.
+- TARGET = low media attention → **PRIMARY bonus**. TARGET batters average RS 3.57, HV rate 73.6%. Raw matrix factor 1.00 → scaled to 1.50× in EV.
+- NEUTRAL = moderate buzz → interpolated at 0.65 raw → ~1.0× in EV.
+- Pitcher differential is smaller (1.4×): TARGET pitcher RS 4.36 vs FADE pitcher RS 3.09. Crowd is less wrong about pitchers because pitcher outcomes are one-player-dependent.
+- Source: Google Trends, ESPN RSS, Reddit — **NOT** DFS platform ownership (during-draft only).
+- draft counts and card boosts are NOT available pre-game and are NOT EV inputs.
+- **Key principle: no amount of environmental advantage rescues a FADE batter from RS ~1.0.**
 
-**Filter 3 — Media Attention Signal** (pre-game web sources only)
-- FADE = media attention high → tertiary penalty (±15% swing in V7.0)
-- TARGET = low media attention → tertiary bonus
-- Source: Google Trends, ESPN RSS, Reddit — **not** DFS platform ownership
-- draft counts and card boosts are NOT available pre-game and are NOT EV inputs
+**Filter 3 — Environmental Advantage (SECONDARY — pre-game data only)**
+- Pitchers: weak opponent OPS (graduated 0.780→0, 0.650→1.0), high opponent K% (graduated 0.20→0, 0.26→1.0), high K/9 (graduated 6.0→0, 10.0→1.0), pitcher-friendly park (graduated 1.05→0, 0.90→1.0), **moneyline favorite (graduated -110→0, -250→1.0 — Win bonus probability)**, home field (+0.5)
+- Batters: correlated run-environment signals (O/U, opposing ERA, moneyline, bullpen ERA) are **grouped and capped at 2.0** to prevent redundancy inflation. Independent signals: platoon advantage, batting order (graduated 1-9 with neutral baseline for unknowns), park + weather.
+- All thresholds are graduated (linear interpolation) — no hard cliffs on April sample sizes.
+- env_score > 0.5 = passes. Stored on SlatePlayer. If a field is NULL, scoring defaults to neutral — not fabricated.
 
-**Filter 4 — Individual Explosive Traits**
+**Filter 4 — Individual Explosive Traits (TERTIARY)**
 - Power upside: ISO ≥ .250, barrel% high, HR/PA ≥ 6% → elevated power_profile score
 - Speed upside: SB pace ≥ 30/season → elevated speed_component score
 - Pitcher K upside: K/9 ≥ 9.0 → elevated k_rate score
-- These flow through the trait_factor (secondary signal) — they differentiate within the same game environment
+- These flow through the trait_factor (tertiary signal, 0.85–1.15) — they break ties within the same pop+env tier
 
-**Filter 5 — Slot Sequencing (V7.0 pitcher-anchor)**
+**Filter 5 — Slot Sequencing (V8.0 pitcher-anchor)**
 - **Slot 1 (2.0×) is always the anchor pitcher.** Pitcher is selected by highest pre-game EV.
 - Slots 2–5 are batters, ordered by filter_ev descending. Batters from different games, each from a unique team.
 
-### Fixed Composition (V7.0): 1 SP + 4 Batters, Always
+### Fixed Composition (V8.0): 1 SP + 4 Batters, Always
 Every lineup is 1 pitcher + 4 batters. The pitcher is the best-condition pre-game SP. The 4 batters are the highest-EV independent batters across the slate, drawn from different games.
 
 ### Debut/Return Premium

@@ -374,6 +374,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             pitcher_k9 = game.home_starter_k_per_9 if is_home else game.away_starter_k_per_9
             opp_ops = game.away_team_ops if is_home else game.home_team_ops
             opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
+            team_ml = game.home_moneyline if is_home else game.away_moneyline
             env_score, env_factors = compute_pitcher_env_score(
                 opp_team_ops=opp_ops,
                 opp_team_k_pct=opp_k_pct,
@@ -381,10 +382,13 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 park_team=game.home_team,
                 is_home=is_home,
                 is_debut_or_return=sp.is_debut_or_return,
+                team_moneyline=team_ml,
             )
         elif not is_pitcher and game:
             is_home = game.home_team == player.team
             opp_era = game.away_starter_era if is_home else game.home_starter_era
+            team_ml = game.home_moneyline if is_home else game.away_moneyline
+            opp_bp_era = game.away_bullpen_era if is_home else game.home_bullpen_era
             env_score, env_factors, _unknown = compute_batter_env_score(
                 vegas_total=game.vegas_total,
                 opp_pitcher_era=opp_era,
@@ -395,6 +399,8 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 wind_speed_mph=game.wind_speed_mph,
                 wind_direction=game.wind_direction,
                 temperature_f=game.temperature_f,
+                team_moneyline=team_ml,
+                opp_bullpen_era=opp_bp_era,
             )
         else:
             env_score = 0.5

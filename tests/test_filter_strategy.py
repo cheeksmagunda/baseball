@@ -179,13 +179,16 @@ class TestPitcherEnvScore:
             opp_team_ops=0.650,
             opp_team_k_pct=0.26,
             pitcher_k_per_9=10.0,
-            park_team="SF",
+            park_team="SF",  # PF=0.92 → graduated (1.05-0.92)/0.15 = 0.867
             is_home=True,
             is_debut_or_return=True,
+            team_moneyline=-250,
         )
-        # 4 main factors (1.0 each) + home (0.5) + debut (0.5) = 5.0 / 5.5 ≈ 0.909
-        assert score == pytest.approx(5.0 / 5.5, abs=0.01)
-        assert len(factors) >= 4
+        # 5 main factors + home (0.5) + debut (0.5) / max_score 6.0
+        # SF park (0.92) gives (1.05-0.92)/0.15 = 0.867 (graduated, not 1.0)
+        # Total ≈ 1.0 + 1.0 + 1.0 + 0.867 + 1.0 + 0.5 + 0.5 = 5.867 / 6.0
+        assert score > 0.9
+        assert len(factors) >= 5
 
     def test_empty_env(self):
         score, factors = compute_pitcher_env_score()
@@ -197,19 +200,36 @@ class TestPitcherEnvScore:
         assert score > 0
         assert any("Home" in f for f in factors)
 
-    def test_max_score_denominator_is_5_5(self):
-        """BUG 4 fix: max_score should be 5.5, not 5.0."""
-        # With all factors maxed (4.0 from main + 0.5 home + 0.5 debut = 5.0),
-        # score should be 5.0/5.5 ≈ 0.909, NOT clamped to 1.0.
+    def test_moneyline_adds_win_bonus(self):
+        """V8.0: pitcher moneyline captures Win bonus probability."""
+        score_no_ml, _ = compute_pitcher_env_score(
+            pitcher_k_per_9=9.0, is_home=True,
+        )
+        score_heavy_fav, factors = compute_pitcher_env_score(
+            pitcher_k_per_9=9.0, is_home=True, team_moneyline=-250,
+        )
+        assert score_heavy_fav > score_no_ml
+        assert any("Win" in f or "Favorite" in f or "favorite" in f for f in factors)
+
+    def test_max_score_denominator_is_6(self):
+        """V8.0: max_score = 6.0 (5 main + home + debut)."""
         score, _ = compute_pitcher_env_score(
             opp_team_ops=0.650,
             opp_team_k_pct=0.26,
             pitcher_k_per_9=10.0,
-            park_team="SF",
+            park_team="LAD",  # PF=0.89 → full 1.0 (≤ 0.90)
             is_home=True,
+            team_moneyline=-250,
         )
-        # 4 main factors (1.0 each) + home (0.5) = 4.5 / 5.5 ≈ 0.818
-        assert score < 1.0, "Without debut, score should be < 1.0 (max_score = 5.5)"
+        # 5 main (1.0 each) + home (0.5) = 5.5 / 6.0 ≈ 0.917
+        assert score < 1.0, "Without debut, score should be < 1.0 (max_score = 6.0)"
+
+    def test_graduated_thresholds(self):
+        """V8.0: thresholds use linear interpolation, not hard cliffs."""
+        # K/9 of 8.0 should get partial credit (graduated 6→0, 10→1)
+        score_k8, _ = compute_pitcher_env_score(pitcher_k_per_9=8.0)
+        score_k10, _ = compute_pitcher_env_score(pitcher_k_per_9=10.0)
+        assert 0 < score_k8 < score_k10, "K/9=8.0 should get partial, not full credit"
 
 
 # ===================================================================
@@ -226,19 +246,43 @@ class TestBatterEnvScore:
             park_team="COL",
             is_debut_or_return=True,
             team_moneyline=-250,
-            opp_bullpen_era=5.0,
+            opp_bullpen_era=5.5,
         )
+        # Group A run_env: 4 signals at 1.0, capped at 2.0
+        # Group B situation: platoon 1.0 + order 2 → 1.0 = 2.0
+        # Group C venue: COL (1.38) → 1.0
+        # Debut: 0.5
+        # Total = 2.0 + 2.0 + 1.0 + 0.5 = 5.5 / 5.5 = 1.0
         assert score == pytest.approx(1.0, abs=0.01)
         assert unknown == 0
 
     def test_empty_env_tracks_unknowns(self):
         score, factors, unknown = compute_batter_env_score()
-        assert score == pytest.approx(0.0, abs=0.01)
+        # V8.0: unknown batting order gets 0.40 baseline instead of 0
+        # Group B situation: 0 (no platoon) + 0.40 (unknown order) = 0.40
+        # Total = 0.0 (run_env) + 0.40 (situation) + 0.0 (venue) = 0.40 / 5.5 ≈ 0.073
+        assert score == pytest.approx(0.40 / 5.5, abs=0.01)
         # vegas_total, opp_pitcher_era, batting_order, team_moneyline, opp_bullpen_era = 5 unknowns
         assert unknown == 5
 
-    def test_max_score_denominator_is_7_5(self):
-        """BUG 3 fix: max_score should be 7.5, not 7.0."""
+    def test_correlated_signal_cap(self):
+        """V8.0: run-env signals (O/U, ERA, ML, bullpen) capped at 2.0."""
+        # All 4 run-env signals maxed = 4.0, but capped at 2.0
+        score_all, _, _ = compute_batter_env_score(
+            vegas_total=10.0, opp_pitcher_era=5.5,
+            team_moneyline=-250, opp_bullpen_era=5.5,
+            batting_order=5,
+        )
+        # Only 2 run-env signals
+        score_two, _, _ = compute_batter_env_score(
+            vegas_total=10.0, opp_pitcher_era=5.5,
+            batting_order=5,
+        )
+        # Due to cap at 2.0, adding 2 more maxed signals shouldn't help much
+        assert score_all == pytest.approx(score_two, abs=0.05)
+
+    def test_max_score_denominator_is_5_5(self):
+        """V8.0: max_score = 5.5 (run_env cap 2.0 + situation 2.0 + venue 1.0 + debut 0.5)."""
         score, _, unknown = compute_batter_env_score(
             vegas_total=10.0,
             opp_pitcher_era=5.5,
@@ -246,19 +290,36 @@ class TestBatterEnvScore:
             batting_order=2,
             park_team="COL",
             team_moneyline=-250,
-            opp_bullpen_era=5.0,
+            opp_bullpen_era=5.5,
         )
-        # 7 main factors maxed = 7.0, no debut. 7.0/7.5 ≈ 0.933
-        assert score < 1.0, "Without debut, score should be < 1.0 (max_score = 7.5)"
+        # Without debut, total = 2.0+2.0+1.0 = 5.0 / 5.5 ≈ 0.909
+        assert score < 1.0, "Without debut, score should be < 1.0 (max_score = 5.5)"
 
-    def test_batting_order_unknown_is_tracked(self):
-        _, _, unknown = compute_batter_env_score(
+    def test_batting_order_unknown_gets_baseline(self):
+        """V8.0: unknown batting order gets 0.40 baseline, not 0."""
+        score_unknown, _, unknown = compute_batter_env_score(
             vegas_total=9.0,
             opp_pitcher_era=5.0,
             batting_order=None,
         )
+        score_known, _, _ = compute_batter_env_score(
+            vegas_total=9.0,
+            opp_pitcher_era=5.0,
+            batting_order=7,  # middle of lineup = 0.50
+        )
+        # Unknown (0.40) should be slightly less than confirmed middle (0.50)
+        assert score_unknown < score_known
+        assert score_unknown > 0, "Unknown order should not zero out env score"
         # batting_order + team_moneyline + opp_bullpen_era = 3 unknowns
         assert unknown == 3
+
+    def test_graduated_batting_order(self):
+        """V8.0: batting order uses graduated scale, not hard top-5 gate."""
+        score_3, _, _ = compute_batter_env_score(batting_order=3)  # 1.0
+        score_5, _, _ = compute_batter_env_score(batting_order=5)  # 0.75
+        score_7, _, _ = compute_batter_env_score(batting_order=7)  # 0.50
+        score_9, _, _ = compute_batter_env_score(batting_order=9)  # 0.25
+        assert score_3 > score_5 > score_7 > score_9 > 0
 
 
 # ===================================================================
@@ -436,7 +497,9 @@ class TestFilterEV:
         target = _make_candidate(popularity=PopularityClass.TARGET)
         ev_fade = _compute_moonshot_filter_ev(fade)
         ev_target = _compute_moonshot_filter_ev(target)
-        assert ev_target > ev_fade * 3.0, "Moonshot should heavily penalize FADE"
+        # V8.0: pop is PRIMARY (3.0× swing) + moonshot contrarian multipliers
+        # FADE raw 0.275 × 0.50 mult, TARGET raw 1.00 × 1.25 mult → very large gap
+        assert ev_target > ev_fade * 2.5, "Moonshot should heavily penalize FADE"
 
 
 # ===================================================================

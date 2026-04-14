@@ -222,6 +222,9 @@ async def _resolve_candidates(
             # ignored the 6.0 floor, compressing a 10 K/9 pitcher down to 8.0 K/9.
             pitcher_k9 = (6.0 + k_rate_score / k_rate_max * 6.0) if k_rate_max > 0 else None
 
+            # V8.0: pass moneyline for Win bonus probability scoring
+            team_ml = game.home_moneyline if is_home else game.away_moneyline
+
             env_score, env_factors = compute_pitcher_env_score(
                 opp_team_ops=opp_ops,
                 opp_team_k_pct=opp_k_pct,
@@ -229,6 +232,7 @@ async def _resolve_candidates(
                 park_team=park_team,
                 is_home=is_home,
                 is_debut_or_return=card.is_debut_or_return,
+                team_moneyline=team_ml,
             )
             env_unknown_count = 0  # pitchers are confirmed starters; env data is reliable
         elif not is_pitcher and game:

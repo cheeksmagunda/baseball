@@ -279,61 +279,87 @@ def compute_pitcher_env_score(
     park_team: str | None = None,
     is_home: bool = False,
     is_debut_or_return: bool = False,
+    team_moneyline: int | None = None,
 ) -> tuple[float, list[str]]:
     """
     Compute environmental score for a pitcher (0-1.0).
 
-    Strategy doc §4.2 Filter 2 pitcher conditions:
-    - Facing bottom-10 offense by K% or wOBA/OPS
-    - Pitching in a pitcher-friendly park
-    - Pitching at home (slight edge)
-    - High K/9 rate (strikeouts drive RS)
-    - Being the probable starter
+    V8.0: Added moneyline as a factor — Win bonus probability is a major
+    pitcher RS component.  Thresholds are graduated (linear interpolation)
+    to avoid false-precision cliffs on small April samples.
+
+    Factors:
+    1. Weak opponent offense (OPS)       — graduated 0.780→0, 0.650→1.0
+    2. High-K opponent (team K%)         — graduated 0.20→0, 0.26→1.0
+    3. K upside (pitcher's own K/9)      — graduated 6.0→0, 10.0→1.0
+    4. Pitcher-friendly park             — graduated 1.05→0, 0.90→1.0
+    5. Moneyline favorite (Win bonus)    — graduated -110→0, -250→1.0
+    6. Home field                        — 0.5
+    7. Debut/return premium              — 0.5
     """
     score = 0.0
     factors = []
-    max_score = 5.5  # 4 major factors (1.0 each) + home (0.5) + debut bonus (0.5)
+    max_score = 6.0  # 5 main factors (1.0 each) + home (0.5) + debut (0.5)
 
-    # 1. Weak opponent offense (OPS)
+    # 1. Weak opponent offense — graduated: full at OPS ≤ 0.650, zero at ≥ 0.780
     if opp_team_ops is not None:
-        if opp_team_ops < PITCHER_ENV_WEAK_OPP_OPS:
+        if opp_team_ops <= 0.650:
             score += 1.0
             factors.append(f"Weak opponent OPS ({opp_team_ops:.3f})")
-        elif opp_team_ops < 0.730:
-            score += 0.5
+        elif opp_team_ops < 0.780:
+            contrib = (0.780 - opp_team_ops) / 0.130
+            score += contrib
             factors.append(f"Below-avg opponent OPS ({opp_team_ops:.3f})")
 
-    # 2. High-K opponent
+    # 2. High-K opponent — graduated: full at K% ≥ 0.26, zero at ≤ 0.20
     if opp_team_k_pct is not None:
-        if opp_team_k_pct >= PITCHER_ENV_WEAK_OPP_K_PCT:
+        if opp_team_k_pct >= 0.26:
             score += 1.0
             factors.append(f"High-K opponent ({opp_team_k_pct:.1%})")
-        elif opp_team_k_pct >= 0.22:
-            score += 0.5
+        elif opp_team_k_pct > 0.20:
+            contrib = (opp_team_k_pct - 0.20) / 0.06
+            score += contrib
+            factors.append(f"Above-avg K opponent ({opp_team_k_pct:.1%})")
 
-    # 3. K upside (pitcher's own K/9)
+    # 3. K upside (pitcher's own K/9) — graduated: full at K/9 ≥ 10, zero at ≤ 6
     if pitcher_k_per_9 is not None:
-        if pitcher_k_per_9 >= PITCHER_ENV_MIN_K_PER_9:
+        if pitcher_k_per_9 >= 10.0:
             score += 1.0
+            factors.append(f"Elite K upside (K/9={pitcher_k_per_9:.1f})")
+        elif pitcher_k_per_9 > 6.0:
+            contrib = (pitcher_k_per_9 - 6.0) / 4.0
+            score += contrib
             factors.append(f"K upside (K/9={pitcher_k_per_9:.1f})")
-        elif pitcher_k_per_9 >= 7.0:
-            score += 0.5
 
-    # 4. Pitcher-friendly park
+    # 4. Pitcher-friendly park — graduated: full at PF ≤ 0.90, zero at ≥ 1.05
     if park_team:
         pf = PARK_HR_FACTORS.get(park_team, 1.0)
-        if pf <= PITCHER_ENV_FRIENDLY_PARK:
+        if pf <= 0.90:
             score += 1.0
             factors.append(f"Pitcher-friendly park ({park_team}, factor={pf:.2f})")
-        elif pf <= 1.05:
-            score += 0.5
+        elif pf < 1.05:
+            contrib = (1.05 - pf) / 0.15
+            score += contrib
+            factors.append(f"Neutral-to-friendly park ({park_team}, factor={pf:.2f})")
 
-    # 5. Home field
+    # 5. Moneyline favorite — graduated: full at ML ≤ -250, zero at ≥ -110
+    #    Win bonus is a major pitcher RS component; heavy favorites have
+    #    higher Win probability.
+    if team_moneyline is not None:
+        if team_moneyline <= -250:
+            score += 1.0
+            factors.append(f"Heavy favorite (ML={team_moneyline}) — high Win prob")
+        elif team_moneyline < -110:
+            contrib = (-team_moneyline - 110) / 140.0
+            score += contrib
+            factors.append(f"Favorite (ML={team_moneyline}) — Win bonus likely")
+
+    # 6. Home field
     if is_home:
         score += 0.5
         factors.append("Home field")
 
-    # Debut/return bonus
+    # 7. Debut/return bonus
     if is_debut_or_return:
         score += 0.5
         factors.append("Debut/return premium")
@@ -358,116 +384,155 @@ def compute_batter_env_score(
     """
     Compute environmental score for a batter (0-1.0).
 
+    V8.0 changes:
+    - Correlated run-environment signals (O/U, ERA, moneyline, bullpen)
+      grouped and capped at 2.0 to prevent redundancy inflation.
+    - Batting order graduated (1-9 scale) with neutral baseline for unknowns.
+    - All thresholds graduated via linear interpolation.
+
     Returns a third value, `unknown_count`, tracking how many environmental
-    factors were missing (None) vs. confirmed bad.  This enables the pipeline to
-    distinguish "data scarcity" from "genuinely bad conditions" — critical for
-    ghost-tier players where missing data is expected, not a negative signal.
+    factors were missing (None) vs. confirmed bad.
 
-    §4 batter filters:
-    - Playing in high Vegas total game (O/U >= 8.5)
-    - Facing a weak opposing starter (high ERA)
-    - Having a platoon advantage
-    - Batting in top 5 of lineup
-    - Hitter-friendly park or favorable weather
-    - Team is moneyline favorite
-    - Vulnerable opposing bullpen (high bullpen ERA)
+    Signal groups:
+      Group A — Run environment (O/U, ERA, moneyline, bullpen) — capped 2.0
+      Group B — Player situation (platoon, batting order) — up to 2.0
+      Group C — Venue (park + weather) — up to 1.0
+      Debut bonus — 0.5
     """
-    score = 0.0
-    factors = []
-    unknown_count = 0  # track missing data factors
-    max_score = 7.5  # 7 main factors (1.0 each) + debut bonus (0.5)
+    factors: list[str] = []
+    unknown_count = 0
 
-    # 1. High Vegas total (run environment)
+    # ---------------------------------------------------------------
+    # Group A: Run environment (correlated signals — capped at 2.0)
+    # Vegas O/U, opposing ERA, moneyline, and bullpen ERA all measure
+    # the same underlying condition: "this team will score runs."
+    # Capping at 2.0 prevents 4 redundant signals from inflating env.
+    # ---------------------------------------------------------------
+    run_env = 0.0
+
+    # A1. Vegas O/U — graduated: 7.0→0, 9.5→1.0
     if vegas_total is not None:
-        if vegas_total >= BATTER_ENV_HIGH_VEGAS_TOTAL:
-            score += 1.0
+        if vegas_total >= 9.5:
+            run_env += 1.0
             factors.append(f"High-run environment (O/U={vegas_total:.1f})")
-        elif vegas_total >= 7.5:
-            score += 0.5
+        elif vegas_total > 7.0:
+            contrib = (vegas_total - 7.0) / 2.5
+            run_env += contrib
+            factors.append(f"Run environment (O/U={vegas_total:.1f})")
     else:
         unknown_count += 1
 
-    # 2. Weak opposing starter
+    # A2. Weak opposing starter — graduated: 3.5→0, 5.5→1.0
     if opp_pitcher_era is not None:
-        if opp_pitcher_era >= BATTER_ENV_WEAK_PITCHER_ERA:
-            score += 1.0
+        if opp_pitcher_era >= 5.5:
+            run_env += 1.0
             factors.append(f"Weak opposing starter (ERA={opp_pitcher_era:.2f})")
-        elif opp_pitcher_era >= 4.0:
-            score += 0.5
+        elif opp_pitcher_era > 3.5:
+            contrib = (opp_pitcher_era - 3.5) / 2.0
+            run_env += contrib
+            factors.append(f"Vulnerable starter (ERA={opp_pitcher_era:.2f})")
     else:
         unknown_count += 1
 
-    # 3. Platoon advantage
-    if platoon_advantage:
-        score += 1.0
-        factors.append("Platoon advantage")
-
-    # 4. Top of lineup (top 5)
-    # Missing batting order is tracked as unknown, not penalized as bad.
-    # The DNP risk penalty in _compute_filter_ev() handles the lineup risk
-    # separately with ghost-awareness (DNP_GHOST_UNKNOWN_PENALTY).
-    if batting_order is not None:
-        if batting_order <= BATTER_ENV_TOP_LINEUP:
-            score += 1.0
-            factors.append(f"Top of lineup (bats #{batting_order})")
-        elif batting_order <= 6:
-            score += 0.5
-    else:
-        unknown_count += 1
-
-    # 5. Hitter-friendly park + favorable weather (combined, capped at 1.0)
-    f5 = 0.0
-    if park_team:
-        pf = PARK_HR_FACTORS.get(park_team, 1.0)
-        if pf >= 1.05:
-            f5 = 1.0
-            factors.append(f"Hitter-friendly park ({park_team}, factor={pf:.2f})")
-        elif pf >= 1.0:
-            f5 = 0.5
-
-    if wind_speed_mph is not None and wind_speed_mph >= 10 and wind_direction:
-        direction_upper = wind_direction.upper()
-        if any(d in direction_upper for d in ("OUT", "L TO R", "R TO L", "OUT TO CF")):
-            f5 = min(1.0, f5 + 0.5)
-            factors.append(f"Wind blowing out ({wind_speed_mph:.0f} mph)")
-
-    if temperature_f is not None and temperature_f >= 80:
-        f5 = min(1.0, f5 + 0.2)
-        factors.append(f"Warm conditions ({temperature_f}°F)")
-
-    score += f5
-
-    # 6. Team is moneyline favorite
+    # A3. Moneyline favorite — graduated: -110→0, -250→1.0
     if team_moneyline is not None:
-        if team_moneyline <= BLOWOUT_MONEYLINE_THRESHOLD:
-            score += 1.0
+        if team_moneyline <= -250:
+            run_env += 1.0
             factors.append(f"Heavy favorite (ML={team_moneyline})")
-        elif team_moneyline < -120:
-            score += 0.5
+        elif team_moneyline < -110:
+            contrib = (-team_moneyline - 110) / 140.0
+            run_env += contrib
             factors.append(f"Moneyline favorite (ML={team_moneyline})")
     else:
         unknown_count += 1
 
-    # 7. Vulnerable opposing bullpen (high ERA = late-game upside)
+    # A4. Vulnerable bullpen — graduated: 3.5→0, 5.5→1.0
     if opp_bullpen_era is not None:
-        if opp_bullpen_era >= BATTER_ENV_WEAK_BULLPEN_ERA:
-            score += 1.0
+        if opp_bullpen_era >= 5.5:
+            run_env += 1.0
             factors.append(f"Vulnerable bullpen (ERA={opp_bullpen_era:.2f})")
-        elif opp_bullpen_era >= BATTER_ENV_WEAK_BULLPEN_ERA - 0.5:
-            score += 0.5
+        elif opp_bullpen_era > 3.5:
+            contrib = (opp_bullpen_era - 3.5) / 2.0
+            run_env += contrib
             factors.append(f"Below-avg bullpen (ERA={opp_bullpen_era:.2f})")
     else:
         unknown_count += 1
 
-    # Debut/return bonus
+    # Cap correlated group at 2.0 — getting 3+ perfect signals adds nothing.
+    run_env = min(2.0, run_env)
+
+    # ---------------------------------------------------------------
+    # Group B: Player situation (independent signals — up to 2.0)
+    # ---------------------------------------------------------------
+    situation = 0.0
+
+    # B1. Platoon advantage (binary — either you have it or you don't)
+    if platoon_advantage:
+        situation += 1.0
+        factors.append("Platoon advantage")
+
+    # B2. Batting order — graduated scale, neutral baseline for unknowns
+    #     Removes the hard top-5 gate that structurally excluded ghost players.
+    if batting_order is not None:
+        if batting_order <= 3:
+            situation += 1.0
+            factors.append(f"Premium lineup spot (bats #{batting_order})")
+        elif batting_order <= 5:
+            situation += 0.75
+            factors.append(f"Top of lineup (bats #{batting_order})")
+        elif batting_order <= 7:
+            situation += 0.50
+            factors.append(f"Middle of lineup (bats #{batting_order})")
+        else:
+            situation += 0.25
+            factors.append(f"Bottom of lineup (bats #{batting_order})")
+    else:
+        # Unknown batting order: neutral baseline (~order 6-7 equivalent).
+        # Not penalized as 0 — missing data ≠ bad data.  DNP risk is handled
+        # separately by _compute_dnp_adjustment() with ghost-awareness.
+        situation += 0.40
+        unknown_count += 1
+
+    # ---------------------------------------------------------------
+    # Group C: Venue — park + weather (capped at 1.0)
+    # ---------------------------------------------------------------
+    venue = 0.0
+    if park_team:
+        pf = PARK_HR_FACTORS.get(park_team, 1.0)
+        if pf >= 1.05:
+            venue = 1.0
+            factors.append(f"Hitter-friendly park ({park_team}, factor={pf:.2f})")
+        elif pf >= 1.0:
+            venue = 0.5
+
+    if wind_speed_mph is not None and wind_speed_mph >= 10 and wind_direction:
+        direction_upper = wind_direction.upper()
+        if any(d in direction_upper for d in ("OUT", "L TO R", "R TO L", "OUT TO CF")):
+            venue = min(1.0, venue + 0.5)
+            factors.append(f"Wind blowing out ({wind_speed_mph:.0f} mph)")
+
+    if temperature_f is not None and temperature_f >= 80:
+        venue = min(1.0, venue + 0.2)
+        factors.append(f"Warm conditions ({temperature_f}°F)")
+
+    # ---------------------------------------------------------------
+    # Debut bonus
+    # ---------------------------------------------------------------
+    debut = 0.0
     if is_debut_or_return:
-        score += 0.5
+        debut = 0.5
         factors.append("Debut/return premium")
+
+    # ---------------------------------------------------------------
+    # Final score: sum of capped groups / max_score
+    # ---------------------------------------------------------------
+    total = run_env + situation + venue + debut
+    max_score = 5.5  # 2.0 (run env cap) + 2.0 (situation) + 1.0 (venue) + 0.5 (debut)
 
     if unknown_count > 0:
         factors.append(f"{unknown_count} unknown factor(s) (data scarcity, not bad env)")
 
-    env_score = min(1.0, score / max_score)
+    env_score = min(1.0, total / max_score)
     return env_score, factors, unknown_count
 
 
@@ -552,35 +617,36 @@ def _compute_base_ev(
 ) -> float:
     """Compute the shared base EV used by both Starting 5 and Moonshot.
 
-    V7.0 "Pre-Game Signals Only" — EV is built exclusively from information
-    available before the draft begins.  Ownership counts and card boosts are
-    only revealed during/after the draft and are NOT inputs here.
+    V8.0 "Popularity-First Pre-Game Signals" — EV is built exclusively from
+    information available before the draft begins.  Ownership counts and card
+    boosts are only revealed during/after the draft and are NOT inputs here.
 
-    Three signals, in order of influence:
+    Three signals, in order of influence (V8.0 empirically calibrated):
 
-      1. env_factor   — PRIMARY: game conditions (Vegas O/U, opposing ERA,
+      1. pop_factor   — PRIMARY: media-attention crowd-avoidance signal from
+                        pre-game web sources (Google Trends, ESPN/MLB RSS,
+                        Reddit) via the RS condition matrix.  Scaled from the
+                        raw 0.275–1.00 matrix range to 0.50–1.50 (3.0× swing).
+                        Empirical basis: TARGET batters avg RS 3.57 vs FADE
+                        batters avg RS 0.98 = 3.6× differential over 20 dates.
+                        The crowd is structurally wrong about batters.
+                        DFS platform ownership is excluded — only visible
+                        during the draft.
+
+      2. env_factor   — SECONDARY: game conditions (Vegas O/U, opposing ERA,
                         bullpen ERA, park, weather, platoon, batting order,
-                        moneyline).  Range: 0.50–1.50 (3.0× swing).
-                        The sharpest pre-game predictor of individual RS:
-                        who faces a weak pitcher in a run-friendly environment.
+                        moneyline).  Range: 0.70–1.30 (1.86× swing).
+                        Differentiates within a popularity tier.
 
-      2. trait_factor — SECONDARY: intrinsic player quality from the scoring
+      3. trait_factor — TERTIARY: intrinsic player quality from the scoring
                         engine (K/9, ISO, barrel%, SB pace, ERA, WHIP, recent
                         form, season stats × matchup context, 0-100).
-                        Range: 0.70–1.30 (1.86× swing).
-
-      3. pop_factor   — TERTIARY: media attention from pre-game web signals
-                        (Google Trends, ESPN/MLB RSS, Reddit) via the RS
-                        condition matrix.  Compressed from the raw 0.275–1.00
-                        matrix range to POP_MODIFIER range (0.85–1.15, 1.35×
-                        swing) so it contextualises rather than dominates.
-                        DFS platform ownership is excluded — it is only
-                        visible during the draft.
+                        Range: 0.85–1.15 (1.35× swing).
 
     Plus contextual multipliers: stack_bonus, debut_bonus, dnp_adj.
 
     Formula:
-        base_ev = env_factor × trait_factor × pop_factor_compressed
+        base_ev = pop_factor_scaled × env_factor × trait_factor
                   × stack_bonus × debut_bonus × dnp_adj × 100
     """
     from app.core.constants import (
@@ -595,35 +661,37 @@ def _compute_base_ev(
     )
 
     # env_score is 0-1 from compute_batter/pitcher_env_score.
-    # Scale to ENV_MODIFIER_FLOOR–ENV_MODIFIER_CEILING (PRIMARY: 0.50–1.50).
+    # Scale to ENV_MODIFIER_FLOOR–ENV_MODIFIER_CEILING (SECONDARY: 0.70–1.30).
     raw_env = max(candidate.env_score, 0.0)
     env_factor = ENV_MODIFIER_FLOOR + raw_env * (ENV_MODIFIER_CEILING - ENV_MODIFIER_FLOOR)
     env_factor = max(ENV_MODIFIER_FLOOR, min(ENV_MODIFIER_CEILING, env_factor))
 
     # trait_score is 0-100 from the scoring engine.  Compress to
-    # TRAIT_MODIFIER_FLOOR–TRAIT_MODIFIER_CEILING (SECONDARY: 0.70–1.30).
+    # TRAIT_MODIFIER_FLOOR–TRAIT_MODIFIER_CEILING (TERTIARY: 0.85–1.15).
     raw_trait = max(candidate.total_score, 15.0) / 100.0  # 0.15–1.0
     trait_factor = TRAIT_MODIFIER_FLOOR + (raw_trait - 0.15) * (
         TRAIT_MODIFIER_CEILING - TRAIT_MODIFIER_FLOOR
     ) / (1.0 - 0.15)
     trait_factor = max(TRAIT_MODIFIER_FLOOR, min(TRAIT_MODIFIER_CEILING, trait_factor))
 
-    # Compress pop_factor from raw RS matrix range (0.275–1.00) into the
-    # tertiary range (0.85–1.15) so media attention modulates, not dominates.
+    # Scale pop_factor from raw RS matrix range (0.275–1.00) into the
+    # PRIMARY range (0.50–1.50).  This is the dominant signal: FADE batters
+    # get 0.50x, TARGET batters get 1.50x — a 3.0x swing matching the
+    # empirical 3.6x RS differential.  The crowd must be faded hard.
     raw_range = POP_FACTOR_RAW_MAX - POP_FACTOR_RAW_MIN  # 0.725
-    pop_compressed = POP_MODIFIER_FLOOR + (pop_factor - POP_FACTOR_RAW_MIN) * (
+    pop_scaled = POP_MODIFIER_FLOOR + (pop_factor - POP_FACTOR_RAW_MIN) * (
         POP_MODIFIER_CEILING - POP_MODIFIER_FLOOR
     ) / raw_range
-    pop_compressed = max(POP_MODIFIER_FLOOR, min(POP_MODIFIER_CEILING, pop_compressed))
+    pop_scaled = max(POP_MODIFIER_FLOOR, min(POP_MODIFIER_CEILING, pop_scaled))
 
     stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
     debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
     dnp_adj = _compute_dnp_adjustment(candidate)
 
     return (
-        env_factor
+        pop_scaled
+        * env_factor
         * trait_factor
-        * pop_compressed
         * stack_bonus
         * debut_bonus
         * dnp_adj
