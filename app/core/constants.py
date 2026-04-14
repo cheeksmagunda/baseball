@@ -186,21 +186,53 @@ DNP_GHOST_UNKNOWN_PENALTY = 0.92      # GHOST UNKNOWN: 8% haircut (data scarcity
 ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data not published" (not "bad env")
 
 # ---------------------------------------------------------------------------
-# Popularity-based EV adjustments (web-scraped FADE/TARGET/NEUTRAL)
+# V6.0 Popularity-First Signal Architecture
+#
+# The popularity signal is the DOMINANT ranking factor.  Empirical evidence
+# across 20 dates: non-popular players hit HV at 63.6% vs 16.0% for popular
+# ones.  The crowd-avoidance signal produces a 3.6x RS differential for
+# batters (TARGET avg RS 3.57 vs FADE avg RS 0.98).
+#
+# The RS condition matrix (condition_classifier.py) provides calibrated
+# factors, but these constants control the EV formula's structure:
+#   pop_factor × env_factor × trait_factor × context × 100
+#
+# Popularity factor comes from the RS_CONDITION_MATRIX lookup.
+# Env and trait factors are bounded to prevent them from overwhelming
+# the popularity signal.
 # ---------------------------------------------------------------------------
 
-# Starting 5: standard adjustments (same as draft_optimizer)
-POPULARITY_FADE_PENALTY = 0.75        # 25% EV penalty — crowd is already here
-POPULARITY_TARGET_BONUS = 1.15        # 15% EV bonus — under the radar edge
+# Trait modifier bounds: trait scores are TIEBREAKERS, not drivers.
+# Range: 0.75–1.25 (1.67x swing) — prevents a high-trait FADE from
+# overtaking a low-trait TARGET.  The old 0.15–1.0 range (6.7x swing)
+# let trait scores drown the popularity signal completely.
+TRAIT_MODIFIER_FLOOR = 0.75
+TRAIT_MODIFIER_CEILING = 1.25
+
+# Env modifier bounds: second-strongest signal after popularity.
+# Range: 0.60–1.40 (2.3x swing) — a great matchup can elevate a TARGET
+# and a terrible matchup can sink one, but env can't rescue a FADE.
+ENV_MODIFIER_FLOOR = 0.60
+ENV_MODIFIER_CEILING = 1.40
+
+# Legacy popularity constants — retained for backward compatibility.
+# V6.0 uses the RS_CONDITION_MATRIX factors directly instead of these
+# flat multipliers, but they remain for any code paths still referencing them.
+POPULARITY_FADE_PENALTY = 0.75        # LEGACY: S5 FADE penalty
+POPULARITY_TARGET_BONUS = 1.15        # LEGACY: S5 TARGET bonus
 
 # ---------------------------------------------------------------------------
 # Moonshot constants (dual-lineup optimizer)
 # ---------------------------------------------------------------------------
 
-# Moonshot popularity adjustments (heavier anti-crowd lean)
+# Moonshot popularity adjustments (heavier anti-crowd lean).
+# V6.0: Moonshot uses RS_CONDITION_MATRIX factors with an additional
+# contrarian multiplier that further penalizes FADE and rewards TARGET.
 MOONSHOT_FADE_PENALTY = 0.60          # 40% penalty (vs 25% for Starting 5)
 MOONSHOT_NEUTRAL_PENALTY = 0.95       # 5% penalty (if you're not a TARGET, step aside)
 MOONSHOT_TARGET_BONUS = 1.30          # 30% bonus (vs 15% for Starting 5)
+MOONSHOT_CONTRARIAN_FADE_MULT = 0.50  # V6.0: additional multiplier on matrix FADE factor
+MOONSHOT_CONTRARIAN_TARGET_MULT = 1.25  # V6.0: additional multiplier on matrix TARGET factor
 
 # Sharp signal bonus: underground buzz → up to +25% EV
 MOONSHOT_SHARP_BONUS_MAX = 0.25
@@ -283,16 +315,13 @@ MIN_GHOST_IN_LINEUP = 1              # min 1 ghost player (< 100 drafts)
 # Ghost enforcement: replace worst lineup player with a ghost if ghost EV >= this fraction
 GHOST_ENFORCE_SWAP_THRESHOLD = 0.50  # was 0.70 — lowered so ghost inclusion actually fires
 MAX_PLAYERS_PER_TEAM = 1             # 1 per team per individual lineup; correlation handled cross-lineup
-# V5.0: Hard pitcher-anchor rule — exactly 1 pitcher per lineup, always in Slot 1.
-# The V3.0-V3.4 dynamic pitcher cap (1/2/3 based on boosted-pool richness) is
-# retired.  Every lineup is a 1 SP + 4 batter construction, and the pitcher's
-# game is blocked for all batter picks in the same lineup (no negative
-# correlation between our SP and our batters).  The best-EV pitcher anchors
-# Slot 1 (2.0x), regardless of boost.  This sacrifices the multi-SP upside
-# surfaced on April 11 in favor of a cleaner, more disciplined shape.
-REQUIRED_PITCHERS_IN_LINEUP = 1      # V5.0: exactly this many pitchers per lineup
-MAX_PITCHERS_IN_LINEUP = 1           # V5.0: identical to REQUIRED; kept for legacy validation paths
-PITCHER_ANCHOR_SLOT = 1              # V5.0: pitcher always goes in Slot 1 (2.0x multiplier)
+# V6.0: retains V5.0 composition — exactly 1 pitcher + 4 batters.
+# The pitcher anchors Slot 1 (2.0x multiplier).  The popularity-first EV
+# formula determines WHICH pitcher and WHICH 4 batters, but the 1P+4B
+# shape is fixed.
+REQUIRED_PITCHERS_IN_LINEUP = 1      # exactly 1 pitcher per lineup
+MAX_PITCHERS_IN_LINEUP = 1           # identical to REQUIRED
+PITCHER_ANCHOR_SLOT = 1              # pitcher always in Slot 1 (2.0x)
 
 # ---------------------------------------------------------------------------
 # Blowout game stack bonus (4-term EV formula)

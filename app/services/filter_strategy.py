@@ -567,7 +567,7 @@ class FilterOptimizedLineup:
 
 
 def _popularity_ev_adjustment(popularity: PopularityClass, is_pitcher: bool = False) -> float:
-    """Return EV multiplier based on web-scraped popularity classification.
+    """LEGACY shim — V6.0 uses get_rs_condition_factor() instead.
 
     Pitchers get a lighter FADE penalty (15% vs 25%).  Pitchers control
     their own environment — high draft count reflects real ERA/K-rate data,
@@ -604,55 +604,73 @@ def _compute_dnp_adjustment(candidate: FilteredCandidate) -> float:
 
 def _compute_base_ev(
     candidate: FilteredCandidate,
-    anti_crowd: float,
+    pop_factor: float,
 ) -> float:
     """Compute the shared base EV used by both Starting 5 and Moonshot.
 
-    Prediction runs on three signals — card_boost and ownership-tier (drafts)
-    are NOT inputs.  Live Real Sports slates don't expose either reliably,
-    and leaning on them pushed the scraped popularity signals into the noise
-    floor.  The ranking is now:
+    V6.0 "Popularity-First Side Analysis" — the EV formula is restructured
+    so the web-scraped popularity signal is the DOMINANT term, not a modifier.
 
-      1. trait_score  — intrinsic player quality from the scoring engine
-                        (season stats × matchup context, 0-100)
-      2. env_score    — game conditions (Vegas total, opposing starter ERA,
-                        ballpark factor, weather, batting order) from
-                        compute_{batter,pitcher}_env_score
-      3. anti_crowd   — scraped popularity from app/services/popularity.py:
-                        FADE (crowd piled on → fade), TARGET (under-the-radar
-                        → buy), NEUTRAL.  Sharp_score drives Moonshot.
+    Empirical basis (20 dates, 2026-03-25 → 2026-04-13):
+      Batter+TARGET:  avg RS 3.57, HV rate 73.6%
+      Batter+FADE:    avg RS 0.98, HV rate  9.6%
+      Pitcher+TARGET: avg RS 4.36, HV rate 44.7%
+      Pitcher+FADE:   avg RS 3.09, HV rate 19.3%
 
-    Plus three contextual multipliers: stack_bonus (blowout game), debut_bonus
-    (first MLB appearance or return from 30+ day absence), dnp_adj (missing
-    batting-order risk).
+    The three signals, in order of influence:
+
+      1. pop_factor   — from RS_CONDITION_MATRIX via get_rs_condition_factor().
+                        Range: 0.275–1.00 for batters, 0.71–1.00 for pitchers.
+                        This is the primary ranking driver — a TARGET batter
+                        starts at 3.6x the EV of a FADE batter.
+
+      2. env_factor   — game conditions (Vegas total, opposing starter ERA,
+                        ballpark, weather, batting order).  Range: 0.60–1.40.
+                        Second-strongest signal — good matchups matter, but
+                        can't rescue a FADE.
+
+      3. trait_factor  — intrinsic player quality from the scoring engine
+                        (season stats × matchup context, 0-100).  Compressed
+                        to range 0.75–1.25 so traits are TIEBREAKERS, not
+                        dominators.  High trait scores correlate with fame,
+                        which is exactly what the crowd over-drafts.
+
+    Plus contextual multipliers: stack_bonus, debut_bonus, dnp_adj.
 
     Formula:
-        base_ev = trait_factor × env_factor × anti_crowd
+        base_ev = pop_factor × env_factor × trait_factor
                   × stack_bonus × debut_bonus × dnp_adj × 100
-
-    No condition-matrix lookup.  No rs_prob.  No auto-include gating.  No
-    ownership tiering.  Each multiplier is an observable, interpretable
-    signal — if a player's EV is high we can point at which factor drove it.
     """
-    # trait_score is 0-100 from the scoring engine.  Scale to 0-1 but floor
-    # at 0.15 so the weakest players aren't multiplied to zero (the scoring
-    # engine already clips near that range for active MLB rosters).
-    trait_factor = max(candidate.total_score, 15.0) / 100.0
+    from app.core.constants import (
+        TRAIT_MODIFIER_FLOOR,
+        TRAIT_MODIFIER_CEILING,
+        ENV_MODIFIER_FLOOR,
+        ENV_MODIFIER_CEILING,
+    )
+
+    # trait_score is 0-100 from the scoring engine.  Compress to
+    # TRAIT_MODIFIER_FLOOR–TRAIT_MODIFIER_CEILING (default 0.75–1.25) so
+    # traits differentiate within a popularity tier but can't override it.
+    raw_trait = max(candidate.total_score, 15.0) / 100.0  # 0.15–1.0
+    trait_factor = TRAIT_MODIFIER_FLOOR + (raw_trait - 0.15) * (
+        TRAIT_MODIFIER_CEILING - TRAIT_MODIFIER_FLOOR
+    ) / (1.0 - 0.15)
+    trait_factor = max(TRAIT_MODIFIER_FLOOR, min(TRAIT_MODIFIER_CEILING, trait_factor))
 
     # env_score is already 0-1 from compute_batter_env_score /
-    # compute_pitcher_env_score.  Floor at 0.25 so a player whose game
-    # has no Vegas line yet doesn't get zero-weighted — we'd rather
-    # downweight by 75% than eliminate the candidate.
-    env_factor = max(candidate.env_score, 0.25)
+    # compute_pitcher_env_score.  Scale to ENV_MODIFIER_FLOOR–ENV_MODIFIER_CEILING.
+    raw_env = max(candidate.env_score, 0.0)
+    env_factor = ENV_MODIFIER_FLOOR + raw_env * (ENV_MODIFIER_CEILING - ENV_MODIFIER_FLOOR)
+    env_factor = max(ENV_MODIFIER_FLOOR, min(ENV_MODIFIER_CEILING, env_factor))
 
     stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
     debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
     dnp_adj = _compute_dnp_adjustment(candidate)
 
     return (
-        trait_factor
+        pop_factor
         * env_factor
-        * anti_crowd
+        * trait_factor
         * stack_bonus
         * debut_bonus
         * dnp_adj
@@ -661,11 +679,14 @@ def _compute_base_ev(
 
 
 def _compute_filter_ev(candidate: FilteredCandidate) -> float:
-    """Compute Starting 5 EV: shared popularity + env + trait formula."""
-    return _compute_base_ev(
-        candidate,
-        _popularity_ev_adjustment(candidate.popularity, is_pitcher=candidate.is_pitcher),
+    """Compute Starting 5 EV: popularity-first formula via RS condition matrix."""
+    from app.services.condition_classifier import get_rs_condition_factor
+
+    pop_factor = get_rs_condition_factor(
+        candidate.popularity.value,
+        is_pitcher=candidate.is_pitcher,
     )
+    return _compute_base_ev(candidate, pop_factor)
 
 
 def _build_team_stack(
@@ -731,22 +752,17 @@ def _enforce_composition(
     slate_class: SlateClassification,
 ) -> list[FilteredCandidate]:
     """
-    V5.0 pitcher-anchored composition: exactly 1 pitcher + 4 batters.
+    V6.0 pitcher-anchored composition: 1 pitcher + 4 batters.
+
+    Retains V5.0's 1P+4B shape.  The popularity-first EV formula determines
+    WHICH pitcher and WHICH batters fill those slots — but the composition
+    is fixed at 1 SP (Slot 1) + 4 batters (Slots 2-5).
 
     Construction:
     1. Sort all candidates by filter_ev descending.
-    2. Pick the single highest-EV pitcher as the lineup anchor.  Placed in
-       Slot 1 (2.0x) by _smart_slot_assignment.
-    3. Block the anchor pitcher's game_id for all batter picks in this
-       lineup — no batter in the pitcher's game (no negative correlation).
-    4. Fill 4 batter slots purely by filter_ev descending, respecting
-       MAX_PLAYERS_PER_TEAM and MAX_PLAYERS_PER_GAME.  No auto-include
-       tiering — ranking is popularity + env + trait, all three already
-       baked into filter_ev.
-    5. Validate diversification caps; the anchor pitcher is never swapped.
-
-    Raises ValueError if the candidate pool contains no pitcher — consistent
-    with the "no fallbacks ever" rule in CLAUDE.md.
+    2. Pick the highest-EV pitcher as anchor.  Its game_id is blocked.
+    3. Fill 4 batter slots by filter_ev, respecting MAX_PLAYERS_PER_TEAM
+       and MAX_PLAYERS_PER_GAME.
     """
     all_sorted = sorted(candidates, key=lambda c: c.filter_ev, reverse=True)
 
@@ -754,18 +770,16 @@ def _enforce_composition(
     anchor_pitcher = next((c for c in all_sorted if c.is_pitcher), None)
     if anchor_pitcher is None:
         raise ValueError(
-            "V5.0 pitcher-anchor rule: candidate pool contains no pitcher. "
-            "Cannot build a lineup without an SP anchor — failing loudly "
-            "rather than falling back to 5-batter composition."
+            "Candidate pool contains no pitcher. "
+            "Cannot build a lineup without an SP anchor."
         )
 
-    blocked_game_id = anchor_pitcher.game_id  # may be None — handled below
+    blocked_game_id = anchor_pitcher.game_id
 
-    # Phase 2: Batters ordered purely by filter_ev.
+    # Phase 2: Batters ordered by filter_ev (popularity-first ranking).
     ordered_batters = [c for c in all_sorted if not c.is_pitcher]
 
-    # Phase 3: Fill 4 batter slots.  Anchor pitcher's team and game are
-    # pre-occupied so the batter loop will naturally avoid both.
+    # Phase 3: Fill 4 batter slots.
     lineup: list[FilteredCandidate] = [anchor_pitcher]
     anchor_team = anchor_pitcher.team.upper()
     team_used: dict[str, int] = {anchor_team: 1}
@@ -779,8 +793,7 @@ def _enforce_composition(
         if len(lineup) == 5:
             break
 
-        # V5.0: No batter may be in the pitcher's game (blocks both the
-        # pitcher's own team and the opposing team in that matchup).
+        # Block the anchor pitcher's game (no negative correlation).
         if blocked_game_id is not None and c.game_id == blocked_game_id:
             continue
 
@@ -808,17 +821,16 @@ def _enforce_composition(
         team_used[team_key] = team_used.get(team_key, 0) + 1
         lineup.append(c)
 
-    # Validate — pass the anchor pitcher so validation can protect it.
+    # Validate team/game caps.
     lineup = _validate_lineup_structure(
         lineup, ordered_batters, anchor_pitcher=anchor_pitcher
     )
     pitcher_count = sum(1 for c in lineup if c.is_pitcher)
     logger.info(
-        "V5.0 pitcher-anchored composition: %dP/%dH — anchor=%s (EV=%.2f, game=%s) "
-        "(candidates: %d, batters: %d)",
+        "V6.0 composition: %dP/%dH — anchor=%s (EV=%.2f) (candidates: %d)",
         pitcher_count, len(lineup) - pitcher_count,
-        anchor_pitcher.player_name, anchor_pitcher.filter_ev, blocked_game_id,
-        len(candidates), len(ordered_batters),
+        anchor_pitcher.player_name, anchor_pitcher.filter_ev,
+        len(candidates),
     )
     return lineup
 
@@ -829,29 +841,14 @@ def _validate_lineup_structure(
     anchor_pitcher: FilteredCandidate | None = None,
 ) -> list[FilteredCandidate]:
     """
-    V5.0 Step 6 Final Check — enforce anchor/ghost structure.
+    V6.0 validation — enforce team/game caps and 1-pitcher invariant.
 
-    Every rank-1 lineup across 13 days followed this pattern:
-    - 1 anchor (consensus play providing a floor)
-    - 2-3 differentiators (ghost players ranks 2-8 don't have)
-    - 1 flex
-
-    V5.0: The anchor pitcher passed from _enforce_composition is protected
-    from every swap rule.  The lineup always has exactly 1 pitcher (the
-    anchor), so the ghost-enforcement path may never introduce a second one.
-    `all_candidates_sorted` contains batters only in V5.0, but we still
-    defensively filter pitchers out of replacement picks.
-
-    Validation rules:
-    - Max 1 mega-chalk (2000+ drafts) player (anchor exempt)
-    - Try to include at least 1 ghost (< 100 drafts) player (anchor exempt)
-    - Max 1 per team / max 1 per game (anchor exempt)
-    - Exactly 1 pitcher (the anchor)
+    The anchor pitcher is protected from all swaps.  Replacement candidates
+    are batters only (to preserve 1P+4B).
     """
     if len(lineup) < 5:
         return lineup
 
-    # V5.0: Identify the anchor's index up front so every rule can skip it.
     anchor_idx: int | None = None
     if anchor_pitcher is not None:
         for i, c in enumerate(lineup):
@@ -860,15 +857,9 @@ def _validate_lineup_structure(
                 break
 
     def _protected(idx: int) -> bool:
-        """V5.0: the anchor pitcher must never be swapped out."""
         return anchor_idx is not None and idx == anchor_idx
 
-    # Rule 1 (mega-chalk cap) and Rule 2 (min-ghost) both required draft-count
-    # inputs to classify ownership tier.  With drafts removed from the
-    # prediction path, those rules can't fire.  Diversification is now enforced
-    # purely by team/game caps below.
-
-    # Rule 3: Max N players per team (diversification) — anchor exempt.
+    # Rule 1: Max N players per team — anchor exempt.
     from collections import Counter
     team_counts = Counter(c.team for c in lineup)
     for team, count in team_counts.items():
@@ -893,19 +884,17 @@ def _validate_lineup_structure(
                 )
                 if replacement:
                     removed_name = lineup[idx].player_name
-                    removed_team = lineup[idx].team
                     lineup_names.discard(removed_name)
                     lineup[idx] = replacement
                     lineup_names.add(replacement.player_name)
                     logger.info(
-                        "Team cap (max %d per team): replaced %s (%s) with %s (%s)",
-                        MAX_PLAYERS_PER_TEAM, removed_name, removed_team,
+                        "Team cap: replaced %s (%s) with %s (%s)",
+                        removed_name, team,
                         replacement.player_name, replacement.team,
                     )
 
-    # Rule 3b: Max N players per game — anchor exempt.
-    from collections import Counter as _GameCounter
-    game_counts = _GameCounter(c.game_id for c in lineup if c.game_id is not None)
+    # Rule 2: Max N players per game — anchor exempt.
+    game_counts = Counter(c.game_id for c in lineup if c.game_id is not None)
     for game_id, count in game_counts.items():
         if count > MAX_PLAYERS_PER_GAME:
             game_indices = sorted(
@@ -917,7 +906,7 @@ def _validate_lineup_structure(
             lineup_names = {c.player_name for c in lineup}
             anchor_game = anchor_pitcher.game_id if anchor_pitcher is not None else None
             for idx in game_indices[MAX_PLAYERS_PER_GAME:]:
-                current_game_counts = _GameCounter(
+                current_game_counts = Counter(
                     c.game_id for c in lineup if c.game_id is not None
                 )
                 replacement = next(
@@ -931,24 +920,20 @@ def _validate_lineup_structure(
                 )
                 if replacement:
                     removed_name = lineup[idx].player_name
-                    removed_game = lineup[idx].game_id
                     lineup_names.discard(removed_name)
                     lineup[idx] = replacement
                     lineup_names.add(replacement.player_name)
                     logger.info(
-                        "Game cap (max %d per game): replaced %s (game=%s) with %s (game=%s)",
-                        MAX_PLAYERS_PER_GAME, removed_name, removed_game,
+                        "Game cap: replaced %s (game=%s) with %s (game=%s)",
+                        removed_name, game_id,
                         replacement.player_name, replacement.game_id,
                     )
 
-    # V5.0 Rule 4: Sanity-check exactly 1 pitcher.  Under the anchor-first
-    # construction this is guaranteed, but we assert it loudly if something
-    # upstream violated the invariant.
+    # Rule 3: Exactly 1 pitcher (sanity check).
     pitcher_count_final = sum(1 for c in lineup if c.is_pitcher)
     if pitcher_count_final != REQUIRED_PITCHERS_IN_LINEUP:
         logger.warning(
-            "V5.0 pitcher-count invariant violated: expected %d pitcher(s), "
-            "got %d in lineup %s",
+            "Pitcher-count invariant violated: expected %d, got %d in %s",
             REQUIRED_PITCHERS_IN_LINEUP, pitcher_count_final,
             [c.player_name for c in lineup],
         )
@@ -1039,14 +1024,11 @@ def _apply_boost_diversification(
 def _smart_slot_assignment(
     candidates: list[FilteredCandidate],
 ) -> list[FilterSlotAssignment]:
-    """V5.0 slot assignment: pitcher anchors Slot 1, batters fill Slots 2-5
-    by filter_ev descending.
+    """V6.0 slot assignment: pitcher anchors Slot 1, batters fill Slots 2-5.
 
-    Slot value is computed from filter_ev scaled by the slot multiplier — the
-    card_boost term that used to enter the `(slot_mult + card_boost)` sum is
-    gone along with the rest of the boost-driven inputs.  The slot multiplier
-    remains (2.0, 1.8, 1.6, 1.4, 1.2) since it's a fixed feature of the
-    Real Sports draft format, not a prediction signal.
+    Retains V5.0 structure.  The pitcher is pinned to Slot 1 (2.0x).
+    Batters are assigned to Slots 2-5 by filter_ev descending (highest
+    EV batter gets Slot 2 at 1.8x).
     """
     if not candidates:
         return []
@@ -1073,7 +1055,7 @@ def _smart_slot_assignment(
             expected_slot_value=round(slot_value, 2),
         ))
 
-    # Batters → remaining slots, top-EV batter goes to the highest remaining slot.
+    # Batters → remaining slots by filter_ev descending.
     batter_slots = sorted(
         ((idx, mult) for idx, mult in slot_mults.items() if idx != PITCHER_ANCHOR_SLOT),
         key=lambda x: x[1],
@@ -1135,8 +1117,7 @@ def run_filter_strategy(
     for c in candidates:
         c.filter_ev = _compute_filter_ev(c)
 
-    # Step 2: Enforce composition — exactly 1 pitcher anchoring Slot 1 + 4
-    # batters.  The pitcher's game is blocked for all batter picks.
+    # Step 2: Enforce composition — V6.0: pure EV ranking with team/game caps.
     lineup = _enforce_composition(candidates, slate_classification)
 
     # Step 3: Game diversification (safety-net; team/game caps enforced upstream)
@@ -1178,15 +1159,30 @@ def _moonshot_popularity_adj(popularity: PopularityClass, is_pitcher: bool = Fal
 
 
 def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
-    """Compute Moonshot EV: shared base formula + sharp/explosive bonuses.
+    """Compute Moonshot EV: popularity-first formula + contrarian lean + sharp/explosive.
 
-    Delegates to _compute_base_ev() for the condition-based formula (DRY),
-    then applies moonshot-specific sharp signal and explosive trait bonuses.
-
-    is_most_drafted_3x penalty was removed when card_boost dropped out of the
-    optimizer input — live slates cannot identify that trap without boost.
+    V6.0: Uses RS_CONDITION_MATRIX for the base pop_factor, then applies
+    additional contrarian multipliers — Moonshot leans even harder into
+    crowd-avoidance.
     """
-    base_ev = _compute_base_ev(candidate, _moonshot_popularity_adj(candidate.popularity, is_pitcher=candidate.is_pitcher))
+    from app.services.condition_classifier import get_rs_condition_factor
+    from app.core.constants import MOONSHOT_CONTRARIAN_FADE_MULT, MOONSHOT_CONTRARIAN_TARGET_MULT
+
+    # Base pop_factor from condition matrix
+    pop_factor = get_rs_condition_factor(
+        candidate.popularity.value,
+        is_pitcher=candidate.is_pitcher,
+    )
+
+    # Moonshot contrarian lean: further penalize FADE, reward TARGET
+    if candidate.popularity == PopularityClass.FADE:
+        pop_factor *= MOONSHOT_CONTRARIAN_FADE_MULT
+    elif candidate.popularity == PopularityClass.TARGET:
+        pop_factor *= MOONSHOT_CONTRARIAN_TARGET_MULT
+    else:
+        pop_factor *= MOONSHOT_NEUTRAL_PENALTY
+
+    base_ev = _compute_base_ev(candidate, pop_factor)
 
     sharp_bonus = 1.0 + (candidate.sharp_score / 100.0) * MOONSHOT_SHARP_BONUS_MAX
     explosive_trait = get_trait_score(
