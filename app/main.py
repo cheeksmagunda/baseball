@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI):
             # Stage 2: morning baseline cache (NOT frozen — T-65 monitor freezes later)
             if pipeline_ok:
                 try:
-                    cached = await build_and_cache_lineups(db)
+                    cached = await build_and_cache_lineups(db, slate_date=active_date)
                     if cached:
                         logger.info("Morning baseline ready — T-65 monitor will freeze at lock time")
                     else:
