@@ -2512,5 +2512,14 @@
     "season_stage": "regular-season",
     "source": "mlb_stats_api_backfill",
     "saved_at": "2026-04-13T13:40:11Z"
+  },
+  {
+    "date": "2026-04-13",
+    "game_count": 0,
+    "games": [],
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-14T00:05:00Z",
+    "notes": "Partial ingest: player leaderboards captured (HV/MP/3x). Winning drafts not yet finalized. Ghost+boost dominance continues \u2014 Trout (34 drafts, +3.0x, TV 40.0), Jeremiah Jackson (2 drafts, +3.0x, TV 37.0), Trent Grisham (2 drafts, +3.0x, TV 38.5), Josh Naylor (1 draft, +3.0x, TV 33.0). Crochet massive bust (RS -7.8, 3.6k drafts, no boost). Most Drafted 3x all busted again (Acu\u00f1a 0.1, Stanton 1.5, Smith 1.3, Tucker 0.3, Muncy -0.7). Eovaldi best pitcher (RS 6.7, +1.4x, 2.6k drafts). Game scores and HV box stats pending."
   }
 ]
