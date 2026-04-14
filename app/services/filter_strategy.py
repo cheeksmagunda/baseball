@@ -53,32 +53,20 @@ from app.core.constants import (
     MOONSHOT_EXPLOSIVE_BONUS_MAX,
     MOONSHOT_SAME_TEAM_PENALTY,
     GHOST_DRAFT_THRESHOLD,
-    LOW_DRAFT_THRESHOLD,
-    CHALK_DRAFT_THRESHOLD,
-    MEGA_CHALK_DRAFT_THRESHOLD,
-    GHOST_BOOST_SYNERGY_MIN_BOOST,
-    MEGA_GHOST_BOOST_MAX_DRAFTS,
-    MAX_MEGA_CHALK_IN_LINEUP,
-    MIN_GHOST_IN_LINEUP,
     MAX_PITCHERS_IN_LINEUP,
     REQUIRED_PITCHERS_IN_LINEUP,
     PITCHER_ANCHOR_SLOT,
-    BOOST_CONCENTRATION_THRESHOLD,
-    BOOST_CONCENTRATION_PENALTY,
-    GHOST_ENFORCE_SWAP_THRESHOLD,
     MAX_PLAYERS_PER_TEAM,
     MAX_PLAYERS_PER_GAME,
     MAX_OPPONENTS_SAME_GAME,
     STACK_BONUS,
     DNP_RISK_PENALTY,
     DNP_UNKNOWN_PENALTY,
-    DNP_GHOST_UNKNOWN_PENALTY,
     ENV_UNKNOWN_COUNT_THRESHOLD,
-    BOOST_QUALITY_THRESHOLD,
-    BOOSTED_POOL_FULL_THRESHOLD,
-    ENV_TIEBREAKER_BONUS_MAX,
-    ENV_TIEBREAKER_HV_THRESHOLD,
-    DRAFT_SCARCITY_TIEBREAKER_MAX,
+    POP_MODIFIER_FLOOR,
+    POP_MODIFIER_CEILING,
+    POP_FACTOR_RAW_MIN,
+    POP_FACTOR_RAW_MAX,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score
 from app.services.popularity import PopularityClass
@@ -491,35 +479,36 @@ def compute_batter_env_score(
 
 @dataclass
 class FilteredCandidate:
-    """A player card that has passed through Filters 1-3."""
+    """A player card that has passed through Filters 1-3.
+
+    EV is computed from pre-game signals only:
+      env_score   — Vegas O/U, opposing ERA/bullpen, park, weather, platoon, batting order
+      total_score — season-level trait quality (K/9, ISO, barrel%, speed, recent form)
+      popularity  — media attention (Google Trends, ESPN, Reddit) — NOT platform ownership
+
+    card_boost and drafts are stored for display/output only and are NOT
+    used in any EV computation.  Both are only revealed during/after the draft.
+    """
     player_name: str
     team: str
     position: str
-    card_boost: float
-    total_score: float  # 0-100 from scoring engine
-    env_score: float    # 0-1.0 from environmental filter
+    card_boost: float     # display only — revealed during draft, not a predictive input
+    total_score: float    # 0-100 from scoring engine (pre-game season stats)
+    env_score: float      # 0-1.0 from environmental filter (pre-game conditions)
     env_factors: list[str] = field(default_factory=list)
     env_unknown_count: int = 0  # how many env factors were missing data
-    popularity: PopularityClass = PopularityClass.NEUTRAL  # web-scraped
+    popularity: PopularityClass = PopularityClass.NEUTRAL  # web-scraped (pre-game)
     is_debut_or_return: bool = False
     game_id: int | str | None = None  # for diversification tracking
     is_pitcher: bool = False
     sharp_score: float = 0.0
-    drafts: int | None = None
-    is_most_drafted_3x: bool = False  # 92% batter bust rate (V5.0 retrain) — hard-excluded from S5
+    drafts: int | None = None  # display only — revealed during draft
     traits: list = field(default_factory=list)  # TraitScore list from scoring engine
     batting_order: int | None = None  # 1-9 if confirmed in lineup, None = DNP risk
     is_in_blowout_game: bool = False  # set by run_filter_strategy before EV computation
-    total_slate_drafts: int | None = None  # sum of all drafts on the slate (for dynamic thresholds)
-    correlation_bonus: float = 1.0  # cross-lineup correlation multiplier (set pre-EV)
 
     # Computed by the optimizer
     filter_ev: float = 0.0
-
-    @property
-    def is_ghost(self) -> bool:
-        """True if this player is in the ghost ownership tier (< GHOST_DRAFT_THRESHOLD drafts)."""
-        return self.drafts is not None and self.drafts < GHOST_DRAFT_THRESHOLD
 
 
 @dataclass
@@ -563,37 +552,35 @@ def _compute_base_ev(
 ) -> float:
     """Compute the shared base EV used by both Starting 5 and Moonshot.
 
-    V6.0 "Popularity-First Side Analysis" — the EV formula is restructured
-    so the web-scraped popularity signal is the DOMINANT term, not a modifier.
+    V7.0 "Pre-Game Signals Only" — EV is built exclusively from information
+    available before the draft begins.  Ownership counts and card boosts are
+    only revealed during/after the draft and are NOT inputs here.
 
-    Empirical basis (20 dates, 2026-03-25 → 2026-04-13):
-      Batter+TARGET:  avg RS 3.57, HV rate 73.6%
-      Batter+FADE:    avg RS 0.98, HV rate  9.6%
-      Pitcher+TARGET: avg RS 4.36, HV rate 44.7%
-      Pitcher+FADE:   avg RS 3.09, HV rate 19.3%
+    Three signals, in order of influence:
 
-    The three signals, in order of influence:
+      1. env_factor   — PRIMARY: game conditions (Vegas O/U, opposing ERA,
+                        bullpen ERA, park, weather, platoon, batting order,
+                        moneyline).  Range: 0.50–1.50 (3.0× swing).
+                        The sharpest pre-game predictor of individual RS:
+                        who faces a weak pitcher in a run-friendly environment.
 
-      1. pop_factor   — from RS_CONDITION_MATRIX via get_rs_condition_factor().
-                        Range: 0.275–1.00 for batters, 0.71–1.00 for pitchers.
-                        This is the primary ranking driver — a TARGET batter
-                        starts at 3.6x the EV of a FADE batter.
+      2. trait_factor — SECONDARY: intrinsic player quality from the scoring
+                        engine (K/9, ISO, barrel%, SB pace, ERA, WHIP, recent
+                        form, season stats × matchup context, 0-100).
+                        Range: 0.70–1.30 (1.86× swing).
 
-      2. env_factor   — game conditions (Vegas total, opposing starter ERA,
-                        ballpark, weather, batting order).  Range: 0.60–1.40.
-                        Second-strongest signal — good matchups matter, but
-                        can't rescue a FADE.
-
-      3. trait_factor  — intrinsic player quality from the scoring engine
-                        (season stats × matchup context, 0-100).  Compressed
-                        to range 0.75–1.25 so traits are TIEBREAKERS, not
-                        dominators.  High trait scores correlate with fame,
-                        which is exactly what the crowd over-drafts.
+      3. pop_factor   — TERTIARY: media attention from pre-game web signals
+                        (Google Trends, ESPN/MLB RSS, Reddit) via the RS
+                        condition matrix.  Compressed from the raw 0.275–1.00
+                        matrix range to POP_MODIFIER range (0.85–1.15, 1.35×
+                        swing) so it contextualises rather than dominates.
+                        DFS platform ownership is excluded — it is only
+                        visible during the draft.
 
     Plus contextual multipliers: stack_bonus, debut_bonus, dnp_adj.
 
     Formula:
-        base_ev = pop_factor × env_factor × trait_factor
+        base_ev = env_factor × trait_factor × pop_factor_compressed
                   × stack_bonus × debut_bonus × dnp_adj × 100
     """
     from app.core.constants import (
@@ -601,31 +588,42 @@ def _compute_base_ev(
         TRAIT_MODIFIER_CEILING,
         ENV_MODIFIER_FLOOR,
         ENV_MODIFIER_CEILING,
+        POP_MODIFIER_FLOOR,
+        POP_MODIFIER_CEILING,
+        POP_FACTOR_RAW_MIN,
+        POP_FACTOR_RAW_MAX,
     )
 
+    # env_score is 0-1 from compute_batter/pitcher_env_score.
+    # Scale to ENV_MODIFIER_FLOOR–ENV_MODIFIER_CEILING (PRIMARY: 0.50–1.50).
+    raw_env = max(candidate.env_score, 0.0)
+    env_factor = ENV_MODIFIER_FLOOR + raw_env * (ENV_MODIFIER_CEILING - ENV_MODIFIER_FLOOR)
+    env_factor = max(ENV_MODIFIER_FLOOR, min(ENV_MODIFIER_CEILING, env_factor))
+
     # trait_score is 0-100 from the scoring engine.  Compress to
-    # TRAIT_MODIFIER_FLOOR–TRAIT_MODIFIER_CEILING (default 0.75–1.25) so
-    # traits differentiate within a popularity tier but can't override it.
+    # TRAIT_MODIFIER_FLOOR–TRAIT_MODIFIER_CEILING (SECONDARY: 0.70–1.30).
     raw_trait = max(candidate.total_score, 15.0) / 100.0  # 0.15–1.0
     trait_factor = TRAIT_MODIFIER_FLOOR + (raw_trait - 0.15) * (
         TRAIT_MODIFIER_CEILING - TRAIT_MODIFIER_FLOOR
     ) / (1.0 - 0.15)
     trait_factor = max(TRAIT_MODIFIER_FLOOR, min(TRAIT_MODIFIER_CEILING, trait_factor))
 
-    # env_score is already 0-1 from compute_batter_env_score /
-    # compute_pitcher_env_score.  Scale to ENV_MODIFIER_FLOOR–ENV_MODIFIER_CEILING.
-    raw_env = max(candidate.env_score, 0.0)
-    env_factor = ENV_MODIFIER_FLOOR + raw_env * (ENV_MODIFIER_CEILING - ENV_MODIFIER_FLOOR)
-    env_factor = max(ENV_MODIFIER_FLOOR, min(ENV_MODIFIER_CEILING, env_factor))
+    # Compress pop_factor from raw RS matrix range (0.275–1.00) into the
+    # tertiary range (0.85–1.15) so media attention modulates, not dominates.
+    raw_range = POP_FACTOR_RAW_MAX - POP_FACTOR_RAW_MIN  # 0.725
+    pop_compressed = POP_MODIFIER_FLOOR + (pop_factor - POP_FACTOR_RAW_MIN) * (
+        POP_MODIFIER_CEILING - POP_MODIFIER_FLOOR
+    ) / raw_range
+    pop_compressed = max(POP_MODIFIER_FLOOR, min(POP_MODIFIER_CEILING, pop_compressed))
 
     stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
     debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
     dnp_adj = _compute_dnp_adjustment(candidate)
 
     return (
-        pop_factor
-        * env_factor
+        env_factor
         * trait_factor
+        * pop_compressed
         * stack_bonus
         * debut_bonus
         * dnp_adj
@@ -880,40 +878,6 @@ def _apply_game_diversification(
         "Game diversification: %d games represented across %d players",
         games_represented, len(lineup),
     )
-
-    return warnings
-
-
-def _apply_boost_diversification(
-    lineup: list[FilteredCandidate],
-) -> list[str]:
-    """
-    Check boost concentration across games (§4.2 Filter 4).
-
-    "Don't put all boosted players in the same game. If that game is
-    a 1-0 pitcher's duel, all your boosts become dead weight."
-
-    If 3+ boosted players share the same game, apply a penalty
-    to the 3rd+ boosted player (sorted by EV desc, top 2 untouched).
-    """
-    warnings = []
-    if not lineup:
-        return warnings
-
-    boosted_by_game: dict[str | int | None, list[FilteredCandidate]] = {}
-    for c in lineup:
-        if c.card_boost >= 1.0 and c.game_id is not None:
-            boosted_by_game.setdefault(c.game_id, []).append(c)
-
-    for gid, players in boosted_by_game.items():
-        if len(players) >= BOOST_CONCENTRATION_THRESHOLD:
-            warnings.append(
-                f"Game {gid} has {len(players)} boosted players. "
-                f"Spread boosts across 2-3 favorable games."
-            )
-            players.sort(key=lambda c: c.filter_ev, reverse=True)
-            for p in players[BOOST_CONCENTRATION_THRESHOLD - 1:]:
-                p.filter_ev *= BOOST_CONCENTRATION_PENALTY
 
     return warnings
 

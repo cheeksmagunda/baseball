@@ -4,11 +4,14 @@ Popularity signal aggregator.
 Scrapes external sources to estimate which players the crowd will over-draft.
 Used to classify players as FADE (over-hyped), TARGET (under the radar), or NEUTRAL.
 
+All sources are pre-game public signals — no DFS platform ownership data.
+DFS platform ownership is only visible during the draft session; using it as
+a predictive input would violate the "pre-game signals only" constraint.
+
 Signal sources (weighted):
-  - Social trending (40%): Google Trends autocomplete + daily trends
-  - Sports news (20%): ESPN, MLB.com headlines
-  - DFS ownership (20%): DraftKings/FanDuel ownership %
-  - Search volume (20%): Google Trends search interest
+  - Social trending (45%): Google Trends autocomplete + daily trends
+  - Sports news (25%): ESPN, MLB.com headlines
+  - Search volume (30%): Google Trends search interest
 
 Classification logic:
   High attention + high/mid performance → FADE (crowd already on it)
@@ -59,7 +62,6 @@ class PopularityProfile:
     team: str
     social_score: float = 0.0
     news_score: float = 0.0
-    dfs_ownership_score: float = 0.0
     search_score: float = 0.0
     sharp_score: float = 0.0
     composite_score: float = 0.0
@@ -68,12 +70,13 @@ class PopularityProfile:
     signals: list[SignalResult] = field(default_factory=list)
 
 
-# Signal weights — social is the dominant signal per strategy
+# Signal weights — pre-game public signals only (no DFS platform ownership).
+# DFS ownership is only visible during the draft; using it would violate
+# the pre-game-signals-only constraint.
 SIGNAL_WEIGHTS = {
-    "social": 0.40,
-    "news": 0.20,
-    "dfs_ownership": 0.20,
-    "search": 0.20,
+    "social": 0.45,   # Google Trends autocomplete + daily trends
+    "news":   0.25,   # ESPN + MLB.com RSS
+    "search": 0.30,   # Google search interest
 }
 
 
@@ -154,44 +157,6 @@ async def fetch_news_signal(player_name: str, team: str) -> SignalResult:
     score = min(len(sources_found) * 40.0, 100.0)
     context = f"Found in: {', '.join(sources_found)}" if sources_found else "No news mentions"
     return SignalResult("news", score, context)
-
-
-async def fetch_dfs_ownership_signal(player_name: str, team: str) -> SignalResult:
-    """
-    Estimate cross-platform DFS ownership.
-
-    Scrapes publicly visible ownership data from major DFS platforms.
-    Each platform handles its own errors independently.
-    """
-    last_name = player_name.split()[-1].lower()
-
-    async def _rotogrinders(client: httpx.AsyncClient) -> bool:
-        try:
-            r = await client.get("https://rotogrinders.com/resultsdb/mlb")
-            r.raise_for_status()
-            return last_name in r.text.lower()
-        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            logger.debug("RotoGrinders failed for %s: %s", player_name, exc)
-            return False
-
-    async def _numberfire(client: httpx.AsyncClient) -> bool:
-        try:
-            r = await client.get(
-                "https://www.numberfire.com/mlb/daily-fantasy/daily-baseball-projections",
-            )
-            r.raise_for_status()
-            return last_name in r.text.lower()
-        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            logger.debug("NumberFire failed for %s: %s", player_name, exc)
-            return False
-
-    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": _USER_AGENT}) as client:
-        roto, nfire = await asyncio.gather(_rotogrinders(client), _numberfire(client))
-    if roto:
-        return SignalResult("dfs_ownership", 60.0, "Found on RotoGrinders results")
-    if nfire:
-        return SignalResult("dfs_ownership", 45.0, "Found on NumberFire projections")
-    return SignalResult("dfs_ownership", 0.0, "No DFS ownership signal")
 
 
 async def fetch_search_signal(player_name: str, team: str) -> SignalResult:
@@ -339,11 +304,12 @@ async def get_popularity_profile(
         include_sharp: If True, also fetches the underground sharp signal
                        (used by Moonshot optimizer).
     """
-    # Build list of fetchers
+    # Build list of fetchers — pre-game public signals only.
+    # DFS platform ownership (RotoGrinders, NumberFire) intentionally excluded:
+    # it is only available during the draft session, not before.
     fetchers = [
         fetch_social_signal(player_name, team),
         fetch_news_signal(player_name, team),
-        fetch_dfs_ownership_signal(player_name, team),
         fetch_search_signal(player_name, team),
     ]
     if include_sharp:
@@ -351,10 +317,10 @@ async def get_popularity_profile(
 
     results = await asyncio.gather(*fetchers)
 
-    social, news, dfs, search = results[0], results[1], results[2], results[3]
-    sharp = results[4] if include_sharp else SignalResult("sharp", 0.0, "Not fetched")
+    social, news, search = results[0], results[1], results[2]
+    sharp = results[3] if include_sharp else SignalResult("sharp", 0.0, "Not fetched")
 
-    signals = [social, news, dfs, search, sharp]
+    signals = [social, news, search, sharp]
     composite = compute_composite_score(signals)  # sharp excluded from composite
     classification, reason = classify_player(composite, player_score)
 
@@ -363,7 +329,6 @@ async def get_popularity_profile(
         team=team,
         social_score=social.score,
         news_score=news.score,
-        dfs_ownership_score=dfs.score,
         search_score=search.score,
         sharp_score=sharp.score,
         composite_score=composite,

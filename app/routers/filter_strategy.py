@@ -305,7 +305,7 @@ async def _resolve_candidates(
             player_name=card.player_name,
             team=card.team,
             position=pre["player"].position,
-            card_boost=card.card_boost,
+            card_boost=card.card_boost,    # stored for display only
             total_score=score_result.total_score,
             env_score=pre["env_score"],
             env_factors=pre["env_factors"],
@@ -315,17 +315,19 @@ async def _resolve_candidates(
             game_id=pre["game_id"],
             is_pitcher=pre["is_pitcher"],
             sharp_score=sharp_score,
-            drafts=card.drafts,
-            is_most_drafted_3x=card.is_most_drafted_3x,
+            drafts=card.drafts,            # stored for display only
             traits=score_result.traits,
             batting_order=card.batting_order,
         ))
 
-    # Candidate pool health summary.
-    ghost_count = sum(1 for c in candidates if c.is_ghost)
+    # Candidate pool health summary (draft counts are display-only labels).
+    ghost_count = sum(
+        1 for c in candidates
+        if c.drafts is not None and c.drafts < 100
+    )
     logger.info(
         "Candidate pool: %d cards in → %d candidates out "
-        "(ghosts: %d, dropped: %d)",
+        "(low-draft players: %d, dropped: %d)",
         len(cards), len(candidates), ghost_count,
         len(cards) - len(candidates),
     )
