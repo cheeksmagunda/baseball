@@ -37,8 +37,6 @@ from app.core.constants import (
     ENV_PASS_THRESHOLD,
     MIN_GAMES_REPRESENTED,
     SAME_GAME_EXCESS_PENALTY,
-    STACK_MIN_PLAYERS,
-    STACK_MAX_PLAYERS,
     MIN_SCORE_THRESHOLD,
     MIN_SCORE_PENALTY_FLOOR,
     PITCHER_ENV_WEAK_OPP_OPS,
@@ -50,11 +48,7 @@ from app.core.constants import (
     BATTER_ENV_TOP_LINEUP,
     BATTER_ENV_WEAK_BULLPEN_ERA,
     DEBUT_RETURN_EV_BONUS,
-    POPULARITY_FADE_PENALTY,
-    POPULARITY_TARGET_BONUS,
-    MOONSHOT_FADE_PENALTY,
     MOONSHOT_NEUTRAL_PENALTY,
-    MOONSHOT_TARGET_BONUS,
     MOONSHOT_SHARP_BONUS_MAX,
     MOONSHOT_EXPLOSIVE_BONUS_MAX,
     MOONSHOT_SAME_TEAM_PENALTY,
@@ -82,16 +76,8 @@ from app.core.constants import (
     ENV_UNKNOWN_COUNT_THRESHOLD,
     BOOST_QUALITY_THRESHOLD,
     BOOSTED_POOL_FULL_THRESHOLD,
-    # Cross-lineup correlation + tiebreaker constants
-    CORRELATION_GHOST_MIN_PLAYERS,
-    CORRELATION_EV_BONUS,
-    CORRELATION_EV_BONUS_3PLUS,
-    MOONSHOT_CORRELATION_TEAMMATE_BONUS,
     ENV_TIEBREAKER_BONUS_MAX,
     ENV_TIEBREAKER_HV_THRESHOLD,
-    # Pitcher-specific FADE moderation + scarcity tiebreaker
-    PITCHER_FADE_PENALTY,
-    MOONSHOT_PITCHER_FADE_PENALTY,
     DRAFT_SCARCITY_TIEBREAKER_MAX,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score
@@ -104,18 +90,6 @@ logger = logging.getLogger(__name__)
 # REQUIRED_PITCHERS_IN_LINEUP pitchers (see app/core/constants.py).  The
 # pitcher is selected first (highest filter_ev), anchors Slot 1, and its
 # game is blocked for all batter picks in the same lineup.
-
-
-def _identify_correlation_groups(
-    candidates: list,
-) -> dict[str, list]:
-    """Deprecated — ownership-tier-based correlation was removed with card_boost
-    and draft-count inputs.  Returns an empty dict so callers that still invoke
-    this function see "no correlation teams" and skip the correlation bonus.
-    Cross-lineup correlation now falls out of the same-team Moonshot penalty
-    and the team/game diversification caps.
-    """
-    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -330,7 +304,7 @@ def compute_pitcher_env_score(
     """
     score = 0.0
     factors = []
-    max_score = 5.0  # 5 factors, each 0-1
+    max_score = 5.5  # 4 major factors (1.0 each) + home (0.5) + debut bonus (0.5)
 
     # 1. Weak opponent offense (OPS)
     if opp_team_ops is not None:
@@ -413,7 +387,7 @@ def compute_batter_env_score(
     score = 0.0
     factors = []
     unknown_count = 0  # track missing data factors
-    max_score = 7.0  # 7 factors (added bullpen vulnerability)
+    max_score = 7.5  # 7 main factors (1.0 each) + debut bonus (0.5)
 
     # 1. High Vegas total (run environment)
     if vegas_total is not None:
@@ -566,25 +540,6 @@ class FilterOptimizedLineup:
     warnings: list[str] = field(default_factory=list)
 
 
-def _popularity_ev_adjustment(popularity: PopularityClass, is_pitcher: bool = False) -> float:
-    """LEGACY shim — V6.0 uses get_rs_condition_factor() instead.
-
-    Pitchers get a lighter FADE penalty (15% vs 25%).  Pitchers control
-    their own environment — high draft count reflects real ERA/K-rate data,
-    not media hype.  The crowd is structurally less wrong about pitchers than
-    batters: pitcher outcomes depend on one player, batter outcomes depend on
-    team context.  Apr 11: Suarez (2.2k drafts, FADE) delivered RS 5.7 and
-    appeared in 6/6 top lineups.
-    """
-    if popularity == PopularityClass.FADE:
-        if is_pitcher:
-            return PITCHER_FADE_PENALTY
-        return POPULARITY_FADE_PENALTY
-    if popularity == PopularityClass.TARGET:
-        return POPULARITY_TARGET_BONUS
-    return 1.0
-
-
 def _compute_dnp_adjustment(candidate: FilteredCandidate) -> float:
     """Compute DNP risk adjustment for batters only.
 
@@ -687,64 +642,6 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
         is_pitcher=candidate.is_pitcher,
     )
     return _compute_base_ev(candidate, pop_factor)
-
-
-def _build_team_stack(
-    candidates: list[FilteredCandidate],
-    stackable_games: list[StackableGame],
-) -> list[FilteredCandidate] | None:
-    """
-    Build a team stack from ghost-ownership players on the favored team.
-
-    §2 Pillar 2: "Stack FROM THE GHOST POOL."
-    The winning OAK stack on 4/5 worked because the entire lineup was ghost-tier.
-    The winning LAD stack on 4/6 worked because ghosts (Hernández 3, Rushing 1)
-    were the differentiators — Ohtani (4900) was just the anchor everyone had.
-
-    Returns 3-4 players from the best stackable team, or None if no viable stack.
-    """
-    if not stackable_games:
-        return None
-
-    for sg in stackable_games:
-        team = sg.favored_team.upper()
-        game_id = sg.game_id
-
-        # Find all candidates from the favored team in this game
-        team_candidates = [
-            c for c in candidates
-            if c.team.upper() == team
-            and not c.is_pitcher  # stack hitters, not pitchers
-        ]
-
-        if len(team_candidates) < STACK_MIN_PLAYERS:
-            continue
-
-        # Sort by filter_ev — the popularity + env + trait signal is the only
-        # input now that ownership and boost are out of the pipeline.
-        team_candidates.sort(key=lambda c: c.filter_ev, reverse=True)
-        stack = team_candidates[:STACK_MAX_PLAYERS]
-
-        if len(stack) >= STACK_MIN_PLAYERS:
-            logger.info(
-                "Team stack: %d %s players (game_id: %s, ML: %s)",
-                len(stack), team, game_id, sg.moneyline,
-            )
-            return stack
-
-    return None
-
-
-def _apply_s5_hard_exclusions(
-    candidates: list[FilteredCandidate],
-) -> list[FilteredCandidate]:
-    """No-op — ownership-tier-based hard exclusions were removed with the
-    drafts input.  Starting 5 trusts the EV ranking (popularity + env +
-    traits).  The popularity FADE penalty already punishes over-drafted
-    players; stacking a hard-exclusion on top of a 25% EV haircut was
-    redundant.  Kept as a no-op for back-compat with run_filter_strategy.
-    """
-    return list(candidates)
 
 
 def _enforce_composition(
@@ -1143,20 +1040,6 @@ def run_filter_strategy(
 # ---------------------------------------------------------------------------
 # Moonshot — completely different 5, anti-crowd, sharp-signal, explosive
 # ---------------------------------------------------------------------------
-
-def _moonshot_popularity_adj(popularity: PopularityClass, is_pitcher: bool = False) -> float:
-    """Return Moonshot-specific popularity EV multiplier (heavier lean).
-
-    Pitchers get lighter FADE penalty in Moonshot too (30% vs 40%).
-    """
-    if popularity == PopularityClass.FADE:
-        if is_pitcher:
-            return MOONSHOT_PITCHER_FADE_PENALTY
-        return MOONSHOT_FADE_PENALTY
-    if popularity == PopularityClass.TARGET:
-        return MOONSHOT_TARGET_BONUS
-    return MOONSHOT_NEUTRAL_PENALTY
-
 
 def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     """Compute Moonshot EV: popularity-first formula + contrarian lean + sharp/explosive.

@@ -305,7 +305,7 @@ def classify_player(
     high_pop = composite_popularity >= 50.0
     mid_pop = 25.0 <= composite_popularity < 50.0
     high_perf = player_score >= 60.0
-    mid_perf = 40.0 <= player_score < 60.0
+    mid_perf = 25.0 <= player_score < 60.0
 
     if high_pop and high_perf:
         return PopularityClass.FADE, "High attention + strong performance — crowd is already on this player"

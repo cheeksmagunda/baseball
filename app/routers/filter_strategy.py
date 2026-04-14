@@ -321,9 +321,7 @@ async def _resolve_candidates(
             batting_order=card.batting_order,
         ))
 
-    # Candidate pool health summary.  Ownership-only auto-include after
-    # card_boost was dropped from the optimizer input — ghost tier alone is
-    # the edge (see is_auto_include / condition_classifier).
+    # Candidate pool health summary.
     ghost_count = sum(1 for c in candidates if c.is_ghost)
     logger.info(
         "Candidate pool: %d cards in → %d candidates out "
@@ -332,10 +330,26 @@ async def _resolve_candidates(
         len(cards) - len(candidates),
     )
 
-    # is_most_drafted_3x was a boost-dependent trap flag (top-N drafted players
-    # with boost >= 3.0).  Live Real Sports slates don't expose card_boost, so
-    # the flag can't fire reliably.  The FADE + chalk/mega_chalk hard-exclusion
-    # in _apply_s5_hard_exclusions is the live-signal replacement.
+    # Popularity distribution health check — detect wholesale scraper failure.
+    # On any real slate, some superstars (Judge, Ohtani, etc.) will always
+    # trigger at least one scraper.  If EVERY player is NEUTRAL, the scrapers
+    # are broken and the 3.6x popularity differential collapses to zero.
+    from app.services.popularity import PopularityClass as _PC
+    fade_count = sum(1 for c in candidates if c.popularity == _PC.FADE)
+    target_count = sum(1 for c in candidates if c.popularity == _PC.TARGET)
+    neutral_count = sum(1 for c in candidates if c.popularity == _PC.NEUTRAL)
+    logger.info(
+        "Popularity distribution: FADE=%d, TARGET=%d, NEUTRAL=%d",
+        fade_count, target_count, neutral_count,
+    )
+    if neutral_count == len(candidates) and len(candidates) >= 10:
+        raise RuntimeError(
+            f"All {len(candidates)} candidates classified NEUTRAL — "
+            "web scraper failure suspected. The popularity signal is the "
+            "primary ranking driver (3.6x batter RS differential); without "
+            "it the pipeline cannot produce winning lineups. Check network "
+            "connectivity and scraper endpoints."
+        )
 
     return candidates
 
@@ -745,3 +759,78 @@ def classify_slate_endpoint(games: list[GameEnvironment] = []):
         stackable_games=stackable_out,
         reason=result.reason,
     )
+
+
+@router.get("/diagnostics")
+async def diagnostics(db: Session = Depends(get_db)):
+    """
+    Pipeline health dashboard — popularity distribution, pool metrics, top EVs.
+
+    Returns the current cached lineup's diagnostics without re-running the
+    optimizer.  If no cache exists, loads slate data and computes a snapshot.
+    """
+    cached = lineup_cache.get()
+    if cached is not None:
+        candidates = cached.all_candidates
+        fade = sum(1 for c in candidates if c.popularity == "FADE")
+        target = sum(1 for c in candidates if c.popularity == "TARGET")
+        neutral = sum(1 for c in candidates if c.popularity == "NEUTRAL")
+        top_evs = [
+            {"player": c.player_name, "team": c.team, "ev": c.filter_ev, "popularity": c.popularity}
+            for c in candidates[:10]
+        ]
+        return {
+            "source": "cache",
+            "candidate_count": len(candidates),
+            "popularity_distribution": {"FADE": fade, "TARGET": target, "NEUTRAL": neutral},
+            "popularity_healthy": not (neutral == len(candidates) and len(candidates) >= 10),
+            "top_10_ev": top_evs,
+            "starting_5": [s.player_name for s in cached.starting_5.lineup],
+            "moonshot": [s.player_name for s in cached.moonshot.lineup],
+        }
+
+    # No cache — build a snapshot from the DB
+    active_date = _get_active_slate_date(db)
+    cards, games = _load_active_slate(db, active_date)
+    if not cards:
+        return {
+            "source": "live",
+            "error": f"No slate data for {active_date}",
+            "candidate_count": 0,
+            "popularity_distribution": {"FADE": 0, "TARGET": 0, "NEUTRAL": 0},
+            "popularity_healthy": False,
+            "top_10_ev": [],
+            "starting_5": [],
+            "moonshot": [],
+        }
+
+    game_dicts = [g.model_dump() for g in games]
+    slate_class = classify_slate(len(games), game_dicts)
+    candidates = await _resolve_candidates(cards, games, db)
+
+    fade = sum(1 for c in candidates if c.popularity == PopularityClass.FADE)
+    target = sum(1 for c in candidates if c.popularity == PopularityClass.TARGET)
+    neutral = sum(1 for c in candidates if c.popularity == PopularityClass.NEUTRAL)
+
+    # Quick EV computation for diagnostics (without full optimization)
+    from app.services.filter_strategy import _compute_filter_ev
+    for c in candidates:
+        c.filter_ev = _compute_filter_ev(c)
+    candidates.sort(key=lambda c: c.filter_ev, reverse=True)
+
+    top_evs = [
+        {"player": c.player_name, "team": c.team, "ev": round(c.filter_ev, 2), "popularity": c.popularity.value}
+        for c in candidates[:10]
+    ]
+
+    return {
+        "source": "live",
+        "slate_date": str(active_date),
+        "slate_type": slate_class.slate_type.value,
+        "candidate_count": len(candidates),
+        "popularity_distribution": {"FADE": fade, "TARGET": target, "NEUTRAL": neutral},
+        "popularity_healthy": not (neutral == len(candidates) and len(candidates) >= 10),
+        "top_10_ev": top_evs,
+        "starting_5": [],
+        "moonshot": [],
+    }
