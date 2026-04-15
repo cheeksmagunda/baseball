@@ -81,7 +81,7 @@ async def fetch_mlb_odds(api_key: str, game_date: date) -> list[dict]:
     """
     if not api_key:
         raise RuntimeError(
-            "DFS_ODDS_API_KEY is not configured — cannot fetch Vegas lines. "
+            "ODDS_API_KEY is not configured — cannot fetch Vegas lines. "
             "Set the env var or accept NULL moneylines in env scoring."
         )
 

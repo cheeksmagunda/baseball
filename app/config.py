@@ -1,4 +1,5 @@
 from pathlib import Path
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,7 +15,8 @@ class Settings(BaseSettings):
 
     # The Odds API key for fetching pre-game Vegas lines (moneyline + O/U totals).
     # Free tier: 500 requests/month.  Required — startup raises ValidationError if unset.
-    odds_api_key: str
+    # Uses ODDS_API_KEY directly (no DFS_ prefix) — this key belongs to The Odds API, not the app.
+    odds_api_key: str = Field(validation_alias="ODDS_API_KEY")
 
     # How often (seconds) the slate monitor re-runs the full pipeline to pick up
     # new starters, batting orders, boosts, and stats.  Data is always available,
