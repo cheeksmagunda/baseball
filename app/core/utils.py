@@ -1,5 +1,6 @@
 """Shared utility functions — single source of truth for common operations."""
 
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models.player import Player, PlayerGameLog, normalize_name
@@ -111,3 +112,45 @@ def graduated_scale_moneyline(moneyline: int, ml_floor: int, ml_ceiling: int) ->
     if moneyline >= ml_floor:
         return 0.0
     return (-moneyline - (-ml_floor)) / float(-ml_ceiling - (-ml_floor))
+
+
+# ---------------------------------------------------------------------------
+# Timing validation (T-65 architecture)
+# ---------------------------------------------------------------------------
+
+def is_pipeline_callable_now(db: Session) -> tuple[bool, str]:
+    """
+    Check if the pipeline can be called right now.
+
+    The pipeline must NOT be called during an active slate (games in progress
+    or upcoming). It ONLY runs at T-65 via the slate_monitor.
+
+    Returns (True, "") if OK to call, (False, reason) if NOT.
+    """
+    from app.models.slate import Slate, SlateGame
+    from datetime import date
+
+    today = date.today()
+
+    # Check if today's slate has active games
+    today_slate = db.query(Slate).filter_by(date=today).first()
+    if today_slate:
+        games = db.query(SlateGame).filter_by(slate_id=today_slate.id).all()
+        if games:
+            # Slate exists with games — check if any are still in progress
+            all_final = all(
+                (g.home_score is not None and g.away_score is not None)
+                or g.game_status in ("Postponed", "Cancelled", "Suspended")
+                for g in games
+            )
+            if not all_final:
+                # Games still playing — pipeline must NOT be called
+                return (
+                    False,
+                    "Pipeline is locked during active slate. "
+                    "Picks are generated at T-65 by the slate monitor and cached. "
+                    "Manual calls are only allowed after all games finish."
+                )
+
+    # No active slate today — OK to call
+    return (True, "")

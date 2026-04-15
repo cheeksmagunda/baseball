@@ -94,6 +94,63 @@ The active optimization path is `filter_strategy` — **not** `draft_optimizer.p
 ### Philosophy
 Rule-based scoring + external-variables filtering (NOT ML). The goal is to **win drafts**, not predict Real Score. RS is opaque — we estimate via player profiling and filter on pre-game conditions.
 
+### T-65 Sniper Architecture (Event-Driven Timing)
+
+**The Core Rule: No pipeline work happens outside T-65. Zero API calls during active slates.**
+
+The app uses an event-driven timing model that triggers the ONLY full pipeline run at exactly T-65 (65 minutes before first pitch). This ensures picks are locked and unchanged throughout the 60-minute user draft window.
+
+**Four Phases Per Slate:**
+
+1. **Initialization** (Morning until T-65): 
+   - Startup completes cache warm-load (from Redis or DB if available)
+   - `/api/filter-strategy/optimize` returns HTTP 425 "come back later"
+   - `startup_done_event` signals the T-65 monitor that initialization is complete
+   - **Zero API calls. Zero MLB data fetches. Zero optimization runs.**
+
+2. **Before Lock** (Until T-65):
+   - Slate monitor sleeps until T-65
+   - Monitor publishes first-pitch time so `/status` can show countdown
+   - `/api/filter-strategy/optimize` still returns HTTP 425 (not yet unlocked)
+
+3. **T-65 Final Run** (Exactly at T-65):
+   - Monitor wakes up and runs the FULL pipeline:
+     - Fetch fresh MLB schedule (handles weather delays via retry loop)
+     - Populate SlatePlayer rosters from MLB API boxscores
+     - Fetch season stats for all players
+     - Enrich game environment (Vegas lines, series context, bullpen ERA)
+     - Score all players (0-100 trait profiles)
+     - Run dual-filter strategy (Starting 5 + Moonshot)
+   - **No fallbacks.** If any stage fails, the monitor crashes so `/optimize` returns HTTP 503.
+   - Freeze cache with `lineup_cache.freeze()` — picks are now immutable
+
+4. **T-60 Unlock & Post-Lock Monitoring** (After T-65):
+   - At T-60 (60 minutes before first pitch), picks unlock for viewing
+   - `/api/filter-strategy/optimize` serves frozen picks (zero computation per request)
+   - Lightweight 60-second loop monitors game completion
+   - On all-final, clear cache and pre-warm tomorrow's pipeline
+
+**Timing Gates (Prevent Mid-Slate Interference):**
+
+- **Manual pipeline endpoints** (`/api/pipeline/fetch`, `/api/pipeline/score`, `/api/pipeline/run`, `/api/pipeline/filter-strategy`) are locked during active slates. If today's slate has unfinished games, these endpoints return HTTP 423 "Locked — pipeline running via T-65 monitor". They only accept calls after all games finish.
+- **The `/optimize` endpoint** never calls the pipeline. It serves cache only.
+- **Start-up timing guard** (main.py): On app restart during a live slate (after T-65), restore frozen picks from SQLite/Redis instead of purging and regenerating. Prevents mid-game lineup changes due to dyno restarts.
+
+**Why This Architecture Matters:**
+
+1. **Pick Quality**: All candidate fetches, scoring, and optimization happen in one synchronized run with live data. No stale data. No partial updates.
+2. **User Predictability**: Picks are locked 60 minutes before first pitch. Users know exactly when to draft.
+3. **No Generational Drift**: No risk of serving lineups built from different versions of the schedule (e.g., lineup A built at 6:00 PM from 8 games, lineup B built at 6:15 PM from 7 games after a cancellation).
+4. **Testability**: Manual endpoints (`/api/pipeline/*`) exist for post-slate analysis and testing, but are gated and only work after all games finish.
+
+**Key Functions:**
+
+- `app.services.slate_monitor.targeted_slate_monitor()` — Main T-65 event loop
+- `app.services.slate_monitor._get_first_pitch_utc()` — Parse game times, compute lock time
+- `app.services.slate_monitor._sleep_until()` — Chunked async sleep for responsive cancellation
+- `app.services.lineup_cache.freeze()` — Freeze picks after T-65 run
+- `app.core.utils.is_pipeline_callable_now()` — Gate manual pipeline endpoints
+
 ## Data Files (`/data/`)
 
 Current coverage (as of 2026-04-14): **21 consecutive dates, 2026-03-25 → 2026-04-14**. All four files stay in lockstep — every date present in one is present in all four.

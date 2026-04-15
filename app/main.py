@@ -31,11 +31,16 @@ async def lifespan(app: FastAPI):
             logger.info("Database empty, loading seed data...")
             run_seed(db)
 
-    # Restart-during-live-slate guard:
+    # Restart-during-live-slate guard (V8.1):
     # If today's picks are already frozen in the DB/Redis (i.e., a Railway
     # dyno restarted after T-65), restore and re-freeze them instead of
     # wiping and regenerating from a reduced candidate pool.  Otherwise,
     # purge all cache tiers so the new startup always gets fresh data.
+    #
+    # This prevents the "dirty mid-run data" bug where a restart after T-65
+    # (but before game completion) would regenerate picks from a reduced pool
+    # (started/final games excluded), producing different picks than the ones
+    # that were locked at T-65, violating the "zero work outside T-65" rule.
     from datetime import datetime, timedelta, timezone
     from app.services.lineup_cache import lineup_cache
     from app.services.slate_monitor import _get_first_pitch_utc, LOCK_MINUTES_BEFORE_PITCH
@@ -61,13 +66,16 @@ async def lifespan(app: FastAPI):
     # startup_done_event signals the T-65 monitor that initialization is complete.
     startup_done_event = asyncio.Event()
 
-    # Minimal startup: no pipeline execution, no premature API calls.
-    # The T-65 monitor will trigger the ONLY run of the full pipeline (fetch→score→optimize).
+    # Minimal startup: zero API calls, zero pipeline work, zero optimization.
+    # The T-65 monitor is the SOLE trigger for the full pipeline (fetch→score→optimize).
+    # Picks are locked at T-65 and served from cache until slate completion.
+    # See CLAUDE.md § "T-65 Sniper Architecture" for detailed timing model.
     async def _startup_init():
         import traceback
         logger.info(
-            "Startup complete: frozen picks restored=%s; "
-            "T-65 monitor will fetch fresh data and generate lineups at lock time",
+            "Startup: frozen picks restored=%s. "
+            "T-65 monitor will fetch fresh data and generate lineups at T-65 lock time. "
+            "No other pipeline work allowed during active slate.",
             _restored_frozen,
         )
         startup_done_event.set()

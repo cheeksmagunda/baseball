@@ -13,32 +13,36 @@ A rule-based scoring engine and draft optimizer for **Real Sports DFS** (basebal
 
 ## Architecture
 
+### T-65 Event-Driven Timing
+
+The core design principle: **One pipeline run at exactly T-65 (65 minutes before first pitch), then picks are locked.**
+
 ```
-┌─────────────┐     ┌──────────────┐     ┌────────────────┐
-│  MLB Stats   │────▶│  Scoring     │────▶│  Draft          │
-│  API (live)  │     │  Engine      │     │  Optimizer      │
-└─────────────┘     │  (0-100)     │     │  (5 slots)      │
-                    └──────┬───────┘     └────────┬────────┘
-                           │                      │
-                    ┌──────▼───────┐     ┌────────▼────────┐
-                    │  RS Range    │     │  Rearrangement   │
-                    │  Estimation  │     │  Inequality      │
-                    └──────────────┘     └─────────────────┘
-                           │
-                    ┌──────▼───────┐
-                    │  Calibration │
-                    │  Feedback    │
-                    └──────────────┘
+App Startup (pre-T-65)        T-65 Lock                   T-60 Unlock
+     │                          │                            │
+     ├─ Load cache              ├─ Fetch MLB data            ├─ Serve picks
+     ├─ Start monitor           ├─ Score players             ├─ Users draft
+     └─ Sleep (0 API calls)     ├─ Optimize lineups          │
+                                ├─ Freeze cache              └─ Monitor completion
+                                └─ Lock picks
 ```
 
-### Four-Stage Pipeline
+**This ensures:**
+- Fresh data (MLB schedule, game conditions) at the moment of line-locking
+- No mid-slate interference (e.g., a dyno restart) changes picks
+- No fallback to stale data — if T-65 pipeline fails, `/optimize` returns an error
+- Zero API activity outside the T-65 window
 
-1. **Collect** (`app/services/data_collection.py`) — Fetch today's MLB schedule, player stats, and game context from the MLB Stats API
+See CLAUDE.md § "T-65 Sniper Architecture" for complete timing details.
+
+### Four-Stage Pipeline (Runs Once at T-65)
+
+1. **Collect** (`app/services/data_collection.py`) — Fetch fresh MLB schedule, player stats, game context, Vegas lines
 2. **Score** (`app/services/scoring_engine.py`) — Rate each player 0-100 via trait-based profiling (pitchers: 5 traits, batters: 7 traits)
-3. **Filter** (`app/services/filter_strategy.py`) — Apply five sequential filters: slate classification, environmental advantage, ownership leverage, boost optimization, slot sequencing
-4. **Optimize** (`app/routers/filter_strategy.py` → `run_dual_filter_strategy`) — Produce Starting 5 + Moonshot lineups
+3. **Filter** (`app/services/filter_strategy.py`) — Apply V8.0 strategy: slate classification, popularity/crowd-avoidance, environmental advantage, composition rules
+4. **Optimize** (`app/routers/filter_strategy.py` → `run_dual_filter_strategy`) — Produce Starting 5 + Moonshot lineups, freeze in cache
 
-The primary optimization path is `filter_strategy`, not `draft_optimizer.py` (which is dead code kept only for lineup evaluation).
+The primary optimization path is `filter_strategy`. The `/api/pipeline/*` manual endpoints exist for post-slate testing only and are gated to prevent mid-slate interference.
 
 ### Philosophy
 
@@ -70,18 +74,19 @@ The scoring engine outputs a **0-100 ranking signal**, not an RS prediction. We 
 
 **Important:** `card_boost` is revealed during/after the draft and must NEVER be used as a scoring engine input. League-average defaults (ERA, WHIP, OPS, K%) and all scaling thresholds are centralized in `app/core/constants.py`. Env-score functions use shared `_graduated_scale()` helpers in `app/services/filter_strategy.py`.
 
-## Popularity Signal Aggregator
+## Popularity Signal Aggregator (Pre-Game Signals Only)
 
-The optimizer automatically fades over-hyped players and targets under-the-radar picks using real-time web signals:
+The optimizer automatically fades over-hyped players and targets under-the-radar picks using **pre-game public signals only**:
 
 | Source | Weight | What It Measures |
 |---|---|---|
-| Social trending | 40% | Google Trends — is the casual public talking about this player? |
-| Sports news | 20% | ESPN/MLB.com RSS — is this player in headlines? |
-| DFS ownership | 20% | RotoGrinders/NumberFire — cross-platform fantasy ownership |
-| Search volume | 20% | Google autocomplete — casual search interest |
+| Social trending | 45% | Google Trends — is the casual public talking about this player? |
+| Sports news | 25% | ESPN/MLB.com RSS — is this player in headlines? |
+| Search volume | 30% | Google autocomplete — casual search interest |
 
-**Classification:** FADE (25% EV penalty), TARGET (15% EV bonus), or NEUTRAL. The key insight: "trending" is not the same as "popular." A breakout rookie trending upward is a TARGET. A slumping star trending on ESPN is a FADE.
+**Intentionally excluded:** RotoGrinders/NumberFire platform ownership — this is only visible during the draft and violates the pre-game signals constraint.
+
+**Classification:** FADE (3.0× EV swing: 0.50x penalty), TARGET (3.0× EV swing: 1.50x bonus), or NEUTRAL (1.0x). This is the **primary** EV signal. Target batters average RS 3.57 with 73.6% Highest-Value rate. Fade batters average RS 0.98 with 9.6% HV rate — a **3.6× differential** that dominates other pre-game signals. See CLAUDE.md § "V8.0 Core Architecture" for detailed EV formula.
 
 ### Sharp Signal (Underground)
 
