@@ -576,6 +576,31 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
 
         updated += 1
 
+    # Validate that team stats were successfully enriched — critical for env scoring
+    # A NULL team stat field indicates MLB API data was unavailable, which silently
+    # degrades the primary environmental signal. Per the "no fallbacks" rule, fail loudly.
+    for game in games:
+        missing_fields = []
+        if game.home_team_ops is None:
+            missing_fields.append(f"home_team_ops ({game.home_team})")
+        if game.away_team_ops is None:
+            missing_fields.append(f"away_team_ops ({game.away_team})")
+        if game.home_team_k_pct is None:
+            missing_fields.append(f"home_team_k_pct ({game.home_team})")
+        if game.away_team_k_pct is None:
+            missing_fields.append(f"away_team_k_pct ({game.away_team})")
+        if game.home_bullpen_era is None:
+            missing_fields.append(f"home_bullpen_era ({game.home_team})")
+        if game.away_bullpen_era is None:
+            missing_fields.append(f"away_bullpen_era ({game.away_team})")
+
+        if missing_fields:
+            raise RuntimeError(
+                f"Team stats enrichment failed for {game.home_team} vs {game.away_team}: "
+                f"{', '.join(missing_fields)} could not be fetched from MLB API. "
+                "Pipeline must fail loudly."
+            )
+
     db.commit()
     return updated
 
