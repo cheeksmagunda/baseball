@@ -86,6 +86,10 @@ from app.core.constants import (
     POP_MODIFIER_CEILING,
     POP_FACTOR_RAW_MIN,
     POP_FACTOR_RAW_MAX,
+    ENV_MODIFIER_FLOOR,
+    ENV_MODIFIER_CEILING,
+    TRAIT_MODIFIER_FLOOR,
+    TRAIT_MODIFIER_CEILING,
     # Graduated env-score scaling thresholds
     PITCHER_ENV_OPS_CEILING,
     PITCHER_ENV_OPS_FLOOR,

@@ -260,11 +260,40 @@ async def targeted_slate_monitor(
     # -----------------------------------------------------------------------
     # Use the same active-date logic as the startup pipeline so the monitor
     # targets tomorrow's slate when today's games are already complete.
+    #
+    # Bootstrap: the monitor cannot sleep until T-65 without knowing when
+    # first pitch is, and that requires SlateGame.scheduled_game_time rows
+    # in the DB. On a fresh deploy (or after a restart that purged the cache
+    # during the T-60 window), no Slate row exists for today. Fetch the
+    # schedule here — this is the ONE MLB API call allowed outside T-65,
+    # because without it the monitor has no idea when T-65 is.
+    # When the restart happens AFTER T-65 (inside the T-60 window), main.py
+    # has already purged lineup_cache so is_frozen=False. Phase 2 below will
+    # see now >= lock_time_utc and skip the sleep; Phase 3's "if is_frozen"
+    # guard will NOT fire, so run_full_pipeline executes immediately with
+    # fresh live data and build_and_cache_lineups re-freezes the cache.
+    from app.services.data_collection import fetch_schedule_for_date
+    from app.routers.filter_strategy import _get_active_slate_date
+
+    today = date.today()
     db = SessionLocal()
     try:
-        from app.routers.filter_strategy import _get_active_slate_date
+        # Use _get_first_pitch_utc as the "do we know T-65?" probe.
+        # fetch_schedule_for_date is idempotent (upserts), so it's safe to
+        # call whether the Slate row is missing OR present-but-empty.
+        if _get_first_pitch_utc(db, today) is None:
+            logger.info("Monitor bootstrap: fetching schedule for %s", today)
+            await fetch_schedule_for_date(db, today)
+
         monitor_date = _get_active_slate_date(db)
         first_pitch_utc = _get_first_pitch_utc(db, monitor_date)
+
+        # If _get_active_slate_date targeted tomorrow (today's slate empty
+        # or all-final), make sure tomorrow's schedule is populated too.
+        if first_pitch_utc is None and monitor_date != today:
+            logger.info("Monitor bootstrap: fetching schedule for %s", monitor_date)
+            await fetch_schedule_for_date(db, monitor_date)
+            first_pitch_utc = _get_first_pitch_utc(db, monitor_date)
     finally:
         db.close()
 
