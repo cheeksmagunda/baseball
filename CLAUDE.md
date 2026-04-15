@@ -278,6 +278,43 @@ Post-EV composition (applied in `_enforce_composition`):
 - `ENV_MODIFIER_FLOOR = 0.70`, `ENV_MODIFIER_CEILING = 1.30` (was 0.50/1.50)
 - `TRAIT_MODIFIER_FLOOR = 0.85`, `TRAIT_MODIFIER_CEILING = 1.15` (was 0.70/1.30)
 
+### V8.1 Changes (April 15 — Series Context, Bullpen ERA, Vegas Lines, Cache Restart Guard)
+
+**Six production fixes addressing the April 14 post-mortem (0/4 batters, Buxton missed).**
+
+**Fix 1 — Cache restart guard** (`app/main.py`, `app/services/lineup_cache.py`)
+- Root cause: `lineup_cache.purge()` was called unconditionally on every app start. A Railway dyno restart after T-65 wiped the frozen picks and regenerated from a smaller pool (started/final games excluded), producing different picks mid-slate.
+- Fix: On startup, check if today's slate is active AND T-65 has already passed. If so, call `lineup_cache.restore_and_refreeze(first_pitch_utc)` — loads from SQLite/Redis and re-freezes without regenerating. Only purge on normal (pre-T-65) restarts.
+- `slate_monitor.py` Phase 3 guarded with `if lineup_cache.is_frozen:` — skips the final pipeline run if picks were already restored on startup.
+
+**Fix 2 — Bullpen ERA** (`app/core/mlb_api.py`, `app/services/data_collection.py`)
+- Added `get_team_pitching_stats(team_id, season)`. `enrich_slate_game_team_stats()` now fetches hitting + pitching in parallel, populating `home/away_bullpen_era` on `SlateGame`.
+- Feeds Group A A4 (`opp_bullpen_era`) in `compute_batter_env_score()` — was always NULL before.
+
+**Fix 3 — Series/H2H context** (`app/models/slate.py`, `app/services/data_collection.py`, `app/services/filter_strategy.py`, `app/core/constants.py`)
+- Added 4 nullable columns to `SlateGame`: `series_home_wins`, `series_away_wins`, `home_team_l10_wins`, `away_team_l10_wins`.
+- `enrich_slate_game_series_context()`: fetches last 14 days of each team's schedule, computes current-series wins and last-10-game wins.
+- **Group D env scoring** (±0.8 additive): series leading ≥2 → +0.6; trailing ≥2 → −0.6; hot L10 ≥7 → +0.2; cold L10 ≤3 → −0.2. `BATTER_ENV_MAX_SCORE` raised 5.5 → 6.3.
+- **Momentum gate** in `_compute_base_ev()`: caps `pop_factor` at NEUTRAL when team trails series ≥2 games AND L10 ≤3 wins simultaneously. Fires only when BOTH conditions are met. Pitchers exempt.
+
+**Fix 4 — Vegas lines** (`app/core/odds_api.py`, `app/config.py`, `app/services/data_collection.py`, `app/services/pipeline.py`)
+- New `app/core/odds_api.py` client. `DFS_ODDS_API_KEY` env var; omitting it skips enrichment with a loud warning (env scoring treats NULL lines as unknown/neutral — existing behavior).
+- `enrich_slate_game_vegas_lines()` populates `vegas_total`, `home_moneyline`, `away_moneyline`. Non-fatal in `run_full_pipeline()`.
+
+**Fix 5 — Condition matrix** (`app/services/condition_classifier.py`)
+- Version bumped to `"6.1"`. `RS_CONDITION_OBSERVATIONS` updated with April 14 outcomes.
+
+**Fix 6 — Quality pass** (multiple files)
+- `NON_PLAYING_GAME_STATUSES` extracted to `constants.py`; 3 inline duplicates removed.
+- All inline imports inside hot functions moved to module-level in `filter_strategy.py`.
+- Module-level loggers added to `data_collection.py` and `pipeline.py`.
+- `_extract_record()` returns `(None, None, None)` on empty data — prevents momentum gate false-positive on partial API failure.
+
+**New constants (`app/core/constants.py`):**
+- `NON_PLAYING_GAME_STATUSES`, `SERIES_LEADING_BONUS`, `SERIES_TRAILING_PENALTY`, `TEAM_HOT_L10_THRESHOLD`, `TEAM_COLD_L10_THRESHOLD`, `TEAM_HOT_L10_BONUS`, `TEAM_COLD_L10_PENALTY`, `BATTER_ENV_MAX_SCORE = 6.3`, `MOMENTUM_GATE_SERIES_DEFICIT = 2`, `MOMENTUM_GATE_L10_CEILING = 3`
+
+---
+
 ### V5.0 Changes (April 13 — Pitcher-Anchor Rule)
 
 **Design change:** Every lineup (both Starting 5 and Moonshot) is now structurally fixed at **exactly 1 SP + 4 batters**, with the pitcher pinned to **Slot 1 (2.0x multiplier)**. The V3.x dynamic pitcher cap (1/2/3 based on boosted-pool richness) and the Slot 1 Differentiator contrarian swap are both retired.

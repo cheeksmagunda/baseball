@@ -395,7 +395,33 @@ BATTER_ENV_WARM_TEMP_THRESHOLD = 80      # °F at or above → warm-weather bonu
 BATTER_ENV_WARM_TEMP_BONUS = 0.2         # venue bonus for warm conditions
 BATTER_ENV_WIND_OUT_BONUS = 0.5          # venue bonus for wind blowing out
 BATTER_ENV_WIND_OUT_DIRECTIONS = ("OUT", "L TO R", "R TO L", "OUT TO CF")
-BATTER_ENV_MAX_SCORE = 5.5               # 2.0 (run env cap) + 2.0 (situation) + 1.0 (venue) + 0.5 (debut)
+
+# Batter env factors — Group D (series/momentum)
+# Applied as bonus/deduction based on series context and recent form.
+# A batter whose team trails 0-2 in a series and is on a cold L10 streak
+# is in a genuinely bad situation regardless of their low media buzz.
+SERIES_LEADING_BONUS = 0.6       # batter's team leads series 2-0 or better → +0.6
+SERIES_TRAILING_PENALTY = 0.6    # batter's team trails series 0-2 or worse → -0.6
+TEAM_HOT_L10_THRESHOLD = 7       # last-10 wins at or above → hot team bonus
+TEAM_COLD_L10_THRESHOLD = 3      # last-10 wins at or below → cold team penalty
+TEAM_HOT_L10_BONUS = 0.2         # bonus for hot team (last 10 ≥ 7 wins)
+TEAM_COLD_L10_PENALTY = 0.2      # penalty for cold team (last 10 ≤ 3 wins)
+
+# Raised from 5.5 to 6.3 to accommodate Group D headroom (max 0.8 additive).
+BATTER_ENV_MAX_SCORE = 6.3               # 2.0 (run env cap) + 2.0 (situation) + 1.0 (venue) + 0.5 (debut) + 0.8 (series/momentum)
+
+# Momentum gate — caps pop_factor at NEUTRAL for batters simultaneously trailing
+# in series AND on a cold L10 streak.  Prevents TARGET misclassification of
+# "correctly-avoided" players (e.g., Red Sox batter in a sweep).
+MOMENTUM_GATE_SERIES_DEFICIT = 2   # series deficit at or above triggers gate
+MOMENTUM_GATE_L10_CEILING = 3      # L10 wins at or below triggers gate (cold + trailing)
+
+# ---------------------------------------------------------------------------
+# Game status constants
+# Games in these statuses will never receive scores; treat as "done" so the
+# post-lock monitor and cache completion check don't perma-freeze.
+# ---------------------------------------------------------------------------
+NON_PLAYING_GAME_STATUSES = frozenset({"Postponed", "Cancelled", "Suspended"})
 
 # Scoring engine scaling (K/9 shared between scoring_engine and filter_strategy)
 SCORING_K9_FLOOR = 6.0                # K/9 at or below → 0 pts

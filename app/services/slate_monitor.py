@@ -147,6 +147,7 @@ async def _post_lock_monitor(today: date) -> None:
     (all games final) it clears the frozen cache and pre-warms tomorrow's
     pipeline. No lineup rebuilds — picks are locked.
     """
+    from app.core.constants import NON_PLAYING_GAME_STATUSES
     from app.database import SessionLocal
     from app.models.slate import Slate, SlateGame
     from app.services.lineup_cache import lineup_cache
@@ -176,10 +177,9 @@ async def _post_lock_monitor(today: date) -> None:
                 if not games:
                     continue
 
-                _NON_PLAYING = {"Postponed", "Cancelled", "Suspended"}
                 all_final = all(
                     (g.home_score is not None and g.away_score is not None)
-                    or g.game_status in _NON_PLAYING
+                    or g.game_status in NON_PLAYING_GAME_STATUSES
                     for g in games
                 )
 
@@ -301,10 +301,9 @@ async def _fallback_status_monitor(monitor_date: date | None = None) -> None:
 
                 prev_remaining = remaining
 
-                _NON_PLAYING = {"Postponed", "Cancelled", "Suspended"}
                 all_final = all(
                     (g.home_score is not None and g.away_score is not None)
-                    or g.game_status in _NON_PLAYING
+                    or g.game_status in NON_PLAYING_GAME_STATUSES
                     for g in games
                 )
 
@@ -417,40 +416,54 @@ async def targeted_slate_monitor(
     # -----------------------------------------------------------------------
     # Phase 3: Final pipeline run + cache freeze
     # -----------------------------------------------------------------------
-    logger.info(
-        "T-%d FINAL RUN — fetching data, building lineups, freezing cache",
-        LOCK_MINUTES_BEFORE_PITCH,
-    )
 
-    db = SessionLocal()
-    try:
+    # If the cache is already frozen (app restarted during live slate and
+    # restore_and_refreeze() succeeded in main.py), skip the final pipeline
+    # run entirely.  Re-running with started/final games excluded would
+    # produce a different candidate pool and — even though store() is a
+    # no-op while frozen — attempting build_and_cache_lineups() on a reduced
+    # pool risks a ValueError/RuntimeError that would crash this monitor task.
+    if lineup_cache.is_frozen:
+        logger.info(
+            "T-%d monitor: cache already frozen (restart during live slate) — "
+            "skipping final pipeline run, proceeding to post-lock monitoring.",
+            LOCK_MINUTES_BEFORE_PITCH,
+        )
+    else:
+        logger.info(
+            "T-%d FINAL RUN — fetching data, building lineups, freezing cache",
+            LOCK_MINUTES_BEFORE_PITCH,
+        )
+
+        db = SessionLocal()
         try:
-            await run_full_pipeline(db, monitor_date)
-            logger.info("T-%d pipeline complete", LOCK_MINUTES_BEFORE_PITCH)
-        except Exception as exc:
-            logger.error(
-                "T-%d pipeline failed: %s — attempting lineup build with existing data",
-                LOCK_MINUTES_BEFORE_PITCH, exc,
-            )
+            try:
+                await run_full_pipeline(db, monitor_date)
+                logger.info("T-%d pipeline complete", LOCK_MINUTES_BEFORE_PITCH)
+            except Exception as exc:
+                logger.error(
+                    "T-%d pipeline failed: %s — attempting lineup build with existing data",
+                    LOCK_MINUTES_BEFORE_PITCH, exc,
+                )
 
-        # No try/except — if the build fails, the exception propagates and
-        # the monitor task crashes loudly.  The old code caught the exception
-        # (including RuntimeError("fail loudly")) and silently continued to
-        # _post_lock_monitor, leaving the cache unfrozen.
-        cached = await build_and_cache_lineups(db, slate_date=monitor_date)
-        if cached:
-            lineup_cache.freeze(first_pitch_utc=first_pitch_utc)
-            logger.info(
-                "Cache FROZEN. First pitch: %s UTC. Picks are locked.",
-                first_pitch_utc.strftime("%H:%M"),
-            )
-        else:
-            raise RuntimeError(
-                f"T-{LOCK_MINUTES_BEFORE_PITCH} lineup build returned nothing — "
-                "no slate data available; pipeline must fail loudly"
-            )
-    finally:
-        db.close()
+            # No try/except — if the build fails, the exception propagates and
+            # the monitor task crashes loudly.  The old code caught the exception
+            # (including RuntimeError("fail loudly")) and silently continued to
+            # _post_lock_monitor, leaving the cache unfrozen.
+            cached = await build_and_cache_lineups(db, slate_date=monitor_date)
+            if cached:
+                lineup_cache.freeze(first_pitch_utc=first_pitch_utc)
+                logger.info(
+                    "Cache FROZEN. First pitch: %s UTC. Picks are locked.",
+                    first_pitch_utc.strftime("%H:%M"),
+                )
+            else:
+                raise RuntimeError(
+                    f"T-{LOCK_MINUTES_BEFORE_PITCH} lineup build returned nothing — "
+                    "no slate data available; pipeline must fail loudly"
+                )
+        finally:
+            db.close()
 
     # -----------------------------------------------------------------------
     # Phase 4: Lightweight post-lock monitoring

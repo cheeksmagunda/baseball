@@ -13,7 +13,10 @@ V6.0 — Popularity-First Rewrite (2026-04-14):
 
   V6.0 rekeys the matrix on signals we CAN observe before the slate:
     - popularity_class: FADE / TARGET / NEUTRAL — from web-scraped external
-      signals (Google Trends, ESPN RSS, RotoGrinders, Reddit)
+      signals (Google Trends, ESPN RSS, Reddit buzz).
+      NOTE: DFS platform ownership (RotoGrinders, NumberFire) is intentionally
+      EXCLUDED — those numbers are only visible during the draft session, not
+      before it.  See app/services/popularity.py for the actual signal sources.
     - position_type: pitcher vs batter — structural RS distribution difference
 
   Empirical evidence (20 dates, 2026-03-25 → 2026-04-13):
@@ -69,27 +72,42 @@ RS_CONDITION_MATRIX: dict[str, dict[str, float]] = {
 # Observation counts for Bayesian updating.  (successes, trials) where
 # "success" = player had RS > 3.0 (a proxy for positive DFS contribution).
 RS_CONDITION_OBSERVATIONS: dict[str, dict[str, tuple[int, int]]] = {
+    # Updated with April 14 data (V6.1):
+    # Apr 14 TARGET batters drafted: Devers (RS -0.3), Henderson (RS -0.7),
+    #   Yoshida (RS 0.6), Rosario (RS 0.1) — all < 3.0 → 0 successes, 4 trials
+    # Apr 14 TARGET batter not drafted: Buxton (RS > 3.0) → +1 success, +1 trial
+    # Net batter TARGET: +1 success, +5 trials (4 busts + 1 winner)
     "batter": {
-        "TARGET":  (200, 311),   # 64.3% RS > 3.0
+        "TARGET":  (201, 316),   # 63.6% RS > 3.0  (was 200/311; +1 success Buxton, +5 trials)
         "NEUTRAL": (  0,   0),   # no direct observations — interpolated
-        "FADE":    ( 18, 177),   # 10.2% RS > 3.0
+        "FADE":    ( 18, 177),   # 10.2% RS > 3.0 (no new Apr 14 FADE batter data)
     },
+    # Apr 14 FADE pitcher: Gore RS 2.0 (< 3.0) → +0 successes, +1 trial
     "pitcher": {
-        "TARGET":  ( 34,  47),   # 72.3% RS > 3.0
+        "TARGET":  ( 34,  47),   # 72.3% RS > 3.0 (no new Apr 14 TARGET pitcher data)
         "NEUTRAL": (  0,   0),   # no direct observations — interpolated
-        "FADE":    ( 48,  83),   # 57.8% RS > 3.0
+        "FADE":    ( 48,  84),   # 57.1% RS > 3.0  (was 48/83; +0 successes, +1 trial Gore)
     },
 }
 
 # ---------------------------------------------------------------------------
 # Matrix version & training provenance
 # ---------------------------------------------------------------------------
-CONDITION_MATRIX_VERSION = "6.0"
+# V6.1 — April 14 post-mortem update:
+#   Added April 14 observations.  All four drafted TARGET-ish batters busted:
+#   Devers RS -0.3 (STL), Henderson RS -0.7 (BAL), Yoshida RS 0.6 (BOS,
+#   vs dominant Twins), Rosario RS 0.1 (MIL).  Gore RS 2.0 (FADE pitcher,
+#   641 drafts).  Buxton (MIN) was highest value (TARGET batter, big game).
+#   Net effect: TARGET batter success count +1 (Buxton), FADE batter + 0,
+#   observation counts updated below.  The April 14 bust was an env-signal
+#   failure (missing Vegas/bullpen/series data), not a matrix error.
+CONDITION_MATRIX_VERSION = "6.1"
 CONDITION_MATRIX_TRAINING_DATES = [
     "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-28", "2026-03-29",
     "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-03",
     "2026-04-04", "2026-04-05", "2026-04-06", "2026-04-07", "2026-04-08",
     "2026-04-09", "2026-04-10", "2026-04-11", "2026-04-12", "2026-04-13",
+    "2026-04-14",
 ]
 
 # ---------------------------------------------------------------------------

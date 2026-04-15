@@ -43,10 +43,19 @@ async def get_team_roster(team_id: int) -> dict:
 
 
 async def get_team_stats(team_id: int, season: int) -> dict:
-    """Get team aggregate stats."""
+    """Get team aggregate batting stats."""
     return await _get(f"/teams/{team_id}/stats", {
         "stats": "season",
         "group": "hitting",
+        "season": season,
+    })
+
+
+async def get_team_pitching_stats(team_id: int, season: int) -> dict:
+    """Get team aggregate pitching stats (used to populate bullpen ERA proxy)."""
+    return await _get(f"/teams/{team_id}/stats", {
+        "stats": "season",
+        "group": "pitching",
         "season": season,
     })
 

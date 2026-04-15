@@ -9,9 +9,12 @@ The full pipeline is:
 """
 
 import asyncio
+import logging
 from datetime import date
 
 from sqlalchemy.orm import Session, selectinload, joinedload
+
+logger = logging.getLogger(__name__)
 
 from app.core.constants import PITCHER_POSITIONS
 from app.models.player import Player
@@ -23,6 +26,8 @@ from app.services.data_collection import (
     fetch_player_season_stats,
     populate_slate_players,
     enrich_slate_game_team_stats,
+    enrich_slate_game_series_context,
+    enrich_slate_game_vegas_lines,
 )
 from app.services.filter_strategy import (
     FilteredCandidate,
@@ -46,8 +51,6 @@ async def run_fetch(db: Session, game_date: date) -> dict:
 async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     """Fetch stats for all players in a slate, then backfill SlateGame starter stats."""
     from app.models.player import PlayerStats
-    import logging
-    logger = logging.getLogger(__name__)
 
     slate = db.query(Slate).filter_by(date=game_date).first()
     if not slate:
@@ -384,11 +387,17 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 is_debut_or_return=sp.is_debut_or_return,
                 team_moneyline=team_ml,
             )
+            series_team_w: int | None = None
+            series_opp_w: int | None = None
+            team_l10: int | None = None
         elif not is_pitcher and game:
             is_home = game.home_team == player.team
             opp_era = game.away_starter_era if is_home else game.home_starter_era
             team_ml = game.home_moneyline if is_home else game.away_moneyline
             opp_bp_era = game.away_bullpen_era if is_home else game.home_bullpen_era
+            series_team_w: int | None = game.series_home_wins if is_home else game.series_away_wins
+            series_opp_w: int | None = game.series_away_wins if is_home else game.series_home_wins
+            team_l10: int | None = game.home_team_l10_wins if is_home else game.away_team_l10_wins
             env_score, env_factors, _unknown = compute_batter_env_score(
                 vegas_total=game.vegas_total,
                 opp_pitcher_era=opp_era,
@@ -401,10 +410,16 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 temperature_f=game.temperature_f,
                 team_moneyline=team_ml,
                 opp_bullpen_era=opp_bp_era,
+                series_team_wins=series_team_w,
+                series_opp_wins=series_opp_w,
+                team_l10_wins=team_l10,
             )
         else:
             env_score = 0.5
             env_factors = []
+            series_team_w = None
+            series_opp_w = None
+            team_l10 = None
 
         # Store env_score on slate player for reference
         sp.env_score = env_score
@@ -419,6 +434,9 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             is_debut_or_return=sp.is_debut_or_return,
             game_id=game_id,
             is_pitcher=is_pitcher,
+            series_team_wins=series_team_w,
+            series_opp_wins=series_opp_w,
+            team_l10_wins=team_l10,
         ))
 
     db.commit()
@@ -468,6 +486,21 @@ async def run_full_pipeline(db: Session, game_date: date) -> dict:
         roster_result = await populate_slate_players(db, slate)
 
     stats_result = await run_fetch_player_stats(db, game_date)
+
+    if slate:
+        # Enrich series context (series wins, recent L10 form) for batter env Group D.
+        try:
+            await enrich_slate_game_series_context(db, slate)
+        except Exception as exc:
+            logger.warning("Series context enrichment failed (non-fatal): %s", exc)
+
+        # Enrich Vegas lines (moneyline + O/U) for pitcher/batter env scoring.
+        # Non-fatal: runs only when DFS_ODDS_API_KEY is configured.
+        try:
+            await enrich_slate_game_vegas_lines(db, slate)
+        except Exception as exc:
+            logger.warning("Vegas lines enrichment failed (non-fatal): %s", exc)
+
     scores = run_score_slate(db, game_date)
 
     return {

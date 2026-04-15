@@ -4,8 +4,11 @@ and stores them in the database.
 """
 
 import asyncio
+import logging
 from datetime import date, datetime as _datetime
 from zoneinfo import ZoneInfo
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy.orm import Session
 
@@ -489,32 +492,50 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
 
 async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -> int:
     """
-    Fetch team-level batting OPS and K% for every game in the slate and store on SlateGame.
+    Fetch team-level batting OPS/K% and pitching ERA for every game in the
+    slate and store on SlateGame.
 
-    Used by Filter 2 pitcher env scoring: weak opponent OPS (Factor 1) and
-    high-K opponent (Factor 2). Both were previously always None because no
-    code populated the team-level stats.
+    Batting (hitting group): populates home/away_team_ops and home/away_team_k_pct.
+      Used by pitcher env scoring: weak opponent OPS (Factor 1) and
+      high-K opponent (Factor 2).
+
+    Pitching (pitching group): populates home/away_bullpen_era as a team
+      pitching ERA proxy.  Used by batter env scoring Group A A4 (vulnerable
+      bullpen).  True bullpen ERA (relievers only) would require a roster-level
+      split; team ERA is an adequate proxy vs. NULL.
     """
-    import logging
-    logger = logging.getLogger(__name__)
+    from app.core.mlb_api import get_team_pitching_stats
 
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
     teams = {g.home_team for g in games} | {g.away_team for g in games}
 
-    async def _fetch(team: str) -> tuple[str, dict | None]:
+    async def _fetch_batting(team: str) -> tuple[str, dict | None]:
         team_id = TEAM_MLB_IDS.get(team)
         if not team_id:
             return team, None
         try:
             return team, await get_team_stats(team_id, season)
         except Exception as exc:
-            logger.warning("Team stats fetch failed for %s: %s", team, exc)
+            logger.warning("Team batting stats fetch failed for %s: %s", team, exc)
             return team, None
 
-    results = await asyncio.gather(*[_fetch(t) for t in teams])
+    async def _fetch_pitching(team: str) -> tuple[str, dict | None]:
+        team_id = TEAM_MLB_IDS.get(team)
+        if not team_id:
+            return team, None
+        try:
+            return team, await get_team_pitching_stats(team_id, season)
+        except Exception as exc:
+            logger.warning("Team pitching stats fetch failed for %s: %s", team, exc)
+            return team, None
 
-    team_stats: dict[str, dict] = {}
-    for team, data in results:
+    batting_results, pitching_results = await asyncio.gather(
+        asyncio.gather(*[_fetch_batting(t) for t in teams]),
+        asyncio.gather(*[_fetch_pitching(t) for t in teams]),
+    )
+
+    team_batting: dict[str, dict] = {}
+    for team, data in batting_results:
         if data is None:
             continue
         splits = (data.get("stats") or [{}])[0].get("splits", [])
@@ -526,21 +547,251 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
         pa = s.get("plateAppearances", 0)
         so = s.get("strikeOuts", 0)
         k_pct = (so / pa) if pa > 0 else None
-        team_stats[team] = {"ops": ops, "k_pct": k_pct}
+        team_batting[team] = {"ops": ops, "k_pct": k_pct}
+
+    team_pitching: dict[str, dict] = {}
+    for team, data in pitching_results:
+        if data is None:
+            continue
+        splits = (data.get("stats") or [{}])[0].get("splits", [])
+        if not splits:
+            continue
+        s = splits[0].get("stat", {})
+        era_str = s.get("era", "")
+        era = float(era_str) if era_str else None
+        team_pitching[team] = {"era": era}
 
     updated = 0
     for game in games:
-        home = team_stats.get(game.home_team, {})
-        away = team_stats.get(game.away_team, {})
-        if home.get("ops") is not None:
-            game.home_team_ops = home["ops"]
-        if home.get("k_pct") is not None:
-            game.home_team_k_pct = home["k_pct"]
-        if away.get("ops") is not None:
-            game.away_team_ops = away["ops"]
-        if away.get("k_pct") is not None:
-            game.away_team_k_pct = away["k_pct"]
+        home_bat = team_batting.get(game.home_team, {})
+        away_bat = team_batting.get(game.away_team, {})
+        home_pit = team_pitching.get(game.home_team, {})
+        away_pit = team_pitching.get(game.away_team, {})
+
+        if home_bat.get("ops") is not None:
+            game.home_team_ops = home_bat["ops"]
+        if home_bat.get("k_pct") is not None:
+            game.home_team_k_pct = home_bat["k_pct"]
+        if away_bat.get("ops") is not None:
+            game.away_team_ops = away_bat["ops"]
+        if away_bat.get("k_pct") is not None:
+            game.away_team_k_pct = away_bat["k_pct"]
+
+        if home_pit.get("era") is not None:
+            game.home_bullpen_era = home_pit["era"]
+        if away_pit.get("era") is not None:
+            game.away_bullpen_era = away_pit["era"]
+
         updated += 1
 
     db.commit()
+    return updated
+
+
+async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
+    """
+    Populate series context (series_home_wins, series_away_wins) and recent
+    form (home_team_l10_wins, away_team_l10_wins) on every SlateGame for the
+    given slate.
+
+    Series context: how many games each team has won in the CURRENT series
+    (consecutive games between the same two opponents) BEFORE today's game.
+    Fetch each team's last 14 days of schedule, find games vs. the same opponent,
+    and count results.
+
+    Recent form (L10): count wins in the team's most recent 10 completed games.
+
+    Both fields remain NULL if the API fails — env scoring treats NULL as
+    unknown/neutral (no penalty, no bonus).
+    """
+    from datetime import timedelta
+
+    games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+    if not games:
+        return 0
+
+    slate_date: date = slate.date
+    lookback_start = (slate_date - timedelta(days=14)).isoformat()
+    lookback_end = (slate_date - timedelta(days=1)).isoformat()
+
+    teams = {g.home_team for g in games} | {g.away_team for g in games}
+
+    async def _fetch_team_schedule(team: str) -> tuple[str, list[dict]]:
+        team_id = TEAM_MLB_IDS.get(team)
+        if not team_id:
+            return team, []
+        try:
+            from app.core.mlb_api import _get
+            data = await _get("/schedule", {
+                "teamId": team_id,
+                "startDate": lookback_start,
+                "endDate": lookback_end,
+                "sportId": 1,
+                "hydrate": "linescore",
+            })
+            game_list: list[dict] = []
+            for date_entry in data.get("dates", []):
+                for g in date_entry.get("games", []):
+                    if g.get("status", {}).get("abstractGameState") == "Final":
+                        game_list.append(g)
+            return team, game_list
+        except Exception as exc:
+            logger.warning("Series context fetch failed for %s: %s", team, exc)
+            return team, []
+
+    results = await asyncio.gather(*[_fetch_team_schedule(t) for t in teams])
+    team_games: dict[str, list[dict]] = dict(results)
+
+    def _normalize(abbr: str) -> str:
+        return canonicalize_team(abbr).upper()
+
+    def _extract_record(team: str, opp: str) -> tuple[int | None, int | None, int | None]:
+        """
+        Return (series_wins, series_losses, l10_wins) for `team` vs `opp`.
+
+        series_wins/losses: consecutive games vs. opp immediately before
+        slate_date (the current series).
+        l10_wins: wins in the 10 most recent completed games (any opponent).
+
+        Returns (None, None, None) when no schedule data is available for the
+        team (API failure). This prevents the momentum gate from firing on
+        fabricated zeros — NULL values are treated as neutral (no penalty).
+        """
+        raw = team_games.get(team, [])
+        if not raw:
+            return None, None, None
+
+        def _game_date(g: dict) -> str:
+            return g.get("officialDate", g.get("gameDate", "")[:10])
+
+        sorted_games = sorted(raw, key=_game_date, reverse=True)
+
+        l10 = 0
+        for g in sorted_games[:10]:
+            teams_info = g.get("teams", {})
+            home_t = _normalize(teams_info.get("home", {}).get("team", {}).get("abbreviation", ""))
+            away_t = _normalize(teams_info.get("away", {}).get("team", {}).get("abbreviation", ""))
+            home_score = teams_info.get("home", {}).get("score")
+            away_score = teams_info.get("away", {}).get("score")
+            if home_score is None or away_score is None:
+                continue
+            team_n = _normalize(team)
+            if home_t == team_n:
+                if home_score > away_score:
+                    l10 += 1
+            elif away_t == team_n:
+                if away_score > home_score:
+                    l10 += 1
+
+        series_wins = 0
+        series_losses = 0
+        opp_n = _normalize(opp)
+        team_n = _normalize(team)
+        in_series = False
+        for g in sorted_games:
+            teams_info = g.get("teams", {})
+            home_t = _normalize(teams_info.get("home", {}).get("team", {}).get("abbreviation", ""))
+            away_t = _normalize(teams_info.get("away", {}).get("team", {}).get("abbreviation", ""))
+            is_vs_opp = (home_t == opp_n and away_t == team_n) or (away_t == opp_n and home_t == team_n)
+
+            if not is_vs_opp:
+                if in_series:
+                    break
+                continue
+
+            in_series = True
+            home_score = teams_info.get("home", {}).get("score")
+            away_score = teams_info.get("away", {}).get("score")
+            if home_score is None or away_score is None:
+                continue
+
+            if home_t == team_n:
+                if home_score > away_score:
+                    series_wins += 1
+                else:
+                    series_losses += 1
+            else:
+                if away_score > home_score:
+                    series_wins += 1
+                else:
+                    series_losses += 1
+
+        return series_wins, series_losses, l10
+
+    updated = 0
+    for game in games:
+        home_sw, _home_sl, home_l10 = _extract_record(game.home_team, game.away_team)
+        away_sw, _away_sl, away_l10 = _extract_record(game.away_team, game.home_team)
+
+        game.series_home_wins = home_sw
+        game.series_away_wins = away_sw
+        game.home_team_l10_wins = home_l10
+        game.away_team_l10_wins = away_l10
+        updated += 1
+
+    db.commit()
+    logger.info("Series context enriched for %d games on %s", updated, slate_date)
+    return updated
+
+
+async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
+    """
+    Fetch Vegas lines (moneylines + O/U totals) from The Odds API and store
+    them on SlateGame records.
+
+    Populates: vegas_total, home_moneyline, away_moneyline.
+
+    These feed directly into env scoring:
+      - compute_pitcher_env_score()  Factor 5: Moneyline Win bonus
+      - compute_batter_env_score()   Group A A1: Vegas O/U, A3: Moneyline
+
+    No fallback: if the API key is not configured, logs a warning and returns 0.
+    If the API call fails, raises RuntimeError (pipeline fails loudly).
+    """
+    from app.config import settings
+    from app.core.odds_api import fetch_mlb_odds
+
+    if not settings.odds_api_key:
+        logger.warning(
+            "DFS_ODDS_API_KEY not set — skipping Vegas lines enrichment. "
+            "Moneyline and O/U env signals will be NULL (unknown/neutral)."
+        )
+        return 0
+
+    games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+    if not games:
+        return 0
+
+    odds_data = await fetch_mlb_odds(settings.odds_api_key, slate.date)
+
+    # Build lookup: (home_abbr, away_abbr) → odds dict
+    odds_lookup: dict[tuple[str, str], dict] = {
+        (o["home_team"], o["away_team"]): o
+        for o in odds_data
+    }
+
+    updated = 0
+    for game in games:
+        key = (game.home_team.upper(), game.away_team.upper())
+        odds = odds_lookup.get(key)
+        if not odds:
+            logger.warning(
+                "No odds found for %s vs %s on %s",
+                game.home_team, game.away_team, slate.date,
+            )
+            continue
+
+        if odds.get("home_moneyline") is not None:
+            game.home_moneyline = odds["home_moneyline"]
+        if odds.get("away_moneyline") is not None:
+            game.away_moneyline = odds["away_moneyline"]
+        if odds.get("total") is not None:
+            game.vegas_total = odds["total"]
+        updated += 1
+
+    db.commit()
+    logger.info(
+        "Vegas lines enriched for %d of %d games on %s",
+        updated, len(games), slate.date,
+    )
     return updated
