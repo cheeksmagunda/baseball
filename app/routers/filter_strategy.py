@@ -21,7 +21,6 @@ from app.core.constants import (
     SCORING_K9_FLOOR,
 )
 from app.core.utils import find_player_by_name, get_trait_score
-from app.models.player import Player, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.schemas.scoring import TraitBreakdown
 from app.schemas.filter_strategy import (
@@ -47,7 +46,6 @@ from app.services.filter_strategy import (
 )
 from app.services.popularity import PopularityClass, get_popularity_profile
 from app.services.pipeline import run_full_pipeline
-from app.services.data_collection import fetch_player_season_stats
 from app.services.lineup_cache import lineup_cache
 
 logger = logging.getLogger(__name__)
@@ -88,52 +86,18 @@ async def _resolve_candidates(
     # popularity, env, and trait signals (see get_ownership_tier).
     cards = [c for c in cards if c.player_name]
 
-    # Stage 0: ensure every card has a Player record with real stats.
-    # Mega-ghost players (1-3 drafts) are the least likely to have existing
-    # records AND the most valuable — silently dropping them is catastrophic.
-    new_players: list[Player] = []
-    card_player_map: dict[str, Player] = {}
+    # Stage 0: map cards to Player records. All cards come from the pipeline's
+    # _load_active_slate, which derives them from SlatePlayer → Player rows
+    # already in the DB. A missing player is a pipeline data integrity error.
+    card_player_map: dict = {}
     for card in cards:
         player = find_player_by_name(db, card.player_name, card.team)
         if not player:
-            if not card.position:
-                raise ValueError(
-                    f"Player {card.player_name!r} has no position — cannot resolve candidate"
-                )
-            player = Player(
-                name=card.player_name,
-                name_normalized=normalize_name(card.player_name),
-                team=card.team or "UNK",
-                position=card.position,
-            )
-            db.add(player)
-            db.flush()
-            new_players.append(player)
-            logger.warning(
-                "Created missing Player: %s (%s, %s) — "
-                "drafts=%s, boost=%.1f. Fetching real stats from MLB API.",
-                card.player_name, card.team, card.position,
-                card.drafts, card.card_boost,
+            raise ValueError(
+                f"Player {card.player_name!r} ({card.team}) not found in database — "
+                "pipeline data integrity error"
             )
         card_player_map[f"{card.player_name}|{card.team}"] = player
-
-    # Fetch real stats for newly-created players — no zeros, no defaults.
-    if new_players:
-        stat_results = await asyncio.gather(
-            *[fetch_player_season_stats(db, p) for p in new_players],
-            return_exceptions=True,
-        )
-        for player, result in zip(new_players, stat_results):
-            if isinstance(result, Exception):
-                logger.error(
-                    "Stats fetch FAILED for %s (%s): %s — player will score with available data only",
-                    player.name, player.team, result,
-                )
-            else:
-                logger.info(
-                    "Fetched real stats for new player: %s (%s)",
-                    player.name, player.team,
-                )
 
     # Stage 1: synchronous work (DB lookups, scoring, env score)
     pre_candidates = []
@@ -679,8 +643,8 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
     Moonshot: Completely different 5 players — heavier anti-crowd lean,
               sharp signal boost, explosive trait bonus, game diversification.
     """
-    cards = req.cards
-    games = req.games
+    cards: list[FilterCard] = []
+    games: list[GameEnvironment] = []
     active_date = None  # resolved once below when needed
 
     if not cards:
@@ -796,10 +760,9 @@ async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_
     response = _build_response(dual, candidates)
 
     # Cache the result for subsequent frontend requests
-    if not req.cards:
-        if active_date is None:
-            active_date = _get_active_slate_date(db)
-        lineup_cache.store(response, slate_date=active_date)
+    if active_date is None:
+        active_date = _get_active_slate_date(db)
+    lineup_cache.store(response, slate_date=active_date)
 
     return response
 

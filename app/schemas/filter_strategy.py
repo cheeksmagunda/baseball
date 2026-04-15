@@ -56,8 +56,7 @@ class FilterCard(BaseModel):
 
 class FilterOptimizeRequest(BaseModel):
     """Request for the full filter strategy pipeline."""
-    cards: list[FilterCard]
-    games: list[GameEnvironment] = []
+    pass
 
 
 # ---------------------------------------------------------------------------
