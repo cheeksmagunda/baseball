@@ -1,163 +1,223 @@
-"""Recalibrate CONDITION_MATRIX and PITCHER_CONDITION_MATRIX from historical data.
+"""Backtest & recalibrate the V6.0 RS_CONDITION_MATRIX from historical data.
 
-Reads data/historical_players.csv and computes empirical HV rates per
-(ownership_tier × boost_tier) cell, separately for batters and pitchers.
+Replaces the V3/V4 script (ownership_tier × boost_tier) — that matrix is dead
+code since V6.0 rekeyed everything on (popularity_class × position_type).
 
-Uses the same tier thresholds as the fallback path in
-app/services/condition_classifier.get_ownership_tier (absolute draft counts)
-since historical_players.csv is a curated notable-player sample that lacks
-the full slate distribution for percentile calibration.
+Classification proxy
+--------------------
+The real FADE/TARGET/NEUTRAL labels come from pre-game web scraping
+(Google Trends, ESPN RSS, Reddit).  Historical CSVs don't store those labels,
+so we proxy using post-game leaderboard flags:
 
-HV definition: is_highest_value == 1 in historical_players.csv (this is the
-label the optimizer is optimizing to hit).
+  FADE    → is_most_popular=1  OR  is_most_drafted_3x=1
+              (high crowd attention: appears on volume leaderboards)
+  TARGET  → drafts ≤ 100  AND  not FADE
+              (ghost tier: under the radar)
+  NEUTRAL → everything else (100 < drafts, not on a crowd leaderboard)
 
-Output: prints new CONDITION_MATRIX, PITCHER_CONDITION_MATRIX, and
-corresponding _OBSERVATIONS dicts ready to paste into condition_classifier.py.
+Known selection bias: historical_players.csv captures leaderboard players
+only (Most Popular, Most Drafted 3x, Highest Value).  TARGET batters in this
+dataset are almost exclusively HV captures, so their HV rate and avg RS are
+biased upward.  FADE numbers are not biased (the full Most Popular leaderboard
+is captured).  NEUTRAL suffers mild upward bias (must have appeared on some
+leaderboard to be in the dataset).
+
+Usage
+-----
+    python scripts/recalibrate_condition_matrix.py
+
+Output: backtest table + current-vs-data comparison + paste-ready calibration
+values.  DOES NOT write to condition_classifier.py automatically.
 """
+
 import csv
-from collections import defaultdict
+import statistics
 from pathlib import Path
 
 HISTORICAL_PLAYERS_CSV = Path(__file__).resolve().parents[1] / "data" / "historical_players.csv"
 
-# Tier thresholds — match the fallback branch of
-# app/services/condition_classifier.get_ownership_tier
-GHOST_ABSOLUTE_DRAFT_FLOOR = 25
-GHOST_DRAFT_THRESHOLD = 100
-LOW_DRAFT_THRESHOLD = 200
-CHALK_DRAFT_THRESHOLD = 1500
-MEGA_CHALK_DRAFT_THRESHOLD = 2000
+# Proxy thresholds
+FADE_DRAFT_THRESHOLD = 100  # drafts > this AND flagged → FADE
+TARGET_DRAFT_CEILING = 100  # drafts ≤ this AND not FADE → TARGET
 
-BAYESIAN_PRIOR_ALPHA = 1.0
-BAYESIAN_PRIOR_BETA = 1.0
+# Success metric: RS > 3.0  (consistent with RS_CONDITION_OBSERVATIONS)
+RS_SUCCESS_THRESHOLD = 3.0
 
-OWNERSHIP_TIERS = ["ghost", "low", "medium", "chalk", "mega_chalk"]
-BOOST_TIERS = ["no_boost", "low_boost", "mid_boost", "elite_boost", "max_boost"]
-
-
-def get_ownership_tier(drafts: int) -> str:
-    if drafts <= GHOST_ABSOLUTE_DRAFT_FLOOR:
-        return "ghost"
-    if drafts < GHOST_DRAFT_THRESHOLD:
-        return "ghost"
-    if drafts < LOW_DRAFT_THRESHOLD:
-        return "low"
-    if drafts < CHALK_DRAFT_THRESHOLD:
-        return "medium"
-    if drafts < MEGA_CHALK_DRAFT_THRESHOLD:
-        return "chalk"
-    return "mega_chalk"
+# Current matrix values (from condition_classifier.py V6.1)
+CURRENT_MATRIX = {
+    "batter": {"TARGET": 1.000, "NEUTRAL": 0.650, "FADE": 0.275},
+    "pitcher": {"TARGET": 1.000, "NEUTRAL": 0.850, "FADE": 0.710},
+}
 
 
-def get_boost_tier(card_boost: float) -> str:
-    if card_boost < 1.0:
-        return "no_boost"
-    if card_boost < 2.0:
-        return "low_boost"
-    if card_boost < 2.5:
-        return "mid_boost"
-    if card_boost < 3.0:
-        return "elite_boost"
-    return "max_boost"
+def classify(row: dict) -> str:
+    """Proxy-classify a player as FADE / TARGET / NEUTRAL."""
+    is_pop = row["is_most_popular"] == "1"
+    is_3x = row["is_most_drafted_3x"] == "1"
+    try:
+        drafts = float(row["drafts"]) if row["drafts"].strip() else 0.0
+    except ValueError:
+        drafts = 0.0
+
+    if is_pop or is_3x:
+        return "FADE"
+    if drafts <= TARGET_DRAFT_CEILING:
+        return "TARGET"
+    return "NEUTRAL"
 
 
-def bayesian_rate(successes: int, trials: int) -> float:
-    return (successes + BAYESIAN_PRIOR_ALPHA) / (trials + BAYESIAN_PRIOR_ALPHA + BAYESIAN_PRIOR_BETA)
-
-
-def interpolate_boost_row(row: dict[str, tuple[int, int]]) -> dict[str, float]:
-    """For cells with zero observations, interpolate from neighboring boost tiers
-    on the same ownership row using monotone-preserving linear fill.
-    """
-    # Compute bayesian rate per tier; mark no-data cells as None for interpolation
-    rates: dict[str, float | None] = {}
-    for bt in BOOST_TIERS:
-        s, t = row.get(bt, (0, 0))
-        rates[bt] = bayesian_rate(s, t) if t > 0 else None
-
-    # Forward-fill + back-fill + linear interpolate for Nones
-    indexed = [rates[bt] for bt in BOOST_TIERS]
-    n = len(indexed)
-    # Find anchor indices where we have data
-    anchors = [i for i, v in enumerate(indexed) if v is not None]
-    if not anchors:
-        # No data at all — uniform Beta(1,1) prior mean
-        return {bt: 0.5 for bt in BOOST_TIERS}
-    filled = indexed.copy()
-    # Fill before first anchor
-    for i in range(anchors[0]):
-        filled[i] = indexed[anchors[0]]
-    # Fill after last anchor
-    for i in range(anchors[-1] + 1, n):
-        filled[i] = indexed[anchors[-1]]
-    # Linear interpolation between adjacent anchors
-    for a, b in zip(anchors, anchors[1:]):
-        if b - a <= 1:
-            continue
-        lo, hi = indexed[a], indexed[b]
-        for i in range(a + 1, b):
-            frac = (i - a) / (b - a)
-            filled[i] = lo + (hi - lo) * frac
-    return {bt: round(filled[i], 3) for i, bt in enumerate(BOOST_TIERS)}
+def is_pitcher(row: dict) -> bool:
+    return row["position"].strip().upper() in {"P", "SP", "RP"}
 
 
 def main() -> None:
     rows = list(csv.DictReader(open(HISTORICAL_PLAYERS_CSV)))
-    # Accumulate (successes, trials) per (is_pitcher, ownership_tier, boost_tier)
-    obs: dict[bool, dict[str, dict[str, list[int]]]] = {
-        False: {ot: {bt: [0, 0] for bt in BOOST_TIERS} for ot in OWNERSHIP_TIERS},
-        True:  {ot: {bt: [0, 0] for bt in BOOST_TIERS} for ot in OWNERSHIP_TIERS},
+
+    # Drop DNP rows (no real_score)
+    valid = [
+        r for r in rows
+        if r["real_score"].strip() and r["real_score"].strip() not in ("", "None")
+    ]
+
+    dates = sorted({r["date"] for r in valid})
+    print(f"Dataset: {len(valid)} valid player-appearances across {len(dates)} dates")
+    print(f"Dates: {dates[0]} → {dates[-1]}\n")
+
+    # Accumulate stats per (popularity_tier, position_type)
+    # Structure: data[pop_class][pos_type] = {rs_vals, hv_vals, success_count, n}
+    pop_classes = ["TARGET", "NEUTRAL", "FADE"]
+    pos_types = ["batter", "pitcher"]
+
+    buckets: dict[str, dict[str, dict]] = {
+        pc: {
+            pt: {"rs": [], "hv": [], "success": 0, "n": 0}
+            for pt in pos_types
+        }
+        for pc in pop_classes
     }
-    dates = set()
-    for r in rows:
-        dates.add(r["date"])
-        try:
-            drafts = int(float(r["drafts"])) if r["drafts"] else 0
-        except ValueError:
-            drafts = 0
-        try:
-            cb = float(r["card_boost"]) if r["card_boost"] else 0.0
-        except ValueError:
-            cb = 0.0
-        is_p = r["position"].strip().upper() in {"P", "SP", "RP"}
+
+    for r in valid:
+        pop_class = classify(r)
+        pos_type = "pitcher" if is_pitcher(r) else "batter"
+        rs = float(r["real_score"])
         hv = r["is_highest_value"] == "1"
-        ot = get_ownership_tier(drafts)
-        bt = get_boost_tier(cb)
-        obs[is_p][ot][bt][1] += 1
-        if hv:
-            obs[is_p][ot][bt][0] += 1
+        success = rs > RS_SUCCESS_THRESHOLD
 
-    training_dates = sorted(dates)
-    print(f"# Trained on {len(rows)} player-appearances across {len(training_dates)} dates")
-    print(f"# Dates: {training_dates}\n")
+        b = buckets[pop_class][pos_type]
+        b["rs"].append(rs)
+        b["hv"].append(1 if hv else 0)
+        b["n"] += 1
+        if success:
+            b["success"] += 1
 
-    for label, is_pitcher in [("BATTER", False), ("PITCHER", True)]:
-        title = "CONDITION_MATRIX" if not is_pitcher else "PITCHER_CONDITION_MATRIX"
-        obs_title = "CONDITION_OBSERVATIONS" if not is_pitcher else "PITCHER_CONDITION_OBSERVATIONS"
-        print(f"# ---------- {label} ----------")
-        # Print observations
-        print(f"{obs_title}: dict[str, dict[str, tuple[int, int]]] = {{")
-        for ot in OWNERSHIP_TIERS:
-            print(f'    "{ot}": {{')
-            for bt in BOOST_TIERS:
-                s, t = obs[is_pitcher][ot][bt]
-                rate_str = f"{s/t*100:.1f}%" if t > 0 else "no data"
-                print(f'        "{bt}":    ({s:3d}, {t:3d}),    # {rate_str}')
-            print(f'    }},')
-        print(f'}}\n')
+    # --- Backtest table ---
+    print("=" * 75)
+    print(f"{'Tier':<10} {'Type':<8} {'n':>5}  {'avg RS':>7}  {'HV%':>6}  "
+          f"{'RS>3%':>6}  {'Curr factor':>12}  {'Status'}")
+    print("-" * 75)
 
-        # Print matrix with interpolated + Bayesian smoothed rates
-        print(f"{title}: dict[str, dict[str, float]] = {{")
-        for ot in OWNERSHIP_TIERS:
-            row = {bt: tuple(obs[is_pitcher][ot][bt]) for bt in BOOST_TIERS}
-            filled = interpolate_boost_row(row)
-            print(f'    "{ot}": {{')
-            for bt in BOOST_TIERS:
-                s, t = row[bt]
-                comment = f"{s}/{t} = {s/t*100:.1f}%" if t > 0 else "interpolated"
-                print(f'        "{bt}":    {filled[bt]:.3f},   # {comment}')
-            print(f'    }},')
-        print(f'}}\n')
+    recommendations: dict[str, dict[str, dict]] = {}
+
+    for pt in pos_types:
+        for pc in pop_classes:
+            b = buckets[pc][pt]
+            if b["n"] == 0:
+                continue
+            avg_rs = statistics.mean(b["rs"])
+            hv_rate = sum(b["hv"]) / b["n"]
+            rs_gt3_rate = b["success"] / b["n"]
+            curr = CURRENT_MATRIX[pt][pc]
+
+            # Derive implied factor relative to TARGET for same position type
+            target_avg = statistics.mean(buckets["TARGET"][pt]["rs"]) if buckets["TARGET"][pt]["n"] else 1.0
+            implied_factor = avg_rs / target_avg if target_avg > 0 else 0.0
+
+            status = "✓ OK"
+            if pc == "NEUTRAL" and b["n"] < 30:
+                status = f"⚠ n={b['n']} too sparse"
+            elif pc == "NEUTRAL" and abs(implied_factor - curr) > 0.08:
+                status = f"⚠ data→{implied_factor:.3f}"
+
+            print(
+                f"{pc:<10} {pt:<8} {b['n']:>5}  {avg_rs:>7.3f}  "
+                f"{hv_rate:>6.1%}  {rs_gt3_rate:>6.1%}  {curr:>12.3f}  {status}"
+            )
+
+            recommendations.setdefault(pt, {})[pc] = {
+                "n": b["n"],
+                "successes": b["success"],
+                "avg_rs": avg_rs,
+                "hv_rate": hv_rate,
+                "rs_gt3_rate": rs_gt3_rate,
+                "implied_factor": implied_factor,
+                "curr_factor": curr,
+            }
+        print()
+
+    # --- Selection-bias note ---
+    print("SELECTION BIAS NOTE:")
+    print("  FADE:    reliable — full Most Popular + Most Drafted 3x leaderboards are captured.")
+    print("  TARGET:  biased ↑ — low-draft players appear only because they hit HV leaderboard.")
+    print("  NEUTRAL: biased ↑ — appears only when on some leaderboard (HV captures).")
+    print("  NEUTRAL n is sparse because players with 100–500 drafts who did NOT hit HV")
+    print("  are not recorded in the CSV (not on any leaderboard). Only once the full")
+    print("  slate player pool is stored can NEUTRAL be calibrated from this dataset.")
+
+    # --- Paste-ready calibration output ---
+    print("\n" + "=" * 75)
+    print("PASTE-READY: RS_CONDITION_MATRIX (V6.2)")
+    print("=" * 75)
+    print("RS_CONDITION_MATRIX: dict[str, dict[str, float]] = {")
+    for pt in pos_types:
+        print(f'    "{pt}": {{')
+        target_avg = recommendations[pt]["TARGET"]["avg_rs"]
+        for pc in pop_classes:
+            rec = recommendations[pt][pc]
+            impl = rec["implied_factor"]
+            curr = rec["curr_factor"]
+            comment = f"data-implied {impl:.3f} (n={rec['n']})"
+            print(f'        "{pc}": {curr:.3f},   # {comment}')
+        print("    },")
+    print("}")
+
+    print("\nPASTE-READY: RS_CONDITION_OBSERVATIONS (V6.2)")
+    print("RS_CONDITION_OBSERVATIONS: dict[str, dict[str, tuple[int, int]]] = {")
+    for pt in pos_types:
+        print(f'    "{pt}": {{')
+        for pc in pop_classes:
+            rec = recommendations[pt][pc]
+            s, t = rec["successes"], rec["n"]
+            bias_note = " (selection-biased↑)" if pc in ("TARGET", "NEUTRAL") else ""
+            print(f'        "{pc}": ({s:3d}, {t:3d}),   # {s/t*100:.1f}% RS>3{bias_note}')
+        print("    },")
+    print("}")
+
+    # --- Per-date breakdown ---
+    print("\n" + "=" * 75)
+    print("PER-DATE: TARGET batter HV rate (early-season sanity check)")
+    print("-" * 75)
+    date_buckets: dict[str, dict] = {}
+    for r in valid:
+        if is_pitcher(r):
+            continue
+        d = r["date"]
+        pc = classify(r)
+        if d not in date_buckets:
+            date_buckets[d] = {p: {"hv": [], "n": 0} for p in pop_classes}
+        hv = 1 if r["is_highest_value"] == "1" else 0
+        date_buckets[d][pc]["hv"].append(hv)
+        date_buckets[d][pc]["n"] += 1
+
+    for d in sorted(date_buckets.keys()):
+        target = date_buckets[d]["TARGET"]
+        fade = date_buckets[d]["FADE"]
+        neutral = date_buckets[d]["NEUTRAL"]
+        t_hv = f"{sum(target['hv'])/target['n']:.0%}" if target["n"] else "—"
+        f_hv = f"{sum(fade['hv'])/fade['n']:.0%}" if fade["n"] else "—"
+        n_hv = f"{sum(neutral['hv'])/neutral['n']:.0%}" if neutral["n"] else "—"
+        print(f"  {d}  TARGET HV={t_hv} (n={target['n']})  "
+              f"NEUTRAL HV={n_hv} (n={neutral['n']})  "
+              f"FADE HV={f_hv} (n={fade['n']})")
 
 
 if __name__ == "__main__":

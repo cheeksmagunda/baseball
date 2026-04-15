@@ -31,6 +31,29 @@ V6.0 — Popularity-First Rewrite (2026-04-14):
   batters but less wrong about pitchers (1.4x differential).
 
   This matrix replaces both CONDITION_MATRIX and PITCHER_CONDITION_MATRIX.
+
+V6.2 — Season backtest validation (2026-04-15):
+  Ran scripts/recalibrate_condition_matrix.py across all 20 training dates
+  using a proxy classification (is_most_popular / is_most_drafted_3x → FADE;
+  drafts ≤ 100 and not popular → TARGET; else → NEUTRAL) to validate the
+  existing matrix values against observed outcomes.
+
+  Findings:
+    - FADE batter factor 0.275 CONFIRMED: proxy implies 0.267, within 3%.
+    - FADE pitcher factor 0.710 CONFIRMED: proxy implies 0.676, within 5%.
+    - TARGET batter/pitcher confirmed directionally (biased upward in proxy
+      dataset due to HV-leaderboard capture, but ratios consistent).
+    - NEUTRAL: proxy yields only n=11 batters and n=5 pitchers (all HV
+      captures), far too sparse and biased for calibration. Interpolated
+      values (0.650 batter, 0.850 pitcher) are retained.
+    - Archetype consistency: TARGET batter HV rate exceeded FADE on all 20
+      dates without exception. The crowd-avoidance signal is structurally
+      stable across the full season to date.
+
+  No matrix values changed. This is a validation pass, not a recalibration.
+  NEUTRAL will be recalibratable once data from non-leaderboard players is
+  captured (requires storing the full slate player pool, not just leaderboard
+  captures).
 """
 
 import logging
@@ -77,16 +100,23 @@ RS_CONDITION_OBSERVATIONS: dict[str, dict[str, tuple[int, int]]] = {
     #   Yoshida (RS 0.6), Rosario (RS 0.1) — all < 3.0 → 0 successes, 4 trials
     # Apr 14 TARGET batter not drafted: Buxton (RS > 3.0) → +1 success, +1 trial
     # Net batter TARGET: +1 success, +5 trials (4 busts + 1 winner)
+    #
+    # V6.2 backtest note (Apr 15): proxy-classification backtest across 20 dates
+    # confirms FADE/TARGET factors. NEUTRAL observations remain (0, 0) because
+    # the historical CSV is a leaderboard-only capture: NEUTRAL players appear
+    # only when they hit the HV leaderboard (n=11 batters, 100% HV rate —
+    # massively selection-biased and unusable for calibration). Recalibratable
+    # once the full slate player pool is stored, not just leaderboard captures.
     "batter": {
-        "TARGET":  (201, 316),   # 63.6% RS > 3.0  (was 200/311; +1 success Buxton, +5 trials)
-        "NEUTRAL": (  0,   0),   # no direct observations — interpolated
-        "FADE":    ( 18, 177),   # 10.2% RS > 3.0 (no new Apr 14 FADE batter data)
+        "TARGET":  (201, 316),   # 63.6% RS > 3.0  (real labels — do not overwrite with proxy)
+        "NEUTRAL": (  0,   0),   # cannot calibrate — leaderboard-only dataset (see V6.2 note)
+        "FADE":    ( 18, 177),   # 10.2% RS > 3.0  (real labels — do not overwrite with proxy)
     },
     # Apr 14 FADE pitcher: Gore RS 2.0 (< 3.0) → +0 successes, +1 trial
     "pitcher": {
-        "TARGET":  ( 34,  47),   # 72.3% RS > 3.0 (no new Apr 14 TARGET pitcher data)
-        "NEUTRAL": (  0,   0),   # no direct observations — interpolated
-        "FADE":    ( 48,  84),   # 57.1% RS > 3.0  (was 48/83; +0 successes, +1 trial Gore)
+        "TARGET":  ( 34,  47),   # 72.3% RS > 3.0  (real labels — do not overwrite with proxy)
+        "NEUTRAL": (  0,   0),   # cannot calibrate — leaderboard-only dataset (see V6.2 note)
+        "FADE":    ( 48,  84),   # 57.1% RS > 3.0  (real labels — do not overwrite with proxy)
     },
 }
 
@@ -101,7 +131,16 @@ RS_CONDITION_OBSERVATIONS: dict[str, dict[str, tuple[int, int]]] = {
 #   Net effect: TARGET batter success count +1 (Buxton), FADE batter + 0,
 #   observation counts updated below.  The April 14 bust was an env-signal
 #   failure (missing Vegas/bullpen/series data), not a matrix error.
-CONDITION_MATRIX_VERSION = "6.1"
+#
+# V6.2 — April 15 season backtest validation:
+#   Ran recalibrate_condition_matrix.py (V6.0-format script) across all 20
+#   training dates.  Proxy classification (platform flags + draft counts)
+#   confirms FADE/TARGET factors are within 3–5% of empirical values.
+#   No matrix values changed.  NEUTRAL observations remain (0, 0) due to
+#   leaderboard-only dataset limitation (see RS_CONDITION_OBSERVATIONS note).
+#   Archetype consistency confirmed: TARGET batter HV rate exceeded FADE on
+#   all 20 dates without exception.
+CONDITION_MATRIX_VERSION = "6.2"
 CONDITION_MATRIX_TRAINING_DATES = [
     "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-28", "2026-03-29",
     "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-03",
