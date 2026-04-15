@@ -691,12 +691,17 @@ class FilterSlotAssignment:
     slot_index: int
     slot_mult: float
     candidate: FilteredCandidate
+    # Slot-weighted ranking signal: filter_ev × (slot_mult / 2.0).
+    # This is NOT an RS prediction — it is a relative ranking score used
+    # to order and compare lineups.  It has no units in common with RS.
     expected_slot_value: float
 
 
 @dataclass
 class FilterOptimizedLineup:
     slots: list[FilterSlotAssignment]
+    # Sum of slot-weighted ranking signals.  Used only for lineup comparison,
+    # not as an RS or total_value prediction.
     total_expected_value: float
     strategy: str
     slate_classification: SlateClassification

@@ -13,7 +13,10 @@ V6.0 — Popularity-First Rewrite (2026-04-14):
 
   V6.0 rekeys the matrix on signals we CAN observe before the slate:
     - popularity_class: FADE / TARGET / NEUTRAL — from web-scraped external
-      signals (Google Trends, ESPN RSS, RotoGrinders, Reddit)
+      signals (Google Trends, ESPN RSS, Reddit buzz).
+      NOTE: DFS platform ownership (RotoGrinders, NumberFire) is intentionally
+      EXCLUDED — those numbers are only visible during the draft session, not
+      before it.  See app/services/popularity.py for the actual signal sources.
     - position_type: pitcher vs batter — structural RS distribution difference
 
   Empirical evidence (20 dates, 2026-03-25 → 2026-04-13):
