@@ -27,7 +27,7 @@ V8.1 additions (2026-04-15):
     series ≥2 games AND has ≤3 L10 wins simultaneously.
   - Bullpen ERA (Group A A4): now populated from MLB Stats API team pitching.
   - Vegas lines (Group A A1/A3, pitcher Factor 5): from The Odds API.
-  - Cache restart guard: restore_and_refreeze() prevents mid-slate pick mutation.
+  - Cache purge on restart ensures fresh regeneration from live data (fail-loud principle).
 
 References strategy doc sections §4.1–§4.5.
 """

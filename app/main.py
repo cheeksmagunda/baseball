@@ -87,7 +87,11 @@ async def lifespan(app: FastAPI):
             client.ping()
             logger.info("Redis connectivity verified at startup")
         except Exception as e:
-            logger.warning("Redis configured but unreachable at startup (will use SQLite fallback): %s", e)
+            raise RuntimeError(
+                f"CRITICAL: Redis configured but unreachable at startup. "
+                f"Redis is required for cache layer — no fallback to SQLite. "
+                f"Restore Redis dyno or remove DFS_REDIS_URL from config. Error: {e}"
+            )
 
     # Startup Validation: Odds API Key
     if not settings.odds_api_key:
@@ -104,37 +108,18 @@ async def lifespan(app: FastAPI):
             logger.info("Database empty, loading seed data...")
             run_seed(db)
 
-    # Restart-during-live-slate guard (V8.1):
-    # If today's picks are already frozen in the DB/Redis (i.e., a Railway
-    # dyno restarted after T-65), restore and re-freeze them instead of
-    # wiping and regenerating from a reduced candidate pool.  Otherwise,
-    # purge all cache tiers so the new startup always gets fresh data.
+    # Cache initialization (FAIL-LOUD principle):
+    # Always purge cache on startup. Do NOT restore frozen picks from previous runs.
+    # If T-65 has already passed, the T-65 monitor will detect this and immediately
+    # regenerate picks from scratch with fresh live data. This ensures every pick
+    # served to users is built from complete, current data — never from cached
+    # or fallback sources.
     #
-    # This prevents the "dirty mid-run data" bug where a restart after T-65
-    # (but before game completion) would regenerate picks from a reduced pool
-    # (started/final games excluded), producing different picks than the ones
-    # that were locked at T-65, violating the "zero work outside T-65" rule.
-    from datetime import datetime, timedelta, timezone
+    # If app restarts after T-65 and any dependency (MLB API, Odds API, DB) is
+    # unavailable, the monitor will crash loudly (no fallback to stale data).
     from app.services.lineup_cache import lineup_cache
-    from app.services.slate_monitor import _get_first_pitch_utc, LOCK_MINUTES_BEFORE_PITCH
 
-    _restored_frozen = False
-    try:
-        with SessionLocal() as _db_check:
-            from app.routers.filter_strategy import _get_active_slate_date
-            _active = _get_active_slate_date(_db_check)
-            if _active == date.today():
-                _fp = _get_first_pitch_utc(_db_check, date.today())
-                if _fp is not None:
-                    _lock = _fp - timedelta(minutes=LOCK_MINUTES_BEFORE_PITCH)
-                    if datetime.now(timezone.utc) >= _lock:
-                        # T-65 has already passed — attempt to restore frozen picks
-                        _restored_frozen = lineup_cache.restore_and_refreeze(_fp)
-    except Exception as _exc:
-        logger.warning("Startup freeze-restore check failed (will purge): %s", _exc)
-
-    if not _restored_frozen:
-        lineup_cache.purge()
+    lineup_cache.purge()
 
     # startup_done_event signals the T-65 monitor that initialization is complete.
     startup_done_event = asyncio.Event()

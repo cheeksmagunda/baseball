@@ -309,12 +309,11 @@ async def targeted_slate_monitor(
     # Phase 3: Final pipeline run + cache freeze
     # -----------------------------------------------------------------------
 
-    # If the cache is already frozen (app restarted during live slate and
-    # restore_and_refreeze() succeeded in main.py), skip the final pipeline
-    # run entirely.  Re-running with started/final games excluded would
-    # produce a different candidate pool and — even though store() is a
-    # no-op while frozen — attempting build_and_cache_lineups() on a reduced
-    # pool risks a ValueError/RuntimeError that would crash this monitor task.
+    # If the cache is already frozen (e.g., this monitor task is re-entering
+    # after previous T-65 run), skip the final pipeline run entirely.
+    # The frozen picks are already locked and valid for the current slate.
+    # Re-running the pipeline with started/final games excluded would produce
+    # a different candidate pool, risking inconsistency.
     if lineup_cache.is_frozen:
         logger.info(
             "T-%d monitor: cache already frozen (restart during live slate) — "

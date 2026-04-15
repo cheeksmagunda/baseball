@@ -76,25 +76,27 @@ Bad data is worse than no data. Operations must restore the system rather than s
 
 ### Scenario 3: Redis Unavailable at Runtime
 
-**Symptom:** Logs show "Redis unavailable" or "Redis write failed" but app continues; lineups are served
+**Symptom:** App crashes with RuntimeError "Redis configured but unreachable"
 
 **Root Cause:**
 - Redis dyno down or unreachable
 - Connection timeout or network partition
 - Redis memory limit exceeded
 
-**Recovery Behavior (Automatic):**
-- App detects Redis unavailable at startup (logs warning)
-- Switches to SQLite-only cache tier
-- Lineups are still served (SQLite provides durability)
-- T-65 performance may degrade slightly (Redis faster than SQLite)
+**Recovery Behavior (FAIL LOUDLY):**
+- If `DFS_REDIS_URL` is set, Redis is REQUIRED
+- App fails loudly at startup with clear error message
+- **No fallback to SQLite** — performance degradation is unacceptable for production
+- Users see HTTP 503 "System unavailable — cache layer down"
 
 **Manual Recovery:**
 1. **Restart Redis dyno:** From Railway dashboard
-2. **Verify connectivity:** App will reconnect on next startup
-3. **No action needed:** System is operational with SQLite fallback
+2. **Restart app:** App will reconnect and proceed
+3. **Verify picks frozen:** Check `/api/filter-strategy/status` returns 200 with picks
 
-**Impact:** Minimal—users see picks normally. Redis is a performance optimization, not required for correctness.
+**If Redis is not required:** Do NOT set `DFS_REDIS_URL` environment variable. Then SQLite is the sole cache tier (slower but acceptable for single-dyno deployments).
+
+**Impact:** System is down until Redis is restored. No silent degradation. Clear operational visibility.
 
 ---
 
@@ -160,47 +162,67 @@ Bad data is worse than no data. Operations must restore the system rather than s
 
 **Root Cause:**
 - Exception raised during `run_full_pipeline()`
-- Example: SQL constraint violation, out-of-memory, network timeout
+- Example: SQL constraint violation, out-of-memory, network timeout, MLB API failure, Odds API failure
 
-**Automatic Recovery (V8.1 Cache Restart Guard):**
+**Recovery Behavior (REGENERATE FROM SCRATCH OR CRASH):**
 1. App restarts (Railway auto-restarts)
-2. Lifespan checks: is today's slate active AND has T-65 passed?
-3. If yes: calls `lineup_cache.restore_and_refreeze()` to reload frozen picks from SQLite/Redis
-4. If no: purges cache and prepares for a fresh pipeline run
+2. Lifespan checks: has T-65 already passed?
+3. **If T-65 has NOT passed:** Purge cache and wait for startup pipeline to run (normal)
+4. **If T-65 HAS passed:** 
+   - **Do NOT restore frozen picks from cache**
+   - Instead, immediately attempt a full pipeline run with fresh data
+   - If any dependency is unavailable (MLB API down, Odds API down, DB down, etc.), crash loudly with error
+   - Users see HTTP 503 "T-65 regeneration failed — dependencies unavailable"
 
-**Recovery Steps:**
+**Why no restoration:** Restoration would serve cached picks (fallback behavior). The fail-loud principle requires either:
+- Fresh picks from a complete T-65 pipeline run with live data, OR
+- A clear crash with error
+
+**Manual Recovery Steps:**
 1. **Check logs:** Find the exception that caused crash
-2. **Fix root cause:** (e.g., add missing column, reduce memory usage, increase timeout)
-3. **Restart app:** Railway will auto-restart, or manually restart
-4. **Verify picks frozen:** Check `/api/filter-strategy/status` returns 200 with picks
+2. **Verify dependencies:** 
+   - Check Railway database dyno status
+   - Verify MLB API is reachable (statsapi.mlb.com)
+   - Verify Odds API is reachable (check DFS_ODDS_API_KEY is set)
+   - Verify network connectivity
+3. **Fix root cause:** (e.g., add missing column, increase dyno memory, extend timeout)
+4. **Restart app:** Railway will auto-restart, or manually trigger restart
+5. **Verify picks frozen:** Check `/api/filter-strategy/status` returns 200 with picks. If HTTP 503, read error message and fix remaining dependencies.
 
-**If picks were NOT frozen before crash:**
-- Restart happens before T-65 → cache purged → new pipeline run will occur (normal)
-- Restart happens after T-65 → picks restored from DB (no regeneration)
-
-**Impact:** User sees momentary 503 during crash, then picks reappear after restart. Picks never change mid-slate (restoration prevents regeneration from reduced pool).
+**Impact:** System either recovers with fresh T-65 picks or crashes loudly with clear error. No silent degradation, no stale data served to users.
 
 ---
 
 ### Scenario 7: Redis Cache Corrupted (Invalid JSON)
 
-**Symptom:** Logs show "Failed to parse cached response from Redis" but app continues
+**Symptom:** App crashes with RuntimeError "Redis cache corrupted — cannot parse lineup data"
 
 **Root Cause:**
 - Redis corruption (rare, typically from power loss or manual edit)
-- SQLite cache is still valid (fallback)
+- Corrupted JSON in `lineup:<date>` key prevents cache loading
 
-**Automatic Recovery:**
-- App falls back to SQLite
-- Next Redis write clears corrupted key
-- No user-visible impact
+**Recovery Behavior (FAIL LOUDLY):**
+- App detects corrupted JSON when loading from Redis
+- Raises `RuntimeError` with clear message
+- Crashes loudly — no fallback to SQLite
+- Users see HTTP 503 "Cache layer corrupted — manual recovery required"
 
 **Manual Recovery:**
-1. **Clear Redis key:**
+1. **Clear corrupted Redis key:**
    ```bash
-   redis-cli DEL lineup:<date>  # e.g., lineup:2026-04-15
+   redis-cli DEL lineup:2026-04-15  # Replace with today's date
+   redis-cli DEL lineup:*           # Or clear all lineup keys if unsure
    ```
-2. **App will rebuild:** Next API call requests rebuild from SQLite
+2. **Option A (Recommended): Regenerate from fresh pipeline**
+   - Restart app dyno
+   - If T-65 has not yet passed: startup pipeline will run and generate fresh picks
+   - If T-65 has already passed: app will attempt full pipeline regeneration (or crash if dependencies missing)
+3. **Option B (Emergency): Restore from SQLite if available**
+   - Only if T-65 picks were previously frozen and SQLite backup exists
+   - Requires manual verification that SQLite data is valid
+   - Contact operations before serving cached picks from SQLite
+
+**Impact:** System crashes and requires explicit manual recovery. Clear visibility into cache corruption — no silent serving of corrupted data.
 
 ---
 
