@@ -758,8 +758,14 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
       - compute_pitcher_env_score()  Factor 5: Moneyline Win bonus
       - compute_batter_env_score()   Group A A1: Vegas O/U, A3: Moneyline
 
+    CRITICAL: Vegas lines are REQUIRED, never optional.
+
     Raises RuntimeError if DFS_ODDS_API_KEY is not set, quota is exhausted,
-    or the request fails — no fallback per "no fallbacks ever" rule.
+    or the request fails. There is no fallback to NULL moneylines. Missing Vegas
+    data corrupts the EV formula and produces suboptimal lineups. The T-65 pipeline
+    must crash loudly rather than proceed with degraded data.
+
+    See CLAUDE.md section "Vegas Lines: Required, Never Optional" for full rationale.
     """
     from app.config import settings
     from app.core.odds_api import fetch_mlb_odds

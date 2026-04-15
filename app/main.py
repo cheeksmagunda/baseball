@@ -58,8 +58,49 @@ async def lifespan(app: FastAPI):
 
     logger = logging.getLogger(__name__)
 
-    Path(settings.database_url.replace("sqlite:///", "")).parent.mkdir(parents=True, exist_ok=True)
+    # Startup Validation: Database URL
+    try:
+        db_url = settings.database_url
+        if db_url.startswith("sqlite:///"):
+            db_path = db_url.replace("sqlite:///", "")
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+            if not Path(db_path).parent.exists():
+                raise RuntimeError(f"Cannot create database directory: {db_path}")
+            logger.info("SQLite database directory validated: %s", db_path)
+        elif db_url.startswith("postgresql://") or db_url.startswith("postgresql+psycopg2://"):
+            # Validate Postgres connection string format
+            if not ("@" in db_url and ":" in db_url):
+                raise RuntimeError(f"Invalid Postgres URL format: {db_url}")
+            logger.info("Postgres database URL format validated")
+        else:
+            raise RuntimeError(f"Unsupported database URL scheme: {db_url}")
+    except Exception as e:
+        raise RuntimeError(f"Database URL validation failed at startup: {e}")
+
     init_db()
+
+    # Startup Validation: Redis (if configured)
+    if settings.redis_url:
+        try:
+            import redis as redis_lib
+            client = redis_lib.from_url(settings.redis_url, decode_responses=True)
+            client.ping()
+            logger.info("Redis connectivity verified at startup")
+        except Exception as e:
+            raise RuntimeError(
+                f"CRITICAL: Redis configured but unreachable at startup. "
+                f"Redis is required for cache layer — no fallback to SQLite. "
+                f"Restore Redis dyno or remove DFS_REDIS_URL from config. Error: {e}"
+            )
+
+    # Startup Validation: Odds API Key
+    if not settings.odds_api_key:
+        logger.critical(
+            "DFS_ODDS_API_KEY not configured. Vegas lines are REQUIRED for optimal lineup generation. "
+            "T-65 pipeline will crash if Vegas API cannot be called. Set DFS_ODDS_API_KEY environment variable."
+        )
+    else:
+        logger.info("DFS_ODDS_API_KEY configured — Vegas API enrichment enabled")
 
     # Seed database if empty
     with SessionLocal() as db:
@@ -67,37 +108,18 @@ async def lifespan(app: FastAPI):
             logger.info("Database empty, loading seed data...")
             run_seed(db)
 
-    # Restart-during-live-slate guard (V8.1):
-    # If today's picks are already frozen in the DB/Redis (i.e., a Railway
-    # dyno restarted after T-65), restore and re-freeze them instead of
-    # wiping and regenerating from a reduced candidate pool.  Otherwise,
-    # purge all cache tiers so the new startup always gets fresh data.
+    # Cache initialization (FAIL-LOUD principle):
+    # Always purge cache on startup. Do NOT restore frozen picks from previous runs.
+    # If T-65 has already passed, the T-65 monitor will detect this and immediately
+    # regenerate picks from scratch with fresh live data. This ensures every pick
+    # served to users is built from complete, current data — never from cached
+    # or fallback sources.
     #
-    # This prevents the "dirty mid-run data" bug where a restart after T-65
-    # (but before game completion) would regenerate picks from a reduced pool
-    # (started/final games excluded), producing different picks than the ones
-    # that were locked at T-65, violating the "zero work outside T-65" rule.
-    from datetime import datetime, timedelta, timezone
+    # If app restarts after T-65 and any dependency (MLB API, Odds API, DB) is
+    # unavailable, the monitor will crash loudly (no fallback to stale data).
     from app.services.lineup_cache import lineup_cache
-    from app.services.slate_monitor import _get_first_pitch_utc, LOCK_MINUTES_BEFORE_PITCH
 
-    _restored_frozen = False
-    try:
-        with SessionLocal() as _db_check:
-            from app.routers.filter_strategy import _get_active_slate_date
-            _active = _get_active_slate_date(_db_check)
-            if _active == date.today():
-                _fp = _get_first_pitch_utc(_db_check, date.today())
-                if _fp is not None:
-                    _lock = _fp - timedelta(minutes=LOCK_MINUTES_BEFORE_PITCH)
-                    if datetime.now(timezone.utc) >= _lock:
-                        # T-65 has already passed — attempt to restore frozen picks
-                        _restored_frozen = lineup_cache.restore_and_refreeze(_fp)
-    except Exception as _exc:
-        logger.warning("Startup freeze-restore check failed (will purge): %s", _exc)
-
-    if not _restored_frozen:
-        lineup_cache.purge()
+    lineup_cache.purge()
 
     # startup_done_event signals the T-65 monitor that initialization is complete.
     startup_done_event = asyncio.Event()
@@ -107,12 +129,10 @@ async def lifespan(app: FastAPI):
     # Picks are locked at T-65 and served from cache until slate completion.
     # See CLAUDE.md § "T-65 Sniper Architecture" for detailed timing model.
     async def _startup_init():
-        import traceback
         logger.info(
-            "Startup: frozen picks restored=%s. "
+            "Startup complete. Cache purged. "
             "T-65 monitor will fetch fresh data and generate lineups at T-65 lock time. "
-            "No other pipeline work allowed during active slate.",
-            _restored_frozen,
+            "No other pipeline work allowed during active slate."
         )
         startup_done_event.set()
 

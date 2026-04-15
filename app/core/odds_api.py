@@ -81,8 +81,10 @@ async def fetch_mlb_odds(api_key: str, game_date: date) -> list[dict]:
     """
     if not api_key:
         raise RuntimeError(
-            "DFS_ODDS_API_KEY is not configured — cannot fetch Vegas lines. "
-            "Set the env var or accept NULL moneylines in env scoring."
+            "CRITICAL: DFS_ODDS_API_KEY environment variable must be set. "
+            "Vegas lines (moneyline + O/U totals) are required inputs to pitcher and batter "
+            "environmental scoring. The system cannot optimize lineups without Vegas data. "
+            "Set DFS_ODDS_API_KEY to your The Odds API key (free tier: 500 requests/month)."
         )
 
     params = {
