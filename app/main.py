@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+import logging
+import logging.config
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,6 +8,40 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import init_db
 from app.routers import players, slates, scoring, draft, calibration, pipeline, popularity, filter_strategy
+
+
+# Centralized logging configuration
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "standard": {
+            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "handlers": {
+        "default": {
+            "level": settings.log_level,
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
+        },
+    },
+    "loggers": {
+        "": {  # root logger
+            "handlers": ["default"],
+            "level": settings.log_level,
+            "propagate": True,
+        },
+        "sqlalchemy": {
+            "handlers": ["default"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
+}
+
+logging.config.dictConfig(LOGGING_CONFIG)
 
 
 @asynccontextmanager

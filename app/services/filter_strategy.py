@@ -655,6 +655,11 @@ class FilteredCandidate:
     series_opp_wins: int | None = None    # wins by the opponent in current series
     team_l10_wins: int | None = None      # this team's wins in last 10 games
 
+    # Two-way player detection: True if stored as non-pitcher (e.g., DH) but detected as a
+    # confirmed starter (e.g., Ohtani pitching). Used to annotate the candidate in outputs
+    # so users understand why position ≠ slot assignment.
+    is_two_way_pitcher: bool = False
+
     # Computed by the optimizer
     filter_ev: float = 0.0
 

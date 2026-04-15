@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _build_game_lookup(games: list[GameEnvironment]) -> dict:
+def _build_game_lookup(games: list[GameEnvironment]) -> tuple[dict, dict]:
     """Build lookup dicts from game environment data."""
     game_by_id = {}
     team_to_game = {}
@@ -61,6 +61,72 @@ def _build_game_lookup(games: list[GameEnvironment]) -> dict:
         team_to_game[g.home_team.upper()] = g
         team_to_game[g.away_team.upper()] = g
     return game_by_id, team_to_game
+
+
+def _detect_two_way_pitcher(player, card, game) -> bool:
+    """Check if a non-pitcher (e.g., DH) is the confirmed starter.
+
+    Returns True if detected as a confirmed starter, False otherwise.
+    Logs the detection when found.
+    """
+    if game is None:
+        return False
+
+    _is_home = game.home_team.upper() == card.team.upper()
+    _starter_mlb_id = game.home_starter_mlb_id if _is_home else game.away_starter_mlb_id
+    _starter_name = game.home_starter if _is_home else game.away_starter
+
+    # Primary check: MLB ID match (authoritative, no name ambiguity)
+    if _starter_mlb_id is not None and player.mlb_id == _starter_mlb_id:
+        logger.info(
+            "Two-way player detected: %s (%s) is confirmed starter — treating as SP",
+            card.player_name, card.team,
+        )
+        return True
+
+    # Fallback to name match when MLB ID wasn't returned
+    if _starter_name is not None:
+        _card_name = card.player_name.lower().strip()
+        _prob_name = _starter_name.lower().strip()
+        if _card_name in _prob_name or _prob_name in _card_name:
+            logger.info(
+                "Two-way player detected (name match): %s (%s) is confirmed starter — treating as SP",
+                card.player_name, card.team,
+            )
+            return True
+
+    return False
+
+
+def _prepare_pitcher_env_kwargs(game: GameEnvironment | None, card: FilterCard) -> dict:
+    """Extract pitcher environment scoring kwargs from game context."""
+    score_kwargs = {}
+    if game:
+        _is_home = game.home_team.upper() == card.team.upper()
+        _opp_ops = game.away_team_ops if _is_home else game.home_team_ops
+        _opp_k_pct = game.away_team_k_pct if _is_home else game.home_team_k_pct
+        if _opp_ops is not None or _opp_k_pct is not None:
+            score_kwargs["opp_team_stats"] = {
+                "ops": _opp_ops if _opp_ops is not None else DEFAULT_OPP_OPS,
+                "k_pct": _opp_k_pct if _opp_k_pct is not None else DEFAULT_OPP_K_PCT,
+            }
+    return score_kwargs
+
+
+def _prepare_batter_env_kwargs(game: GameEnvironment | None, card: FilterCard) -> dict:
+    """Extract batter environment scoring kwargs from game context."""
+    score_kwargs = {}
+    if game:
+        _is_home = game.home_team.upper() == card.team.upper()
+        _opp_era = game.away_starter_era if _is_home else game.home_starter_era
+        if _opp_era is not None:
+            score_kwargs["opp_pitcher_stats"] = {"era": _opp_era}
+        score_kwargs["batting_order"] = card.batting_order
+        score_kwargs["park_team"] = game.home_team.upper()
+        score_kwargs["wind_speed_mph"] = game.wind_speed_mph
+        score_kwargs["wind_direction"] = game.wind_direction
+        score_kwargs["temperature_f"] = game.temperature_f
+    return score_kwargs
 
 
 async def _resolve_candidates(
@@ -112,54 +178,21 @@ async def _resolve_candidates(
             game = team_to_game.get(card.team.upper())
 
         # Two-way player detection: if a non-pitcher is the confirmed
-        # starter for their game, treat them as a pitcher.  Ohtani is stored
-        # as "DH" but when he's on the mound he's an SP with elite batter
-        # upside — he needs to fill one of the two SP slots across both drafts.
-        if not is_pitcher and game:
-            _is_home = game.home_team.upper() == card.team.upper()
-            _starter_mlb_id = game.home_starter_mlb_id if _is_home else game.away_starter_mlb_id
-            _starter_name = game.home_starter if _is_home else game.away_starter
-            if _starter_mlb_id is not None and player.mlb_id == _starter_mlb_id:
+        # starter for their game, treat them as a pitcher (e.g., Ohtani as DH).
+        is_two_way_pitcher = False
+        if not is_pitcher:
+            is_two_way_pitcher = _detect_two_way_pitcher(player, card, game)
+            if is_two_way_pitcher:
                 is_pitcher = True
-                logger.info(
-                    "Two-way player detected: %s (%s) is confirmed starter — treating as SP",
-                    card.player_name, card.team,
-                )
-            elif _starter_name is not None:
-                _card_name = card.player_name.lower().strip()
-                _prob_name = _starter_name.lower().strip()
-                if _card_name in _prob_name or _prob_name in _card_name:
-                    is_pitcher = True
-                    logger.info(
-                        "Two-way player detected (name match): %s (%s) is confirmed starter — treating as SP",
-                        card.player_name, card.team,
-                    )
 
         # Build game-aware scoring context. Without this, batters default to
         # neutral scores on lineup_position, matchup_quality, and ballpark_factor,
         # causing unboosted pitchers (whose ERA/K-rate come from season stats) to
         # systematically outscore boosted batters regardless of matchup or order.
-        score_kwargs: dict = {}
-        if game:
-            _is_home = game.home_team.upper() == card.team.upper()
-            if is_pitcher:
-                _opp_ops = game.away_team_ops if _is_home else game.home_team_ops
-                _opp_k_pct = game.away_team_k_pct if _is_home else game.home_team_k_pct
-                if _opp_ops is not None or _opp_k_pct is not None:
-                    score_kwargs["opp_team_stats"] = {
-                        "ops": _opp_ops if _opp_ops is not None else DEFAULT_OPP_OPS,
-                        "k_pct": _opp_k_pct if _opp_k_pct is not None else DEFAULT_OPP_K_PCT,
-                    }
-            else:
-                _opp_era = game.away_starter_era if _is_home else game.home_starter_era
-                if _opp_era is not None:
-                    score_kwargs["opp_pitcher_stats"] = {"era": _opp_era}
-                score_kwargs["batting_order"] = card.batting_order
-                score_kwargs["park_team"] = game.home_team.upper()
-                # Pass weather data for dynamic park factor adjustment
-                score_kwargs["wind_speed_mph"] = game.wind_speed_mph
-                score_kwargs["wind_direction"] = game.wind_direction
-                score_kwargs["temperature_f"] = game.temperature_f
+        if is_pitcher:
+            score_kwargs = _prepare_pitcher_env_kwargs(game, card)
+        else:
+            score_kwargs = _prepare_batter_env_kwargs(game, card)
 
         score_result = score_player(db, player, is_pitcher=is_pitcher, **score_kwargs)
 
@@ -256,6 +289,7 @@ async def _resolve_candidates(
             "card": card,
             "player": player,
             "is_pitcher": is_pitcher,
+            "is_two_way_pitcher": is_two_way_pitcher,
             "score_result": score_result,
             "env_score": env_score,
             "env_factors": env_factors,
@@ -306,6 +340,7 @@ async def _resolve_candidates(
             is_debut_or_return=card.is_debut_or_return,
             game_id=pre["game_id"],
             is_pitcher=pre["is_pitcher"],
+            is_two_way_pitcher=pre["is_two_way_pitcher"],
             sharp_score=sharp_score,
             drafts=card.drafts,            # stored for display only
             traits=score_result.traits,
@@ -490,6 +525,7 @@ def _build_lineup_out(result) -> FilterLineupOut:
             env_factors=s.candidate.env_factors,
             popularity=s.candidate.popularity.value,
             is_debut_or_return=s.candidate.is_debut_or_return,
+            is_two_way_pitcher=s.candidate.is_two_way_pitcher,
             filter_ev=round(s.candidate.filter_ev, 2),
             expected_slot_value=s.expected_slot_value,
             game_id=s.candidate.game_id,
@@ -520,6 +556,7 @@ def _build_response(dual, candidates) -> FilterOptimizeResponse:
             env_factors=c.env_factors,
             popularity=c.popularity.value,
             is_debut_or_return=c.is_debut_or_return,
+            is_two_way_pitcher=c.is_two_way_pitcher,
             filter_ev=round(c.filter_ev, 2),
             game_id=c.game_id,
             drafts=c.drafts,

@@ -86,6 +86,7 @@ class FilterCandidateOut(BaseModel):
     env_factors: list[str] = []
     popularity: str  # FADE, TARGET, or NEUTRAL (web-scraped)
     is_debut_or_return: bool = False
+    is_two_way_pitcher: bool = False  # True if detected as starter despite non-pitcher position (e.g., Ohtani)
     filter_ev: float
     game_id: int | str | None = None
     drafts: int | None = None
@@ -104,6 +105,7 @@ class FilterSlotOut(BaseModel):
     env_factors: list[str] = []
     popularity: str  # FADE, TARGET, or NEUTRAL (web-scraped)
     is_debut_or_return: bool = False
+    is_two_way_pitcher: bool = False  # True if detected as starter despite non-pitcher position (e.g., Ohtani)
     filter_ev: float
     expected_slot_value: float
     game_id: int | str | None = None
