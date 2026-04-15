@@ -513,21 +513,13 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
         team_id = TEAM_MLB_IDS.get(team)
         if not team_id:
             return team, None
-        try:
-            return team, await get_team_stats(team_id, season)
-        except Exception as exc:
-            logger.warning("Team batting stats fetch failed for %s: %s", team, exc)
-            return team, None
+        return team, await get_team_stats(team_id, season)
 
     async def _fetch_pitching(team: str) -> tuple[str, dict | None]:
         team_id = TEAM_MLB_IDS.get(team)
         if not team_id:
             return team, None
-        try:
-            return team, await get_team_pitching_stats(team_id, season)
-        except Exception as exc:
-            logger.warning("Team pitching stats fetch failed for %s: %s", team, exc)
-            return team, None
+        return team, await get_team_pitching_stats(team_id, season)
 
     batting_results, pitching_results = await asyncio.gather(
         asyncio.gather(*[_fetch_batting(t) for t in teams]),
@@ -601,8 +593,8 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
 
     Recent form (L10): count wins in the team's most recent 10 completed games.
 
-    Both fields remain NULL if the API fails — env scoring treats NULL as
-    unknown/neutral (no penalty, no bonus).
+    Both fields remain NULL only when team_id is not in TEAM_MLB_IDS (unknown
+    abbreviation). API failures propagate — the pipeline fails loudly.
     """
     from datetime import timedelta
 
@@ -620,24 +612,20 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
         team_id = TEAM_MLB_IDS.get(team)
         if not team_id:
             return team, []
-        try:
-            from app.core.mlb_api import _get
-            data = await _get("/schedule", {
-                "teamId": team_id,
-                "startDate": lookback_start,
-                "endDate": lookback_end,
-                "sportId": 1,
-                "hydrate": "linescore",
-            })
-            game_list: list[dict] = []
-            for date_entry in data.get("dates", []):
-                for g in date_entry.get("games", []):
-                    if g.get("status", {}).get("abstractGameState") == "Final":
-                        game_list.append(g)
-            return team, game_list
-        except Exception as exc:
-            logger.warning("Series context fetch failed for %s: %s", team, exc)
-            return team, []
+        from app.core.mlb_api import _get
+        data = await _get("/schedule", {
+            "teamId": team_id,
+            "startDate": lookback_start,
+            "endDate": lookback_end,
+            "sportId": 1,
+            "hydrate": "linescore",
+        })
+        game_list: list[dict] = []
+        for date_entry in data.get("dates", []):
+            for g in date_entry.get("games", []):
+                if g.get("status", {}).get("abstractGameState") == "Final":
+                    game_list.append(g)
+        return team, game_list
 
     results = await asyncio.gather(*[_fetch_team_schedule(t) for t in teams])
     team_games: dict[str, list[dict]] = dict(results)
@@ -745,18 +733,11 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
       - compute_pitcher_env_score()  Factor 5: Moneyline Win bonus
       - compute_batter_env_score()   Group A A1: Vegas O/U, A3: Moneyline
 
-    No fallback: if the API key is not configured, logs a warning and returns 0.
+    No fallback: the API key is required at startup (ValidationError if unset).
     If the API call fails, raises RuntimeError (pipeline fails loudly).
     """
     from app.config import settings
     from app.core.odds_api import fetch_mlb_odds
-
-    if not settings.odds_api_key:
-        logger.warning(
-            "DFS_ODDS_API_KEY not set — skipping Vegas lines enrichment. "
-            "Moneyline and O/U env signals will be NULL (unknown/neutral)."
-        )
-        return 0
 
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
     if not games:
