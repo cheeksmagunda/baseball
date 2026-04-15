@@ -44,7 +44,6 @@ from app.services.filter_strategy import (
     run_dual_filter_strategy,
 )
 from app.services.popularity import PopularityClass, get_popularity_profile
-from app.services.pipeline import run_full_pipeline
 from app.services.lineup_cache import lineup_cache
 
 logger = logging.getLogger(__name__)
@@ -632,138 +631,73 @@ def optimize_status():
 @router.get("/optimize", response_model=FilterOptimizeResponse)
 async def filter_optimize(db: Session = Depends(get_db)):
     """
-    Run the full "Filter, Not Forecast" dual-lineup pipeline.
+    Serve T-65 frozen lineup picks from cache. Read-only.
 
-    Returns both Starting 5 and Moonshot lineups from a single call.
-    When no cards are provided, serves from the in-process cache that the
-    startup pipeline pre-computes — so the response is instant.
-
-    Starting 5: Best filter EV with web-scraped popularity adjustments.
-    Moonshot: Completely different 5 players — heavier anti-crowd lean,
-              sharp signal boost, explosive trait bonus, game diversification.
+    This endpoint never triggers the pipeline or optimizer. Picks are
+    produced exclusively by the T-65 monitor and stored in lineup_cache.
     """
-    cards: list[FilterCard] = []
-    games: list[GameEnvironment] = []
-    active_date = None  # resolved once below when needed
+    from fastapi.responses import JSONResponse
 
-    if not cards:
-        from fastapi.responses import JSONResponse
+    # Frozen → serve locked picks instantly
+    if lineup_cache.is_frozen:
+        cached = lineup_cache.get()
+        if cached is not None:
+            return cached
 
-        # Frozen → serve locked picks instantly (static file mode)
-        if lineup_cache.is_frozen:
-            cached = lineup_cache.get()
-            if cached is not None:
-                return cached
+    active_date = _get_active_slate_date(db)
 
-        # Resolve active_date once for all downstream logic in this request.
-        # Calling _get_active_slate_date multiple times risks inconsistency
-        # if game state changes between calls.
-        active_date = _get_active_slate_date(db)
+    # Cache warm but schedule not yet published → resolve first_pitch now
+    lock_time = lineup_cache.lock_time_utc
+    if lock_time is None and lineup_cache.is_warm:
+        from app.services.slate_monitor import _get_first_pitch_utc
 
-        # Cache warm but schedule not yet published → resolve first_pitch now
-        # and publish it so the T-65 gate below can evaluate correctly.  The
-        # old code unconditionally returned 425 "before_lock" here, which
-        # caused the frontend to render WaitState with a 0-min countdown even
-        # when the cache already had warm picks past lock time.  After
-        # resolving, fall through to the real T-65 gate so post-lock cache
-        # requests serve the stored picks.
-        lock_time = lineup_cache.lock_time_utc
-        if lock_time is None and lineup_cache.is_warm:
-            from app.services.slate_monitor import _get_first_pitch_utc
-
-            first_pitch = _get_first_pitch_utc(db, active_date)
-            if first_pitch is not None:
-                lineup_cache.set_schedule(first_pitch)
-                lock_time = lineup_cache.lock_time_utc
-            else:
-                # No first_pitch resolvable — still initializing, short-circuit
-                return JSONResponse(
-                    status_code=425,
-                    content={
-                        "detail": "Pipeline initializing — picks will be available soon.",
-                        "phase": "initializing",
-                        "first_pitch_utc": None,
-                        "lock_time_utc": None,
-                        "minutes_until_lock": None,
-                    },
-                )
-
-        # Schedule is set → enforce T-65 gate
-        if lock_time is not None:
-            now = datetime.now(timezone.utc)
-            if now < lock_time:
-                # Before T-65 → countdown
-                minutes_until = max(0, int((lock_time - now).total_seconds() / 60))
-                return JSONResponse(
-                    status_code=425,
-                    content={
-                        "detail": (
-                            f"Picks lock at T-65 ({minutes_until} min). "
-                            "Come back closer to game time."
-                        ),
-                        "phase": "before_lock",
-                        "first_pitch_utc": lineup_cache.first_pitch_utc.isoformat(),
-                        "lock_time_utc": lock_time.isoformat(),
-                        "minutes_until_lock": minutes_until,
-                    },
-                )
-
-            # Past T-65 → serve from cache
-            cached = lineup_cache.get()
-            if cached is not None:
-                return cached
-
-            # Past T-65 but no cache — T-65 freeze didn't complete.
-            # Computing on-the-fly is unsafe: _load_active_slate filters
-            # out Live/Final games, so a lineup built now would exclude
-            # started games and produce an incomplete candidate pool.
-            raise HTTPException(
-                503,
-                "T-65 lineup not available — the freeze did not complete. "
-                "Check pipeline logs.",
+        first_pitch = _get_first_pitch_utc(db, active_date)
+        if first_pitch is not None:
+            lineup_cache.set_schedule(first_pitch)
+            lock_time = lineup_cache.lock_time_utc
+        else:
+            return JSONResponse(
+                status_code=425,
+                content={
+                    "detail": "Pipeline initializing — picks will be available soon.",
+                    "phase": "initializing",
+                    "first_pitch_utc": None,
+                    "lock_time_utc": None,
+                    "minutes_until_lock": None,
+                },
             )
 
-    if not cards:
-        if active_date is None:
-            active_date = _get_active_slate_date(db)
-        cards, games = _load_active_slate(db, active_date)
+    # Schedule known → enforce T-65 gate
+    if lock_time is not None:
+        now = datetime.now(timezone.utc)
+        if now < lock_time:
+            minutes_until = max(0, int((lock_time - now).total_seconds() / 60))
+            return JSONResponse(
+                status_code=425,
+                content={
+                    "detail": (
+                        f"Picks lock at T-65 ({minutes_until} min). "
+                        "Come back closer to game time."
+                    ),
+                    "phase": "before_lock",
+                    "first_pitch_utc": lineup_cache.first_pitch_utc.isoformat(),
+                    "lock_time_utc": lock_time.isoformat(),
+                    "minutes_until_lock": minutes_until,
+                },
+            )
 
-    # If no slate data, trigger pipeline on-demand (handles first-request
-    # before startup pipeline finishes).  This path is unreachable past T-65
-    # because the gate above either serves cached picks or raises 503.
-    if len(cards) < 1:
-        if active_date is None:
-            active_date = _get_active_slate_date(db)
-        logger.info("No slate data found — triggering on-demand pipeline for %s", active_date)
-        try:
-            await run_full_pipeline(db, active_date)
-            cards, games = _load_active_slate(db, active_date)
-        except Exception as exc:
-            logger.error("On-demand pipeline failed — refusing to serve stale data: %s", exc)
-            raise HTTPException(503, f"Pipeline failed for {active_date}: {exc}") from exc
+        # Past T-65 → must be in cache; freeze did not complete if missing
+        cached = lineup_cache.get()
+        if cached is not None:
+            return cached
+        raise HTTPException(
+            503,
+            "T-65 lineup not available — the freeze did not complete. "
+            "Check pipeline logs.",
+        )
 
-    if len(cards) < 1:
-        raise HTTPException(404, "No slate data available for today")
-
-    # Step 1: Classify slate (Filter 1)
-    game_dicts = [g.model_dump() for g in games]
-    slate_class = classify_slate(len(games), game_dicts)
-
-    # Steps 2-3: Resolve candidates (scoring + env + popularity)
-    candidates = await _resolve_candidates(cards, games, db)
-    if not candidates:
-        raise HTTPException(404, "No matching players found in database")
-
-    # Steps 4-7: Run the dual filter strategy optimizer
-    dual = run_dual_filter_strategy(candidates, slate_class)
-    response = _build_response(dual, candidates)
-
-    # Cache the result for subsequent frontend requests
-    if active_date is None:
-        active_date = _get_active_slate_date(db)
-    lineup_cache.store(response, slate_date=active_date)
-
-    return response
+    # No schedule, cache not warm → pipeline hasn't run yet
+    raise HTTPException(503, "Pipeline not ready — picks will be available closer to game time.")
 
 
 @router.post("/classify-slate", response_model=SlateClassificationOut)
