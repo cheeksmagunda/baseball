@@ -96,6 +96,13 @@ class _LineupCache:
             return None
         return self._first_pitch_utc - timedelta(minutes=65)
 
+    @property
+    def unlock_time_utc(self) -> Optional[datetime]:
+        """T-60 unlock time: 60 minutes before first pitch. Picks become available after this."""
+        if self._first_pitch_utc is None:
+            return None
+        return self._first_pitch_utc - timedelta(minutes=60)
+
     # ---------- public API ----------
 
     def store(self, response: Any, slate_date: date | None = None) -> None:

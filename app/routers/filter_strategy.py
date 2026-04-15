@@ -594,52 +594,66 @@ async def build_and_cache_lineups(db: Session, slate_date: date | None = None) -
 @router.get("/status")
 def optimize_status():
     """
-    Returns lineup cache state and T-65 timing.
+    Returns lineup cache state and timing information.
 
     Phases:
-      no_slate    — no games scheduled today
-      before_lock — morning baseline is ready; waiting for T-65 window
-      finalizing  — T-65 has passed, final run in progress (rare race window)
-      locked      — picks are frozen; serve from cache until slate completes
+      no_slate      — no games scheduled today
+      before_lock   — waiting for T-65 (pipeline hasn't run yet)
+      finalizing    — T-65 has passed, final pipeline run in progress (rare race window)
+      locked_frozen — picks are frozen at T-65, but not yet unlocked for frontend (waiting for T-60)
+      ready         — picks are frozen and unlocked at T-60 (available for viewing)
     """
     first_pitch = lineup_cache.first_pitch_utc
     lock_time = lineup_cache.lock_time_utc
+    unlock_time = lineup_cache.unlock_time_utc
     now = datetime.now(timezone.utc)
 
     if lineup_cache.is_frozen:
-        phase = "locked"
-        minutes_until_lock = None
+        if unlock_time is not None and now < unlock_time:
+            phase = "locked_frozen"
+            minutes_until_unlock = max(0, int((unlock_time - now).total_seconds() / 60))
+        else:
+            phase = "ready"
+            minutes_until_unlock = None
     elif first_pitch is not None and lock_time is not None and now < lock_time:
         phase = "before_lock"
-        minutes_until_lock = max(0, int((lock_time - now).total_seconds() / 60))
+        minutes_until_unlock = max(0, int((lock_time - now).total_seconds() / 60))
     elif first_pitch is not None:
         phase = "finalizing"
-        minutes_until_lock = 0
+        minutes_until_unlock = 0
     else:
         phase = "no_slate"
-        minutes_until_lock = None
+        minutes_until_unlock = None
 
     return {
-        "ready": lineup_cache.is_warm,
+        "ready": lineup_cache.is_warm and (unlock_time is None or now >= unlock_time),
         "phase": phase,
         "first_pitch_utc": first_pitch.isoformat() if first_pitch else None,
         "lock_time_utc": lock_time.isoformat() if lock_time else None,
-        "minutes_until_lock": minutes_until_lock,
+        "unlock_time_utc": unlock_time.isoformat() if unlock_time else None,
+        "minutes_until_unlock": minutes_until_unlock,
     }
 
 
 @router.get("/optimize", response_model=FilterOptimizeResponse)
 async def filter_optimize(db: Session = Depends(get_db)):
     """
-    Serve T-65 frozen lineup picks from cache. Read-only.
+    Serve T-60 unlocked lineup picks from cache. Read-only.
 
     This endpoint never triggers the pipeline or optimizer. Picks are
     produced exclusively by the T-65 monitor and stored in lineup_cache.
+
+    Timeline:
+      - Before T-65: returns 425 (pipeline not yet run)
+      - T-65 to T-60: cache frozen but picks not yet unlocked, returns 425 (generating fresh data)
+      - T-60 onwards: picks available for viewing
     """
     from fastapi.responses import JSONResponse
 
-    # Frozen → serve locked picks instantly
-    if lineup_cache.is_frozen:
+    # Frozen + unlocked → serve picks
+    now = datetime.now(timezone.utc)
+    unlock_time = lineup_cache.unlock_time_utc
+    if lineup_cache.is_frozen and (unlock_time is None or now >= unlock_time):
         cached = lineup_cache.get()
         if cached is not None:
             return cached
@@ -655,49 +669,69 @@ async def filter_optimize(db: Session = Depends(get_db)):
         if first_pitch is not None:
             lineup_cache.set_schedule(first_pitch)
             lock_time = lineup_cache.lock_time_utc
+            unlock_time = lineup_cache.unlock_time_utc
         else:
             return JSONResponse(
                 status_code=425,
                 content={
-                    "detail": "Pipeline initializing — picks will be available soon.",
+                    "detail": "Pipeline initializing — picks will be available at T-60.",
                     "phase": "initializing",
                     "first_pitch_utc": None,
                     "lock_time_utc": None,
-                    "minutes_until_lock": None,
+                    "unlock_time_utc": None,
+                    "minutes_until_unlock": None,
                 },
             )
 
-    # Schedule known → enforce T-65 gate
+    # Schedule known → enforce T-65 and T-60 gates
     if lock_time is not None:
-        now = datetime.now(timezone.utc)
         if now < lock_time:
             minutes_until = max(0, int((lock_time - now).total_seconds() / 60))
             return JSONResponse(
                 status_code=425,
                 content={
                     "detail": (
-                        f"Picks lock at T-65 ({minutes_until} min). "
-                        "Come back closer to game time."
+                        f"Pipeline runs at T-65 ({minutes_until} min). "
+                        "Picks available for viewing at T-60."
                     ),
                     "phase": "before_lock",
                     "first_pitch_utc": lineup_cache.first_pitch_utc.isoformat(),
                     "lock_time_utc": lock_time.isoformat(),
-                    "minutes_until_lock": minutes_until,
+                    "unlock_time_utc": unlock_time.isoformat(),
+                    "minutes_until_unlock": minutes_until + 5,
                 },
             )
 
-        # Past T-65 → must be in cache; freeze did not complete if missing
+        # Past T-65 → check T-60 unlock gate
+        if unlock_time is not None and now < unlock_time:
+            minutes_until = max(0, int((unlock_time - now).total_seconds() / 60))
+            return JSONResponse(
+                status_code=425,
+                content={
+                    "detail": (
+                        f"Picks unlock at T-60 ({minutes_until} min). "
+                        "Backend is generating fresh lineups — come back shortly."
+                    ),
+                    "phase": "locked_frozen",
+                    "first_pitch_utc": lineup_cache.first_pitch_utc.isoformat(),
+                    "lock_time_utc": lock_time.isoformat(),
+                    "unlock_time_utc": unlock_time.isoformat(),
+                    "minutes_until_unlock": minutes_until,
+                },
+            )
+
+        # Past T-60 → must be in cache; freeze did not complete if missing
         cached = lineup_cache.get()
         if cached is not None:
             return cached
         raise HTTPException(
             503,
-            "T-65 lineup not available — the freeze did not complete. "
+            "T-60 lineup not available — the freeze did not complete. "
             "Check pipeline logs.",
         )
 
     # No schedule, cache not warm → pipeline hasn't run yet
-    raise HTTPException(503, "Pipeline not ready — picks will be available closer to game time.")
+    raise HTTPException(503, "Pipeline not ready — picks will be available at T-60.")
 
 
 @router.post("/classify-slate", response_model=SlateClassificationOut)
