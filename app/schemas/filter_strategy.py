@@ -54,12 +54,6 @@ class FilterCard(BaseModel):
     is_most_drafted_3x: bool = False  # 92% batter bust rate (V5.0 retrain) — hard-excluded from S5
 
 
-class FilterOptimizeRequest(BaseModel):
-    """Request for the full filter strategy pipeline."""
-    cards: list[FilterCard]
-    games: list[GameEnvironment] = []
-
-
 # ---------------------------------------------------------------------------
 # Response schemas
 # ---------------------------------------------------------------------------

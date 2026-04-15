@@ -25,9 +25,7 @@ async function getInitialLineups(): Promise<FilterOptimizeResponse | null> {
 
       // If healthy, fetch lineups
       const res = await fetch(`${backendUrl}/api/filter-strategy/optimize`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cards: [], games: [] }),
+        method: "GET",
         signal: controller.signal,
         cache: "no-store",
       });
