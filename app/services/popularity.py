@@ -104,8 +104,7 @@ async def fetch_social_signal(player_name: str, team: str) -> SignalResult:
             r.raise_for_status()
             return last_name in r.text.lower()
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            logger.debug("Google autocomplete failed for %s: %s", player_name, exc)
-            return False
+            raise RuntimeError(f"Google Trends autocomplete failed for {player_name}: {exc}") from exc
 
     async def _dailytrends(client: httpx.AsyncClient) -> bool:
         try:
@@ -116,8 +115,7 @@ async def fetch_social_signal(player_name: str, team: str) -> SignalResult:
             r.raise_for_status()
             return last_name in r.text.lower()
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            logger.debug("Google daily trends failed for %s: %s", player_name, exc)
-            return False
+            raise RuntimeError(f"Google Trends daily trends failed for {player_name}: {exc}") from exc
 
     async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT}) as client:
         in_autocomplete, in_daily = await asyncio.gather(
@@ -145,8 +143,7 @@ async def fetch_news_signal(player_name: str, team: str) -> SignalResult:
             r.raise_for_status()
             return name if last_name in r.text.lower() else None
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            logger.debug("%s RSS feed failed for %s: %s", name, player_name, exc)
-            return None
+            raise RuntimeError(f"{name} RSS feed failed for {player_name}: {exc}") from exc
 
     async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": _USER_AGENT}) as client:
         results = await asyncio.gather(
