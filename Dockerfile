@@ -6,7 +6,9 @@ WORKDIR /app
 COPY . .
 
 # Install dependencies and create db directory
-RUN pip install --no-cache-dir . && mkdir -p db && python -m app.seed
+# Seed runs at startup via FastAPI lifespan hook — not at build time,
+# since env vars (DFS_ODDS_API_KEY etc.) are not available during build.
+RUN pip install --no-cache-dir . && mkdir -p db
 
 EXPOSE 8000
 
