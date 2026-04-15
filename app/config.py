@@ -13,9 +13,8 @@ class Settings(BaseSettings):
     redis_url: str | None = None
 
     # The Odds API key for fetching pre-game Vegas lines (moneyline + O/U totals).
-    # Free tier: 500 requests/month.  Leave empty to skip Vegas line enrichment —
-    # the pipeline will log a warning and env scoring will treat lines as unknown.
-    odds_api_key: str = ""
+    # Free tier: 500 requests/month.  Required — startup raises ValidationError if unset.
+    odds_api_key: str
 
     # How often (seconds) the slate monitor re-runs the full pipeline to pick up
     # new starters, batting orders, boosts, and stats.  Data is always available,

@@ -96,11 +96,15 @@ async def _resolve_candidates(
     for card in cards:
         player = find_player_by_name(db, card.player_name, card.team)
         if not player:
+            if not card.position:
+                raise ValueError(
+                    f"Player {card.player_name!r} has no position — cannot resolve candidate"
+                )
             player = Player(
                 name=card.player_name,
                 name_normalized=normalize_name(card.player_name),
                 team=card.team or "UNK",
-                position=card.position or "DH",
+                position=card.position,
             )
             db.add(player)
             db.flush()
@@ -277,9 +281,10 @@ async def _resolve_candidates(
                 team_l10_wins=team_l10,
             )
         else:
-            env_score = 0.5
-            env_factors = ["No game environment data available"]
-            env_unknown_count = 7  # all factors unknown
+            raise ValueError(
+                f"Player {card.player_name!r} has no associated game — "
+                "env_score cannot be computed"
+            )
 
         game_id = card.game_id
         if game_id is None and game is not None:
