@@ -272,8 +272,12 @@ async def targeted_slate_monitor(
 
     if first_pitch_utc is None:
         raise RuntimeError(
-            f"No scheduled_game_time values found for {monitor_date} — "
-            "cannot determine first pitch time; pipeline must fail loudly"
+            f"No scheduled_game_time values found for {monitor_date}. "
+            "Cannot determine first pitch time. "
+            "Cannot build lineups without knowing when games start. "
+            "Pipeline must fail loudly (no fallback to default times). "
+            "This is a critical error that requires investigation. "
+            "See DISASTER_RECOVERY.md § Scenario 1 for debugging steps."
         )
 
     lock_time_utc = first_pitch_utc - timedelta(minutes=LOCK_MINUTES_BEFORE_PITCH)
@@ -362,10 +366,22 @@ async def targeted_slate_monitor(
 
         db = SessionLocal()
         try:
-            # No try/except — under the no-fallback rule, a T-65 pipeline
-            # failure (MLB/Odds API outage, etc.) must crash this monitor
-            # task so /optimize surfaces a hard error instead of quietly
-            # building lineups on stale morning-baseline data.
+            # =========================================================
+            # CRITICAL: NO TRY/EXCEPT AT T-65 FINAL RUN
+            # =========================================================
+            # Under the no-fallback rule, ANY T-65 pipeline failure
+            # (MLB API down, Odds API quota exhausted, DB connection
+            # failed, invalid config, etc.) must crash this monitor
+            # task. This allows /api/filter-strategy/optimize to return
+            # HTTP 503 with a clear error message rather than silently
+            # serving stale lineups from yesterday or neutral defaults.
+            #
+            # Bad data is worse than no data. Operations must restore
+            # the system rather than letting corrupted picks get drafted.
+            #
+            # See CLAUDE.md § "ABSOLUTE RULE: No Fallbacks. Ever"
+            # See DISASTER_RECOVERY.md for all failure scenarios
+            # =========================================================
             await run_full_pipeline(db, monitor_date)
             logger.info("T-%d pipeline complete", LOCK_MINUTES_BEFORE_PITCH)
 

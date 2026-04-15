@@ -3,7 +3,19 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
 
-engine = create_engine(settings.database_url, connect_args={"check_same_thread": False})
+# Configure database connection pool for production stability
+# pool_size: Max number of connections to maintain in the pool (Railway dyno typical)
+# max_overflow: Allow temporary connections above pool_size for traffic spikes
+# pool_recycle: Recycle connections every 1 hour (Railway Postgres timeout ~4 hours)
+# pool_pre_ping: Test connection before use (auto-recovery from stale connections)
+engine = create_engine(
+    settings.database_url,
+    connect_args={"check_same_thread": False},
+    pool_size=10,
+    max_overflow=20,
+    pool_recycle=3600,
+    pool_pre_ping=True,
+)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 

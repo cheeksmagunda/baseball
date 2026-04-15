@@ -58,8 +58,45 @@ async def lifespan(app: FastAPI):
 
     logger = logging.getLogger(__name__)
 
-    Path(settings.database_url.replace("sqlite:///", "")).parent.mkdir(parents=True, exist_ok=True)
+    # Startup Validation: Database URL
+    try:
+        db_url = settings.database_url
+        if db_url.startswith("sqlite:///"):
+            db_path = db_url.replace("sqlite:///", "")
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+            if not Path(db_path).parent.exists():
+                raise RuntimeError(f"Cannot create database directory: {db_path}")
+            logger.info("SQLite database directory validated: %s", db_path)
+        elif db_url.startswith("postgresql://") or db_url.startswith("postgresql+psycopg2://"):
+            # Validate Postgres connection string format
+            if not ("@" in db_url and ":" in db_url):
+                raise RuntimeError(f"Invalid Postgres URL format: {db_url}")
+            logger.info("Postgres database URL format validated")
+        else:
+            raise RuntimeError(f"Unsupported database URL scheme: {db_url}")
+    except Exception as e:
+        raise RuntimeError(f"Database URL validation failed at startup: {e}")
+
     init_db()
+
+    # Startup Validation: Redis (if configured)
+    if settings.redis_url:
+        try:
+            import redis as redis_lib
+            client = redis_lib.from_url(settings.redis_url, decode_responses=True)
+            client.ping()
+            logger.info("Redis connectivity verified at startup")
+        except Exception as e:
+            logger.warning("Redis configured but unreachable at startup (will use SQLite fallback): %s", e)
+
+    # Startup Validation: Odds API Key
+    if not settings.odds_api_key:
+        logger.critical(
+            "DFS_ODDS_API_KEY not configured. Vegas lines are REQUIRED for optimal lineup generation. "
+            "T-65 pipeline will crash if Vegas API cannot be called. Set DFS_ODDS_API_KEY environment variable."
+        )
+    else:
+        logger.info("DFS_ODDS_API_KEY configured — Vegas API enrichment enabled")
 
     # Seed database if empty
     with SessionLocal() as db:

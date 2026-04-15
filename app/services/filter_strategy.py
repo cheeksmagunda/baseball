@@ -622,13 +622,25 @@ def compute_batter_env_score(
 class FilteredCandidate:
     """A player card that has passed through Filters 1-3.
 
+    ========================================================================
+    CRITICAL RULE: card_boost and drafts are DISPLAY-ONLY FIELDS.
+    They must NEVER be used in EV computations, optimization, or scoring.
+    Both are only revealed during/after the draft and cannot be pre-game inputs.
+    ========================================================================
+
     EV is computed from pre-game signals only:
       env_score   — Vegas O/U, opposing ERA/bullpen, park, weather, platoon, batting order
       total_score — season-level trait quality (K/9, ISO, barrel%, speed, recent form)
       popularity  — media attention (Google Trends, ESPN, Reddit) — NOT platform ownership
 
-    card_boost and drafts are stored for display/output only and are NOT
-    used in any EV computation.  Both are only revealed during/after the draft.
+    Fields marked "display only":
+      card_boost  — user-facing boost multiplier (0 to +3.0x), revealed during draft
+      drafts      — user-facing platform ownership count, revealed during draft
+
+    These fields exist solely for user communication. They MUST NOT leak into
+    EV computations. Leaking in-draft dynamic signals corrupts the entire model.
+
+    See CLAUDE.md § "Signal Isolation: ABSOLUTE RULE" for full rationale.
     """
     player_name: str
     team: str

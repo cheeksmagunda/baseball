@@ -79,6 +79,27 @@ total_value = real_score × (2 + card_boost)
 
 The pipeline either works with real data or it fails loudly. Fallbacks mask bugs, corrupt optimization with wrong data, and violate the "Filter, Not Forecast" philosophy — you cannot filter on yesterday's environment.
 
+## Vegas Lines: Required, Never Optional
+
+**Critical Requirement:** Vegas lines (moneyline + over/under totals) are **mandatory inputs** to the T-65 pipeline. The Odds API (`DFS_ODDS_API_KEY` environment variable) must be configured and operational.
+
+**Behavior:**
+- `DFS_ODDS_API_KEY` **must be set** at startup. If missing, the app logs a critical warning at initialization.
+- When the T-65 pipeline runs (`app/services/pipeline.py:500`), `enrich_slate_game_vegas_lines()` **raises `RuntimeError`** if:
+  - The API key is unset
+  - The API request fails (network error, timeout)
+  - The API response indicates an error (401 invalid key, 422 quota exhausted, etc.)
+- **No fallback to NULL moneylines.** The entire T-65 pipeline crashes with a clear error.
+- Users see HTTP 503 "T-65 lineup not available — Vegas API failed" when they try to fetch picks.
+
+**Why?** Vegas lines feed directly into pitcher and batter environmental scoring (Filter 2):
+- **Pitcher env (Factor 5):** Moneyline determines win-bonus probability (heavy favorite -250+ gets full credit).
+- **Batter env (Group A, A1/A3):** Vegas O/U (over/under) and moneyline determine run-scoring environment.
+
+Missing Vegas data corrupts the EV formula and produces suboptimal lineups. The system cannot proceed without it. If The Odds API fails, operations must investigate and restore it — there is no graceful degradation.
+
+**Configuration:** Set `DFS_ODDS_API_KEY` to your The Odds API key (free tier: 500 requests/month, sufficient for one pipeline run per day).
+
 ## Architecture Overview
 
 ### Active Pipeline
@@ -253,6 +274,42 @@ Weights are configurable via the weights API (`GET/PUT /api/calibration/weights`
 **Scaling thresholds** (K/9 floor/ceiling, ERA ranges, OPS ranges, etc.) are also centralized in `app/core/constants.py` (`SCORING_K9_FLOOR`, `SCORING_K9_CEILING`, etc.). The scoring engine uses `scale_score()` from `app/core/utils.py` for all linear scaling — never inline `max(0, min(...))`.
 
 **Graduated env-score thresholds** for both pitcher and batter env functions are in `app/core/constants.py` (`PITCHER_ENV_OPS_FLOOR`, `BATTER_ENV_VEGAS_CEILING`, etc.). The service layer uses `_graduated_scale()` and `_graduated_scale_moneyline()` helpers in `app/services/filter_strategy.py`.
+
+## Signal Isolation: ABSOLUTE RULE
+
+**CRITICAL: `card_boost` and `drafts` must NEVER appear in EV calculations at any stage.**
+
+These are **in-draft dynamic signals** revealed ONLY during/after the draft. They can never be predictive inputs.
+
+Where they ARE permitted (display-only):
+- `FilteredCandidate.card_boost` — stored for user display during draft
+- `FilteredCandidate.drafts` — stored for user display (crowd ownership signals)
+- `compute_total_value()` in `app/core/utils.py` — ONLY for historical record-keeping from CSV data, never for prediction
+- Database fields on `SlatePlayer` — historical record-keeping
+
+Where they are FORBIDDEN:
+- `_compute_base_ev()` — no card_boost input (line 707-816 of filter_strategy.py) ✓
+- `_compute_filter_ev()` — derives pop_factor from pre-game signals only (line 819-825) ✓
+- Scoring engine (`app/services/scoring_engine.py`) — absolutely no card_boost or drafts ✓
+- Trait scoring — no dynamic signals ✓
+- Environmental scoring — no platform data ✓
+
+**Rationale:** Card boost is unknown before the draft. Drafts (platform ownership) are only visible during the draft. Using either for pre-game prediction would leak in-game information, corrupting the entire model with data unavailable at analysis time.
+
+**Enforcement:** Code review must flag any mention of `card_boost` or `drafts` in optimization, scoring, or EV-related logic. These fields are read-only for display purposes.
+
+## Disaster Recovery
+
+See **DISASTER_RECOVERY.md** for the complete runbook covering seven failure scenarios:
+1. Database unavailable
+2. Odds API key invalid/quota exhausted
+3. Redis unavailable
+4. MLB API down
+5. T-65 monitor hangs (weather delay)
+6. App crashes during pipeline
+7. Redis cache corrupted
+
+All scenarios follow the **FAIL LOUDLY, NEVER FALLBACK** rule. Users see HTTP 503 with clear error messages; operations must restore the system.
 
 ## Shared Utilities (`app/core/utils.py`)
 
