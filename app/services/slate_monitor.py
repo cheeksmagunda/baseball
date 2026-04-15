@@ -430,6 +430,43 @@ async def targeted_slate_monitor(
             LOCK_MINUTES_BEFORE_PITCH,
         )
     else:
+        # -------------------------------------------------------------------
+        # Phase 2b: Refresh the schedule right before the final run so weather
+        # delays push the lock *back* instead of locking early on stale times.
+        # Loop until the newly-parsed first pitch is within tolerance of the
+        # cached one; if it moves later, re-sleep to the new T-65.
+        # -------------------------------------------------------------------
+        from app.services.data_collection import fetch_schedule_for_date
+
+        while True:
+            db_refresh = SessionLocal()
+            try:
+                await fetch_schedule_for_date(db_refresh, monitor_date)
+                refreshed_first_pitch = _get_first_pitch_utc(db_refresh, monitor_date)
+            finally:
+                db_refresh.close()
+
+            if refreshed_first_pitch is None:
+                raise RuntimeError(
+                    f"No scheduled_game_time values for {monitor_date} at T-"
+                    f"{LOCK_MINUTES_BEFORE_PITCH} — pipeline must fail loudly"
+                )
+
+            # <2 min drift is noise (schedule-string rounding); treat as stable.
+            if refreshed_first_pitch <= first_pitch_utc + timedelta(minutes=2):
+                break
+
+            logger.warning(
+                "First pitch pushed back: %s UTC -> %s UTC — re-sleeping to new T-%d",
+                first_pitch_utc.strftime("%H:%M"),
+                refreshed_first_pitch.strftime("%H:%M"),
+                LOCK_MINUTES_BEFORE_PITCH,
+            )
+            first_pitch_utc = refreshed_first_pitch
+            lock_time_utc = first_pitch_utc - timedelta(minutes=LOCK_MINUTES_BEFORE_PITCH)
+            lineup_cache.set_schedule(first_pitch_utc=first_pitch_utc)
+            await _sleep_until(lock_time_utc)
+
         logger.info(
             "T-%d FINAL RUN — fetching data, building lineups, freezing cache",
             LOCK_MINUTES_BEFORE_PITCH,
@@ -437,19 +474,13 @@ async def targeted_slate_monitor(
 
         db = SessionLocal()
         try:
-            try:
-                await run_full_pipeline(db, monitor_date)
-                logger.info("T-%d pipeline complete", LOCK_MINUTES_BEFORE_PITCH)
-            except Exception as exc:
-                logger.error(
-                    "T-%d pipeline failed: %s — attempting lineup build with existing data",
-                    LOCK_MINUTES_BEFORE_PITCH, exc,
-                )
+            # No try/except — under the no-fallback rule, a T-65 pipeline
+            # failure (MLB/Odds API outage, etc.) must crash this monitor
+            # task so /optimize surfaces a hard error instead of quietly
+            # building lineups on stale morning-baseline data.
+            await run_full_pipeline(db, monitor_date)
+            logger.info("T-%d pipeline complete", LOCK_MINUTES_BEFORE_PITCH)
 
-            # No try/except — if the build fails, the exception propagates and
-            # the monitor task crashes loudly.  The old code caught the exception
-            # (including RuntimeError("fail loudly")) and silently continued to
-            # _post_lock_monitor, leaving the cache unfrozen.
             cached = await build_and_cache_lineups(db, slate_date=monitor_date)
             if cached:
                 lineup_cache.freeze(first_pitch_utc=first_pitch_utc)

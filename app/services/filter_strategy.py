@@ -549,8 +549,10 @@ def compute_batter_env_score(
         situation += 1.0
         factors.append("Platoon advantage")
 
-    # B2. Batting order — graduated scale, neutral baseline for unknowns
-    #     Removes the hard top-5 gate that structurally excluded ghost players.
+    # B2. Batting order — graduated scale.  Removes the hard top-5 gate that
+    #     structurally excluded ghost players.  Unknown orders contribute 0
+    #     (no mathematical guessing); missing-data risk is accounted for via
+    #     the DNP adjustment, not here.
     if batting_order is not None:
         if batting_order <= 3:
             situation += 1.0
@@ -565,10 +567,12 @@ def compute_batter_env_score(
             situation += 0.25
             factors.append(f"Bottom of lineup (bats #{batting_order})")
     else:
-        # Unknown batting order: neutral baseline (~order 6-7 equivalent).
-        # Not penalized as 0 — missing data ≠ bad data.  DNP risk is handled
-        # separately by _compute_dnp_adjustment() with ghost-awareness.
-        situation += 0.40
+        # Unknown batting order contributes 0 to env — no mathematical
+        # guessing ("assume they bat 6th/7th").  DNP risk for unpublished
+        # lineups is handled separately by _compute_dnp_adjustment() with
+        # ghost-awareness (DNP_GHOST_UNKNOWN_PENALTY / DNP_UNKNOWN_PENALTY),
+        # so this branch already avoids double-counting the missing-data
+        # penalty while staying faithful to the no-fallback rule.
         unknown_count += 1
 
     # ---------------------------------------------------------------

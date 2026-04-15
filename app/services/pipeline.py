@@ -489,17 +489,17 @@ async def run_full_pipeline(db: Session, game_date: date) -> dict:
 
     if slate:
         # Enrich series context (series wins, recent L10 form) for batter env Group D.
-        try:
-            await enrich_slate_game_series_context(db, slate)
-        except Exception as exc:
-            logger.warning("Series context enrichment failed (non-fatal): %s", exc)
+        # Fail loudly under the no-fallback rule — a silent failure here would
+        # leave Group D signals NULL and downstream env scoring would treat
+        # that as neutral, corrupting the EV formula.
+        await enrich_slate_game_series_context(db, slate)
 
         # Enrich Vegas lines (moneyline + O/U) for pitcher/batter env scoring.
-        # Non-fatal: runs only when DFS_ODDS_API_KEY is configured.
-        try:
-            await enrich_slate_game_vegas_lines(db, slate)
-        except Exception as exc:
-            logger.warning("Vegas lines enrichment failed (non-fatal): %s", exc)
+        # enrich_slate_game_vegas_lines() internally returns 0 (with a warning)
+        # when DFS_ODDS_API_KEY is not configured — that is a deliberate
+        # config choice, not a data-failure fallback. Any *actual* API error
+        # (quota exceeded, HTTP 5xx, etc.) must propagate and fail the pipeline.
+        await enrich_slate_game_vegas_lines(db, slate)
 
     scores = run_score_slate(db, game_date)
 
