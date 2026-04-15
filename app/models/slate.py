@@ -82,6 +82,28 @@ class SlateGame(Base):
 
     slate: Mapped["Slate"] = relationship(back_populates="games")
 
+    def get_context_for_team(self, team: str) -> dict:
+        """Return home/away context fields keyed from *team*'s perspective.
+
+        Callers no longer need to branch on home_team/away_team manually —
+        use this instead of repeating `game.home_X if is_home else game.away_X`.
+        """
+        is_home = self.home_team.upper() == team.upper()
+        return {
+            "is_home": is_home,
+            "opp_team": self.away_team if is_home else self.home_team,
+            "team_moneyline": self.home_moneyline if is_home else self.away_moneyline,
+            "opp_team_ops": self.away_team_ops if is_home else self.home_team_ops,
+            "opp_team_k_pct": self.away_team_k_pct if is_home else self.home_team_k_pct,
+            "opp_starter": self.away_starter if is_home else self.home_starter,
+            "opp_starter_mlb_id": self.away_starter_mlb_id if is_home else self.home_starter_mlb_id,
+            "opp_starter_era": self.away_starter_era if is_home else self.home_starter_era,
+            "opp_bullpen_era": self.away_bullpen_era if is_home else self.home_bullpen_era,
+            "series_team_wins": self.series_home_wins if is_home else self.series_away_wins,
+            "series_opp_wins": self.series_away_wins if is_home else self.series_home_wins,
+            "team_l10_wins": self.home_team_l10_wins if is_home else self.away_team_l10_wins,
+        }
+
 
 class SlatePlayer(Base):
     __tablename__ = "slate_players"

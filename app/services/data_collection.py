@@ -733,18 +733,11 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
       - compute_pitcher_env_score()  Factor 5: Moneyline Win bonus
       - compute_batter_env_score()   Group A A1: Vegas O/U, A3: Moneyline
 
-    Returns 0 with a warning when DFS_ODDS_API_KEY is not configured — that
-    is a deliberate config choice. Any actual API error raises RuntimeError.
+    Raises RuntimeError if DFS_ODDS_API_KEY is not set, quota is exhausted,
+    or the request fails — no fallback per "no fallbacks ever" rule.
     """
     from app.config import settings
     from app.core.odds_api import fetch_mlb_odds
-
-    if not settings.odds_api_key:
-        logger.warning(
-            "DFS_ODDS_API_KEY is not configured — skipping Vegas lines enrichment. "
-            "Moneyline and O/U signals will be NULL (env scoring treats as unknown/neutral)."
-        )
-        return 0
 
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
     if not games:

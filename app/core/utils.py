@@ -82,3 +82,32 @@ def scale_score(value: float, floor: float, ceiling: float, max_pts: float) -> f
         return max_pts if value >= ceiling else 0.0
     pct = (value - floor) / (ceiling - floor)
     return round(max(0.0, min(max_pts, pct * max_pts)), 1)
+
+
+def graduated_scale(value: float, floor: float, ceiling: float) -> float:
+    """Linearly scale *value* between *floor* and *ceiling* to 0.0–1.0.
+
+    Works for ascending (floor < ceiling) and descending (floor > ceiling) ranges.
+    Raises ValueError if *value* is None.
+    """
+    if value is None:
+        raise ValueError("graduated_scale: value must not be None")
+    span = ceiling - floor
+    if span == 0:
+        return 1.0 if value == ceiling else 0.0
+    ratio = (value - floor) / span
+    return max(0.0, min(1.0, ratio))
+
+
+def graduated_scale_moneyline(moneyline: int, ml_floor: int, ml_ceiling: int) -> float:
+    """Graduated moneyline scale: ml_floor (e.g. -110) → 0, ml_ceiling (e.g. -250) → 1.0.
+
+    More negative = stronger favourite. Raises ValueError if *moneyline* is None.
+    """
+    if moneyline is None:
+        raise ValueError("graduated_scale_moneyline: moneyline must not be None")
+    if moneyline <= ml_ceiling:
+        return 1.0
+    if moneyline >= ml_floor:
+        return 0.0
+    return (-moneyline - (-ml_floor)) / float(-ml_ceiling - (-ml_floor))
