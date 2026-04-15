@@ -197,6 +197,11 @@ async def _resolve_candidates(
 
         score_result = score_player(db, player, is_pitcher=is_pitcher, **score_kwargs)
 
+        # Series/momentum context — populated only for batters below
+        series_team_w: int | None = None
+        series_opp_w: int | None = None
+        team_l10: int | None = None
+
         # Compute environmental score (Filter 2)
         if is_pitcher and game:
             is_home = game.home_team.upper() == card.team.upper()
@@ -250,6 +255,11 @@ async def _resolve_candidates(
             # Bullpen vulnerability: the opposing team's bullpen ERA
             opp_bp_era = game.away_bullpen_era if is_home else game.home_bullpen_era
 
+            # Series/momentum context for Group D env scoring
+            series_team_w = game.series_home_wins if is_home else game.series_away_wins
+            series_opp_w = game.series_away_wins if is_home else game.series_home_wins
+            team_l10 = game.home_team_l10_wins if is_home else game.away_team_l10_wins
+
             env_score, env_factors, env_unknown_count = compute_batter_env_score(
                 vegas_total=game.vegas_total,
                 opp_pitcher_era=opp_era,
@@ -262,6 +272,9 @@ async def _resolve_candidates(
                 temperature_f=game.temperature_f,
                 team_moneyline=team_ml,
                 opp_bullpen_era=opp_bp_era,
+                series_team_wins=series_team_w,
+                series_opp_wins=series_opp_w,
+                team_l10_wins=team_l10,
             )
         else:
             env_score = 0.5
@@ -281,6 +294,9 @@ async def _resolve_candidates(
             "env_factors": env_factors,
             "env_unknown_count": env_unknown_count,
             "game_id": game_id,
+            "series_team_wins": series_team_w,
+            "series_opp_wins": series_opp_w,
+            "team_l10_wins": team_l10,
         })
 
     # Stage 2: fetch popularity for all players in parallel (Filter 3)
@@ -327,6 +343,9 @@ async def _resolve_candidates(
             drafts=card.drafts,            # stored for display only
             traits=score_result.traits,
             batting_order=card.batting_order,
+            series_team_wins=pre.get("series_team_wins"),
+            series_opp_wins=pre.get("series_opp_wins"),
+            team_l10_wins=pre.get("team_l10_wins"),
         ))
 
     # Candidate pool health summary (draft counts are display-only labels).
@@ -451,6 +470,10 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             temperature_f=g.temperature_f,
             home_bullpen_era=g.home_bullpen_era,
             away_bullpen_era=g.away_bullpen_era,
+            series_home_wins=g.series_home_wins,
+            series_away_wins=g.series_away_wins,
+            home_team_l10_wins=g.home_team_l10_wins,
+            away_team_l10_wins=g.away_team_l10_wins,
         )
         for g in remaining_games
     ]

@@ -147,6 +147,33 @@ class _LineupCache:
         # Late game still in progress — keep serving current picks
         return self._data
 
+    def restore_and_refreeze(self, first_pitch_utc: datetime) -> bool:
+        """
+        Attempt to warm-load today's cache from SQLite/Redis and immediately
+        re-freeze it.  Called on startup when the app restarts during a live
+        slate — prevents regenerating picks from a reduced candidate pool
+        (started/final games already excluded) and serving different picks
+        than the ones that were locked at T-65.
+
+        Returns True if the cache was successfully restored and refrozen.
+        """
+        loaded = self.load_from_db()
+        if not loaded:
+            return False
+        if self._slate_date != date.today():
+            # Cache belongs to a different day — do not refreeze
+            self._data = None
+            self._slate_date = None
+            return False
+        self.freeze(first_pitch_utc=first_pitch_utc)
+        logger.info(
+            "Startup during live slate — restored frozen picks for %s "
+            "(first pitch %s UTC). No regeneration.",
+            self._slate_date,
+            first_pitch_utc.strftime("%H:%M"),
+        )
+        return True
+
     def clear(self) -> None:
         self._data = None
         self._slate_date = None

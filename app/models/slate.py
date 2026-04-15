@@ -69,6 +69,17 @@ class SlateGame(Base):
     home_bullpen_era: Mapped[float | None] = mapped_column(Float, nullable=True)
     away_bullpen_era: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Series context — games won by each team in the current series BEFORE today.
+    # Populated by enrich_slate_game_series_context() from the MLB schedule API.
+    # Used by batter env Group D (momentum) and the momentum gate in _compute_base_ev().
+    series_home_wins: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    series_away_wins: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Recent form — wins in last 10 games for each team.
+    # Populated alongside series context from the MLB schedule API.
+    home_team_l10_wins: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    away_team_l10_wins: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     slate: Mapped["Slate"] = relationship(back_populates="games")
 
 

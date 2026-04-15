@@ -427,6 +427,9 @@ def compute_batter_env_score(
     temperature_f: int | None = None,
     team_moneyline: int | None = None,
     opp_bullpen_era: float | None = None,
+    series_team_wins: int | None = None,
+    series_opp_wins: int | None = None,
+    team_l10_wins: int | None = None,
 ) -> tuple[float, list[str], int]:
     """
     Compute environmental score for a batter (0-1.0).
@@ -437,6 +440,11 @@ def compute_batter_env_score(
     - Batting order graduated (1-9 scale) with neutral baseline for unknowns.
     - All thresholds graduated via linear interpolation.
 
+    V8.1 changes (April 15):
+    - Group D added: series/momentum context (series wins, recent L10 form).
+      Addresses "correctly-avoided player disguised as a ghost" problem where
+      a low-media batter gets TARGET classification despite a terrible matchup.
+
     Returns a third value, `unknown_count`, tracking how many environmental
     factors were missing (None) vs. confirmed bad.
 
@@ -445,6 +453,7 @@ def compute_batter_env_score(
       Group B — Player situation (platoon, batting order) — up to 2.0
       Group C — Venue (park + weather) — up to 1.0
       Debut bonus — 0.5
+      Group D — Series/momentum (series record, recent L10) — ±0.8
     """
     factors: list[str] = []
     unknown_count = 0
@@ -563,9 +572,42 @@ def compute_batter_env_score(
         factors.append("Debut/return premium")
 
     # ---------------------------------------------------------------
+    # Group D: Series/Momentum context (±0.8 additive)
+    # Addresses the "correctly-avoided player disguised as a ghost"
+    # problem: a batter on a team getting swept faces genuinely bad
+    # conditions regardless of low media attention.
+    # ---------------------------------------------------------------
+    from app.core.constants import (
+        SERIES_LEADING_BONUS,
+        SERIES_TRAILING_PENALTY,
+        TEAM_HOT_L10_THRESHOLD,
+        TEAM_COLD_L10_THRESHOLD,
+        TEAM_HOT_L10_BONUS,
+        TEAM_COLD_L10_PENALTY,
+    )
+    momentum = 0.0
+    if series_team_wins is not None and series_opp_wins is not None:
+        series_deficit = series_opp_wins - series_team_wins
+        series_lead = series_team_wins - series_opp_wins
+        if series_lead >= 2:
+            momentum += SERIES_LEADING_BONUS
+            factors.append(f"Leading series {series_team_wins}-{series_opp_wins}")
+        elif series_deficit >= 2:
+            momentum -= SERIES_TRAILING_PENALTY
+            factors.append(f"Trailing series {series_team_wins}-{series_opp_wins} (sweep risk)")
+
+    if team_l10_wins is not None:
+        if team_l10_wins >= TEAM_HOT_L10_THRESHOLD:
+            momentum += TEAM_HOT_L10_BONUS
+            factors.append(f"Hot team (L10: {team_l10_wins}-{10 - team_l10_wins})")
+        elif team_l10_wins <= TEAM_COLD_L10_THRESHOLD:
+            momentum -= TEAM_COLD_L10_PENALTY
+            factors.append(f"Cold team (L10: {team_l10_wins}-{10 - team_l10_wins})")
+
+    # ---------------------------------------------------------------
     # Final score: sum of capped groups / max_score
     # ---------------------------------------------------------------
-    total = run_env + situation + venue + debut
+    total = run_env + situation + venue + debut + momentum
     max_score = BATTER_ENV_MAX_SCORE
 
     if unknown_count > 0:
@@ -610,6 +652,13 @@ class FilteredCandidate:
     traits: list = field(default_factory=list)  # TraitScore list from scoring engine
     batting_order: int | None = None  # 1-9 if confirmed in lineup, None = DNP risk
     is_in_blowout_game: bool = False  # set by run_filter_strategy before EV computation
+
+    # Series/momentum context — populated from SlateGame series fields.
+    # Used by Group D env scoring and the momentum gate in _compute_base_ev().
+    # None = data unavailable (treated as neutral, no penalty).
+    series_team_wins: int | None = None   # wins by this player's team in current series
+    series_opp_wins: int | None = None    # wins by the opponent in current series
+    team_l10_wins: int | None = None      # this team's wins in last 10 games
 
     # Computed by the optimizer
     filter_ev: float = 0.0
@@ -713,6 +762,42 @@ def _compute_base_ev(
         TRAIT_MODIFIER_CEILING - TRAIT_MODIFIER_FLOOR
     ) / (1.0 - trait_floor)
     trait_factor = max(TRAIT_MODIFIER_FLOOR, min(TRAIT_MODIFIER_CEILING, trait_factor))
+
+    # Momentum gate — caps pop_factor at NEUTRAL for batters simultaneously
+    # trailing 2+ games in series AND on a cold L10 streak.
+    #
+    # This addresses the "correctly-avoided player disguised as a ghost" problem:
+    # a low-media batter (TARGET classification) may be low-buzz precisely
+    # because they are on a struggling team facing a dominant opponent — not
+    # because the crowd overlooked a genuine opportunity.  When both series
+    # context AND recent form are simultaneously bad (rare, specific condition),
+    # the pop signal is overriding a real matchup problem.
+    #
+    # The gate fires only when BOTH conditions are met:
+    #   - Team is behind in the series by MOMENTUM_GATE_SERIES_DEFICIT or more
+    #   - Team's L10 wins are at or below MOMENTUM_GATE_L10_CEILING (cold team)
+    # Pitchers are exempt — series/team context affects batter run support, not
+    # the pitcher's own performance.
+    if not candidate.is_pitcher:
+        from app.core.constants import MOMENTUM_GATE_SERIES_DEFICIT, MOMENTUM_GATE_L10_CEILING
+        from app.services.condition_classifier import RS_CONDITION_MATRIX
+        series_tw = candidate.series_team_wins
+        series_ow = candidate.series_opp_wins
+        l10 = candidate.team_l10_wins
+        if (
+            series_tw is not None and series_ow is not None and l10 is not None
+            and (series_ow - series_tw) >= MOMENTUM_GATE_SERIES_DEFICIT
+            and l10 <= MOMENTUM_GATE_L10_CEILING
+        ):
+            neutral_factor = RS_CONDITION_MATRIX["batter"]["NEUTRAL"]
+            if pop_factor > neutral_factor:
+                logger.debug(
+                    "Momentum gate triggered for %s (series %d-%d, L10 %d-wins) — "
+                    "capping pop_factor %.3f → %.3f (NEUTRAL)",
+                    candidate.player_name, series_tw, series_ow, l10,
+                    pop_factor, neutral_factor,
+                )
+                pop_factor = neutral_factor
 
     # Scale pop_factor from raw RS matrix range (0.275–1.00) into the
     # PRIMARY range (0.50–1.50).  This is the dominant signal: FADE batters

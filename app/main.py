@@ -34,11 +34,34 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # Purge all cache tiers on startup so every redeploy triggers a full
-    # pipeline regeneration. Stale lineups (wrong starters, old scores)
-    # must never survive a restart.
+    # Restart-during-live-slate guard:
+    # If today's picks are already frozen in the DB/Redis (i.e., a Railway
+    # dyno restarted after T-65), restore and re-freeze them instead of
+    # wiping and regenerating from a reduced candidate pool.  Otherwise,
+    # purge all cache tiers so the new startup always gets fresh data.
+    from datetime import datetime, timedelta, timezone
     from app.services.lineup_cache import lineup_cache
-    lineup_cache.purge()
+    from app.services.slate_monitor import _get_first_pitch_utc, LOCK_MINUTES_BEFORE_PITCH
+
+    _restored_frozen = False
+    _db_check = SessionLocal()
+    try:
+        from app.routers.filter_strategy import _get_active_slate_date
+        _active = _get_active_slate_date(_db_check)
+        if _active == date.today():
+            _fp = _get_first_pitch_utc(_db_check, date.today())
+            if _fp is not None:
+                _lock = _fp - timedelta(minutes=LOCK_MINUTES_BEFORE_PITCH)
+                if datetime.now(timezone.utc) >= _lock:
+                    # T-65 has already passed — attempt to restore frozen picks
+                    _restored_frozen = lineup_cache.restore_and_refreeze(_fp)
+    except Exception as _exc:
+        logger.warning("Startup freeze-restore check failed (will purge): %s", _exc)
+    finally:
+        _db_check.close()
+
+    if not _restored_frozen:
+        lineup_cache.purge()
 
     # startup_done_event signals the T-65 monitor that the morning baseline
     # pipeline has finished and it is safe to compute lock timing.
@@ -49,6 +72,17 @@ async def lifespan(app: FastAPI):
         import traceback
         from datetime import timedelta
         from app.routers.filter_strategy import build_and_cache_lineups, _get_active_slate_date
+
+        # If picks were already restored from a frozen cache (restart during live
+        # slate), skip regeneration entirely — the T-65 monitor already ran and
+        # produced the correct picks before the restart.
+        if _restored_frozen:
+            logger.info(
+                "Startup pipeline skipped — frozen picks restored from cache. "
+                "T-65 monitor will not re-run."
+            )
+            startup_done_event.set()
+            return
 
         db = SessionLocal()
         try:

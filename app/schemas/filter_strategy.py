@@ -34,6 +34,10 @@ class GameEnvironment(BaseModel):
     temperature_f: int | None = None
     home_bullpen_era: float | None = None
     away_bullpen_era: float | None = None
+    series_home_wins: int | None = None
+    series_away_wins: int | None = None
+    home_team_l10_wins: int | None = None
+    away_team_l10_wins: int | None = None
 
 
 class FilterCard(BaseModel):
