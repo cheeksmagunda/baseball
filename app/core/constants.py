@@ -416,6 +416,13 @@ BATTER_ENV_MAX_SCORE = 6.3               # 2.0 (run env cap) + 2.0 (situation) +
 MOMENTUM_GATE_SERIES_DEFICIT = 2   # series deficit at or above triggers gate
 MOMENTUM_GATE_L10_CEILING = 3      # L10 wins at or below triggers gate (cold + trailing)
 
+# ---------------------------------------------------------------------------
+# Game status constants
+# Games in these statuses will never receive scores; treat as "done" so the
+# post-lock monitor and cache completion check don't perma-freeze.
+# ---------------------------------------------------------------------------
+NON_PLAYING_GAME_STATUSES = frozenset({"Postponed", "Cancelled", "Suspended"})
+
 # Scoring engine scaling (K/9 shared between scoring_engine and filter_strategy)
 SCORING_K9_FLOOR = 6.0                # K/9 at or below → 0 pts
 SCORING_K9_CEILING = 12.0             # K/9 at or above → max pts

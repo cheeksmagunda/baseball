@@ -9,9 +9,12 @@ The full pipeline is:
 """
 
 import asyncio
+import logging
 from datetime import date
 
 from sqlalchemy.orm import Session, selectinload, joinedload
+
+logger = logging.getLogger(__name__)
 
 from app.core.constants import PITCHER_POSITIONS
 from app.models.player import Player
@@ -48,8 +51,6 @@ async def run_fetch(db: Session, game_date: date) -> dict:
 async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     """Fetch stats for all players in a slate, then backfill SlateGame starter stats."""
     from app.models.player import PlayerStats
-    import logging
-    logger = logging.getLogger(__name__)
 
     slate = db.query(Slate).filter_by(date=game_date).first()
     if not slate:
@@ -487,21 +488,18 @@ async def run_full_pipeline(db: Session, game_date: date) -> dict:
     stats_result = await run_fetch_player_stats(db, game_date)
 
     if slate:
-        import logging
-        _logger = logging.getLogger(__name__)
-
         # Enrich series context (series wins, recent L10 form) for batter env Group D.
         try:
             await enrich_slate_game_series_context(db, slate)
-        except Exception as _exc:
-            _logger.warning("Series context enrichment failed (non-fatal): %s", _exc)
+        except Exception as exc:
+            logger.warning("Series context enrichment failed (non-fatal): %s", exc)
 
         # Enrich Vegas lines (moneyline + O/U) for pitcher/batter env scoring.
         # Non-fatal: runs only when DFS_ODDS_API_KEY is configured.
         try:
             await enrich_slate_game_vegas_lines(db, slate)
-        except Exception as _exc:
-            _logger.warning("Vegas lines enrichment failed (non-fatal): %s", _exc)
+        except Exception as exc:
+            logger.warning("Vegas lines enrichment failed (non-fatal): %s", exc)
 
     scores = run_score_slate(db, game_date)
 

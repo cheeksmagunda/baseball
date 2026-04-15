@@ -147,6 +147,7 @@ async def _post_lock_monitor(today: date) -> None:
     (all games final) it clears the frozen cache and pre-warms tomorrow's
     pipeline. No lineup rebuilds — picks are locked.
     """
+    from app.core.constants import NON_PLAYING_GAME_STATUSES
     from app.database import SessionLocal
     from app.models.slate import Slate, SlateGame
     from app.services.lineup_cache import lineup_cache
@@ -176,10 +177,9 @@ async def _post_lock_monitor(today: date) -> None:
                 if not games:
                     continue
 
-                _NON_PLAYING = {"Postponed", "Cancelled", "Suspended"}
                 all_final = all(
                     (g.home_score is not None and g.away_score is not None)
-                    or g.game_status in _NON_PLAYING
+                    or g.game_status in NON_PLAYING_GAME_STATUSES
                     for g in games
                 )
 
@@ -301,10 +301,9 @@ async def _fallback_status_monitor(monitor_date: date | None = None) -> None:
 
                 prev_remaining = remaining
 
-                _NON_PLAYING = {"Postponed", "Cancelled", "Suspended"}
                 all_final = all(
                     (g.home_score is not None and g.away_score is not None)
-                    or g.game_status in _NON_PLAYING
+                    or g.game_status in NON_PLAYING_GAME_STATUSES
                     for g in games
                 )
 

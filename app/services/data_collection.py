@@ -4,8 +4,11 @@ and stores them in the database.
 """
 
 import asyncio
+import logging
 from datetime import date, datetime as _datetime
 from zoneinfo import ZoneInfo
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy.orm import Session
 
@@ -501,8 +504,6 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
       bullpen).  True bullpen ERA (relievers only) would require a roster-level
       split; team ERA is an adequate proxy vs. NULL.
     """
-    import logging
-    logger = logging.getLogger(__name__)
     from app.core.mlb_api import get_team_pitching_stats
 
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
@@ -603,9 +604,7 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
     Both fields remain NULL if the API fails — env scoring treats NULL as
     unknown/neutral (no penalty, no bonus).
     """
-    import logging
     from datetime import timedelta
-    logger = logging.getLogger(__name__)
 
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
     if not games:
@@ -646,15 +645,21 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
     def _normalize(abbr: str) -> str:
         return canonicalize_team(abbr).upper()
 
-    def _extract_record(team: str, opp: str) -> tuple[int, int, int]:
+    def _extract_record(team: str, opp: str) -> tuple[int | None, int | None, int | None]:
         """
         Return (series_wins, series_losses, l10_wins) for `team` vs `opp`.
 
         series_wins/losses: consecutive games vs. opp immediately before
         slate_date (the current series).
         l10_wins: wins in the 10 most recent completed games (any opponent).
+
+        Returns (None, None, None) when no schedule data is available for the
+        team (API failure). This prevents the momentum gate from firing on
+        fabricated zeros — NULL values are treated as neutral (no penalty).
         """
         raw = team_games.get(team, [])
+        if not raw:
+            return None, None, None
 
         def _game_date(g: dict) -> str:
             return g.get("officialDate", g.get("gameDate", "")[:10])
@@ -743,8 +748,6 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
     No fallback: if the API key is not configured, logs a warning and returns 0.
     If the API call fails, raises RuntimeError (pipeline fails loudly).
     """
-    import logging
-    logger = logging.getLogger(__name__)
     from app.config import settings
     from app.core.odds_api import fetch_mlb_odds
 

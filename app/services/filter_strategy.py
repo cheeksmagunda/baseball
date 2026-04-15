@@ -1,16 +1,33 @@
 """
-Filter Strategy: "Filter, Not Forecast" — the five-filter pipeline.
+Filter Strategy V8.1: "Filter, Not Forecast" — the five-filter pipeline.
 
 This is the core strategic engine from the Master Strategy Document.
 We do NOT predict RS. We identify conditions under which high RS is
 most likely to emerge, then select from that filtered pool.
 
 Five filters applied sequentially:
-  1. Slate Architecture — classify the day type
-  2. Environmental Advantage — who has the conditions?
-  3. Ownership Leverage — who is the crowd ignoring?
-  4. Boost Optimization — how to allocate boosts?
-  5. Lineup Construction — slot sequencing
+  1. Slate Architecture    — classify the day type (informational only)
+  2. Popularity / Crowd-Avoidance — PRIMARY signal (V8.0+): FADE the crowd.
+                             TARGET batters avg RS 3.57 vs FADE 0.98 (3.6×).
+                             Source: Google Trends, ESPN RSS, Reddit (pre-game).
+  3. Environmental Advantage — SECONDARY signal: game conditions (Vegas O/U,
+                             opposing ERA, bullpen ERA, park, weather, platoon,
+                             batting order, moneyline). Groups A/B/C/D.
+  4. Individual Explosive Traits — TERTIARY: K/9, ISO, barrel%, speed, form.
+  5. Slot Sequencing (Pitcher-Anchor) — 1 SP pinned to Slot 1 (2.0×);
+                             4 batters fill Slots 2–5 by filter_ev.
+
+EV formula (V8.0):
+    base_ev = pop_factor_scaled × env_factor × trait_factor
+              × stack_bonus × debut_bonus × dnp_adj × 100
+
+V8.1 additions (2026-04-15):
+  - Group D env scoring: series/momentum context (±0.8 additive).
+  - Momentum gate: caps pop_factor at NEUTRAL when batter's team trails
+    series ≥2 games AND has ≤3 L10 wins simultaneously.
+  - Bullpen ERA (Group A A4): now populated from MLB Stats API team pitching.
+  - Vegas lines (Group A A1/A3, pitcher Factor 5): from The Odds API.
+  - Cache restart guard: restore_and_refreeze() prevents mid-slate pick mutation.
 
 References strategy doc sections §4.1–§4.5.
 """
@@ -52,6 +69,8 @@ from app.core.constants import (
     MOONSHOT_SHARP_BONUS_MAX,
     MOONSHOT_EXPLOSIVE_BONUS_MAX,
     MOONSHOT_SAME_TEAM_PENALTY,
+    MOONSHOT_CONTRARIAN_FADE_MULT,
+    MOONSHOT_CONTRARIAN_TARGET_MULT,
     GHOST_DRAFT_THRESHOLD,
     MAX_PITCHERS_IN_LINEUP,
     REQUIRED_PITCHERS_IN_LINEUP,
@@ -95,8 +114,19 @@ from app.core.constants import (
     BATTER_ENV_WIND_OUT_BONUS,
     BATTER_ENV_WIND_OUT_DIRECTIONS,
     BATTER_ENV_MAX_SCORE,
+    # Group D — series/momentum context
+    SERIES_LEADING_BONUS,
+    SERIES_TRAILING_PENALTY,
+    TEAM_HOT_L10_THRESHOLD,
+    TEAM_COLD_L10_THRESHOLD,
+    TEAM_HOT_L10_BONUS,
+    TEAM_COLD_L10_PENALTY,
+    # Momentum gate constants
+    MOMENTUM_GATE_SERIES_DEFICIT,
+    MOMENTUM_GATE_L10_CEILING,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score
+from app.services.condition_classifier import RS_CONDITION_MATRIX, get_rs_condition_factor
 from app.services.popularity import PopularityClass
 
 logger = logging.getLogger(__name__)
@@ -577,14 +607,6 @@ def compute_batter_env_score(
     # problem: a batter on a team getting swept faces genuinely bad
     # conditions regardless of low media attention.
     # ---------------------------------------------------------------
-    from app.core.constants import (
-        SERIES_LEADING_BONUS,
-        SERIES_TRAILING_PENALTY,
-        TEAM_HOT_L10_THRESHOLD,
-        TEAM_COLD_L10_THRESHOLD,
-        TEAM_HOT_L10_BONUS,
-        TEAM_COLD_L10_PENALTY,
-    )
     momentum = 0.0
     if series_team_wins is not None and series_opp_wins is not None:
         series_deficit = series_opp_wins - series_team_wins
@@ -737,17 +759,6 @@ def _compute_base_ev(
         base_ev = pop_factor_scaled × env_factor × trait_factor
                   × stack_bonus × debut_bonus × dnp_adj × 100
     """
-    from app.core.constants import (
-        TRAIT_MODIFIER_FLOOR,
-        TRAIT_MODIFIER_CEILING,
-        ENV_MODIFIER_FLOOR,
-        ENV_MODIFIER_CEILING,
-        POP_MODIFIER_FLOOR,
-        POP_MODIFIER_CEILING,
-        POP_FACTOR_RAW_MIN,
-        POP_FACTOR_RAW_MAX,
-    )
-
     # env_score is 0-1 from compute_batter/pitcher_env_score.
     # Scale to ENV_MODIFIER_FLOOR–ENV_MODIFIER_CEILING (SECONDARY: 0.70–1.30).
     raw_env = max(candidate.env_score, 0.0)
@@ -779,8 +790,6 @@ def _compute_base_ev(
     # Pitchers are exempt — series/team context affects batter run support, not
     # the pitcher's own performance.
     if not candidate.is_pitcher:
-        from app.core.constants import MOMENTUM_GATE_SERIES_DEFICIT, MOMENTUM_GATE_L10_CEILING
-        from app.services.condition_classifier import RS_CONDITION_MATRIX
         series_tw = candidate.series_team_wins
         series_ow = candidate.series_opp_wins
         l10 = candidate.team_l10_wins
@@ -826,8 +835,6 @@ def _compute_base_ev(
 
 def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     """Compute Starting 5 EV: popularity-first formula via RS condition matrix."""
-    from app.services.condition_classifier import get_rs_condition_factor
-
     pop_factor = get_rs_condition_factor(
         candidate.popularity.value,
         is_pitcher=candidate.is_pitcher,
@@ -1205,9 +1212,6 @@ def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
     additional contrarian multipliers — Moonshot leans even harder into
     crowd-avoidance.
     """
-    from app.services.condition_classifier import get_rs_condition_factor
-    from app.core.constants import MOONSHOT_CONTRARIAN_FADE_MULT, MOONSHOT_CONTRARIAN_TARGET_MULT
-
     # Base pop_factor from condition matrix
     pop_factor = get_rs_condition_factor(
         candidate.popularity.value,

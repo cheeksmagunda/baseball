@@ -228,6 +228,7 @@ class _LineupCache:
         if self._slate_date is None:
             return True
 
+        from app.core.constants import NON_PLAYING_GAME_STATUSES
         from app.database import SessionLocal
         from app.models.slate import Slate, SlateGame
 
@@ -243,10 +244,9 @@ class _LineupCache:
 
             # A postponed/cancelled/suspended game will never receive scores.
             # Treat those statuses as "done" so the cache doesn't perma-freeze.
-            _NON_PLAYING = {"Postponed", "Cancelled", "Suspended"}
             return all(
                 (g.home_score is not None and g.away_score is not None)
-                or g.game_status in _NON_PLAYING
+                or g.game_status in NON_PLAYING_GAME_STATUSES
                 for g in games
             )
         except Exception as exc:
