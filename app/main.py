@@ -26,13 +26,10 @@ async def lifespan(app: FastAPI):
     init_db()
 
     # Seed database if empty
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         if db.query(Player).count() == 0:
             logger.info("Database empty, loading seed data...")
             run_seed(db)
-    finally:
-        db.close()
 
     # Restart-during-live-slate guard:
     # If today's picks are already frozen in the DB/Redis (i.e., a Railway
@@ -44,21 +41,19 @@ async def lifespan(app: FastAPI):
     from app.services.slate_monitor import _get_first_pitch_utc, LOCK_MINUTES_BEFORE_PITCH
 
     _restored_frozen = False
-    _db_check = SessionLocal()
     try:
-        from app.routers.filter_strategy import _get_active_slate_date
-        _active = _get_active_slate_date(_db_check)
-        if _active == date.today():
-            _fp = _get_first_pitch_utc(_db_check, date.today())
-            if _fp is not None:
-                _lock = _fp - timedelta(minutes=LOCK_MINUTES_BEFORE_PITCH)
-                if datetime.now(timezone.utc) >= _lock:
-                    # T-65 has already passed — attempt to restore frozen picks
-                    _restored_frozen = lineup_cache.restore_and_refreeze(_fp)
+        with SessionLocal() as _db_check:
+            from app.routers.filter_strategy import _get_active_slate_date
+            _active = _get_active_slate_date(_db_check)
+            if _active == date.today():
+                _fp = _get_first_pitch_utc(_db_check, date.today())
+                if _fp is not None:
+                    _lock = _fp - timedelta(minutes=LOCK_MINUTES_BEFORE_PITCH)
+                    if datetime.now(timezone.utc) >= _lock:
+                        # T-65 has already passed — attempt to restore frozen picks
+                        _restored_frozen = lineup_cache.restore_and_refreeze(_fp)
     except Exception as _exc:
         logger.warning("Startup freeze-restore check failed (will purge): %s", _exc)
-    finally:
-        _db_check.close()
 
     if not _restored_frozen:
         lineup_cache.purge()
@@ -84,53 +79,52 @@ async def lifespan(app: FastAPI):
             startup_done_event.set()
             return
 
-        db = SessionLocal()
         try:
-            # Stage 1: fetch schedule, rosters, stats, scores
-            pipeline_ok = False
-            try:
-                result = await run_full_pipeline(db, date.today())
-                logger.info("Startup pipeline complete: %s", result)
-                pipeline_ok = True
-            except Exception as exc:
-                logger.error("Startup pipeline failed: %s\n%s", exc, traceback.format_exc())
-
-            # If today has no games, also fetch the next day's slate
-            active_date = _get_active_slate_date(db)
-            if active_date != date.today():
+            with SessionLocal() as db:
+                # Stage 1: fetch schedule, rosters, stats, scores
+                pipeline_ok = False
                 try:
-                    result = await run_full_pipeline(db, active_date)
-                    logger.info("Next-day pipeline complete (%s): %s", active_date, result)
+                    result = await run_full_pipeline(db, date.today())
+                    logger.info("Startup pipeline complete: %s", result)
                     pipeline_ok = True
                 except Exception as exc:
-                    logger.error("Next-day pipeline failed: %s\n%s", exc, traceback.format_exc())
+                    logger.error("Startup pipeline failed: %s\n%s", exc, traceback.format_exc())
 
-            # Stage 2: morning baseline cache (NOT frozen — T-65 monitor freezes later)
-            if pipeline_ok:
+                # If today has no games, also fetch the next day's slate
+                active_date = _get_active_slate_date(db)
+                if active_date != date.today():
+                    try:
+                        result = await run_full_pipeline(db, active_date)
+                        logger.info("Next-day pipeline complete (%s): %s", active_date, result)
+                        pipeline_ok = True
+                    except Exception as exc:
+                        logger.error("Next-day pipeline failed: %s\n%s", exc, traceback.format_exc())
+
+                # Stage 2: morning baseline cache (NOT frozen — T-65 monitor freezes later)
+                if pipeline_ok:
+                    try:
+                        cached = await build_and_cache_lineups(db, slate_date=active_date)
+                        if cached:
+                            logger.info("Morning baseline ready — T-65 monitor will freeze at lock time")
+                        else:
+                            logger.warning("Morning baseline empty after startup (no slate data?)")
+                    except Exception as exc:
+                        logger.error("Morning baseline failed: %s\n%s", exc, traceback.format_exc())
+
+                # Publish schedule immediately so the UI shows "Picks Available
+                # at HH:MM" instead of "Preparing Today's Picks" while waiting
+                # for the T-65 monitor to wake up.  Runs even when pipeline_ok is
+                # False — the slate/games may already exist from a prior run.
                 try:
-                    cached = await build_and_cache_lineups(db, slate_date=active_date)
-                    if cached:
-                        logger.info("Morning baseline ready — T-65 monitor will freeze at lock time")
-                    else:
-                        logger.warning("Morning baseline empty after startup (no slate data?)")
+                    from app.services.slate_monitor import _get_first_pitch_utc
+
+                    first_pitch = _get_first_pitch_utc(db, active_date)
+                    if first_pitch is not None:
+                        lineup_cache.set_schedule(first_pitch)
+                        logger.info("Schedule published: first pitch %s UTC", first_pitch.strftime("%H:%M"))
                 except Exception as exc:
-                    logger.error("Morning baseline failed: %s\n%s", exc, traceback.format_exc())
-
-            # Publish schedule immediately so the UI shows "Picks Available
-            # at HH:MM" instead of "Preparing Today's Picks" while waiting
-            # for the T-65 monitor to wake up.  Runs even when pipeline_ok is
-            # False — the slate/games may already exist from a prior run.
-            try:
-                from app.services.slate_monitor import _get_first_pitch_utc
-
-                first_pitch = _get_first_pitch_utc(db, active_date)
-                if first_pitch is not None:
-                    lineup_cache.set_schedule(first_pitch)
-                    logger.info("Schedule published: first pitch %s UTC", first_pitch.strftime("%H:%M"))
-            except Exception as exc:
-                logger.warning("Could not publish schedule at startup: %s", exc)
+                    logger.warning("Could not publish schedule at startup: %s", exc)
         finally:
-            db.close()
             # Always signal the monitor so it can compute lock timing even if
             # the pipeline partially failed.
             startup_done_event.set()

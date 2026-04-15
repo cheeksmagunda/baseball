@@ -165,17 +165,13 @@ async def fetch_search_signal(player_name: str, team: str) -> SignalResult:
 
     High casual search interest = the crowd knows about this player.
     """
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT}) as client:
-            resp = await client.get(
-                "https://suggestqueries.google.com/complete/search",
-                params={"client": "firefox", "q": f"{player_name} "},
-            )
-        resp.raise_for_status()
-        suggestions = resp.text.lower()
-    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-        logger.debug("Google suggest failed for %s: %s", player_name, exc)
-        return SignalResult("search", 0.0, f"Search signal unavailable: {exc}")
+    async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT}) as client:
+        resp = await client.get(
+            "https://suggestqueries.google.com/complete/search",
+            params={"client": "firefox", "q": f"{player_name} "},
+        )
+    resp.raise_for_status()
+    suggestions = resp.text.lower()
 
     hot_terms = ["stats", "today", "home run", "injury", "lineup", "dfs"]
     matches = sum(1 for term in hot_terms if term in suggestions)

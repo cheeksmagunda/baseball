@@ -125,7 +125,7 @@ from app.core.constants import (
     MOMENTUM_GATE_SERIES_DEFICIT,
     MOMENTUM_GATE_L10_CEILING,
 )
-from app.core.utils import BASE_MULTIPLIER, get_trait_score
+from app.core.utils import BASE_MULTIPLIER, get_trait_score, graduated_scale, graduated_scale_moneyline
 from app.services.condition_classifier import RS_CONDITION_MATRIX, get_rs_condition_factor
 from app.services.popularity import PopularityClass
 
@@ -136,37 +136,6 @@ logger = logging.getLogger(__name__)
 # REQUIRED_PITCHERS_IN_LINEUP pitchers (see app/core/constants.py).  The
 # pitcher is selected first (highest filter_ev), anchors Slot 1, and its
 # game is blocked for all batter picks in the same lineup.
-
-
-# ---------------------------------------------------------------------------
-# Shared graduated scaling helper
-# ---------------------------------------------------------------------------
-
-def _graduated_scale(value: float, floor: float, ceiling: float) -> float:
-    """Linearly scale *value* between *floor* and *ceiling* to 0.0–1.0.
-
-    Returns 0.0 when value is at or beyond the floor (worse end),
-    1.0 when at or beyond the ceiling (better end).  Works for both
-    ascending ranges (floor < ceiling, e.g. K/9 6→10) and descending
-    ranges (floor > ceiling, e.g. OPS 0.780→0.650).
-    """
-    span = ceiling - floor
-    if span == 0:
-        return 1.0 if value == ceiling else 0.0
-    ratio = (value - floor) / span
-    return max(0.0, min(1.0, ratio))
-
-
-def _graduated_scale_moneyline(moneyline: int, ml_floor: int, ml_ceiling: int) -> float:
-    """Graduated moneyline scale: ml_floor (e.g. -110) → 0, ml_ceiling (e.g. -250) → 1.0.
-
-    Moneylines are negative, so "more negative = stronger favorite".
-    """
-    if moneyline <= ml_ceiling:
-        return 1.0
-    if moneyline >= ml_floor:
-        return 0.0
-    return (-moneyline - (-ml_floor)) / float(-ml_ceiling - (-ml_floor))
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +361,7 @@ def compute_pitcher_env_score(
 
     # 1. Weak opponent offense — graduated (lower OPS = better for pitcher)
     if opp_team_ops is not None:
-        contrib = _graduated_scale(opp_team_ops, PITCHER_ENV_OPS_CEILING, PITCHER_ENV_OPS_FLOOR)
+        contrib = graduated_scale(opp_team_ops, PITCHER_ENV_OPS_CEILING, PITCHER_ENV_OPS_FLOOR)
         score += contrib
         if contrib > 0:
             label = "Weak" if contrib >= 0.9 else "Below-avg"
@@ -400,7 +369,7 @@ def compute_pitcher_env_score(
 
     # 2. High-K opponent — graduated (higher K% = better for pitcher)
     if opp_team_k_pct is not None:
-        contrib = _graduated_scale(opp_team_k_pct, PITCHER_ENV_K_PCT_FLOOR, PITCHER_ENV_K_PCT_CEILING)
+        contrib = graduated_scale(opp_team_k_pct, PITCHER_ENV_K_PCT_FLOOR, PITCHER_ENV_K_PCT_CEILING)
         score += contrib
         if contrib > 0:
             label = "High-K" if contrib >= 0.9 else "Above-avg K"
@@ -408,7 +377,7 @@ def compute_pitcher_env_score(
 
     # 3. K upside (pitcher's own K/9) — graduated (higher = better)
     if pitcher_k_per_9 is not None:
-        contrib = _graduated_scale(pitcher_k_per_9, PITCHER_ENV_K9_FLOOR, PITCHER_ENV_K9_CEILING)
+        contrib = graduated_scale(pitcher_k_per_9, PITCHER_ENV_K9_FLOOR, PITCHER_ENV_K9_CEILING)
         score += contrib
         if contrib > 0:
             label = "Elite K upside" if contrib >= 0.9 else "K upside"
@@ -417,7 +386,7 @@ def compute_pitcher_env_score(
     # 4. Pitcher-friendly park — graduated (lower park factor = better)
     if park_team:
         pf = PARK_HR_FACTORS.get(park_team, 1.0)
-        contrib = _graduated_scale(pf, PITCHER_ENV_PARK_CEILING, PITCHER_ENV_PARK_FLOOR)
+        contrib = graduated_scale(pf, PITCHER_ENV_PARK_CEILING, PITCHER_ENV_PARK_FLOOR)
         score += contrib
         if contrib > 0:
             label = "Pitcher-friendly" if contrib >= 0.9 else "Neutral-to-friendly"
@@ -425,7 +394,7 @@ def compute_pitcher_env_score(
 
     # 5. Moneyline favorite — graduated (more negative = stronger favorite)
     if team_moneyline is not None:
-        contrib = _graduated_scale_moneyline(team_moneyline, PITCHER_ENV_ML_FLOOR, PITCHER_ENV_ML_CEILING)
+        contrib = graduated_scale_moneyline(team_moneyline, PITCHER_ENV_ML_FLOOR, PITCHER_ENV_ML_CEILING)
         score += contrib
         if contrib > 0:
             label = "Heavy favorite" if contrib >= 0.9 else "Favorite"
@@ -498,7 +467,7 @@ def compute_batter_env_score(
 
     # A1. Vegas O/U — graduated
     if vegas_total is not None:
-        contrib = _graduated_scale(vegas_total, BATTER_ENV_VEGAS_FLOOR, BATTER_ENV_VEGAS_CEILING)
+        contrib = graduated_scale(vegas_total, BATTER_ENV_VEGAS_FLOOR, BATTER_ENV_VEGAS_CEILING)
         run_env += contrib
         if contrib > 0:
             label = "High-run environment" if contrib >= 0.9 else "Run environment"
@@ -508,7 +477,7 @@ def compute_batter_env_score(
 
     # A2. Weak opposing starter — graduated
     if opp_pitcher_era is not None:
-        contrib = _graduated_scale(opp_pitcher_era, BATTER_ENV_ERA_FLOOR, BATTER_ENV_ERA_CEILING)
+        contrib = graduated_scale(opp_pitcher_era, BATTER_ENV_ERA_FLOOR, BATTER_ENV_ERA_CEILING)
         run_env += contrib
         if contrib > 0:
             label = "Weak opposing starter" if contrib >= 0.9 else "Vulnerable starter"
@@ -518,7 +487,7 @@ def compute_batter_env_score(
 
     # A3. Moneyline favorite — graduated
     if team_moneyline is not None:
-        contrib = _graduated_scale_moneyline(team_moneyline, BATTER_ENV_ML_FLOOR, BATTER_ENV_ML_CEILING)
+        contrib = graduated_scale_moneyline(team_moneyline, BATTER_ENV_ML_FLOOR, BATTER_ENV_ML_CEILING)
         run_env += contrib
         if contrib > 0:
             label = "Heavy favorite" if contrib >= 0.9 else "Moneyline favorite"
@@ -528,7 +497,7 @@ def compute_batter_env_score(
 
     # A4. Vulnerable bullpen — graduated
     if opp_bullpen_era is not None:
-        contrib = _graduated_scale(opp_bullpen_era, BATTER_ENV_BULLPEN_ERA_FLOOR, BATTER_ENV_BULLPEN_ERA_CEILING)
+        contrib = graduated_scale(opp_bullpen_era, BATTER_ENV_BULLPEN_ERA_FLOOR, BATTER_ENV_BULLPEN_ERA_CEILING)
         run_env += contrib
         if contrib > 0:
             label = "Vulnerable bullpen" if contrib >= 0.9 else "Below-avg bullpen"

@@ -359,7 +359,7 @@ DEFAULT_PITCHER_WHIP = 1.5            # league-worst-tier WHIP (conservative)
 # Graduated env-score scaling thresholds
 #
 # Every env factor uses the same pattern:
-#   _graduated_scale(value, floor, ceiling) → 0.0–1.0
+#   graduated_scale(value, floor, ceiling) → 0.0–1.0  (app.core.utils)
 # These constants define the floor/ceiling for each factor so they are
 # not scattered as magic numbers across filter_strategy.py.
 # ---------------------------------------------------------------------------

@@ -495,10 +495,8 @@ async def run_full_pipeline(db: Session, game_date: date) -> dict:
         await enrich_slate_game_series_context(db, slate)
 
         # Enrich Vegas lines (moneyline + O/U) for pitcher/batter env scoring.
-        # enrich_slate_game_vegas_lines() internally returns 0 (with a warning)
-        # when DFS_ODDS_API_KEY is not configured — that is a deliberate
-        # config choice, not a data-failure fallback. Any *actual* API error
-        # (quota exceeded, HTTP 5xx, etc.) must propagate and fail the pipeline.
+        # Raises RuntimeError if DFS_ODDS_API_KEY is missing or the API fails —
+        # no fallback per "no fallbacks ever" rule.
         await enrich_slate_game_vegas_lines(db, slate)
 
     scores = run_score_slate(db, game_date)

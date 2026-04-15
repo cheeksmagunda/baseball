@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { motion } from "framer-motion";
 import type { FilterSlotOut } from "@/lib/types";
 import { useTeamColors } from "@/hooks/useTeamColors";
@@ -11,6 +12,15 @@ import { EnvFactorChip } from "./EnvFactorChip";
 import { NumberTicker } from "./NumberTicker";
 import { TraitBreakdown } from "./TraitBreakdown";
 import { formatScore, formatEV } from "@/lib/formatters";
+
+function StatBlock({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-0.5">
+      <p className="text-fluid-xs text-text-muted">{label}</p>
+      {children}
+    </div>
+  );
+}
 
 interface PlayerCardProps {
   slot: FilterSlotOut;
@@ -63,26 +73,23 @@ export function PlayerCard({ slot, index, isMoonshot = false }: PlayerCardProps)
 
         {/* Score row */}
         <div className="mt-3 grid grid-cols-3 gap-3">
-          <div className="space-y-0.5">
-            <p className="text-fluid-xs text-text-muted">Score</p>
+          <StatBlock label="Score">
             <p className="font-stats text-fluid-base font-bold text-text-primary">
               {formatScore(slot.total_score)}
             </p>
-          </div>
-          <div className="space-y-0.5">
-            <p className="text-fluid-xs text-text-muted">Filter EV</p>
+          </StatBlock>
+          <StatBlock label="Filter EV">
             <p className="font-stats text-fluid-base font-bold text-text-accent">
               {formatEV(slot.filter_ev)}
             </p>
-          </div>
-          <div className="space-y-0.5">
-            <p className="text-fluid-xs text-text-muted">Slot Value</p>
+          </StatBlock>
+          <StatBlock label="Slot Value">
             <NumberTicker
               value={slot.expected_slot_value}
               decimals={2}
               className="text-fluid-base font-bold text-brand-success"
             />
-          </div>
+          </StatBlock>
         </div>
 
         {/* Env factors + popularity */}
