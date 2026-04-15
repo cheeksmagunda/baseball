@@ -25,7 +25,6 @@ from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.schemas.scoring import TraitBreakdown
 from app.schemas.filter_strategy import (
     FilterCard,
-    FilterOptimizeRequest,
     FilterOptimizeResponse,
     FilterLineupOut,
     FilterSlotOut,
@@ -630,8 +629,8 @@ def optimize_status():
     }
 
 
-@router.post("/optimize", response_model=FilterOptimizeResponse)
-async def filter_optimize(req: FilterOptimizeRequest, db: Session = Depends(get_db)):
+@router.get("/optimize", response_model=FilterOptimizeResponse)
+async def filter_optimize(db: Session = Depends(get_db)):
     """
     Run the full "Filter, Not Forecast" dual-lineup pipeline.
 

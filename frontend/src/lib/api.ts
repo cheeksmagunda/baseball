@@ -11,9 +11,7 @@ class ApiError extends Error {
 
 export async function fetchLineups(signal?: AbortSignal): Promise<FilterOptimizeResponse> {
   const res = await fetch(`/api/filter-strategy/optimize`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cards: [], games: [] }),
+    method: "GET",
     signal,
     cache: "no-store",
   });
