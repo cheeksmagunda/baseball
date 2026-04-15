@@ -638,15 +638,23 @@ def optimize_status():
 @router.get("/optimize", response_model=FilterOptimizeResponse)
 async def filter_optimize(db: Session = Depends(get_db)):
     """
-    Serve T-60 unlocked lineup picks from cache. Read-only.
+    Serve frozen lineup picks from cache. Zero computation, zero API calls.
 
-    This endpoint never triggers the pipeline or optimizer. Picks are
-    produced exclusively by the T-65 monitor and stored in lineup_cache.
+    This endpoint is read-only and never triggers the pipeline, optimizer, or
+    any API work. Picks are produced EXCLUSIVELY by the T-65 slate monitor
+    and locked in lineup_cache after the final run.
 
-    Timeline:
-      - Before T-65: returns 425 (pipeline not yet run)
-      - T-65 to T-60: cache frozen but picks not yet unlocked, returns 425 (generating fresh data)
-      - T-60 onwards: picks available for viewing
+    T-65 Sniper Architecture:
+      - Before T-65: HTTP 425 "Pipeline not yet run" (initialization phase)
+      - T-65 to T-60: HTTP 425 "Generating fresh lineups" (monitor actively running)
+      - T-60 onwards: HTTP 200 + frozen picks (user can draft)
+      - After all games final: HTTP 200 for the final time, then resets for next slate
+
+    Under the "zero work outside T-65" rule, this endpoint cannot trigger any
+    slate work. If T-65 has passed and no cache exists, return HTTP 503 — the
+    monitor's final run failed and needs investigation (never a silent fallback).
+
+    See CLAUDE.md § "T-65 Sniper Architecture" for complete timing model.
     """
     from fastapi.responses import JSONResponse
 
