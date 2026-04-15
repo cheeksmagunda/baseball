@@ -429,20 +429,24 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
     if not slate:
         return [], []
 
-    # Include ALL games in the slate — do NOT filter by game_status.
-    #
-    # Under T-65 Sniper architecture, the pipeline builds the lineup ONCE at
-    # T-65 (before any game has started) and freezes it. Picks are never
-    # rebuilt mid-slate. The only reason this function runs is the T-65
-    # final pipeline — either on time, or in "hindsight lock" mode when the
-    # app restarts after T-65 has already passed (e.g., post-crash redeploy).
-    #
-    # In hindsight mode, fetch_schedule_for_date has just refreshed game
-    # statuses from the MLB API, so games that started show "Live"/"Final".
-    # Filtering those out here used to collapse the candidate pool to empty,
-    # causing build_and_cache_lineups to return None and the monitor to
-    # raise RuntimeError — leaving /optimize permanently returning 503.
-    # See commit 37f870c for the original filter context (pre-T-65 arch).
+    # Filter out games that have already started (Live) or finished (Final).
+    # Games with NULL game_status are treated as not-yet-started (safe default).
+    # None is not in STARTED_STATUSES, so null-status games pass through.
+    STARTED_STATUSES = {"Live", "Final"}
+    remaining_games = [
+        g for g in slate.games
+        if g.game_status not in STARTED_STATUSES
+    ]
+    remaining_game_ids = {g.id for g in remaining_games}
+
+    filtered_count = len(slate.games) - len(remaining_games)
+    if filtered_count > 0:
+        logger.warning(
+            "_load_active_slate: %d of %d games already started/final for %s — "
+            "only %d remaining games included in candidate pool",
+            filtered_count, len(slate.games), slate_date, len(remaining_games),
+        )
+
     games: list[GameEnvironment] = [
         GameEnvironment(
             game_id=g.id,
@@ -473,13 +477,16 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             home_team_l10_wins=g.home_team_l10_wins,
             away_team_l10_wins=g.away_team_l10_wins,
         )
-        for g in slate.games
+        for g in remaining_games
     ]
 
     cards: list[FilterCard] = []
     for sp in slate.players:
         player = sp.player
         if not player or sp.player_status in ("DNP", "scratched"):
+            continue
+        # Skip players from games that have already started
+        if sp.game_id is not None and sp.game_id not in remaining_game_ids:
             continue
         cards.append(FilterCard(
             player_name=player.name,
