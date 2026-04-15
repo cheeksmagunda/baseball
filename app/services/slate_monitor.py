@@ -199,7 +199,7 @@ async def _post_lock_monitor(today: date) -> None:
                         await run_full_pipeline(db, tomorrow)
 
                         from app.routers.filter_strategy import build_and_cache_lineups
-                        cached = await build_and_cache_lineups(db)
+                        cached = await build_and_cache_lineups(db, slate_date=tomorrow)
                         if cached:
                             logger.info("Tomorrow's cache warmed (%s)", tomorrow)
                             tomorrow_warmed = True

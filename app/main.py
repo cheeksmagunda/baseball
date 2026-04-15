@@ -58,78 +58,21 @@ async def lifespan(app: FastAPI):
     if not _restored_frozen:
         lineup_cache.purge()
 
-    # startup_done_event signals the T-65 monitor that the morning baseline
-    # pipeline has finished and it is safe to compute lock timing.
+    # startup_done_event signals the T-65 monitor that initialization is complete.
     startup_done_event = asyncio.Event()
 
-    # Run pipeline in background so health checks respond immediately
-    async def _startup_pipeline():
+    # Minimal startup: no pipeline execution, no premature API calls.
+    # The T-65 monitor will trigger the ONLY run of the full pipeline (fetch→score→optimize).
+    async def _startup_init():
         import traceback
-        from datetime import timedelta
-        from app.routers.filter_strategy import build_and_cache_lineups, _get_active_slate_date
+        logger.info(
+            "Startup complete: frozen picks restored=%s; "
+            "T-65 monitor will fetch fresh data and generate lineups at lock time",
+            _restored_frozen,
+        )
+        startup_done_event.set()
 
-        # If picks were already restored from a frozen cache (restart during live
-        # slate), skip regeneration entirely — the T-65 monitor already ran and
-        # produced the correct picks before the restart.
-        if _restored_frozen:
-            logger.info(
-                "Startup pipeline skipped — frozen picks restored from cache. "
-                "T-65 monitor will not re-run."
-            )
-            startup_done_event.set()
-            return
-
-        try:
-            with SessionLocal() as db:
-                # Stage 1: fetch schedule, rosters, stats, scores
-                pipeline_ok = False
-                try:
-                    result = await run_full_pipeline(db, date.today())
-                    logger.info("Startup pipeline complete: %s", result)
-                    pipeline_ok = True
-                except Exception as exc:
-                    logger.error("Startup pipeline failed: %s\n%s", exc, traceback.format_exc())
-
-                # If today has no games, also fetch the next day's slate
-                active_date = _get_active_slate_date(db)
-                if active_date != date.today():
-                    try:
-                        result = await run_full_pipeline(db, active_date)
-                        logger.info("Next-day pipeline complete (%s): %s", active_date, result)
-                        pipeline_ok = True
-                    except Exception as exc:
-                        logger.error("Next-day pipeline failed: %s\n%s", exc, traceback.format_exc())
-
-                # Stage 2: morning baseline cache (NOT frozen — T-65 monitor freezes later)
-                if pipeline_ok:
-                    try:
-                        cached = await build_and_cache_lineups(db, slate_date=active_date)
-                        if cached:
-                            logger.info("Morning baseline ready — T-65 monitor will freeze at lock time")
-                        else:
-                            logger.warning("Morning baseline empty after startup (no slate data?)")
-                    except Exception as exc:
-                        logger.error("Morning baseline failed: %s\n%s", exc, traceback.format_exc())
-
-                # Publish schedule immediately so the UI shows "Picks Available
-                # at HH:MM" instead of "Preparing Today's Picks" while waiting
-                # for the T-65 monitor to wake up.  Runs even when pipeline_ok is
-                # False — the slate/games may already exist from a prior run.
-                try:
-                    from app.services.slate_monitor import _get_first_pitch_utc
-
-                    first_pitch = _get_first_pitch_utc(db, active_date)
-                    if first_pitch is not None:
-                        lineup_cache.set_schedule(first_pitch)
-                        logger.info("Schedule published: first pitch %s UTC", first_pitch.strftime("%H:%M"))
-                except Exception as exc:
-                    logger.warning("Could not publish schedule at startup: %s", exc)
-        finally:
-            # Always signal the monitor so it can compute lock timing even if
-            # the pipeline partially failed.
-            startup_done_event.set()
-
-    startup_task = asyncio.create_task(_startup_pipeline())
+    startup_task = asyncio.create_task(_startup_init())
     monitor_task = asyncio.create_task(targeted_slate_monitor(startup_done_event))
 
     yield
