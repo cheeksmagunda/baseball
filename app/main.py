@@ -129,12 +129,10 @@ async def lifespan(app: FastAPI):
     # Picks are locked at T-65 and served from cache until slate completion.
     # See CLAUDE.md § "T-65 Sniper Architecture" for detailed timing model.
     async def _startup_init():
-        import traceback
         logger.info(
-            "Startup: frozen picks restored=%s. "
+            "Startup complete. Cache purged. "
             "T-65 monitor will fetch fresh data and generate lineups at T-65 lock time. "
-            "No other pipeline work allowed during active slate.",
-            _restored_frozen,
+            "No other pipeline work allowed during active slate."
         )
         startup_done_event.set()
 
