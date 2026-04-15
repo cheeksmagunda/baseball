@@ -40,6 +40,60 @@ _USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHT
 
 
 # ---------------------------------------------------------------------------
+# Per-slate URL cache
+# ---------------------------------------------------------------------------
+# Many popularity signals come from URLs whose response does NOT depend on the
+# player being scored (league-wide RSS feeds, daily trending topics). With
+# ~125 candidates per slate, the naive per-player fetch fired the same feed
+# URL ~125 times in the same second, causing rate-limiting, connection
+# exhaustion, and pipeline timeouts (the T-65 freeze never completed).
+#
+# This cache deduplicates concurrent callers onto a single in-flight Task per
+# URL and memoises the lowercased body for the rest of the slate run.
+# `reset_url_cache()` must be invoked once at the start of each pipeline run
+# (see `_resolve_candidates`) so stale bodies are not served on the next day.
+
+_invariant_text_cache: dict[str, "asyncio.Task[str]"] = {}
+
+
+def reset_url_cache() -> None:
+    """Clear the invariant-URL text cache. Call once per slate pipeline run."""
+    _invariant_text_cache.clear()
+
+
+async def _fetch_text_cached(
+    key: str,
+    url: str,
+    params: dict | None = None,
+    headers: dict | None = None,
+) -> str:
+    """
+    Fetch a player-invariant URL exactly once per slate; return lowercased body.
+
+    Concurrent callers share the single in-flight Task, so hundreds of
+    candidates checking the same RSS feed result in ONE HTTP request.
+    Exceptions from the underlying fetch propagate to every awaiter — this
+    preserves the loud-failure semantics for signals that previously raised
+    (news feeds), and continues to be caught per-source by the sharp fetcher.
+    """
+    task = _invariant_text_cache.get(key)
+    if task is None:
+        async def _do_fetch() -> str:
+            async with httpx.AsyncClient(
+                timeout=TIMEOUT,
+                follow_redirects=True,
+                headers={"User-Agent": _USER_AGENT},
+            ) as client:
+                r = await client.get(url, params=params or None, headers=headers or None)
+                r.raise_for_status()
+                return r.text.lower()
+
+        task = asyncio.create_task(_do_fetch())
+        _invariant_text_cache[key] = task
+    return await task
+
+
+# ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
 
@@ -89,38 +143,40 @@ async def fetch_social_signal(player_name: str, team: str) -> SignalResult:
     Estimate social media buzz via Google Trends.
 
     Presence in Google autocomplete or daily trends = mainstream attention.
-    Both endpoints are fetched in parallel; each handles its own errors
-    so a single 429 doesn't kill the entire signal.
+    Daily-trends is player-invariant and shared across the slate via the
+    URL cache; autocomplete is player-specific and fetched per call.
     """
     query = f"{player_name} MLB"
     last_name = player_name.split()[-1].lower()
 
-    async def _autocomplete(client: httpx.AsyncClient) -> bool:
+    async def _autocomplete() -> bool:
         try:
-            r = await client.get(
-                "https://trends.google.com/trends/api/autocomplete",
-                params={"hl": "en-US", "tz": "300", "q": query},
-            )
-            r.raise_for_status()
-            return last_name in r.text.lower()
+            async with httpx.AsyncClient(
+                timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT}
+            ) as client:
+                r = await client.get(
+                    "https://trends.google.com/trends/api/autocomplete",
+                    params={"hl": "en-US", "tz": "300", "q": query},
+                )
+                r.raise_for_status()
+                return last_name in r.text.lower()
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             raise RuntimeError(f"Google Trends autocomplete failed for {player_name}: {exc}") from exc
 
-    async def _dailytrends(client: httpx.AsyncClient) -> bool:
+    async def _dailytrends() -> bool:
         try:
-            r = await client.get(
-                "https://trends.google.com/trends/api/dailytrends",
+            text = await _fetch_text_cached(
+                key="google_daily_trends",
+                url="https://trends.google.com/trends/api/dailytrends",
                 params={"hl": "en-US", "tz": "300", "geo": "US", "ns": "15"},
             )
-            r.raise_for_status()
-            return last_name in r.text.lower()
+            return last_name in text
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             raise RuntimeError(f"Google Trends daily trends failed for {player_name}: {exc}") from exc
 
-    async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT}) as client:
-        in_autocomplete, in_daily = await asyncio.gather(
-            _autocomplete(client), _dailytrends(client)
-        )
+    in_autocomplete, in_daily = await asyncio.gather(
+        _autocomplete(), _dailytrends()
+    )
     if in_daily:
         return SignalResult("social", 85.0, f"In Google daily trends: '{player_name}'")
     if in_autocomplete:
@@ -132,24 +188,24 @@ async def fetch_news_signal(player_name: str, team: str) -> SignalResult:
     """
     Check sports news for recent headlines mentioning the player.
 
-    Uses ESPN and MLB.com RSS feeds — free, no auth. Each feed handles
-    its own errors so one broken feed doesn't kill the signal.
+    Uses ESPN and MLB.com RSS feeds — free, no auth. Both URLs are player-
+    invariant, so the slate-wide URL cache deduplicates the fetch across
+    every candidate: the RSS body is downloaded once and each candidate
+    just scans the cached lowercased text for its last name.
     """
     last_name = player_name.split()[-1].lower()
 
-    async def _feed(client: httpx.AsyncClient, name: str, url: str) -> str | None:
+    async def _feed(name: str, url: str) -> str | None:
         try:
-            r = await client.get(url)
-            r.raise_for_status()
-            return name if last_name in r.text.lower() else None
+            text = await _fetch_text_cached(key=url, url=url)
+            return name if last_name in text else None
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             raise RuntimeError(f"{name} RSS feed failed for {player_name}: {exc}") from exc
 
-    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": _USER_AGENT}) as client:
-        results = await asyncio.gather(
-            _feed(client, "ESPN", "https://www.espn.com/espn/rss/mlb/news"),
-            _feed(client, "MLB", "https://www.mlb.com/feeds/news/rss.xml"),
-        )
+    results = await asyncio.gather(
+        _feed("ESPN", "https://www.espn.com/espn/rss/mlb/news"),
+        _feed("MLB", "https://www.mlb.com/feeds/news/rss.xml"),
+    )
     sources_found = [s for s in results if s]
     score = min(len(sources_found) * 40.0, 100.0)
     context = f"Found in: {', '.join(sources_found)}" if sources_found else "No news mentions"
@@ -211,20 +267,18 @@ async def fetch_sharp_signal(player_name: str, team: str) -> SignalResult:
          {}, {"User-Agent": _USER_AGENT}),
     ]
 
-    async def _fetch(client: httpx.AsyncClient, name: str, url: str, pts: float,
+    async def _fetch(name: str, url: str, pts: float,
                      params: dict, headers: dict) -> tuple[str, float]:
         try:
-            r = await client.get(url, params=params or None, headers=headers)
-            r.raise_for_status()
-            return (name, pts) if last_name in r.text.lower() else (name, 0.0)
+            text = await _fetch_text_cached(key=url, url=url, params=params, headers=headers)
+            return (name, pts) if last_name in text else (name, 0.0)
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.debug("Sharp source %s failed for %s: %s", name, player_name, exc)
             return (name, 0.0)
 
-    async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
-        results = await asyncio.gather(
-            *[_fetch(client, name, url, pts, params, hdrs) for name, url, pts, params, hdrs in SOURCES]
-        )
+    results = await asyncio.gather(
+        *[_fetch(name, url, pts, params, hdrs) for name, url, pts, params, hdrs in SOURCES]
+    )
     score = 0.0
     sources_found = []
     for name, pts in results:

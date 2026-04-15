@@ -43,7 +43,7 @@ from app.services.filter_strategy import (
     compute_batter_env_score,
     run_dual_filter_strategy,
 )
-from app.services.popularity import PopularityClass, get_popularity_profile
+from app.services.popularity import PopularityClass, get_popularity_profile, reset_url_cache
 from app.services.lineup_cache import lineup_cache
 
 logger = logging.getLogger(__name__)
@@ -140,6 +140,12 @@ async def _resolve_candidates(
     2. Computing environmental score (Filter 2)
     3. Fetching web-scraped popularity (Filter 3) — all players in parallel
     """
+    # Popularity fetchers hit several player-invariant URLs (RSS feeds, daily
+    # trends). Reset the slate-wide URL cache so we deduplicate the ~125
+    # candidates' fetches onto a handful of HTTP requests — and avoid serving
+    # stale bodies from a previous slate run.
+    reset_url_cache()
+
     game_by_id, team_to_game = _build_game_lookup(games)
 
     # Stage -1: filter out pre-game scratches only.  Draft counts come from
