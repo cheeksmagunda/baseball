@@ -47,7 +47,7 @@ Rule-based scoring + external-variables filtering (NOT ML). The goal is to **win
 
 ## Data Files (`/data/`)
 
-Current coverage (as of 2026-04-12): **19 consecutive dates, 2026-03-25 → 2026-04-12**. All four files stay in lockstep — every date present in one is present in all four.
+Current coverage (as of 2026-04-14): **21 consecutive dates, 2026-03-25 → 2026-04-14**. All four files stay in lockstep — every date present in one is present in all four.
 
 | File | Format | Current size | Purpose |
 |---|---|---|---|
@@ -427,7 +427,7 @@ At env=0, a 40% haircut fires for any boosted player — even those whose low en
 - 0/34 observations → floor of 0.028 (not 0.0). 0/8 → floor of 0.10.
 - Added `CONDITION_OBSERVATIONS` and `PITCHER_CONDITION_OBSERVATIONS` matrices tracking (successes, trials) per cell for principled updating.
 - `LEGACY_DEAD_CAPITAL_CONDITIONS` retained for logging/reference only.
-- ML model (`ml_model.py`) can now contribute signal for all conditions — the `matrix_rate == 0.0` early-return is removed.
+- (The V3.0 gradient-booster `ml_model.py` was removed on 2026-04-15: it accepted `drafts` and `card_boost` as predictive inputs, violating the Prime Directive that post-slate variables must never feed pre-game prediction. It was dead code — no importers, no trained artifact on disk. The Bayesian-smoothed matrix remains the sole signal for previously-dead-capital conditions.)
 
 **Pillar 2 — Bifurcated Environmental Module (`app/services/filter_strategy.py`)**
 - `compute_batter_env_score()` now returns `(env_score, factors, unknown_count)` — tracking how many environmental factors were missing (None) vs. confirmed bad.

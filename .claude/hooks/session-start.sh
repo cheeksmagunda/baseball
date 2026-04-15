@@ -8,7 +8,7 @@ set -euo pipefail
 # Canonical reference: see "Ingesting New Slate Data" in CLAUDE.md. This
 # comment block is a startup cheat-sheet — keep it in sync with CLAUDE.md.
 #
-# Current coverage (2026-04-12): 19 consecutive dates, 2026-03-25 → 2026-04-12.
+# Current coverage (2026-04-14): 21 consecutive dates, 2026-03-25 → 2026-04-14.
 # All four files stay in lockstep — a date present in one must be present in
 # all four. After each slate, append to these four files in data/:
 #
