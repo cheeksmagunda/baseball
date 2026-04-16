@@ -1,5 +1,5 @@
 """
-Filter Strategy V8.1: "Filter, Not Forecast" — the five-filter pipeline.
+Filter Strategy V9.0: "Filter, Not Forecast" — the five-filter pipeline.
 
 This is the core strategic engine from the Master Strategy Document.
 We do NOT predict RS. We identify conditions under which high RS is
@@ -7,27 +7,39 @@ most likely to emerge, then select from that filtered pool.
 
 Five filters applied sequentially:
   1. Slate Architecture    — classify the day type (informational only)
-  2. Popularity / Crowd-Avoidance — PRIMARY signal (V8.0+): FADE the crowd.
-                             TARGET batters avg RS 3.57 vs FADE 0.98 (3.6×).
-                             Source: Google Trends, ESPN RSS, Reddit (pre-game).
-  3. Environmental Advantage — SECONDARY signal: game conditions (Vegas O/U,
+  2. Popularity gate       — FADE players (high pre-game media attention) are
+                             excluded from the candidate pool.  TARGET/NEUTRAL
+                             pass with no bonus.  No RS data involved.
+  3. Environmental Advantage — PRIMARY signal: game conditions (Vegas O/U,
                              opposing ERA, bullpen ERA, park, weather, platoon,
                              batting order, moneyline). Groups A/B/C/D.
-  4. Individual Explosive Traits — TERTIARY: K/9, ISO, barrel%, speed, form.
+  4. Individual Explosive Traits — SECONDARY: K/9, ISO, barrel%, speed, form.
   5. Slot Sequencing (Pitcher-Anchor) — 1 SP pinned to Slot 1 (2.0×);
                              4 batters fill Slots 2–5 by filter_ev.
 
-EV formula (V8.0):
-    base_ev = pop_factor_scaled × env_factor × trait_factor
-              × stack_bonus × debut_bonus × dnp_adj × 100
+EV formula (V9.0):
+    base_ev = env_factor × trait_factor × stack_bonus × debut_bonus × dnp_adj × 100
+
+    Starting 5:  base_ev (pure env + trait ranking)
+    Moonshot:    base_ev × sharp_bonus × explosive_bonus
+                 sharp_bonus    — underground Reddit/FanGraphs analyst buzz (+35% max)
+                 explosive_bonus — power_profile / k_rate upside (+20% max)
+
+V9.0 changes (2026-04-16):
+  - RS_CONDITION_MATRIX removed entirely.  pop_factor was the primary EV
+    term (3.0× swing) but was derived from historical RS ratios, violating
+    "Filter, Not Forecast."
+  - Popularity is now a candidate pool gate: FADE → excluded before EV runs.
+  - EV formula is now purely env × trait × context.
+  - Moonshot draws from the same candidate pool as Starting 5 (no forced
+    player exclusion).  Moonshot differentiates via sharp + explosive bonuses.
+  - Momentum gate removed (it capped pop_factor; no longer meaningful).
+  - MOONSHOT_CONTRARIAN_*_MULT / FADE_PENALTY / TARGET_BONUS removed.
 
 V8.1 additions (2026-04-15):
   - Group D env scoring: series/momentum context (±0.8 additive).
-  - Momentum gate: caps pop_factor at NEUTRAL when batter's team trails
-    series ≥2 games AND has ≤3 L10 wins simultaneously.
   - Bullpen ERA (Group A A4): now populated from MLB Stats API team pitching.
   - Vegas lines (Group A A1/A3, pitcher Factor 5): from The Odds API.
-  - Cache purge on restart ensures fresh regeneration from live data (fail-loud principle).
 
 References strategy doc sections §4.1–§4.5.
 """
@@ -65,12 +77,9 @@ from app.core.constants import (
     BATTER_ENV_TOP_LINEUP,
     BATTER_ENV_WEAK_BULLPEN_ERA,
     DEBUT_RETURN_EV_BONUS,
-    MOONSHOT_NEUTRAL_PENALTY,
     MOONSHOT_SHARP_BONUS_MAX,
     MOONSHOT_EXPLOSIVE_BONUS_MAX,
     MOONSHOT_SAME_TEAM_PENALTY,
-    MOONSHOT_CONTRARIAN_FADE_MULT,
-    MOONSHOT_CONTRARIAN_TARGET_MULT,
     GHOST_DRAFT_THRESHOLD,
     MAX_PITCHERS_IN_LINEUP,
     REQUIRED_PITCHERS_IN_LINEUP,
@@ -82,10 +91,6 @@ from app.core.constants import (
     DNP_RISK_PENALTY,
     DNP_UNKNOWN_PENALTY,
     ENV_UNKNOWN_COUNT_THRESHOLD,
-    POP_MODIFIER_FLOOR,
-    POP_MODIFIER_CEILING,
-    POP_FACTOR_RAW_MIN,
-    POP_FACTOR_RAW_MAX,
     ENV_MODIFIER_FLOOR,
     ENV_MODIFIER_CEILING,
     TRAIT_MODIFIER_FLOOR,
@@ -125,12 +130,8 @@ from app.core.constants import (
     TEAM_COLD_L10_THRESHOLD,
     TEAM_HOT_L10_BONUS,
     TEAM_COLD_L10_PENALTY,
-    # Momentum gate constants
-    MOMENTUM_GATE_SERIES_DEFICIT,
-    MOMENTUM_GATE_L10_CEILING,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score, graduated_scale, graduated_scale_moneyline
-from app.services.condition_classifier import RS_CONDITION_MATRIX, get_rs_condition_factor
 from app.services.popularity import PopularityClass
 
 logger = logging.getLogger(__name__)
@@ -720,52 +721,30 @@ def _compute_dnp_adjustment(candidate: FilteredCandidate) -> float:
     return DNP_RISK_PENALTY
 
 
-def _compute_base_ev(
-    candidate: FilteredCandidate,
-    pop_factor: float,
-) -> float:
+def _compute_base_ev(candidate: FilteredCandidate) -> float:
     """Compute the shared base EV used by both Starting 5 and Moonshot.
 
-    V8.0 "Popularity-First Pre-Game Signals" — EV is built exclusively from
-    information available before the draft begins.  Ownership counts and card
-    boosts are only revealed during/after the draft and are NOT inputs here.
+    V9.0 "Filter, Not Forecast" — EV is built exclusively from pre-game
+    signals.  No RS data, no historical outcomes, no ownership counts.
+    FADE players are excluded from the candidate pool before this runs.
 
-    Three signals, in order of influence (V8.0 empirically calibrated):
-
-      1. pop_factor   — PRIMARY: media-attention crowd-avoidance signal from
-                        pre-game web sources (Google Trends, ESPN/MLB RSS,
-                        Reddit) via the RS condition matrix.  Scaled from the
-                        raw 0.275–1.00 matrix range to 0.50–1.50 (3.0× swing).
-                        Empirical basis: TARGET batters avg RS 3.57 vs FADE
-                        batters avg RS 0.98 = 3.6× differential over 20 dates.
-                        The crowd is structurally wrong about batters.
-                        DFS platform ownership is excluded — only visible
-                        during the draft.
-
-      2. env_factor   — SECONDARY: game conditions (Vegas O/U, opposing ERA,
+    Two signals:
+      1. env_factor   — PRIMARY: game conditions (Vegas O/U, opposing ERA,
                         bullpen ERA, park, weather, platoon, batting order,
                         moneyline).  Range: 0.70–1.30 (1.86× swing).
-                        Differentiates within a popularity tier.
-
-      3. trait_factor — TERTIARY: intrinsic player quality from the scoring
-                        engine (K/9, ISO, barrel%, SB pace, ERA, WHIP, recent
-                        form, season stats × matchup context, 0-100).
+      2. trait_factor — SECONDARY: intrinsic player quality (K/9, ISO,
+                        barrel%, SB pace, ERA, WHIP, recent form, 0-100).
                         Range: 0.85–1.15 (1.35× swing).
 
     Plus contextual multipliers: stack_bonus, debut_bonus, dnp_adj.
 
     Formula:
-        base_ev = pop_factor_scaled × env_factor × trait_factor
-                  × stack_bonus × debut_bonus × dnp_adj × 100
+        base_ev = env_factor × trait_factor × stack_bonus × debut_bonus × dnp_adj × 100
     """
-    # env_score is 0-1 from compute_batter/pitcher_env_score.
-    # Scale to ENV_MODIFIER_FLOOR–ENV_MODIFIER_CEILING (SECONDARY: 0.70–1.30).
     raw_env = max(candidate.env_score, 0.0)
     env_factor = ENV_MODIFIER_FLOOR + raw_env * (ENV_MODIFIER_CEILING - ENV_MODIFIER_FLOOR)
     env_factor = max(ENV_MODIFIER_FLOOR, min(ENV_MODIFIER_CEILING, env_factor))
 
-    # trait_score is 0-100 from the scoring engine.  Compress to
-    # TRAIT_MODIFIER_FLOOR–TRAIT_MODIFIER_CEILING (TERTIARY: 0.85–1.15).
     trait_floor = MIN_SCORE_THRESHOLD / 100.0
     raw_trait = max(candidate.total_score, float(MIN_SCORE_THRESHOLD)) / 100.0
     trait_factor = TRAIT_MODIFIER_FLOOR + (raw_trait - trait_floor) * (
@@ -773,57 +752,12 @@ def _compute_base_ev(
     ) / (1.0 - trait_floor)
     trait_factor = max(TRAIT_MODIFIER_FLOOR, min(TRAIT_MODIFIER_CEILING, trait_factor))
 
-    # Momentum gate — caps pop_factor at NEUTRAL for batters simultaneously
-    # trailing 2+ games in series AND on a cold L10 streak.
-    #
-    # This addresses the "correctly-avoided player disguised as a ghost" problem:
-    # a low-media batter (TARGET classification) may be low-buzz precisely
-    # because they are on a struggling team facing a dominant opponent — not
-    # because the crowd overlooked a genuine opportunity.  When both series
-    # context AND recent form are simultaneously bad (rare, specific condition),
-    # the pop signal is overriding a real matchup problem.
-    #
-    # The gate fires only when BOTH conditions are met:
-    #   - Team is behind in the series by MOMENTUM_GATE_SERIES_DEFICIT or more
-    #   - Team's L10 wins are at or below MOMENTUM_GATE_L10_CEILING (cold team)
-    # Pitchers are exempt — series/team context affects batter run support, not
-    # the pitcher's own performance.
-    if not candidate.is_pitcher:
-        series_tw = candidate.series_team_wins
-        series_ow = candidate.series_opp_wins
-        l10 = candidate.team_l10_wins
-        if (
-            series_tw is not None and series_ow is not None and l10 is not None
-            and (series_ow - series_tw) >= MOMENTUM_GATE_SERIES_DEFICIT
-            and l10 <= MOMENTUM_GATE_L10_CEILING
-        ):
-            neutral_factor = RS_CONDITION_MATRIX["batter"]["NEUTRAL"]
-            if pop_factor > neutral_factor:
-                logger.debug(
-                    "Momentum gate triggered for %s (series %d-%d, L10 %d-wins) — "
-                    "capping pop_factor %.3f → %.3f (NEUTRAL)",
-                    candidate.player_name, series_tw, series_ow, l10,
-                    pop_factor, neutral_factor,
-                )
-                pop_factor = neutral_factor
-
-    # Scale pop_factor from raw RS matrix range (0.275–1.00) into the
-    # PRIMARY range (0.50–1.50).  This is the dominant signal: FADE batters
-    # get 0.50x, TARGET batters get 1.50x — a 3.0x swing matching the
-    # empirical 3.6x RS differential.  The crowd must be faded hard.
-    raw_range = POP_FACTOR_RAW_MAX - POP_FACTOR_RAW_MIN  # 0.725
-    pop_scaled = POP_MODIFIER_FLOOR + (pop_factor - POP_FACTOR_RAW_MIN) * (
-        POP_MODIFIER_CEILING - POP_MODIFIER_FLOOR
-    ) / raw_range
-    pop_scaled = max(POP_MODIFIER_FLOOR, min(POP_MODIFIER_CEILING, pop_scaled))
-
     stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
     debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
     dnp_adj = _compute_dnp_adjustment(candidate)
 
     return (
-        pop_scaled
-        * env_factor
+        env_factor
         * trait_factor
         * stack_bonus
         * debut_bonus
@@ -833,12 +767,8 @@ def _compute_base_ev(
 
 
 def _compute_filter_ev(candidate: FilteredCandidate) -> float:
-    """Compute Starting 5 EV: popularity-first formula via RS condition matrix."""
-    pop_factor = get_rs_condition_factor(
-        candidate.popularity.value,
-        is_pitcher=candidate.is_pitcher,
-    )
-    return _compute_base_ev(candidate, pop_factor)
+    """Compute Starting 5 EV: env × trait × context (no RS data)."""
+    return _compute_base_ev(candidate)
 
 
 def _enforce_composition(
@@ -1139,6 +1069,31 @@ def _smart_slot_assignment(
 # Main filter pipeline
 # ---------------------------------------------------------------------------
 
+def _exclude_fade_players(candidates: list[FilteredCandidate]) -> list[FilteredCandidate]:
+    """Popularity gate: remove FADE-classified players before EV computation.
+
+    FADE = high pre-game media attention (Google Trends, ESPN, Reddit).
+    These players are excluded from the candidate pool entirely — not penalised
+    via EV, not ranked last, just removed.  TARGET and NEUTRAL pass with no bonus.
+
+    Raises ValueError if no pitcher remains after exclusion (fail loudly).
+    """
+    filtered = [c for c in candidates if c.popularity != PopularityClass.FADE]
+    excluded = len(candidates) - len(filtered)
+    if excluded:
+        logger.info(
+            "Popularity gate: excluded %d FADE players (%d remain)",
+            excluded, len(filtered),
+        )
+    if not any(c.is_pitcher for c in filtered):
+        raise ValueError(
+            "Popularity gate excluded all pitchers from the candidate pool. "
+            "Cannot build a lineup without an SP anchor. "
+            "Excluded %d players total." % excluded
+        )
+    return filtered
+
+
 def run_filter_strategy(
     candidates: list[FilteredCandidate],
     slate_classification: SlateClassification,
@@ -1150,10 +1105,11 @@ def run_filter_strategy(
     candidates and produces an optimized lineup following all 5 filters.
 
     Steps:
-    1. Compute filter-adjusted EV for each candidate (Filters 2-4)
-    2. Enforce composition targets from slate classification (Filter 1)
-    3. Check game diversification (Commandment 10)
-    4. Smart slot assignment (Filter 5)
+    1. Exclude FADE players (popularity gate)
+    2. Compute filter-adjusted EV for each candidate (env + trait + context)
+    3. Enforce composition (pitcher anchor + 4 batters)
+    4. Check game diversification
+    5. Smart slot assignment
     """
     if not candidates:
         return FilterOptimizedLineup(
@@ -1162,6 +1118,9 @@ def run_filter_strategy(
             strategy="filter_not_forecast",
             slate_classification=slate_classification,
         )
+
+    # Step 1: Popularity gate — remove FADE players before EV computation.
+    candidates = _exclude_fade_players(candidates)
 
     # Mark blowout-game players before EV computation so _compute_filter_ev()
     # can apply the stack_bonus without needing slate_classification as a parameter.
@@ -1173,17 +1132,17 @@ def run_filter_strategy(
     for c in candidates:
         c.is_in_blowout_game = c.team.upper() in blowout_teams
 
-    # Step 1: Compute filter-adjusted EV (popularity + env + trait + context)
+    # Step 2: Compute filter-adjusted EV (env + trait + context)
     for c in candidates:
         c.filter_ev = _compute_filter_ev(c)
 
-    # Step 2: Enforce composition — V6.0: pure EV ranking with team/game caps.
+    # Step 3: Enforce composition — pitcher anchor + 4 batters by EV rank.
     lineup = _enforce_composition(candidates, slate_classification)
 
-    # Step 3: Game diversification (safety-net; team/game caps enforced upstream)
+    # Step 4: Game diversification (safety-net; team/game caps enforced upstream)
     warnings = _apply_game_diversification(lineup)
 
-    # Step 4: Smart slot assignment
+    # Step 5: Smart slot assignment
     slots = _smart_slot_assignment(lineup)
 
     total_ev = sum(s.expected_slot_value for s in slots)
@@ -1205,27 +1164,18 @@ def run_filter_strategy(
 # ---------------------------------------------------------------------------
 
 def _compute_moonshot_filter_ev(candidate: FilteredCandidate) -> float:
-    """Compute Moonshot EV: popularity-first formula + contrarian lean + sharp/explosive.
+    """Compute Moonshot EV: base env×trait + sharp signal + explosive upside.
 
-    V6.0: Uses RS_CONDITION_MATRIX for the base pop_factor, then applies
-    additional contrarian multipliers — Moonshot leans even harder into
-    crowd-avoidance.
+    V9.0: Same base formula as Starting 5 (env × trait × context).
+    Moonshot differentiates via two bonuses applied on top:
+      - sharp_bonus     (+35% max) — underground Reddit/FanGraphs analyst buzz
+      - explosive_bonus (+20% max) — power_profile (batters) or k_rate (pitchers)
+
+    Players with underground buzz or boom-or-bust upside rank higher here
+    than in Starting 5, naturally diverging the two lineups without forcing
+    player exclusion.
     """
-    # Base pop_factor from condition matrix
-    pop_factor = get_rs_condition_factor(
-        candidate.popularity.value,
-        is_pitcher=candidate.is_pitcher,
-    )
-
-    # Moonshot contrarian lean: further penalize FADE, reward TARGET
-    if candidate.popularity == PopularityClass.FADE:
-        pop_factor *= MOONSHOT_CONTRARIAN_FADE_MULT
-    elif candidate.popularity == PopularityClass.TARGET:
-        pop_factor *= MOONSHOT_CONTRARIAN_TARGET_MULT
-    else:
-        pop_factor *= MOONSHOT_NEUTRAL_PENALTY
-
-    base_ev = _compute_base_ev(candidate, pop_factor)
+    base_ev = _compute_base_ev(candidate)
 
     sharp_bonus = 1.0 + (candidate.sharp_score / 100.0) * MOONSHOT_SHARP_BONUS_MAX
     explosive_trait = get_trait_score(
@@ -1248,33 +1198,27 @@ def run_dual_filter_strategy(
 ) -> DualFilterOptimizedResult:
     """Produce both Starting 5 and Moonshot from the same candidate pool.
 
-    Starting 5: rank by popularity + env + trait EV; pitcher anchors Slot 1.
-    Moonshot:   same base EV formula with Moonshot popularity weights (heavier
-                FADE penalty, TARGET bonus) plus sharp-signal and explosive
-                trait bonuses.  No player overlap with Starting 5; a same-team
-                penalty discourages teammate overlap.
+    Starting 5: rank by env + trait EV; pitcher anchors Slot 1.
+    Moonshot:   same base EV + sharp signal bonus + explosive trait bonus.
+                Picks from the same FADE-excluded pool as Starting 5.
+                Player overlap with Starting 5 is allowed — the two lineups
+                diverge naturally via different EV formulas, not forced exclusion.
+                Same-team penalty (0.85×) provides soft portfolio diversification.
 
-    Ownership-based cross-lineup correlation was removed with the drafts
-    input — same-team Moonshot penalty + team/game diversification caps
-    already produce lineup variance without it.
+    The FADE exclusion gate runs once here, before either lineup is built.
     """
+    # Apply popularity gate once — both lineups draw from this filtered pool.
+    candidates = _exclude_fade_players(candidates)
+
     # Phase 1: Starting 5
+    # run_filter_strategy calls _exclude_fade_players internally, but candidates
+    # are already filtered here so it will be a no-op exclusion pass.
     starting_5 = run_filter_strategy(candidates, slate_classification)
 
-    s5_names = {s.candidate.player_name for s in starting_5.slots}
     s5_teams = {s.candidate.team.upper() for s in starting_5.slots}
 
-    # Phase 2: Moonshot from the remaining pool
-    moonshot_pool = [c for c in candidates if c.player_name not in s5_names]
-
-    if not moonshot_pool:
-        empty_moonshot = FilterOptimizedLineup(
-            slots=[],
-            total_expected_value=0.0,
-            strategy="moonshot",
-            slate_classification=slate_classification,
-        )
-        return DualFilterOptimizedResult(starting_5=starting_5, moonshot=empty_moonshot)
+    # Phase 2: Moonshot — same pool, different EV formula
+    moonshot_pool = candidates  # no player exclusion
 
     for c in moonshot_pool:
         c.filter_ev = _compute_moonshot_filter_ev(c)
