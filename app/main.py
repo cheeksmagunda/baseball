@@ -24,6 +24,7 @@ LOGGING_CONFIG = {
         "default": {
             "level": settings.log_level,
             "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
             "formatter": "standard",
         },
     },
