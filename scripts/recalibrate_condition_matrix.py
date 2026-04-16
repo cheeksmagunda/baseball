@@ -43,10 +43,10 @@ TARGET_DRAFT_CEILING = 100  # drafts ≤ this AND not FADE → TARGET
 # Success metric: RS > 3.0  (consistent with RS_CONDITION_OBSERVATIONS)
 RS_SUCCESS_THRESHOLD = 3.0
 
-# Current matrix values (from condition_classifier.py V6.1)
+# Current matrix values (from condition_classifier.py V6.3)
 CURRENT_MATRIX = {
-    "batter": {"TARGET": 1.000, "NEUTRAL": 0.650, "FADE": 0.275},
-    "pitcher": {"TARGET": 1.000, "NEUTRAL": 0.850, "FADE": 0.710},
+    "batter": {"TARGET": 1.000, "NEUTRAL": 0.650, "FADE": 0.258},
+    "pitcher": {"TARGET": 1.000, "NEUTRAL": 0.850, "FADE": 0.670},
 }
 
 

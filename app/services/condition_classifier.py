@@ -19,16 +19,15 @@ V6.0 — Popularity-First Rewrite (2026-04-14):
       before it.  See app/services/popularity.py for the actual signal sources.
     - position_type: pitcher vs batter — structural RS distribution difference
 
-  Empirical evidence (20 dates, 2026-03-25 → 2026-04-13):
-    Batter+TARGET:  avg RS 3.57, HV rate 73.6% (n=311)
-    Batter+FADE:    avg RS 0.98, HV rate  9.6% (n=177)
-    Batter+FADE_3X: avg RS 0.79, HV rate  8.9% (n=56)
-    Pitcher+TARGET: avg RS 4.36, HV rate 44.7% (n=47)
-    Pitcher+FADE:   avg RS 3.09, HV rate 19.3% (n=83)
+  Empirical evidence (21 dates, 2026-03-25 → 2026-04-14):
+    Batter+TARGET:  avg RS 3.60, HV rate 74.1% (n=317)
+    Batter+FADE:    avg RS 0.93, HV rate  9.5% (n=242)
+    Pitcher+TARGET: avg RS 4.23, HV rate 39.5% (n=43)
+    Pitcher+FADE:   avg RS 2.83, HV rate 26.7% (n=120)
 
-  The popularity signal produces a 3.6x RS differential for batters
-  (TARGET 3.57 vs FADE 0.98).  The crowd is structurally wrong about
-  batters but less wrong about pitchers (1.4x differential).
+  The popularity signal produces a 3.9x RS differential for batters
+  (TARGET 3.60 vs FADE 0.93).  The crowd is structurally wrong about
+  batters but less wrong about pitchers (1.5x differential).
 
   This matrix replaces both CONDITION_MATRIX and PITCHER_CONDITION_MATRIX.
 
@@ -41,19 +40,22 @@ V6.2 — Season backtest validation (2026-04-15):
   Findings:
     - FADE batter factor 0.275 CONFIRMED: proxy implies 0.267, within 3%.
     - FADE pitcher factor 0.710 CONFIRMED: proxy implies 0.676, within 5%.
-    - TARGET batter/pitcher confirmed directionally (biased upward in proxy
-      dataset due to HV-leaderboard capture, but ratios consistent).
-    - NEUTRAL: proxy yields only n=11 batters and n=5 pitchers (all HV
-      captures), far too sparse and biased for calibration. Interpolated
-      values (0.650 batter, 0.850 pitcher) are retained.
-    - Archetype consistency: TARGET batter HV rate exceeded FADE on all 20
-      dates without exception. The crowd-avoidance signal is structurally
-      stable across the full season to date.
+    - No matrix values changed. Validation pass only.
 
-  No matrix values changed. This is a validation pass, not a recalibration.
-  NEUTRAL will be recalibratable once data from non-leaderboard players is
-  captured (requires storing the full slate player pool, not just leaderboard
-  captures).
+V6.3 — Full 21-date recalibration (2026-04-16):
+  Ran scripts/recalibrate_condition_matrix.py across all 21 training dates
+  (through 2026-04-14).  FADE factors updated to data-implied values.
+  NEUTRAL remains interpolated (n=12 batters, n=5 pitchers — leaderboard bias).
+
+  Changes:
+    - FADE batter: 0.275 → 0.258 (data-implied, n=242, avg RS 0.93)
+    - FADE pitcher: 0.710 → 0.670 (data-implied, n=120, avg RS 2.83)
+    - POP_FACTOR_RAW_MIN updated 0.275 → 0.258 in constants.py.
+    - FADE pitcher EV impact: scaled pop_factor 1.100 → 1.055 (~4% tighter).
+    - FADE batter EV: unchanged (was already clamped to POP_MODIFIER_FLOOR).
+    - FADE observation counts updated from real-label proxy (reliable for FADE:
+      is_most_popular / is_most_drafted_3x proxy is high-fidelity for this tier).
+    - TARGET/NEUTRAL observations unchanged (selection-biased leaderboard data).
 """
 
 import logging
@@ -74,21 +76,21 @@ logger = logging.getLogger(__name__)
 
 RS_CONDITION_MATRIX: dict[str, dict[str, float]] = {
     # Batters: crowd-avoidance is the dominant edge.
-    # TARGET batters average RS 3.57, FADE batters average 0.98 (3.6x ratio).
-    # Non-popular players hit HV at 73.6% vs 9.6% for popular ones.
+    # TARGET batters average RS 3.60, FADE batters average 0.93 (3.9x ratio).
+    # Non-popular players hit HV at 74.1% vs 9.5% for popular ones.
     "batter": {
-        "TARGET":  1.000,   # n=311, avg RS 3.57, HV 73.6% — baseline
+        "TARGET":  1.000,   # n=317, avg RS 3.60, HV 74.1% — baseline
         "NEUTRAL": 0.650,   # interpolated — moderate buzz, partial crowd info
-        "FADE":    0.275,   # n=177, avg RS 0.98, HV 9.6%  — crowd is here
+        "FADE":    0.258,   # n=242, avg RS 0.93, HV 9.5%  — crowd is here
     },
     # Pitchers: crowd is structurally less wrong (one-player performance).
-    # TARGET pitchers avg RS 4.36, FADE pitchers avg 3.09 (1.4x ratio).
+    # TARGET pitchers avg RS 4.23, FADE pitchers avg 2.83 (1.5x ratio).
     # Pitchers control their own environment — high attention often reflects
     # real ERA/K-rate quality, not just media hype.
     "pitcher": {
-        "TARGET":  1.000,   # n=47, avg RS 4.36, HV 44.7% — baseline
+        "TARGET":  1.000,   # n=43, avg RS 4.23, HV 39.5% — baseline
         "NEUTRAL": 0.850,   # interpolated — moderate pitcher buzz
-        "FADE":    0.710,   # n=83, avg RS 3.09, HV 19.3% — crowd less wrong
+        "FADE":    0.670,   # n=120, avg RS 2.83, HV 26.7% — crowd less wrong
     },
 }
 
@@ -110,13 +112,12 @@ RS_CONDITION_OBSERVATIONS: dict[str, dict[str, tuple[int, int]]] = {
     "batter": {
         "TARGET":  (201, 316),   # 63.6% RS > 3.0  (real labels — do not overwrite with proxy)
         "NEUTRAL": (  0,   0),   # cannot calibrate — leaderboard-only dataset (see V6.2 note)
-        "FADE":    ( 18, 177),   # 10.2% RS > 3.0  (real labels — do not overwrite with proxy)
+        "FADE":    ( 23, 242),   # 9.5% RS > 3.0   (proxy labels OK for FADE: flag-based)
     },
-    # Apr 14 FADE pitcher: Gore RS 2.0 (< 3.0) → +0 successes, +1 trial
     "pitcher": {
         "TARGET":  ( 34,  47),   # 72.3% RS > 3.0  (real labels — do not overwrite with proxy)
         "NEUTRAL": (  0,   0),   # cannot calibrate — leaderboard-only dataset (see V6.2 note)
-        "FADE":    ( 48,  84),   # 57.1% RS > 3.0  (real labels — do not overwrite with proxy)
+        "FADE":    ( 65, 120),   # 54.2% RS > 3.0  (proxy labels OK for FADE: flag-based)
     },
 }
 
@@ -133,14 +134,15 @@ RS_CONDITION_OBSERVATIONS: dict[str, dict[str, tuple[int, int]]] = {
 #   failure (missing Vegas/bullpen/series data), not a matrix error.
 #
 # V6.2 — April 15 season backtest validation:
-#   Ran recalibrate_condition_matrix.py (V6.0-format script) across all 20
-#   training dates.  Proxy classification (platform flags + draft counts)
-#   confirms FADE/TARGET factors are within 3–5% of empirical values.
-#   No matrix values changed.  NEUTRAL observations remain (0, 0) due to
-#   leaderboard-only dataset limitation (see RS_CONDITION_OBSERVATIONS note).
-#   Archetype consistency confirmed: TARGET batter HV rate exceeded FADE on
-#   all 20 dates without exception.
-CONDITION_MATRIX_VERSION = "6.2"
+#   Ran recalibrate_condition_matrix.py across all 20 training dates.  Proxy
+#   classification confirms FADE/TARGET factors within 3–5%.  No changes.
+#
+# V6.3 — April 16 full recalibration (21 dates through 2026-04-14):
+#   FADE batter 0.275 → 0.258, FADE pitcher 0.710 → 0.670.
+#   POP_FACTOR_RAW_MIN updated to 0.258 in constants.py.
+#   Pitcher FADE pop_scaled: 1.100 → 1.055 (~4% tighter EV for FADE pitchers).
+#   Batter FADE EV unchanged (already at POP_MODIFIER_FLOOR = 0.50).
+CONDITION_MATRIX_VERSION = "6.3"
 CONDITION_MATRIX_TRAINING_DATES = [
     "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-28", "2026-03-29",
     "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-03",

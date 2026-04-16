@@ -210,15 +210,15 @@ ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data
 # ---------------------------------------------------------------------------
 
 # Pop modifier bounds — PRIMARY signal (V8.0: elevated from tertiary).
-# The RS_CONDITION_MATRIX raw factor (0.275–1.00) is scaled to this range.
-# Range: 0.50–1.50 (3.0x swing) — matching the empirical 3.6x RS differential.
-# A FADE batter now starts at 0.50x, meaning they need 3x better env+trait
-# to match a TARGET batter.  This is the dominant edge in the system.
+# The RS_CONDITION_MATRIX raw factor (0.258–1.00) is scaled to this range.
+# Range: 0.50–1.50 (3.0x swing) — matching the empirical 3.9x RS differential
+# (TARGET batters avg RS 3.60 vs FADE batters avg RS 0.93, n=559, 21 dates).
+# A FADE batter starts at 0.50x — needs 3x better env+trait to match TARGET.
 # DFS platform ownership (RotoGrinders, NumberFire) is NOT included —
 # it is only visible during the draft, not before.
 POP_MODIFIER_FLOOR = 0.50
 POP_MODIFIER_CEILING = 1.50
-POP_FACTOR_RAW_MIN = 0.275   # min raw value from RS_CONDITION_MATRIX (batter FADE)
+POP_FACTOR_RAW_MIN = 0.258   # min raw value from RS_CONDITION_MATRIX (batter FADE, V6.3)
 POP_FACTOR_RAW_MAX = 1.00    # max raw value from RS_CONDITION_MATRIX (TARGET)
 
 # Env modifier bounds — SECONDARY signal (V8.0: demoted from primary).
