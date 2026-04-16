@@ -428,31 +428,22 @@ async def targeted_slate_monitor(
 
             db = SessionLocal()
             try:
-                # =========================================================
-                # CRITICAL: NO TRY/EXCEPT AT T-65 FINAL RUN
-                # =========================================================
-                # Under the no-fallback rule, ANY T-65 pipeline failure
-                # (MLB API down, Odds API quota exhausted, DB connection
-                # failed, invalid config, etc.) must crash this monitor
-                # task. This allows /api/filter-strategy/optimize to return
-                # HTTP 503 with a clear error message rather than silently
-                # serving stale lineups from yesterday or neutral defaults.
-                #
-                # Bad data is worse than no data. Operations must restore
-                # the system rather than letting corrupted picks get
-                # drafted.
-                #
-                # See CLAUDE.md § "ABSOLUTE RULE: No Fallbacks. Ever"
-                # See DISASTER_RECOVERY.md for all failure scenarios
-                # =========================================================
-                await run_full_pipeline(db, monitor_date)
-                logger.info(
-                    "T-%d pipeline complete", LOCK_MINUTES_BEFORE_PITCH
-                )
+                try:
+                    await run_full_pipeline(db, monitor_date)
+                    logger.info(
+                        "T-%d pipeline complete", LOCK_MINUTES_BEFORE_PITCH
+                    )
 
-                cached = await build_and_cache_lineups(
-                    db, slate_date=monitor_date
-                )
+                    cached = await build_and_cache_lineups(
+                        db, slate_date=monitor_date
+                    )
+                except Exception:
+                    logger.exception(
+                        "T-%d PIPELINE FAILED — see traceback below. "
+                        "No fallback; /optimize will return 503.",
+                        LOCK_MINUTES_BEFORE_PITCH,
+                    )
+                    raise
                 if cached:
                     lineup_cache.freeze(first_pitch_utc=first_pitch_utc)
                     logger.info(
