@@ -1,4 +1,6 @@
-"""Backtest & recalibrate the V6.0 RS_CONDITION_MATRIX from historical data.
+"""DEAD CODE — V9.0 removed RS_CONDITION_MATRIX. Use calibrate_env_scoring.py instead.
+
+Backtest & recalibrate the V6.0 RS_CONDITION_MATRIX from historical data.
 
 Replaces the V3/V4 script (ownership_tier × boost_tier) — that matrix is dead
 code since V6.0 rekeyed everything on (popularity_class × position_type).
@@ -43,10 +45,10 @@ TARGET_DRAFT_CEILING = 100  # drafts ≤ this AND not FADE → TARGET
 # Success metric: RS > 3.0  (consistent with RS_CONDITION_OBSERVATIONS)
 RS_SUCCESS_THRESHOLD = 3.0
 
-# Current matrix values (from condition_classifier.py V6.1)
+# Current matrix values (from condition_classifier.py V6.3)
 CURRENT_MATRIX = {
-    "batter": {"TARGET": 1.000, "NEUTRAL": 0.650, "FADE": 0.275},
-    "pitcher": {"TARGET": 1.000, "NEUTRAL": 0.850, "FADE": 0.710},
+    "batter": {"TARGET": 1.000, "NEUTRAL": 0.650, "FADE": 0.258},
+    "pitcher": {"TARGET": 1.000, "NEUTRAL": 0.850, "FADE": 0.670},
 }
 
 

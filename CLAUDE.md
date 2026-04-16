@@ -183,6 +183,26 @@ Current coverage (as of 2026-04-14): **21 consecutive dates, 2026-03-25 → 2026
 | `historical_slate_results.json` | JSON array | 19 entries | Per-date MLB slate outcome envelope: `date`, `game_count`, `games[]`, `season_stage`, `source`, `saved_at`, `notes`. One object per slate day. |
 | `hv_player_game_stats.csv` | CSV | 290 rows / 19 dates | Actual box score stats for every Highest-Value player appearance to date (grows each slate). Batting columns (ab, r, h, hr, rbi, bb, so) and pitching columns (ip, er, k_pitching, decision) coexist in one table — blanks indicate the column does not apply to that player. |
 
+## Env Scoring Calibration
+
+The env scoring thresholds in `app/core/constants.py` (BATTER_ENV_VEGAS_FLOOR, ERA floors/ceilings, etc.) are set by reasoning, not automation. To validate and adjust them from real outcome data:
+
+**Step 1 — Capture conditions after each slate** (alongside the manual player ingest):
+```bash
+python scripts/export_slate_conditions.py   # exports today's SlateGame env data
+```
+This appends one row per game to `data/historical_conditions.csv`. Idempotent — safe to re-run.
+
+**Step 2 — Run calibration analysis** (after accumulating 10+ new dates, or when pick quality degrades):
+```bash
+python scripts/calibrate_env_scoring.py
+```
+Output shows RS and HV-rate distributions across each threshold bucket (below floor / mid / above ceiling). No code is modified.
+
+**Step 3 — Edit constants directly.** Read the output, decide which thresholds are misaligned, and update `app/core/constants.py`. Add or remove env factors by editing `compute_batter_env_score()` / `compute_pitcher_env_score()` in `app/services/filter_strategy.py`. Historical data teaches which conditions are predictive — it does not update the model automatically.
+
+`scripts/recalibrate_condition_matrix.py` is dead code (the matrix it calibrated was removed in V9.0).
+
 ## Ingesting New Slate Data
 
 New slates are ingested **manually by appending rows** to the four files above — there is no automated collector. After a slate completes, capture the platform's leaderboards and append to each file. The canonical column-by-column reference lives in `.claude/hooks/session-start.sh` (reproduced below). Keep all four files in lockstep — a date missing from any one of them will break cross-validation.

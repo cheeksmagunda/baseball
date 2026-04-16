@@ -209,27 +209,15 @@ ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data
 # Formula: base_ev = pop_factor × env_factor × trait_factor × context × 100
 # ---------------------------------------------------------------------------
 
-# Pop modifier bounds — PRIMARY signal (V8.0: elevated from tertiary).
-# The RS_CONDITION_MATRIX raw factor (0.275–1.00) is scaled to this range.
-# Range: 0.50–1.50 (3.0x swing) — matching the empirical 3.6x RS differential.
-# A FADE batter now starts at 0.50x, meaning they need 3x better env+trait
-# to match a TARGET batter.  This is the dominant edge in the system.
-# DFS platform ownership (RotoGrinders, NumberFire) is NOT included —
-# it is only visible during the draft, not before.
-POP_MODIFIER_FLOOR = 0.50
-POP_MODIFIER_CEILING = 1.50
-POP_FACTOR_RAW_MIN = 0.275   # min raw value from RS_CONDITION_MATRIX (batter FADE)
-POP_FACTOR_RAW_MAX = 1.00    # max raw value from RS_CONDITION_MATRIX (TARGET)
-
-# Env modifier bounds — SECONDARY signal (V8.0: demoted from primary).
-# Range: 0.70–1.30 (1.86x swing) — game environment differentiates within
-# a popularity tier.  Cannot override a strong FADE/TARGET signal on its own.
+# Env modifier bounds — PRIMARY signal.
+# Range: 0.70–1.30 (1.86x swing) — game conditions (Vegas O/U, ERA, bullpen,
+# park, weather, platoon, batting order, moneyline).
 ENV_MODIFIER_FLOOR = 0.70
 ENV_MODIFIER_CEILING = 1.30
 
-# Trait modifier bounds — TERTIARY signal (V8.0: demoted from secondary).
-# Range: 0.85–1.15 (1.35x swing) — season stats provide fine-grained
-# differentiation within the same env+pop tier.
+# Trait modifier bounds — SECONDARY signal.
+# Range: 0.85–1.15 (1.35x swing) — season stats (K/9, ISO, barrel%, ERA, WHIP,
+# recent form) provide fine-grained differentiation within the same env tier.
 TRAIT_MODIFIER_FLOOR = 0.85
 TRAIT_MODIFIER_CEILING = 1.15
 
@@ -237,20 +225,13 @@ TRAIT_MODIFIER_CEILING = 1.15
 # Moonshot constants (dual-lineup optimizer)
 # ---------------------------------------------------------------------------
 
-# Moonshot popularity adjustments (heavier anti-crowd lean).
-# V6.0: Moonshot uses RS_CONDITION_MATRIX factors with an additional
-# contrarian multiplier that further penalizes FADE and rewards TARGET.
-MOONSHOT_FADE_PENALTY = 0.60          # 40% penalty (vs 25% for Starting 5)
-MOONSHOT_NEUTRAL_PENALTY = 0.95       # 5% penalty (if you're not a TARGET, step aside)
-MOONSHOT_TARGET_BONUS = 1.30          # 30% bonus (vs 15% for Starting 5)
-MOONSHOT_CONTRARIAN_FADE_MULT = 0.50  # V6.0: additional multiplier on matrix FADE factor
-MOONSHOT_CONTRARIAN_TARGET_MULT = 1.25  # V6.0: additional multiplier on matrix TARGET factor
+# Sharp signal bonus: underground analyst buzz (Reddit, FanGraphs, Prospects Live)
+# → up to +35% EV.  Primary Moonshot differentiator from Starting 5.
+MOONSHOT_SHARP_BONUS_MAX = 0.35
 
-# Sharp signal bonus: underground buzz → up to +25% EV
-MOONSHOT_SHARP_BONUS_MAX = 0.25
-
-# Explosive bonus: power_profile (batters) or k_rate (pitchers) → up to +10% EV
-MOONSHOT_EXPLOSIVE_BONUS_MAX = 0.10
+# Explosive bonus: power_profile (batters) or k_rate (pitchers) → up to +20% EV.
+# Moonshot favors boom-or-bust profiles over balanced steady producers.
+MOONSHOT_EXPLOSIVE_BONUS_MAX = 0.20
 
 # Game diversification: soft penalty for same-team overlap with Starting 5
 MOONSHOT_SAME_TEAM_PENALTY = 0.85

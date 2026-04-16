@@ -1,224 +1,29 @@
 """
-Condition Classifier — V6.0 "Popularity-First Side Analysis"
+Condition Classifier — meta-game monitoring utilities.
 
-Maps each player's (position_type × popularity_class) to their historical
-RS performance ratio.  This ratio, not the trait score, is the dominant
-term in the EV formula.
+The RS_CONDITION_MATRIX (V6.0–V6.3) was removed in V7.0.  It fed historical
+RS ratios into the live EV formula as the primary signal, which violated the
+"Filter, Not Forecast" principle — the optimizer was implicitly predicting RS
+from past RS outcomes.
 
-V6.0 — Popularity-First Rewrite (2026-04-14):
-  The V5.0 matrix was keyed on (ownership_tier × boost_tier) — both of which
-  come from the Real Sports platform and are unknowable pre-game.  This made
-  the matrix useless for live slates: every player defaulted to "medium" tier
-  with 0.0 boost, collapsing the entire strategy.
+Popularity is now a **candidate pool gate only**:
+  - FADE players (high pre-game media attention) are excluded from the
+    candidate pool before EV computation begins.
+  - TARGET / NEUTRAL players are NOT rewarded — they simply pass the gate.
+  - The EV formula is driven purely by env (game conditions) and trait
+    (season stats), with no RS-derived inputs.
 
-  V6.0 rekeys the matrix on signals we CAN observe before the slate:
-    - popularity_class: FADE / TARGET / NEUTRAL — from web-scraped external
-      signals (Google Trends, ESPN RSS, Reddit buzz).
-      NOTE: DFS platform ownership (RotoGrinders, NumberFire) is intentionally
-      EXCLUDED — those numbers are only visible during the draft session, not
-      before it.  See app/services/popularity.py for the actual signal sources.
-    - position_type: pitcher vs batter — structural RS distribution difference
-
-  Empirical evidence (20 dates, 2026-03-25 → 2026-04-13):
-    Batter+TARGET:  avg RS 3.57, HV rate 73.6% (n=311)
-    Batter+FADE:    avg RS 0.98, HV rate  9.6% (n=177)
-    Batter+FADE_3X: avg RS 0.79, HV rate  8.9% (n=56)
-    Pitcher+TARGET: avg RS 4.36, HV rate 44.7% (n=47)
-    Pitcher+FADE:   avg RS 3.09, HV rate 19.3% (n=83)
-
-  The popularity signal produces a 3.6x RS differential for batters
-  (TARGET 3.57 vs FADE 0.98).  The crowd is structurally wrong about
-  batters but less wrong about pitchers (1.4x differential).
-
-  This matrix replaces both CONDITION_MATRIX and PITCHER_CONDITION_MATRIX.
-
-V6.2 — Season backtest validation (2026-04-15):
-  Ran scripts/recalibrate_condition_matrix.py across all 20 training dates
-  using a proxy classification (is_most_popular / is_most_drafted_3x → FADE;
-  drafts ≤ 100 and not popular → TARGET; else → NEUTRAL) to validate the
-  existing matrix values against observed outcomes.
-
-  Findings:
-    - FADE batter factor 0.275 CONFIRMED: proxy implies 0.267, within 3%.
-    - FADE pitcher factor 0.710 CONFIRMED: proxy implies 0.676, within 5%.
-    - TARGET batter/pitcher confirmed directionally (biased upward in proxy
-      dataset due to HV-leaderboard capture, but ratios consistent).
-    - NEUTRAL: proxy yields only n=11 batters and n=5 pitchers (all HV
-      captures), far too sparse and biased for calibration. Interpolated
-      values (0.650 batter, 0.850 pitcher) are retained.
-    - Archetype consistency: TARGET batter HV rate exceeded FADE on all 20
-      dates without exception. The crowd-avoidance signal is structurally
-      stable across the full season to date.
-
-  No matrix values changed. This is a validation pass, not a recalibration.
-  NEUTRAL will be recalibratable once data from non-leaderboard players is
-  captured (requires storing the full slate player pool, not just leaderboard
-  captures).
+This module retains the meta-game monitoring utilities for observability.
 """
 
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# V6.0 RS Condition Matrix — (position_type × popularity_class) → RS factor
-#
-# Values are empirical RS ratios relative to TARGET baseline (= 1.00),
-# computed from 20 dates of historical_players.csv.
-#
-# The RS factor directly multiplies into the EV formula as the primary
-# signal.  A batter classified FADE starts at 0.27x — meaning they need
-# 3.7x better env + trait scores to overcome a TARGET batter.  This is
-# calibrated to the actual historical RS differential.
-# ---------------------------------------------------------------------------
-
-RS_CONDITION_MATRIX: dict[str, dict[str, float]] = {
-    # Batters: crowd-avoidance is the dominant edge.
-    # TARGET batters average RS 3.57, FADE batters average 0.98 (3.6x ratio).
-    # Non-popular players hit HV at 73.6% vs 9.6% for popular ones.
-    "batter": {
-        "TARGET":  1.000,   # n=311, avg RS 3.57, HV 73.6% — baseline
-        "NEUTRAL": 0.650,   # interpolated — moderate buzz, partial crowd info
-        "FADE":    0.275,   # n=177, avg RS 0.98, HV 9.6%  — crowd is here
-    },
-    # Pitchers: crowd is structurally less wrong (one-player performance).
-    # TARGET pitchers avg RS 4.36, FADE pitchers avg 3.09 (1.4x ratio).
-    # Pitchers control their own environment — high attention often reflects
-    # real ERA/K-rate quality, not just media hype.
-    "pitcher": {
-        "TARGET":  1.000,   # n=47, avg RS 4.36, HV 44.7% — baseline
-        "NEUTRAL": 0.850,   # interpolated — moderate pitcher buzz
-        "FADE":    0.710,   # n=83, avg RS 3.09, HV 19.3% — crowd less wrong
-    },
-}
-
-# Observation counts for Bayesian updating.  (successes, trials) where
-# "success" = player had RS > 3.0 (a proxy for positive DFS contribution).
-RS_CONDITION_OBSERVATIONS: dict[str, dict[str, tuple[int, int]]] = {
-    # Updated with April 14 data (V6.1):
-    # Apr 14 TARGET batters drafted: Devers (RS -0.3), Henderson (RS -0.7),
-    #   Yoshida (RS 0.6), Rosario (RS 0.1) — all < 3.0 → 0 successes, 4 trials
-    # Apr 14 TARGET batter not drafted: Buxton (RS > 3.0) → +1 success, +1 trial
-    # Net batter TARGET: +1 success, +5 trials (4 busts + 1 winner)
-    #
-    # V6.2 backtest note (Apr 15): proxy-classification backtest across 20 dates
-    # confirms FADE/TARGET factors. NEUTRAL observations remain (0, 0) because
-    # the historical CSV is a leaderboard-only capture: NEUTRAL players appear
-    # only when they hit the HV leaderboard (n=11 batters, 100% HV rate —
-    # massively selection-biased and unusable for calibration). Recalibratable
-    # once the full slate player pool is stored, not just leaderboard captures.
-    "batter": {
-        "TARGET":  (201, 316),   # 63.6% RS > 3.0  (real labels — do not overwrite with proxy)
-        "NEUTRAL": (  0,   0),   # cannot calibrate — leaderboard-only dataset (see V6.2 note)
-        "FADE":    ( 18, 177),   # 10.2% RS > 3.0  (real labels — do not overwrite with proxy)
-    },
-    # Apr 14 FADE pitcher: Gore RS 2.0 (< 3.0) → +0 successes, +1 trial
-    "pitcher": {
-        "TARGET":  ( 34,  47),   # 72.3% RS > 3.0  (real labels — do not overwrite with proxy)
-        "NEUTRAL": (  0,   0),   # cannot calibrate — leaderboard-only dataset (see V6.2 note)
-        "FADE":    ( 48,  84),   # 57.1% RS > 3.0  (real labels — do not overwrite with proxy)
-    },
-}
 
 # ---------------------------------------------------------------------------
-# Matrix version & training provenance
-# ---------------------------------------------------------------------------
-# V6.1 — April 14 post-mortem update:
-#   Added April 14 observations.  All four drafted TARGET-ish batters busted:
-#   Devers RS -0.3 (STL), Henderson RS -0.7 (BAL), Yoshida RS 0.6 (BOS,
-#   vs dominant Twins), Rosario RS 0.1 (MIL).  Gore RS 2.0 (FADE pitcher,
-#   641 drafts).  Buxton (MIN) was highest value (TARGET batter, big game).
-#   Net effect: TARGET batter success count +1 (Buxton), FADE batter + 0,
-#   observation counts updated below.  The April 14 bust was an env-signal
-#   failure (missing Vegas/bullpen/series data), not a matrix error.
-#
-# V6.2 — April 15 season backtest validation:
-#   Ran recalibrate_condition_matrix.py (V6.0-format script) across all 20
-#   training dates.  Proxy classification (platform flags + draft counts)
-#   confirms FADE/TARGET factors are within 3–5% of empirical values.
-#   No matrix values changed.  NEUTRAL observations remain (0, 0) due to
-#   leaderboard-only dataset limitation (see RS_CONDITION_OBSERVATIONS note).
-#   Archetype consistency confirmed: TARGET batter HV rate exceeded FADE on
-#   all 20 dates without exception.
-CONDITION_MATRIX_VERSION = "6.2"
-CONDITION_MATRIX_TRAINING_DATES = [
-    "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-28", "2026-03-29",
-    "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-03",
-    "2026-04-04", "2026-04-05", "2026-04-06", "2026-04-07", "2026-04-08",
-    "2026-04-09", "2026-04-10", "2026-04-11", "2026-04-12", "2026-04-13",
-    "2026-04-14",
-]
-
-# ---------------------------------------------------------------------------
-# Bayesian smoothing (retained from V3.0+)
-# ---------------------------------------------------------------------------
-BAYESIAN_PRIOR_ALPHA = 1.0
-BAYESIAN_PRIOR_BETA = 1.0
-
-
-def bayesian_rate(successes: int, trials: int) -> float:
-    """Compute Bayesian posterior mean using Beta-Binomial conjugate.
-
-    posterior_mean = (successes + alpha) / (trials + alpha + beta)
-
-    With alpha=1, beta=1 (uniform prior):
-      0/34 → 1/36 ≈ 0.028  (not 0.0)
-      8/8  → 9/10 = 0.90   (not 1.0)
-    """
-    return (successes + BAYESIAN_PRIOR_ALPHA) / (trials + BAYESIAN_PRIOR_ALPHA + BAYESIAN_PRIOR_BETA)
-
-
-# ---------------------------------------------------------------------------
-# Core lookup: (position_type, popularity_class) → RS condition factor
-# ---------------------------------------------------------------------------
-
-def get_rs_condition_factor(
-    popularity_class: str,
-    is_pitcher: bool = False,
-) -> float:
-    """Look up the RS condition factor from the V6.0 matrix.
-
-    This is the primary term in the EV formula.  A TARGET batter gets 1.00,
-    a FADE batter gets 0.275 — the crowd-avoidance signal is the strongest
-    predictor of RS across 20 dates of data.
-
-    Args:
-        popularity_class: "FADE", "NEUTRAL", or "TARGET" from web scraping
-        is_pitcher: True for starting pitchers, False for batters
-
-    Returns:
-        RS condition factor (0.275 – 1.00 for batters, 0.71 – 1.00 for pitchers)
-    """
-    pos_key = "pitcher" if is_pitcher else "batter"
-    matrix_row = RS_CONDITION_MATRIX[pos_key]
-
-    # Normalize classification to matrix keys
-    pop_key = popularity_class.upper() if popularity_class else "NEUTRAL"
-    if pop_key not in matrix_row:
-        pop_key = "NEUTRAL"
-
-    factor = matrix_row[pop_key]
-
-    # Blend with Bayesian posterior when observations exist
-    obs = RS_CONDITION_OBSERVATIONS.get(pos_key, {}).get(pop_key, (0, 0))
-    successes, trials = obs
-    if trials > 0:
-        bayesian = bayesian_rate(successes, trials)
-        # The matrix factor and Bayesian rate measure different things
-        # (RS ratio vs P(RS>3)), but both express the same directional signal.
-        # Use the matrix factor as the primary value — it's calibrated for
-        # the EV formula.  Log Bayesian for monitoring.
-        logger.debug(
-            "RS condition: %s+%s → factor=%.3f, bayesian_p(RS>3)=%.3f "
-            "(obs=%d/%d)",
-            pos_key, pop_key, factor, bayesian, successes, trials,
-        )
-
-    return factor
-
-
-# ---------------------------------------------------------------------------
-# Meta-game monitoring (retained from V3.0)
+# Meta-game monitoring
 # ---------------------------------------------------------------------------
 
 def compute_draft_entropy(draft_counts: list[int]) -> float:
@@ -230,7 +35,6 @@ def compute_draft_entropy(draft_counts: list[int]) -> float:
 
     Returns entropy in bits (log base 2).
     """
-    import math
     if not draft_counts:
         return 0.0
     total = sum(draft_counts)
