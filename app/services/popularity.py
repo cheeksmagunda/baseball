@@ -167,7 +167,8 @@ async def fetch_social_signal(player_name: str, team: str) -> SignalResult:
                 r.raise_for_status()
                 return last_name in r.text.lower()
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            raise RuntimeError(f"Google Trends autocomplete failed for {player_name}: {exc}") from exc
+            logger.debug("Google autocomplete failed for %s: %s", player_name, exc)
+            return False
 
     async def _dailytrends() -> bool:
         try:
@@ -178,7 +179,8 @@ async def fetch_social_signal(player_name: str, team: str) -> SignalResult:
             )
             return last_name in text
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            raise RuntimeError(f"Google Trends daily trends failed for {player_name}: {exc}") from exc
+            logger.debug("Google daily trends failed for %s: %s", player_name, exc)
+            return False
 
     in_autocomplete, in_daily = await asyncio.gather(
         _autocomplete(), _dailytrends()
@@ -206,7 +208,8 @@ async def fetch_news_signal(player_name: str, team: str) -> SignalResult:
             text = await _fetch_text_cached(key=url, url=url)
             return name if last_name in text else None
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            raise RuntimeError(f"{name} RSS feed failed for {player_name}: {exc}") from exc
+            logger.debug("%s RSS feed failed for %s: %s", name, player_name, exc)
+            return None
 
     results = await asyncio.gather(
         _feed("ESPN", "https://www.espn.com/espn/rss/mlb/news"),
@@ -224,13 +227,17 @@ async def fetch_search_signal(player_name: str, team: str) -> SignalResult:
 
     High casual search interest = the crowd knows about this player.
     """
-    async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT}) as client:
-        resp = await client.get(
-            "https://suggestqueries.google.com/complete/search",
-            params={"client": "firefox", "q": f"{player_name} "},
-        )
-    resp.raise_for_status()
-    suggestions = resp.text.lower()
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT}) as client:
+            resp = await client.get(
+                "https://suggestqueries.google.com/complete/search",
+                params={"client": "firefox", "q": f"{player_name} "},
+            )
+        resp.raise_for_status()
+        suggestions = resp.text.lower()
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        logger.debug("Google search signal failed for %s: %s", player_name, exc)
+        return SignalResult("search", 0.0, "Search signal unavailable")
 
     hot_terms = ["stats", "today", "home run", "injury", "lineup", "dfs"]
     matches = sum(1 for term in hot_terms if term in suggestions)
