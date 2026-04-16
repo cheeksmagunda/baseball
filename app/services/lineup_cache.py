@@ -81,6 +81,40 @@ class _LineupCache:
         self._is_frozen = True
         logger.info("Lineup cache FROZEN — picks are locked until slate completion")
 
+    def restore_and_refreeze(self, first_pitch_utc: datetime) -> bool:
+        """
+        Restore previously-frozen picks from persistent storage and re-freeze.
+
+        Called on startup when T-65 has already passed for today's slate. Loads
+        from Redis/SQLite and re-freezes the cache so the monitor skips pipeline
+        regeneration (which would fail because games may be Live/Final).
+
+        Only restores if the cached slate date matches today — stale picks from
+        a previous day are never served.
+
+        Returns True if picks were successfully restored and re-frozen.
+        """
+        loaded = self.load_from_db()
+        if not loaded:
+            return False
+
+        if self._slate_date != date.today():
+            logger.warning(
+                "Cached picks are from %s, not today (%s) — cannot restore",
+                self._slate_date, date.today(),
+            )
+            self._data = None
+            self._slate_date = None
+            return False
+
+        self._first_pitch_utc = first_pitch_utc
+        self._is_frozen = True
+        logger.info(
+            "Restored and re-frozen cached picks for %s (post-T-65 restart)",
+            self._slate_date,
+        )
+        return True
+
     @property
     def is_frozen(self) -> bool:
         return self._is_frozen
