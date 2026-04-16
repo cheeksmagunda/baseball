@@ -108,18 +108,43 @@ async def lifespan(app: FastAPI):
             logger.info("Database empty, loading seed data...")
             run_seed(db)
 
-    # Cache initialization (FAIL-LOUD principle):
-    # Always purge cache on startup. Do NOT restore frozen picks from previous runs.
-    # If T-65 has already passed, the T-65 monitor will detect this and immediately
-    # regenerate picks from scratch with fresh live data. This ensures every pick
-    # served to users is built from complete, current data — never from cached
-    # or fallback sources.
+    # Cache initialization: restore frozen picks on post-T-65 restart, otherwise purge.
     #
-    # If app restarts after T-65 and any dependency (MLB API, Odds API, DB) is
-    # unavailable, the monitor will crash loudly (no fallback to stale data).
+    # If T-65 has already passed for today's slate, the pipeline cannot regenerate
+    # picks because _load_active_slate filters out Live/Final games. Instead,
+    # restore the previously-frozen picks from SQLite/Redis and re-freeze them.
+    # The monitor's "if lineup_cache.is_frozen" guard (Phase 3) will skip the
+    # pipeline run and proceed directly to post-lock monitoring.
+    #
+    # On normal (pre-T-65) startups, purge the cache so the T-65 pipeline builds
+    # fresh picks from live data.
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
     from app.services.lineup_cache import lineup_cache
+    from app.services.slate_monitor import _get_first_pitch_utc, LOCK_MINUTES_BEFORE_PITCH
 
-    lineup_cache.purge()
+    _restored = False
+    with SessionLocal() as _check_db:
+        from app.models.slate import Slate as _Slate
+        _today_slate = _check_db.query(_Slate).filter_by(date=date.today()).first()
+        if _today_slate:
+            _first_pitch = _get_first_pitch_utc(_check_db, date.today())
+            if _first_pitch:
+                _lock_time = _first_pitch - _td(minutes=LOCK_MINUTES_BEFORE_PITCH)
+                if _dt.now(_tz.utc) >= _lock_time:
+                    _restored = lineup_cache.restore_and_refreeze(_first_pitch)
+                    if _restored:
+                        logger.info(
+                            "Post-T-65 restart: restored frozen picks. "
+                            "Monitor will skip pipeline and proceed to post-lock monitoring."
+                        )
+                    else:
+                        logger.warning(
+                            "Post-T-65 restart: no cached picks to restore. "
+                            "Monitor will attempt pipeline regeneration (may fail if games are Live)."
+                        )
+
+    if not _restored:
+        lineup_cache.purge()
 
     # startup_done_event signals the T-65 monitor that initialization is complete.
     startup_done_event = asyncio.Event()
