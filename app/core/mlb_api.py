@@ -1,19 +1,28 @@
 """MLB Stats API client wrapper."""
 
+import asyncio
+
 import httpx
 
 from app.config import settings
 
 TIMEOUT = 15.0
 
+# Cap concurrent MLB API connections to avoid overwhelming the server.
+# The T-65 pipeline fires ~260 requests (rosters, boxscores, player stats,
+# team stats, series context). Without a cap, asyncio.gather launches all
+# of them simultaneously, risking rate-limits or connection exhaustion.
+_API_SEM = asyncio.Semaphore(20)
+
 
 async def _get(path: str, params: dict | None = None) -> dict:
     """Make a GET request to the MLB Stats API."""
-    url = f"{settings.mlb_api_base_url}{path}"
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        resp = await client.get(url, params=params)
-        resp.raise_for_status()
-        return resp.json()
+    async with _API_SEM:
+        url = f"{settings.mlb_api_base_url}{path}"
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            return resp.json()
 
 
 async def get_schedule(game_date: str) -> dict:

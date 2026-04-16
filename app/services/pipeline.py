@@ -65,16 +65,13 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     fetched = 0
     failed = 0
 
-    # Fetch all player stats in parallel (HTTP is async; DB ops serialize naturally
-    # since asyncio is single-threaded and yields only at await points).
-    _SEM = asyncio.Semaphore(20)  # cap concurrent MLB API connections
-
-    async def _fetch(player):
-        async with _SEM:
-            return await fetch_player_season_stats(db, player)
-
+    # Fetch all player stats in parallel. Concurrency is capped by the
+    # module-level semaphore in mlb_api._get (sem=20).
     players = [sp.player for sp in slate_players if sp.player]
-    results = await asyncio.gather(*[_fetch(p) for p in players], return_exceptions=True)
+    results = await asyncio.gather(
+        *[fetch_player_season_stats(db, p) for p in players],
+        return_exceptions=True,
+    )
     for r in results:
         if isinstance(r, Exception):
             failed += 1

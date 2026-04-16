@@ -38,6 +38,12 @@ logger = logging.getLogger(__name__)
 TIMEOUT = 8.0
 _USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+# Cap concurrent popularity profiles. Each profile fires 2 per-player HTTP
+# requests to Google (autocomplete + suggest). With ~125 candidates and no
+# limit, 250 simultaneous Google requests trigger rate-limiting and 8s
+# timeouts, crashing the pipeline. Sem=10 → ≤20 concurrent Google requests.
+_PROFILE_SEM = asyncio.Semaphore(10)
+
 
 # ---------------------------------------------------------------------------
 # Per-slate URL cache
@@ -351,38 +357,39 @@ async def get_popularity_profile(
         include_sharp: If True, also fetches the underground sharp signal
                        (used by Moonshot optimizer).
     """
-    # Build list of fetchers — pre-game public signals only.
-    # DFS platform ownership (RotoGrinders, NumberFire) intentionally excluded:
-    # it is only available during the draft session, not before.
-    fetchers = [
-        fetch_social_signal(player_name, team),
-        fetch_news_signal(player_name, team),
-        fetch_search_signal(player_name, team),
-    ]
-    if include_sharp:
-        fetchers.append(fetch_sharp_signal(player_name, team))
+    async with _PROFILE_SEM:
+        # Build list of fetchers — pre-game public signals only.
+        # DFS platform ownership (RotoGrinders, NumberFire) intentionally excluded:
+        # it is only available during the draft session, not before.
+        fetchers = [
+            fetch_social_signal(player_name, team),
+            fetch_news_signal(player_name, team),
+            fetch_search_signal(player_name, team),
+        ]
+        if include_sharp:
+            fetchers.append(fetch_sharp_signal(player_name, team))
 
-    results = await asyncio.gather(*fetchers)
+        results = await asyncio.gather(*fetchers)
 
-    social, news, search = results[0], results[1], results[2]
-    sharp = results[3] if include_sharp else SignalResult("sharp", 0.0, "Not fetched")
+        social, news, search = results[0], results[1], results[2]
+        sharp = results[3] if include_sharp else SignalResult("sharp", 0.0, "Not fetched")
 
-    signals = [social, news, search, sharp]
-    composite = compute_composite_score(signals)  # sharp excluded from composite
-    classification, reason = classify_player(composite, player_score)
+        signals = [social, news, search, sharp]
+        composite = compute_composite_score(signals)  # sharp excluded from composite
+        classification, reason = classify_player(composite, player_score)
 
-    return PopularityProfile(
-        player_name=player_name,
-        team=team,
-        social_score=social.score,
-        news_score=news.score,
-        search_score=search.score,
-        sharp_score=sharp.score,
-        composite_score=composite,
-        classification=classification,
-        reason=reason,
-        signals=signals,
-    )
+        return PopularityProfile(
+            player_name=player_name,
+            team=team,
+            social_score=social.score,
+            news_score=news.score,
+            search_score=search.score,
+            sharp_score=sharp.score,
+            composite_score=composite,
+            classification=classification,
+            reason=reason,
+            signals=signals,
+        )
 
 
 async def get_slate_popularity(
