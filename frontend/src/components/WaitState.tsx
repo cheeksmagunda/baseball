@@ -36,8 +36,10 @@ export function WaitState({ waitInfo, onReady }: WaitStateProps) {
     if (!waitInfo.lock_time_utc) return;
     const diff = Math.max(0, new Date(waitInfo.lock_time_utc).getTime() - Date.now());
     setRemaining(diff);
-    if (diff <= 0) onReady();
-  }, [waitInfo.lock_time_utc, onReady]);
+    // Only fire onReady for before_lock countdown; generating/initializing
+    // phases use the hook's auto-refetch timer instead.
+    if (diff <= 0 && waitInfo.phase === "before_lock") onReady();
+  }, [waitInfo.lock_time_utc, waitInfo.phase, onReady]);
 
   useEffect(() => {
     if (!waitInfo.lock_time_utc) return;
@@ -46,13 +48,13 @@ export function WaitState({ waitInfo, onReady }: WaitStateProps) {
     return () => clearInterval(id);
   }, [tick, waitInfo.lock_time_utc]);
 
-  const isInitializing = waitInfo.phase === "initializing";
+  const isSpinnerPhase = waitInfo.phase === "initializing" || waitInfo.phase === "generating";
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
       <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-brand-primary/15">
         <svg
-          className={`h-9 w-9 text-brand-primary${isInitializing ? " animate-spin" : ""}`}
+          className={`h-9 w-9 text-brand-primary${isSpinnerPhase ? " animate-spin" : ""}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -63,13 +65,15 @@ export function WaitState({ waitInfo, onReady }: WaitStateProps) {
         </svg>
       </div>
 
-      {isInitializing ? (
+      {isSpinnerPhase ? (
         <>
           <h2 className="text-fluid-xl font-bold text-text-primary">
-            Preparing Today&apos;s Picks
+            {waitInfo.phase === "generating" ? "Generating Today\u2019s Picks" : "Preparing Today\u2019s Picks"}
           </h2>
           <p className="mt-2 max-w-xs text-fluid-sm text-text-muted">
-            The pipeline is starting up. This page will refresh automatically.
+            {waitInfo.phase === "generating"
+              ? "The lineup engine is running. This page will refresh automatically."
+              : "The pipeline is starting up. This page will refresh automatically."}
           </p>
           <div className="mt-6 h-1.5 w-40 overflow-hidden rounded-full bg-surface-elevated">
             <div className="h-full w-1/3 animate-pulse rounded-full bg-brand-primary" />
