@@ -1,4 +1,6 @@
-"""Backtest & recalibrate the V6.0 RS_CONDITION_MATRIX from historical data.
+"""DEAD CODE — V9.0 removed RS_CONDITION_MATRIX. Use calibrate_env_scoring.py instead.
+
+Backtest & recalibrate the V6.0 RS_CONDITION_MATRIX from historical data.
 
 Replaces the V3/V4 script (ownership_tier × boost_tier) — that matrix is dead
 code since V6.0 rekeyed everything on (popularity_class × position_type).
