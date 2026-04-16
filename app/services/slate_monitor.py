@@ -17,6 +17,10 @@ Four phases per slate day:
   4. MONITORING  — Lightweight 60-second loop watching only for game completion.
                    On all-final: clear cache, pre-warm tomorrow's pipeline.
 
+After Phase 4 completes for a slate, the monitor loops back to Phase 1 to
+target the next slate day. This ensures multi-day uptime without requiring
+app restarts to re-trigger the T-65 cycle.
+
 Design decisions
 ----------------
 * 65-minute buffer = 60-min user draft window + 5-min generation headroom.
@@ -233,9 +237,10 @@ async def targeted_slate_monitor(
     """
     T-65 Sniper: event-driven slate monitor.
 
-    Waits for the startup pipeline to complete, determines first-pitch time,
-    sleeps until T-65, runs the final optimizer, freezes the cache, then
-    switches to lightweight completion monitoring.
+    Waits for the startup pipeline to complete, then enters a perpetual loop:
+    determines first-pitch time, sleeps until T-65, runs the final optimizer,
+    freezes the cache, then switches to lightweight completion monitoring.
+    After each slate completes, loops back to target the next slate day.
 
     Args:
         startup_done_event: Set by the startup pipeline task when it finishes.
@@ -246,6 +251,8 @@ async def targeted_slate_monitor(
     from app.services.lineup_cache import lineup_cache
     from app.services.pipeline import run_full_pipeline
     from app.routers.filter_strategy import build_and_cache_lineups
+    from app.services.data_collection import fetch_schedule_for_date
+    from app.routers.filter_strategy import _get_active_slate_date
 
     # -----------------------------------------------------------------------
     # Wait for startup pipeline so we don't race with the morning init
@@ -256,179 +263,218 @@ async def targeted_slate_monitor(
         logger.info("Startup pipeline done — T-65 monitor proceeding")
 
     # -----------------------------------------------------------------------
-    # Phase 1: Determine the active slate date and first pitch time
+    # Perpetual slate loop: one iteration per slate day.
+    # After Phase 4 (post-lock) completes, loop back to Phase 1 to target
+    # the next slate. This keeps the monitor alive across multi-day uptime
+    # without requiring app restarts.
     # -----------------------------------------------------------------------
-    # Use the same active-date logic as the startup pipeline so the monitor
-    # targets tomorrow's slate when today's games are already complete.
-    #
-    # Bootstrap: the monitor cannot sleep until T-65 without knowing when
-    # first pitch is, and that requires SlateGame.scheduled_game_time rows
-    # in the DB. On a fresh deploy (or after a restart that purged the cache
-    # during the T-60 window), no Slate row exists for today. Fetch the
-    # schedule here — this is the ONE MLB API call allowed outside T-65,
-    # because without it the monitor has no idea when T-65 is.
-    # When the restart happens AFTER T-65 (inside the T-60 window), main.py
-    # has already purged lineup_cache so is_frozen=False. Phase 2 below will
-    # see now >= lock_time_utc and skip the sleep; Phase 3's "if is_frozen"
-    # guard will NOT fire, so run_full_pipeline executes immediately with
-    # fresh live data and build_and_cache_lineups re-freezes the cache.
-    from app.services.data_collection import fetch_schedule_for_date
-    from app.routers.filter_strategy import _get_active_slate_date
-
-    today = date.today()
-    db = SessionLocal()
-    try:
-        # Use _get_first_pitch_utc as the "do we know T-65?" probe.
-        # fetch_schedule_for_date is idempotent (upserts), so it's safe to
-        # call whether the Slate row is missing OR present-but-empty.
-        if _get_first_pitch_utc(db, today) is None:
-            logger.info("Monitor bootstrap: fetching schedule for %s", today)
-            await fetch_schedule_for_date(db, today)
-
-        monitor_date = _get_active_slate_date(db)
-        first_pitch_utc = _get_first_pitch_utc(db, monitor_date)
-
-        # If _get_active_slate_date targeted tomorrow (today's slate empty
-        # or all-final), make sure tomorrow's schedule is populated too.
-        if first_pitch_utc is None and monitor_date != today:
-            logger.info("Monitor bootstrap: fetching schedule for %s", monitor_date)
-            await fetch_schedule_for_date(db, monitor_date)
-            first_pitch_utc = _get_first_pitch_utc(db, monitor_date)
-    finally:
-        db.close()
-
-    logger.info("T-65 monitor targeting date: %s", monitor_date)
-
-    if first_pitch_utc is None:
-        raise RuntimeError(
-            f"No scheduled_game_time values found for {monitor_date}. "
-            "Cannot determine first pitch time. "
-            "Cannot build lineups without knowing when games start. "
-            "Pipeline must fail loudly (no fallback to default times). "
-            "This is a critical error that requires investigation. "
-            "See DISASTER_RECOVERY.md § Scenario 1 for debugging steps."
-        )
-
-    lock_time_utc = first_pitch_utc - timedelta(minutes=LOCK_MINUTES_BEFORE_PITCH)
-
-    # Publish timing so /status and /optimize can expose the countdown
-    lineup_cache.set_schedule(first_pitch_utc=first_pitch_utc)
-
-    logger.info(
-        "T-%d schedule: first_pitch=%s UTC, lock=%s UTC (%.0f min from now)",
-        LOCK_MINUTES_BEFORE_PITCH,
-        first_pitch_utc.strftime("%H:%M"),
-        lock_time_utc.strftime("%H:%M"),
-        max(0, (lock_time_utc - datetime.now(timezone.utc)).total_seconds() / 60),
-    )
-
-    # -----------------------------------------------------------------------
-    # Phase 2: Sleep until T-65
-    # -----------------------------------------------------------------------
-    now = datetime.now(timezone.utc)
-    if now < lock_time_utc:
-        logger.info(
-            "Sleeping until T-%d (%s UTC)…",
-            LOCK_MINUTES_BEFORE_PITCH,
-            lock_time_utc.strftime("%H:%M"),
-        )
-        await _sleep_until(lock_time_utc)
-
-    # -----------------------------------------------------------------------
-    # Phase 3: Final pipeline run + cache freeze
-    # -----------------------------------------------------------------------
-
-    # If the cache is already frozen (e.g., this monitor task is re-entering
-    # after previous T-65 run), skip the final pipeline run entirely.
-    # The frozen picks are already locked and valid for the current slate.
-    # Re-running the pipeline with started/final games excluded would produce
-    # a different candidate pool, risking inconsistency.
-    if lineup_cache.is_frozen:
-        logger.info(
-            "T-%d monitor: cache already frozen (restart during live slate) — "
-            "skipping final pipeline run, proceeding to post-lock monitoring.",
-            LOCK_MINUTES_BEFORE_PITCH,
-        )
-    else:
+    while True:
         # -------------------------------------------------------------------
-        # Phase 2b: Refresh the schedule right before the final run so weather
-        # delays push the lock *back* instead of locking early on stale times.
-        # Loop until the newly-parsed first pitch is within tolerance of the
-        # cached one; if it moves later, re-sleep to the new T-65.
+        # Phase 1: Determine the active slate date and first pitch time
         # -------------------------------------------------------------------
-        from app.services.data_collection import fetch_schedule_for_date
+        # Use the same active-date logic as the startup pipeline so the
+        # monitor targets tomorrow's slate when today's games are already
+        # complete.
+        #
+        # Bootstrap: the monitor cannot sleep until T-65 without knowing when
+        # first pitch is, and that requires SlateGame.scheduled_game_time rows
+        # in the DB. On a fresh deploy (or after a restart that purged the
+        # cache during the T-60 window), no Slate row exists for today. Fetch
+        # the schedule here — this is the ONE MLB API call allowed outside
+        # T-65, because without it the monitor has no idea when T-65 is.
+        # When the restart happens AFTER T-65 (inside the T-60 window),
+        # main.py has already purged lineup_cache so is_frozen=False. Phase 2
+        # below will see now >= lock_time_utc and skip the sleep; Phase 3's
+        # "if is_frozen" guard will NOT fire, so run_full_pipeline executes
+        # immediately with fresh live data and build_and_cache_lineups
+        # re-freezes the cache.
 
-        while True:
-            db_refresh = SessionLocal()
-            try:
-                await fetch_schedule_for_date(db_refresh, monitor_date)
-                refreshed_first_pitch = _get_first_pitch_utc(db_refresh, monitor_date)
-            finally:
-                db_refresh.close()
-
-            if refreshed_first_pitch is None:
-                raise RuntimeError(
-                    f"No scheduled_game_time values for {monitor_date} at T-"
-                    f"{LOCK_MINUTES_BEFORE_PITCH} — pipeline must fail loudly"
-                )
-
-            # <2 min drift is noise (schedule-string rounding); treat as stable.
-            if refreshed_first_pitch <= first_pitch_utc + timedelta(minutes=2):
-                break
-
-            logger.warning(
-                "First pitch pushed back: %s UTC -> %s UTC — re-sleeping to new T-%d",
-                first_pitch_utc.strftime("%H:%M"),
-                refreshed_first_pitch.strftime("%H:%M"),
-                LOCK_MINUTES_BEFORE_PITCH,
-            )
-            first_pitch_utc = refreshed_first_pitch
-            lock_time_utc = first_pitch_utc - timedelta(minutes=LOCK_MINUTES_BEFORE_PITCH)
-            lineup_cache.set_schedule(first_pitch_utc=first_pitch_utc)
-            await _sleep_until(lock_time_utc)
-
-        logger.info(
-            "T-%d FINAL RUN — fetching data, building lineups, freezing cache",
-            LOCK_MINUTES_BEFORE_PITCH,
-        )
-
+        today = date.today()
         db = SessionLocal()
         try:
-            # =========================================================
-            # CRITICAL: NO TRY/EXCEPT AT T-65 FINAL RUN
-            # =========================================================
-            # Under the no-fallback rule, ANY T-65 pipeline failure
-            # (MLB API down, Odds API quota exhausted, DB connection
-            # failed, invalid config, etc.) must crash this monitor
-            # task. This allows /api/filter-strategy/optimize to return
-            # HTTP 503 with a clear error message rather than silently
-            # serving stale lineups from yesterday or neutral defaults.
-            #
-            # Bad data is worse than no data. Operations must restore
-            # the system rather than letting corrupted picks get drafted.
-            #
-            # See CLAUDE.md § "ABSOLUTE RULE: No Fallbacks. Ever"
-            # See DISASTER_RECOVERY.md for all failure scenarios
-            # =========================================================
-            await run_full_pipeline(db, monitor_date)
-            logger.info("T-%d pipeline complete", LOCK_MINUTES_BEFORE_PITCH)
+            # Use _get_first_pitch_utc as the "do we know T-65?" probe.
+            # fetch_schedule_for_date is idempotent (upserts), so it's safe
+            # to call whether the Slate row is missing OR present-but-empty.
+            if _get_first_pitch_utc(db, today) is None:
+                logger.info("Monitor bootstrap: fetching schedule for %s", today)
+                await fetch_schedule_for_date(db, today)
 
-            cached = await build_and_cache_lineups(db, slate_date=monitor_date)
-            if cached:
-                lineup_cache.freeze(first_pitch_utc=first_pitch_utc)
+            monitor_date = _get_active_slate_date(db)
+            first_pitch_utc = _get_first_pitch_utc(db, monitor_date)
+
+            # If _get_active_slate_date targeted tomorrow (today's slate
+            # empty or all-final), make sure tomorrow's schedule is
+            # populated too.
+            if first_pitch_utc is None and monitor_date != today:
                 logger.info(
-                    "Cache FROZEN. First pitch: %s UTC. Picks are locked.",
-                    first_pitch_utc.strftime("%H:%M"),
+                    "Monitor bootstrap: fetching schedule for %s", monitor_date
                 )
-            else:
-                raise RuntimeError(
-                    f"T-{LOCK_MINUTES_BEFORE_PITCH} lineup build returned nothing — "
-                    "no slate data available; pipeline must fail loudly"
-                )
+                await fetch_schedule_for_date(db, monitor_date)
+                first_pitch_utc = _get_first_pitch_utc(db, monitor_date)
         finally:
             db.close()
 
-    # -----------------------------------------------------------------------
-    # Phase 4: Lightweight post-lock monitoring
-    # -----------------------------------------------------------------------
-    await _post_lock_monitor(monitor_date)
+        logger.info("T-65 monitor targeting date: %s", monitor_date)
+
+        if first_pitch_utc is None:
+            raise RuntimeError(
+                f"No scheduled_game_time values found for {monitor_date}. "
+                "Cannot determine first pitch time. "
+                "Cannot build lineups without knowing when games start. "
+                "Pipeline must fail loudly (no fallback to default times). "
+                "This is a critical error that requires investigation. "
+                "See DISASTER_RECOVERY.md § Scenario 1 for debugging steps."
+            )
+
+        lock_time_utc = first_pitch_utc - timedelta(
+            minutes=LOCK_MINUTES_BEFORE_PITCH
+        )
+
+        # Publish timing so /status and /optimize can expose the countdown
+        lineup_cache.set_schedule(first_pitch_utc=first_pitch_utc)
+
+        logger.info(
+            "T-%d schedule: first_pitch=%s UTC, lock=%s UTC (%.0f min from now)",
+            LOCK_MINUTES_BEFORE_PITCH,
+            first_pitch_utc.strftime("%H:%M"),
+            lock_time_utc.strftime("%H:%M"),
+            max(
+                0,
+                (lock_time_utc - datetime.now(timezone.utc)).total_seconds()
+                / 60,
+            ),
+        )
+
+        # ---------------------------------------------------------------
+        # Phase 2: Sleep until T-65
+        # ---------------------------------------------------------------
+        now = datetime.now(timezone.utc)
+        if now < lock_time_utc:
+            logger.info(
+                "Sleeping until T-%d (%s UTC)…",
+                LOCK_MINUTES_BEFORE_PITCH,
+                lock_time_utc.strftime("%H:%M"),
+            )
+            await _sleep_until(lock_time_utc)
+
+        # ---------------------------------------------------------------
+        # Phase 3: Final pipeline run + cache freeze
+        # ---------------------------------------------------------------
+
+        # If the cache is already frozen (e.g., this monitor task is
+        # re-entering after previous T-65 run), skip the final pipeline
+        # run entirely. The frozen picks are already locked and valid for
+        # the current slate. Re-running the pipeline with started/final
+        # games excluded would produce a different candidate pool, risking
+        # inconsistency.
+        if lineup_cache.is_frozen:
+            logger.info(
+                "T-%d monitor: cache already frozen (restart during live "
+                "slate) — skipping final pipeline run, proceeding to "
+                "post-lock monitoring.",
+                LOCK_MINUTES_BEFORE_PITCH,
+            )
+        else:
+            # ---------------------------------------------------------------
+            # Phase 2b: Refresh the schedule right before the final run so
+            # weather delays push the lock *back* instead of locking early
+            # on stale times. Loop until the newly-parsed first pitch is
+            # within tolerance of the cached one; if it moves later,
+            # re-sleep to the new T-65.
+            # ---------------------------------------------------------------
+            while True:
+                db_refresh = SessionLocal()
+                try:
+                    await fetch_schedule_for_date(db_refresh, monitor_date)
+                    refreshed_first_pitch = _get_first_pitch_utc(
+                        db_refresh, monitor_date
+                    )
+                finally:
+                    db_refresh.close()
+
+                if refreshed_first_pitch is None:
+                    raise RuntimeError(
+                        f"No scheduled_game_time values for {monitor_date} "
+                        f"at T-{LOCK_MINUTES_BEFORE_PITCH} — pipeline must "
+                        "fail loudly"
+                    )
+
+                # <2 min drift is noise (schedule-string rounding); treat
+                # as stable.
+                if refreshed_first_pitch <= first_pitch_utc + timedelta(
+                    minutes=2
+                ):
+                    break
+
+                logger.warning(
+                    "First pitch pushed back: %s UTC -> %s UTC — "
+                    "re-sleeping to new T-%d",
+                    first_pitch_utc.strftime("%H:%M"),
+                    refreshed_first_pitch.strftime("%H:%M"),
+                    LOCK_MINUTES_BEFORE_PITCH,
+                )
+                first_pitch_utc = refreshed_first_pitch
+                lock_time_utc = first_pitch_utc - timedelta(
+                    minutes=LOCK_MINUTES_BEFORE_PITCH
+                )
+                lineup_cache.set_schedule(first_pitch_utc=first_pitch_utc)
+                await _sleep_until(lock_time_utc)
+
+            logger.info(
+                "T-%d FINAL RUN — fetching data, building lineups, "
+                "freezing cache",
+                LOCK_MINUTES_BEFORE_PITCH,
+            )
+
+            db = SessionLocal()
+            try:
+                # =========================================================
+                # CRITICAL: NO TRY/EXCEPT AT T-65 FINAL RUN
+                # =========================================================
+                # Under the no-fallback rule, ANY T-65 pipeline failure
+                # (MLB API down, Odds API quota exhausted, DB connection
+                # failed, invalid config, etc.) must crash this monitor
+                # task. This allows /api/filter-strategy/optimize to return
+                # HTTP 503 with a clear error message rather than silently
+                # serving stale lineups from yesterday or neutral defaults.
+                #
+                # Bad data is worse than no data. Operations must restore
+                # the system rather than letting corrupted picks get
+                # drafted.
+                #
+                # See CLAUDE.md § "ABSOLUTE RULE: No Fallbacks. Ever"
+                # See DISASTER_RECOVERY.md for all failure scenarios
+                # =========================================================
+                await run_full_pipeline(db, monitor_date)
+                logger.info(
+                    "T-%d pipeline complete", LOCK_MINUTES_BEFORE_PITCH
+                )
+
+                cached = await build_and_cache_lineups(
+                    db, slate_date=monitor_date
+                )
+                if cached:
+                    lineup_cache.freeze(first_pitch_utc=first_pitch_utc)
+                    logger.info(
+                        "Cache FROZEN. First pitch: %s UTC. Picks are locked.",
+                        first_pitch_utc.strftime("%H:%M"),
+                    )
+                else:
+                    raise RuntimeError(
+                        f"T-{LOCK_MINUTES_BEFORE_PITCH} lineup build "
+                        "returned nothing — no slate data available; "
+                        "pipeline must fail loudly"
+                    )
+            finally:
+                db.close()
+
+        # ---------------------------------------------------------------
+        # Phase 4: Lightweight post-lock monitoring
+        # ---------------------------------------------------------------
+        await _post_lock_monitor(monitor_date)
+
+        # Slate complete — loop back to Phase 1 for the next slate day.
+        logger.info(
+            "Slate %s cycle complete — restarting monitor for next slate",
+            monitor_date,
+        )
