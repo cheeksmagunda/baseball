@@ -54,8 +54,14 @@ export function useLineupData(initialData: FilterOptimizeResponse | null = null)
           if (!controller.signal.aborted) {
             setWaitInfo(info);
 
-            // Auto-refetch when lock time arrives (+ 10s buffer for pipeline)
-            if (info.lock_time_utc) {
+            // Schedule auto-refetch based on phase
+            if (info.phase === "generating") {
+              // Pipeline actively running — poll every 5 seconds
+              autoRefetchTimer.current = setTimeout(() => {
+                load(false);
+              }, 5_000);
+            } else if (info.lock_time_utc) {
+              // Before lock — refetch when lock time arrives (+ 10s buffer)
               const lockMs = new Date(info.lock_time_utc).getTime();
               const delayMs = Math.max(0, lockMs - Date.now()) + 10_000;
               autoRefetchTimer.current = setTimeout(() => {
