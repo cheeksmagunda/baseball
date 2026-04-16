@@ -642,13 +642,11 @@ def optimize_status():
     Phases:
       no_slate      — no games scheduled today
       before_lock   — waiting for T-65 (pipeline hasn't run yet)
-      finalizing    — T-65 has passed, final pipeline run in progress (rare race window)
-      locked_frozen — picks are frozen at T-65, but not yet unlocked for frontend (waiting for T-60)
-      ready         — picks are frozen and unlocked at T-60 (available for viewing)
+      generating    — T-65 has passed, pipeline is running (picks will unlock on freeze)
+      ready         — picks are frozen and available
     """
     first_pitch = lineup_cache.first_pitch_utc
     lock_time = lineup_cache.lock_time_utc
-    unlock_time = lineup_cache.unlock_time_utc
     now = datetime.now(timezone.utc)
 
     if lineup_cache.is_frozen:
@@ -658,7 +656,7 @@ def optimize_status():
         phase = "before_lock"
         minutes_until_unlock = max(0, int((lock_time - now).total_seconds() / 60))
     elif first_pitch is not None:
-        phase = "finalizing"
+        phase = "generating"
         minutes_until_unlock = 0
     else:
         phase = "no_slate"
@@ -669,7 +667,6 @@ def optimize_status():
         "phase": phase,
         "first_pitch_utc": first_pitch.isoformat() if first_pitch else None,
         "lock_time_utc": lock_time.isoformat() if lock_time else None,
-        "unlock_time_utc": unlock_time.isoformat() if unlock_time else None,
         "minutes_until_unlock": minutes_until_unlock,
     }
 
@@ -715,7 +712,6 @@ async def filter_optimize(db: Session = Depends(get_db)):
         if first_pitch is not None:
             lineup_cache.set_schedule(first_pitch)
             lock_time = lineup_cache.lock_time_utc
-            unlock_time = lineup_cache.unlock_time_utc
         else:
             return JSONResponse(
                 status_code=425,
@@ -724,12 +720,11 @@ async def filter_optimize(db: Session = Depends(get_db)):
                     "phase": "initializing",
                     "first_pitch_utc": None,
                     "lock_time_utc": None,
-                    "unlock_time_utc": None,
                     "minutes_until_unlock": None,
                 },
             )
 
-    # Schedule known → enforce T-65 and T-60 gates
+    # Schedule known → enforce T-65 gate; post-T-65 the pipeline is running
     if lock_time is not None:
         if now < lock_time:
             minutes_until = max(0, int((lock_time - now).total_seconds() / 60))
@@ -743,22 +738,28 @@ async def filter_optimize(db: Session = Depends(get_db)):
                     "phase": "before_lock",
                     "first_pitch_utc": lineup_cache.first_pitch_utc.isoformat(),
                     "lock_time_utc": lock_time.isoformat(),
-                    "unlock_time_utc": unlock_time.isoformat(),
                     "minutes_until_unlock": minutes_until + 5,
                 },
             )
 
-        # Past T-65 — pipeline is running; picks will unlock as soon as freeze completes
-        cached = lineup_cache.get()
-        if cached is not None:
-            return cached
-        raise HTTPException(
-            503,
-            "T-65 lineup not available — the freeze did not complete. "
-            "Check pipeline logs.",
+        # Past T-65 — pipeline is actively generating lineups.
+        # Return 425 (not 503) so the frontend knows to retry, not give up.
+        # If the pipeline actually crashed, the monitor task dies and the
+        # cache never freezes — operator investigates via logs. From the
+        # endpoint's perspective we cannot distinguish "running" from
+        # "crashed", so we stay in "generating" until freeze succeeds.
+        return JSONResponse(
+            status_code=425,
+            content={
+                "detail": "Pipeline generating lineups — retry in a few seconds.",
+                "phase": "generating",
+                "first_pitch_utc": lineup_cache.first_pitch_utc.isoformat(),
+                "lock_time_utc": lock_time.isoformat(),
+                "minutes_until_unlock": 0,
+            },
         )
 
-    # No schedule, cache not warm → pipeline hasn't run yet
+    # No schedule, cache not warm → pipeline hasn't started yet
     raise HTTPException(503, "Pipeline not ready — picks will be available once the lineup is generated.")
 
 
