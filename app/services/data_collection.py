@@ -814,8 +814,10 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
         park = game.home_team
         coords = STADIUM_COORDINATES.get(park)
         if coords is None:
-            logger.warning("No stadium coordinates for home_team=%s — skipping weather", park)
-            continue
+            raise RuntimeError(
+                f"No stadium coordinates for home_team={park!r} — "
+                "add entry to STADIUM_COORDINATES in app/core/open_meteo.py."
+            )
 
         lat, lon = coords
 
