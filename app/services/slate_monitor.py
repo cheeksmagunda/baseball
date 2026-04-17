@@ -443,6 +443,7 @@ async def targeted_slate_monitor(
                         "No fallback; /optimize will return 503.",
                         LOCK_MINUTES_BEFORE_PITCH,
                     )
+                    lineup_cache.mark_failed()
                     raise
                 if cached:
                     lineup_cache.freeze(first_pitch_utc=first_pitch_utc)
@@ -451,6 +452,7 @@ async def targeted_slate_monitor(
                         first_pitch_utc.strftime("%H:%M"),
                     )
                 else:
+                    lineup_cache.mark_failed()
                     raise RuntimeError(
                         f"T-{LOCK_MINUTES_BEFORE_PITCH} lineup build "
                         "returned nothing — no slate data available; "

@@ -40,6 +40,7 @@ class _LineupCache:
         self._redis_checked: bool = False          # avoid re-attempting a failed connection
         self._is_frozen: bool = False             # True after T-65 freeze; blocks further writes
         self._first_pitch_utc: Optional[datetime] = None  # earliest game start (UTC)
+        self._pipeline_failed: bool = False       # True if T-65 pipeline raised an exception
 
     # ---------- Redis helpers ----------
 
@@ -120,6 +121,15 @@ class _LineupCache:
         self._is_frozen = True
         self._write_meta()
         logger.info("Lineup cache FROZEN — picks are locked until slate completion")
+
+    def mark_failed(self) -> None:
+        """Signal that the T-65 pipeline raised an exception. /optimize returns 503."""
+        self._pipeline_failed = True
+        logger.error("Lineup cache marked FAILED — T-65 pipeline crashed, /optimize will return 503")
+
+    @property
+    def pipeline_failed(self) -> bool:
+        return self._pipeline_failed
 
     def restore_and_refreeze(self, first_pitch_utc: datetime) -> bool:
         """
@@ -237,6 +247,7 @@ class _LineupCache:
         self._slate_date = None
         self._is_frozen = False
         self._first_pitch_utc = None
+        self._pipeline_failed = False
 
     def purge(self) -> None:
         """

@@ -391,12 +391,14 @@ async def filter_optimize(db: Session = Depends(get_db)):
                 },
             )
 
-        # Past T-65 — pipeline is actively generating lineups.
-        # Return 425 (not 503) so the frontend knows to retry, not give up.
-        # If the pipeline actually crashed, the monitor task dies and the
-        # cache never freezes — operator investigates via logs. From the
-        # endpoint's perspective we cannot distinguish "running" from
-        # "crashed", so we stay in "generating" until freeze succeeds.
+        # Past T-65 — check if pipeline crashed before assuming it's still running.
+        if lineup_cache.pipeline_failed:
+            raise HTTPException(
+                503,
+                "T-65 pipeline failed — picks unavailable. Check logs for the traceback.",
+            )
+
+        # Pipeline is actively generating lineups; frontend retries every 5s.
         return JSONResponse(
             status_code=425,
             content={
