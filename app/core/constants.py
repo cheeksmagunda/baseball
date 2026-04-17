@@ -337,6 +337,8 @@ DEFAULT_OPP_OPS = 0.730               # 2026 league-average team OPS
 DEFAULT_OPP_K_PCT = 0.22              # 2026 league-average team K%
 DEFAULT_PITCHER_ERA = 5.0             # league-worst-tier ERA (conservative)
 DEFAULT_PITCHER_WHIP = 1.5            # league-worst-tier WHIP (conservative)
+DEFAULT_BATTER_OPS_VS_LHP = 0.720     # league-average batter OPS vs left-handed pitchers
+DEFAULT_BATTER_OPS_VS_RHP = 0.740     # league-average batter OPS vs right-handed pitchers
 
 # ---------------------------------------------------------------------------
 # Graduated env-score scaling thresholds

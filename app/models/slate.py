@@ -70,6 +70,10 @@ class SlateGame(Base):
     home_bullpen_era: Mapped[float | None] = mapped_column(Float, nullable=True)
     away_bullpen_era: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Starter handedness — for conditional matchup scoring (platoon advantage/disadvantage)
+    home_starter_hand: Mapped[str | None] = mapped_column(String(1), nullable=True)  # 'L' or 'R'
+    away_starter_hand: Mapped[str | None] = mapped_column(String(1), nullable=True)  # 'L' or 'R'
+
     # Series context — games won by each team in the current series BEFORE today.
     # Populated by enrich_slate_game_series_context() from the MLB schedule API.
     # Used by batter env Group D (momentum) and the momentum gate in _compute_base_ev().
