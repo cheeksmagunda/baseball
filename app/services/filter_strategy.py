@@ -18,7 +18,7 @@ Five filters applied sequentially:
                              4 batters fill Slots 2–5 by filter_ev.
 
 EV formula (V9.0):
-    base_ev = env_factor × trait_factor × stack_bonus × debut_bonus × dnp_adj × 100
+    base_ev = env_factor × trait_factor × stack_bonus × dnp_adj × 100
 
     Starting 5:  base_ev (pure env + trait ranking)
     Moonshot:    base_ev × sharp_bonus × explosive_bonus
@@ -76,7 +76,6 @@ from app.core.constants import (
     BATTER_ENV_WEAK_PITCHER_ERA,
     BATTER_ENV_TOP_LINEUP,
     BATTER_ENV_WEAK_BULLPEN_ERA,
-    DEBUT_RETURN_EV_BONUS,
     MOONSHOT_SHARP_BONUS_MAX,
     MOONSHOT_EXPLOSIVE_BONUS_MAX,
     MOONSHOT_SAME_TEAM_PENALTY,
@@ -331,8 +330,6 @@ class EnvironmentalProfile:
     platoon_advantage: bool = False
     batting_order: int | None = None
 
-    # Shared
-    is_debut_or_return: bool = False
 
 
 def compute_pitcher_env_score(
@@ -341,7 +338,6 @@ def compute_pitcher_env_score(
     pitcher_k_per_9: float | None = None,
     park_team: str | None = None,
     is_home: bool = False,
-    is_debut_or_return: bool = False,
     team_moneyline: int | None = None,
 ) -> tuple[float, list[str]]:
     """
@@ -358,7 +354,6 @@ def compute_pitcher_env_score(
     4. Pitcher-friendly park             — graduated 1.05→0, 0.90→1.0
     5. Moneyline favorite (Win bonus)    — graduated -110→0, -250→1.0
     6. Home field                        — 0.5
-    7. Debut/return premium              — 0.5
     """
     score = 0.0
     factors = []
@@ -410,11 +405,6 @@ def compute_pitcher_env_score(
         score += 0.5
         factors.append("Home field")
 
-    # 7. Debut/return bonus
-    if is_debut_or_return:
-        score += 0.5
-        factors.append("Debut/return premium")
-
     env_score = min(1.0, score / max_score)
     return env_score, factors
 
@@ -425,7 +415,6 @@ def compute_batter_env_score(
     platoon_advantage: bool = False,
     batting_order: int | None = None,
     park_team: str | None = None,
-    is_debut_or_return: bool = False,
     wind_speed_mph: float | None = None,
     wind_direction: str | None = None,
     temperature_f: int | None = None,
@@ -456,7 +445,6 @@ def compute_batter_env_score(
       Group A — Run environment (O/U, ERA, moneyline, bullpen) — capped 2.0
       Group B — Player situation (platoon, batting order) — up to 2.0
       Group C — Venue (park + weather) — up to 1.0
-      Debut bonus — 0.5
       Group D — Series/momentum (series record, recent L10) — ±0.8
     """
     factors: list[str] = []
@@ -572,14 +560,6 @@ def compute_batter_env_score(
         factors.append(f"Warm conditions ({temperature_f}°F)")
 
     # ---------------------------------------------------------------
-    # Debut bonus
-    # ---------------------------------------------------------------
-    debut = 0.0
-    if is_debut_or_return:
-        debut = 0.5
-        factors.append("Debut/return premium")
-
-    # ---------------------------------------------------------------
     # Group D: Series/Momentum context (±0.8 additive)
     # Addresses the "correctly-avoided player disguised as a ghost"
     # problem: a batter on a team getting swept faces genuinely bad
@@ -607,7 +587,7 @@ def compute_batter_env_score(
     # ---------------------------------------------------------------
     # Final score: sum of capped groups / max_score
     # ---------------------------------------------------------------
-    total = run_env + situation + venue + debut + momentum
+    total = run_env + situation + venue + momentum
     max_score = BATTER_ENV_MAX_SCORE
 
     if unknown_count > 0:
@@ -656,7 +636,6 @@ class FilteredCandidate:
     env_factors: list[str] = field(default_factory=list)
     env_unknown_count: int = 0  # how many env factors were missing data
     popularity: PopularityClass = PopularityClass.NEUTRAL  # web-scraped (pre-game)
-    is_debut_or_return: bool = False
     game_id: int | str | None = None  # for diversification tracking
     is_pitcher: bool = False
     sharp_score: float = 0.0
@@ -736,10 +715,10 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
                         barrel%, SB pace, ERA, WHIP, recent form, 0-100).
                         Range: 0.85–1.15 (1.35× swing).
 
-    Plus contextual multipliers: stack_bonus, debut_bonus, dnp_adj.
+    Plus contextual multipliers: stack_bonus, dnp_adj.
 
     Formula:
-        base_ev = env_factor × trait_factor × stack_bonus × debut_bonus × dnp_adj × 100
+        base_ev = env_factor × trait_factor × stack_bonus × dnp_adj × 100
     """
     raw_env = max(candidate.env_score, 0.0)
     env_factor = ENV_MODIFIER_FLOOR + raw_env * (ENV_MODIFIER_CEILING - ENV_MODIFIER_FLOOR)
@@ -753,14 +732,12 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
     trait_factor = max(TRAIT_MODIFIER_FLOOR, min(TRAIT_MODIFIER_CEILING, trait_factor))
 
     stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
-    debut_bonus = DEBUT_RETURN_EV_BONUS if candidate.is_debut_or_return else 1.0
     dnp_adj = _compute_dnp_adjustment(candidate)
 
     return (
         env_factor
         * trait_factor
         * stack_bonus
-        * debut_bonus
         * dnp_adj
         * 100.0
     )

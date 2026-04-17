@@ -100,6 +100,22 @@ Missing Vegas data corrupts the EV formula and produces suboptimal lineups. The 
 
 **Configuration:** Set `DFS_ODDS_API_KEY` to your The Odds API key (free tier: 500 requests/month, sufficient for one pipeline run per day).
 
+## ABSOLUTE RULE: Historical Data Is Reference Only
+
+**Historical stats from CSV/DB must NEVER be used as a direct input feature, normalization anchor, or baseline weight in the live daily pipeline.**
+
+This means:
+- `total_value`, `card_boost`, `drafts`, and leaderboard flags from `historical_players.csv` are **never** EV inputs — they're retrospective labels only.
+- Past slate real scores and total values cannot feed forward into prediction or scoring.
+- If a scoring baseline is needed, derive it from archetypal expectations (league-average defaults in `constants.py`) or conditional variables (pre-game conditions), not past performance.
+
+**What IS permitted:**
+- `PlayerStats` (ERA, WHIP, K/9, OPS, etc.) fetched from the live MLB Stats API — these are factual season aggregates.
+- `PlayerGameLog` records for recent form — populated by `fetch_player_season_stats()` from the live MLB API. Historical CSV game logs (`hv_player_game_stats.csv`) are a supplementary seed only; the live API is authoritative.
+- `historical_players.csv` for building the initial `Player` table (name, team, position, MLB ID) — identifying data, not predictive inputs.
+
+**Why?** Using historical RS or leaderboard outcomes as predictive inputs creates data leakage — you'd be learning from outcomes that weren't knowable before the draft. The condition matrix in earlier versions (`RS_CONDITION_MATRIX`) was removed in V9.0 for exactly this reason.
+
 ## Architecture Overview
 
 ### Active Pipeline
@@ -400,7 +416,7 @@ base_ev = env_factor × trait_factor × context × 100
 |---|---|---|---|
 | env_factor | Pre-game conditions (Vegas O/U, ERA, bullpen ERA, park, weather, platoon, batting order, moneyline, series context) | 0.70–1.30 | **Primary** — 1.86× swing |
 | trait_factor | Scoring engine (K/9, ISO, barrel%, SB pace, ERA, WHIP, recent form, 0-100) | 0.85–1.15 | **Secondary** — 1.35× swing |
-| context | stack_bonus × debut_bonus × dnp_adj | varies | Situational modifiers |
+| context | stack_bonus × dnp_adj | varies | Situational modifiers |
 
 **Moonshot differentiation** — same candidate pool as Starting 5, but a different formula:
 ```
@@ -429,7 +445,6 @@ The active optimizer produces **two lineups** from the same FADE-excluded pool v
 filter_ev = env_factor                           # PRIMARY: 0.70–1.30 (1.86× swing)
   × trait_factor                                 # SECONDARY: 0.85–1.15 (1.35× swing)
   × stack_bonus (1.20 if blowout game, else 1.0)
-  × debut_bonus (1.15 if first appearance)
   × dnp_adj (unknown=0.85, confirmed_bad=0.70)
   × 100
 ```
@@ -483,7 +498,7 @@ Post-EV composition (applied in `_enforce_composition`):
 **Fix 3 — Series/H2H context** (`app/models/slate.py`, `app/services/data_collection.py`, `app/services/filter_strategy.py`, `app/core/constants.py`)
 - Added 4 nullable columns to `SlateGame`: `series_home_wins`, `series_away_wins`, `home_team_l10_wins`, `away_team_l10_wins`.
 - `enrich_slate_game_series_context()`: fetches last 14 days of each team's schedule, computes current-series wins and last-10-game wins.
-- **Group D env scoring** (±0.8 additive): series leading ≥2 → +0.6; trailing ≥2 → −0.6; hot L10 ≥7 → +0.2; cold L10 ≤3 → −0.2. `BATTER_ENV_MAX_SCORE` raised 5.5 → 6.3.
+- **Group D env scoring** (±0.8 additive): series leading ≥2 → +0.6; trailing ≥2 → −0.6; hot L10 ≥7 → +0.2; cold L10 ≤3 → −0.2. `BATTER_ENV_MAX_SCORE` raised to 6.3 (then reduced to 5.8 after debut bonus removed).
 - **Momentum gate** (removed in V9.0): previously capped `pop_factor` at NEUTRAL for cold/trailing teams. Removed when pop_factor was removed from EV. Series context still contributes to env Group D scoring.
 
 **Fix 4 — Vegas lines** (`app/core/odds_api.py`, `app/config.py`, `app/services/data_collection.py`, `app/services/pipeline.py`)
@@ -500,7 +515,7 @@ Post-EV composition (applied in `_enforce_composition`):
 - `_extract_record()` returns `(None, None, None)` on empty data — prevents momentum gate false-positive on partial API failure.
 
 **New constants (`app/core/constants.py`):**
-- `NON_PLAYING_GAME_STATUSES`, `SERIES_LEADING_BONUS`, `SERIES_TRAILING_PENALTY`, `TEAM_HOT_L10_THRESHOLD`, `TEAM_COLD_L10_THRESHOLD`, `TEAM_HOT_L10_BONUS`, `TEAM_COLD_L10_PENALTY`, `BATTER_ENV_MAX_SCORE = 6.3`, `MOMENTUM_GATE_SERIES_DEFICIT = 2`, `MOMENTUM_GATE_L10_CEILING = 3`
+- `NON_PLAYING_GAME_STATUSES`, `SERIES_LEADING_BONUS`, `SERIES_TRAILING_PENALTY`, `TEAM_HOT_L10_THRESHOLD`, `TEAM_COLD_L10_THRESHOLD`, `TEAM_HOT_L10_BONUS`, `TEAM_COLD_L10_PENALTY`, `BATTER_ENV_MAX_SCORE = 5.8`, `MOMENTUM_GATE_SERIES_DEFICIT = 2`, `MOMENTUM_GATE_L10_CEILING = 3`
 
 ---
 
@@ -887,14 +902,11 @@ Not multiplicative. Proven from historical data. This means:
 ### Fixed Composition (V8.0): 1 SP + 4 Batters, Always
 Every lineup is 1 pitcher + 4 batters. The pitcher is the best-condition pre-game SP. The 4 batters are the highest-EV independent batters across the slate, drawn from different games.
 
-### Debut/Return Premium
-First MLB game or return from 30+ day absence = typically low media buzz + historically strong RS. Always flag `is_debut_or_return = True` when known. 15% EV bonus applied.
-
 ## Deployment
 
 - **Dockerfile** + **Procfile** included for Railway
 - Environment vars use `DFS_` prefix (see `.env.example`)
 - SQLite by default, swap `DFS_DATABASE_URL` for Postgres in production
 - Database seeds automatically on startup via FastAPI lifespan
-- Startup runs `run_full_pipeline(db, date.today())` as a background task
-- If pipeline fails, the app returns a 404 from `/api/filter-strategy/optimize` — **this is correct behavior, not a bug to work around**
+- Startup does **zero** pipeline work — the T-65 slate monitor is the sole pipeline trigger
+- If the T-65 pipeline fails, the app returns HTTP 503 from `/api/filter-strategy/optimize` — this is correct behavior

@@ -23,6 +23,8 @@ class GameEnvironment(BaseModel):
     away_starter_mlb_id: int | None = None
     home_starter_era: float | None = None
     away_starter_era: float | None = None
+    home_starter_whip: float | None = None
+    away_starter_whip: float | None = None
     home_starter_k_per_9: float | None = None
     away_starter_k_per_9: float | None = None
     home_team_ops: float | None = None
@@ -49,7 +51,6 @@ class FilterCard(BaseModel):
     game_id: int | str | None = None
     batting_order: int | None = None
     platoon_advantage: bool = False
-    is_debut_or_return: bool = False
     drafts: int | None = None  # ownership data
     is_most_drafted_3x: bool = False  # 92% batter bust rate (V5.0 retrain) — hard-excluded from S5
 
@@ -85,7 +86,6 @@ class FilterCandidateOut(BaseModel):
     env_score: float
     env_factors: list[str] = []
     popularity: str  # FADE, TARGET, or NEUTRAL (web-scraped)
-    is_debut_or_return: bool = False
     is_two_way_pitcher: bool = False  # True if detected as starter despite non-pitcher position (e.g., Ohtani)
     filter_ev: float
     game_id: int | str | None = None
@@ -104,7 +104,6 @@ class FilterSlotOut(BaseModel):
     env_score: float
     env_factors: list[str] = []
     popularity: str  # FADE, TARGET, or NEUTRAL (web-scraped)
-    is_debut_or_return: bool = False
     is_two_way_pitcher: bool = False  # True if detected as starter despite non-pitcher position (e.g., Ohtani)
     filter_ev: float
     expected_slot_value: float

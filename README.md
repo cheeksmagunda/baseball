@@ -46,7 +46,7 @@ The primary optimization path is `filter_strategy`. The `/api/pipeline/*` manual
 
 ### Philosophy
 
-It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data with a feedback loop. The goal is to **win drafts**, not predict Real Score. The optimizer identifies which players are in the ghost+high-boost category, because that category's historical win rate (82%) is itself the signal. Trait scores from the scoring engine are secondary — they matter far less than draft tier × boost.
+It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and season-level traits (trait_factor), then excludes high-media-attention players (FADE gate) before selecting the lineup. **Historical stats are reference data only — they never feed the live scoring pipeline directly.**
 
 ## Scoring Engine
 
@@ -98,37 +98,33 @@ A fifth signal source used exclusively by the Moonshot lineup:
 | FanGraphs community blogs | RSS feed — deep-dive analyst chatter |
 | Prospects Live | RSS feed — prospect/breakout coverage |
 
-If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +25% EV boost in Moonshot only.
+If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +35% EV boost in Moonshot only.
 
 ## Dual-Lineup Optimizer (V5.0 "Pitcher-Anchor Rule")
 
 The optimizer produces **two lineups** from the same ranked candidate pool. Each lineup is structurally fixed at **exactly 1 starting pitcher + 4 batters**, with the pitcher pinned to Slot 1 (2.0x multiplier):
 
-| Lineup | Structure | Strategy | Popularity | Edge |
+| Lineup | Structure | Strategy | Popularity handling | Edge |
 |---|---|---|---|---|
-| **Starting 5** | 1 SP (Slot 1) + 4 batters (Slots 2–5) | Best EV | FADE=0.75, TARGET=1.15 | Primary win probability |
-| **Moonshot** | 1 SP (Slot 1) + 4 batters (Slots 2–5) | Completely different 5 | FADE=0.60, TARGET=1.30 | Anti-crowd, sharp signal, HR power |
+| **Starting 5** | 1 SP (Slot 1) + 4 batters (Slots 2–5) | Best env+trait EV | FADE players **excluded** from pool | Primary win probability |
+| **Moonshot** | 1 SP (Slot 1) + 4 batters (Slots 2–5) | env+trait EV + sharp/explosive bonuses | FADE players **excluded** from pool | Anti-crowd, sharp signal, HR power |
 
 Each lineup's anchor pitcher is the highest-EV pitcher in its candidate pool. The anchor's `game_id` is blocked for batter selection so no batter (teammate or opponent) in that game can appear — no negative correlation between the pitcher and the rest of the lineup.
 
-**The primary signal is draft tier × boost**, not trait score:
+**V9.0 EV formula (env/trait-only):**
 
-| Draft tier + boost ≥ 2.0 | n | Avg TV | % TV>15 (19 dates) |
-|---|---|---|---|
-| mega-ghost (<50 drafts) | 181 | 20.2 | **82%** |
-| ghost (50–99 drafts) | 8 | 19.3 | **100%** |
-| medium (200–499 drafts) | 17 | 6.2 | 18% |
-| mid-chalk (500–1499 drafts) | 46 | 3.4 | 11% |
-| mega-chalk (1500+ drafts) | 48 | 8.7 | 29% |
+```
+base_ev = env_factor × trait_factor × stack_bonus × dnp_adj × 100
+```
+
+FADE players (high pre-game media attention) are excluded from the candidate pool before EV runs. The env_factor (0.70–1.30) is the primary differentiator; trait_factor (0.85–1.15) breaks ties within env tiers.
 
 **Key optimizer behaviors:**
-- **V5.0 pitcher anchor**: exactly 1 SP per lineup, pinned to Slot 1. The highest-EV pitcher in the pool wins the anchor — boosted or unboosted, ghost or chalk, treated uniformly.
-- **Game-blocking**: the anchor pitcher's `game_id` is excluded from all batter picks (prevents batter-vs-own-pitcher and teammate-of-opposing-pitcher conflicts).
-- Top-5 most-drafted boost=3.0 batters flagged each run as chalk+boost traps (57% bust rate; pitchers are exempt).
-- Mega-ghost+3x players (< 50 drafts) get 1.50× synergy bonus and env penalty cap of 20%
-- Ghost+boost EV floor at score=30 (env-independent) prevents data scarcity from burying ghost picks
-- Min 1 ghost batter in lineup enforced; fallback accepts mega-ghost+3x even without env data (anchor pitcher is exempt from the swap)
-- Moonshot: zero player overlap with Starting 5 (normally forces a different anchor pitcher); heavier anti-crowd lean; underground sharp signal (+25% EV max)
+- **Pitcher anchor**: exactly 1 SP per lineup, pinned to Slot 1. The highest-EV pitcher in the pool wins the anchor.
+- **Game-blocking**: the anchor pitcher's `game_id` is excluded from all batter picks (no batter from the same game).
+- **Team/game cap**: max 1 player per team and 1 player per game per lineup.
+- Moonshot uses the same FADE-excluded pool but adds sharp signal (+35% max from Reddit/FanGraphs/Prospects Live) and explosive bonus (+20% from power_profile or k_rate).
+- **Historical win rate data (draft tier × boost) is used for calibration reference only — not as a live EV input.**
 
 ## Strategy Insights
 

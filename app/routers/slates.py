@@ -88,7 +88,6 @@ def get_slate_players(slate_date: date, db: Session = Depends(get_db)):
             opponent_team=opponent_team,
             batting_order=sp.batting_order,
             platoon_advantage=sp.platoon_advantage,
-            is_debut_or_return=sp.is_debut_or_return,
             player_status=sp.player_status,
             env_score=sp.env_score,
         ))
@@ -127,7 +126,6 @@ def add_slate_players(
             card_boost=card.card_boost,
             batting_order=card.batting_order,
             platoon_advantage=card.platoon_advantage,
-            is_debut_or_return=card.is_debut_or_return,
             drafts=card.drafts,
         )
         db.add(sp)

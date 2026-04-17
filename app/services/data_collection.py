@@ -779,10 +779,10 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
 
     updated = 0
     for game in games:
-        park = game.park_team or game.home_team
+        park = game.home_team
         coords = STADIUM_COORDINATES.get(park)
         if coords is None:
-            logger.warning("No stadium coordinates for park_team=%s — skipping weather", park)
+            logger.warning("No stadium coordinates for home_team=%s — skipping weather", park)
             continue
 
         lat, lon = coords

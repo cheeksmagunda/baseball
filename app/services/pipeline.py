@@ -82,9 +82,9 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     # This feeds the environmental scoring engine (Filter 2).
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
     for game in games:
-        for starter_field, era_field, k9_field, team_field in [
-            ("home_starter", "home_starter_era", "home_starter_k_per_9", "home_team"),
-            ("away_starter", "away_starter_era", "away_starter_k_per_9", "away_team"),
+        for starter_field, era_field, whip_field, k9_field, team_field in [
+            ("home_starter", "home_starter_era", "home_starter_whip", "home_starter_k_per_9", "home_team"),
+            ("away_starter", "away_starter_era", "away_starter_whip", "away_starter_k_per_9", "away_team"),
         ]:
             starter_name = getattr(game, starter_field)
             if not starter_name:
@@ -109,6 +109,8 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
 
             if ps.era is not None:
                 setattr(game, era_field, ps.era)
+            if ps.whip is not None:
+                setattr(game, whip_field, ps.whip)
             if ps.k_per_9 is not None:
                 setattr(game, k9_field, ps.k_per_9)
 
@@ -225,6 +227,9 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
             opp_pitcher_stats=opp_pitcher_stats,
             batting_order=sp.batting_order,
             park_team=park_team,
+            wind_speed_mph=game.wind_speed_mph if game else None,
+            wind_direction=game.wind_direction if game else None,
+            temperature_f=game.temperature_f if game else None,
         )
 
         # Store in DB
@@ -381,7 +386,6 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 pitcher_k_per_9=pitcher_k9,
                 park_team=game.home_team,
                 is_home=is_home,
-                is_debut_or_return=sp.is_debut_or_return,
                 team_moneyline=team_ml,
             )
             series_team_w: int | None = None
@@ -401,7 +405,6 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 platoon_advantage=sp.platoon_advantage or False,
                 batting_order=sp.batting_order,
                 park_team=game.home_team,
-                is_debut_or_return=sp.is_debut_or_return,
                 wind_speed_mph=game.wind_speed_mph,
                 wind_direction=game.wind_direction,
                 temperature_f=game.temperature_f,
@@ -428,7 +431,6 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             total_score=result.total_score,
             env_score=env_score,
             env_factors=env_factors,
-            is_debut_or_return=sp.is_debut_or_return,
             game_id=game_id,
             is_pitcher=is_pitcher,
             series_team_wins=series_team_w,
