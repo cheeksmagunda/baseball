@@ -54,7 +54,9 @@ class _LineupCache:
             client = redis_lib.from_url(settings.redis_url, decode_responses=True)
             client.ping()
             self._redis = client
-            logger.info("Redis connected: %s", settings.redis_url)
+            import re as _re
+            safe_url = _re.sub(r":([^@/]+)@", ":***@", settings.redis_url)
+            logger.info("Redis connected: %s", safe_url)
         except Exception as exc:
             logger.warning("Redis unavailable — using DB cache only: %s", exc)
 

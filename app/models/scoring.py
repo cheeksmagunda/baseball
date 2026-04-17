@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, ForeignKey
+from sqlalchemy import DateTime, Float, Integer, String, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -8,6 +8,7 @@ from app.database import Base
 
 class PlayerScore(Base):
     __tablename__ = "player_scores"
+    __table_args__ = (UniqueConstraint("slate_player_id", name="uq_player_score_slate_player"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     slate_player_id: Mapped[int] = mapped_column(

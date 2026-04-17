@@ -75,8 +75,17 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     for r in results:
         if isinstance(r, Exception):
             failed += 1
+            logger.warning("fetch_player_stats failure: %s", r)
         else:
             fetched += 1
+
+    if players and failed >= len(players) * 0.5:
+        raise RuntimeError(
+            f"fetch_player_stats: {failed}/{len(players)} players failed — "
+            "cannot produce a reliable lineup with fewer than half of player stats available"
+        )
+    if failed:
+        logger.warning("fetch_player_stats: %d/%d players failed, continuing", failed, len(players))
 
     # Backfill SlateGame starter ERA/K9 from newly-fetched PlayerStats.
     # This feeds the environmental scoring engine (Filter 2).
@@ -200,6 +209,14 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
                 }
             else:
                 starter_stats_cache[starter_name] = {}
+
+    # Ensure idempotency: remove any scores from a prior run of this slate.
+    slate_player_ids = [sp.id for sp in slate_players]
+    if slate_player_ids:
+        db.query(PlayerScore).filter(
+            PlayerScore.slate_player_id.in_(slate_player_ids)
+        ).delete(synchronize_session=False)
+        db.commit()
 
     results = []
 

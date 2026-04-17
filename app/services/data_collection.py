@@ -29,6 +29,20 @@ from app.models.slate import Slate, SlateGame, SlatePlayer
 _ET = ZoneInfo("America/New_York")
 
 
+def _safe_float(value: str | None) -> float | None:
+    """Convert a stat string to float, returning None on blank or non-numeric values.
+
+    The MLB Stats API returns sentinel strings like '.---' or '-.--' for players
+    with no qualifying stats. float() would raise ValueError on these.
+    """
+    if not value:
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
 def _format_game_time_et(game_date_iso: str | None) -> str | None:
     """
     Convert MLB API gameDate (ISO 8601 UTC) to 'H:MM AM/PM ET' display format.
@@ -441,19 +455,14 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
             ps.sb = s.get("stolenBases", 0)
             ps.bb = s.get("baseOnBalls", 0)
             ps.so = s.get("strikeOuts", 0)
-            avg_str = s.get("avg", "")
-            ps.avg = float(avg_str) if avg_str else None
-            ops_str = s.get("ops", "")
-            ps.ops = float(ops_str) if ops_str else None
+            ps.avg = _safe_float(s.get("avg", ""))
+            ps.ops = _safe_float(s.get("ops", ""))
 
         elif stat_type == "season" and group.get("group", {}).get("displayName") == "pitching":
             ps.games = s.get("gamesPlayed", 0)
-            ip_str = s.get("inningsPitched", "0")
-            ps.ip = float(ip_str) if ip_str else 0.0
-            era_str = s.get("era", "")
-            ps.era = float(era_str) if era_str else None
-            whip_str = s.get("whip", "")
-            ps.whip = float(whip_str) if whip_str else None
+            ps.ip = _safe_float(s.get("inningsPitched", "")) or 0.0
+            ps.era = _safe_float(s.get("era", ""))
+            ps.whip = _safe_float(s.get("whip", ""))
             so = s.get("strikeOuts", 0)
             if ps.ip > 0:
                 ps.k_per_9 = round(so / ps.ip * 9, 2)
@@ -499,8 +508,7 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
             for split in splits:
                 split_code = split.get("split", {}).get("code", "")
                 s = split.get("stat", {})
-                ops_str = s.get("ops", "")
-                ops = float(ops_str) if ops_str else None
+                ops = _safe_float(s.get("ops", ""))
 
                 if split_code == "vl" and ops is not None:
                     ps.ops_vs_lhp = ops

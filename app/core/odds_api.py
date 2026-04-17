@@ -13,6 +13,7 @@ import logging
 from datetime import date
 
 import httpx
+import tenacity
 
 logger = logging.getLogger(__name__)
 
@@ -97,17 +98,23 @@ async def fetch_mlb_odds(api_key: str, game_date: date) -> list[dict]:
         "commenceTimeTo": f"{game_date.isoformat()}T23:59:59Z",
     }
 
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        resp = await client.get(f"{_BASE_URL}/v4/sports/baseball_mlb/odds", params=params)
+    @tenacity.retry(
+        stop=tenacity.stop_after_attempt(3),
+        wait=tenacity.wait_exponential(multiplier=1, min=1, max=8),
+        reraise=True,
+    )
+    async def _fetch() -> httpx.Response:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            return await client.get(f"{_BASE_URL}/v4/sports/baseball_mlb/odds", params=params)
+
+    resp = await _fetch()
 
     if resp.status_code == 401:
         raise RuntimeError("The Odds API: invalid API key (401)")
     if resp.status_code == 422:
-        raise RuntimeError(f"The Odds API: quota exhausted (422) — {resp.text}")
+        raise RuntimeError("The Odds API: quota exhausted (422)")
     if resp.status_code != 200:
-        raise RuntimeError(
-            f"The Odds API: unexpected status {resp.status_code} — {resp.text}"
-        )
+        raise RuntimeError(f"The Odds API: unexpected status {resp.status_code}")
 
     remaining = resp.headers.get("x-requests-remaining", "?")
     logger.info("The Odds API: %s requests remaining this month", remaining)
