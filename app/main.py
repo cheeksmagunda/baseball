@@ -87,7 +87,9 @@ async def lifespan(app: FastAPI):
         )
     try:
         import redis as redis_lib
-        client = redis_lib.from_url(settings.redis_url, decode_responses=True)
+        client = redis_lib.from_url(
+            settings.redis_url, decode_responses=True, socket_connect_timeout=5
+        )
         client.ping()
         logger.info("Redis connectivity verified at startup")
     except Exception as e:

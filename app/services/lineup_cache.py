@@ -56,7 +56,9 @@ class _LineupCache:
             )
 
         import redis as redis_lib
-        client = redis_lib.from_url(settings.redis_url, decode_responses=True)
+        client = redis_lib.from_url(
+            settings.redis_url, decode_responses=True, socket_connect_timeout=5
+        )
         client.ping()
         self._redis = client
         self._redis_checked = True
