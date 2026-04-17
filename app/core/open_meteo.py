@@ -10,9 +10,10 @@ on whether the game date is in the past.
 
 Wind direction is classified as "OUT", "IN", or a raw 8-point compass label
 ("N", "NE", "E", "SE", "S", "SW", "W", "NW") depending on whether the park
-is in STADIUM_WIND_OUT_FROM_DEG.  The "OUT" label is the only one that
-triggers the BATTER_ENV_WIND_OUT_BONUS in filter_strategy.py; all others
-are stored as-is for observability.
+is in STADIUM_WIND_OUT_FROM_DEG:
+  "OUT" — wind blowing out to CF (±45° of the out-bearing) → batter/HR bonus
+  "IN"  — wind blowing in from CF (±45° of the opposite bearing) → suppresses HR
+  compass label — crosswind or park not in STADIUM_WIND_OUT_FROM_DEG
 """
 import logging
 import math
@@ -114,19 +115,39 @@ def _degrees_to_compass(deg: float) -> str:
     return ("N", "NE", "E", "SE", "S", "SW", "W", "NW")[idx]
 
 
+def _angular_diff(from_deg: float, center: float) -> float:
+    """Shortest angular distance between two bearings (0–180°)."""
+    return abs((from_deg - center + 180) % 360 - 180)
+
+
 def _is_wind_out(from_deg: float, park_team: str) -> bool:
     """Return True if wind blows out to CF at this park (±45° tolerance)."""
     center = STADIUM_WIND_OUT_FROM_DEG.get(park_team)
     if center is None:
         return False
-    diff = abs((from_deg - center + 180) % 360 - 180)
-    return diff <= 45
+    return _angular_diff(from_deg, center) <= 45
+
+
+def _is_wind_in(from_deg: float, park_team: str) -> bool:
+    """Return True if wind blows in from CF at this park (±45° tolerance)."""
+    center = STADIUM_WIND_OUT_FROM_DEG.get(park_team)
+    if center is None:
+        return False
+    in_bearing = (center + 180) % 360
+    return _angular_diff(from_deg, in_bearing) <= 45
 
 
 def _classify_wind_direction(from_deg: float, park_team: str | None) -> str:
-    """Return 'OUT' if wind blows out to CF, else 8-point compass label."""
-    if park_team and _is_wind_out(from_deg, park_team):
-        return "OUT"
+    """Return 'OUT', 'IN', or 8-point compass label.
+
+    'OUT' — wind blowing toward CF (HR bonus); 'IN' — wind blowing from CF
+    (suppresses fly balls); compass label otherwise.
+    """
+    if park_team:
+        if _is_wind_out(from_deg, park_team):
+            return "OUT"
+        if _is_wind_in(from_deg, park_team):
+            return "IN"
     return _degrees_to_compass(from_deg)
 
 

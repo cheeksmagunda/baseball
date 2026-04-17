@@ -53,12 +53,13 @@ class SlateGame(Base):
     away_starter_mlb_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     home_starter_era: Mapped[float | None] = mapped_column(Float, nullable=True)
     away_starter_era: Mapped[float | None] = mapped_column(Float, nullable=True)
+    home_starter_whip: Mapped[float | None] = mapped_column(Float, nullable=True)
+    away_starter_whip: Mapped[float | None] = mapped_column(Float, nullable=True)
     home_starter_k_per_9: Mapped[float | None] = mapped_column(Float, nullable=True)
     away_starter_k_per_9: Mapped[float | None] = mapped_column(Float, nullable=True)
     wind_speed_mph: Mapped[float | None] = mapped_column(Float, nullable=True)
     wind_direction: Mapped[str | None] = mapped_column(String, nullable=True)
     temperature_f: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    park_team: Mapped[str | None] = mapped_column(String, nullable=True)
     scheduled_game_time: Mapped[str | None] = mapped_column(String, nullable=True)  # e.g. "7:05 PM ET"
     home_team_ops: Mapped[float | None] = mapped_column(Float, nullable=True)
     away_team_ops: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -123,7 +124,6 @@ class SlatePlayer(Base):
     # Pre-game filter fields (§4.2 Filters 2-4, §5.2)
     batting_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
     platoon_advantage: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    is_debut_or_return: Mapped[bool] = mapped_column(Boolean, default=False)
     player_status: Mapped[str] = mapped_column(String, default="active")  # active, DNP, scratched, data_missing
     game_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("slate_games.id"), nullable=True, index=True)
     env_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0-1.0, computed by env filter

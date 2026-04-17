@@ -19,7 +19,6 @@ class SlateGameOut(BaseModel):
     temperature_f: int | None = None
     wind_speed_mph: float | None = None
     wind_direction: str | None = None
-    park_team: str | None = None
     scheduled_game_time: str | None = None
 
     model_config = {"from_attributes": True}
@@ -32,7 +31,6 @@ class SlatePlayerIn(BaseModel):
     card_boost: float = 0.0
     batting_order: int | None = None
     platoon_advantage: bool | None = None
-    is_debut_or_return: bool = False
     drafts: int | None = None
 
 
@@ -49,7 +47,6 @@ class SlatePlayerOut(BaseModel):
     opponent_team: str | None = None
     batting_order: int | None = None
     platoon_advantage: bool | None = None
-    is_debut_or_return: bool = False
     player_status: str = "active"
     env_score: float | None = None
 

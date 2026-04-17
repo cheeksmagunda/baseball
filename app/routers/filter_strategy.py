@@ -16,6 +16,8 @@ from app.database import get_db
 from app.core.constants import (
     DEFAULT_OPP_K_PCT,
     DEFAULT_OPP_OPS,
+    DEFAULT_PITCHER_ERA,
+    DEFAULT_PITCHER_WHIP,
     PITCHER_POSITIONS,
     SCORING_K9_CEILING,
     SCORING_K9_FLOOR,
@@ -119,8 +121,12 @@ def _prepare_batter_env_kwargs(game: GameEnvironment | None, card: FilterCard) -
     if game:
         _is_home = game.home_team.upper() == card.team.upper()
         _opp_era = game.away_starter_era if _is_home else game.home_starter_era
-        if _opp_era is not None:
-            score_kwargs["opp_pitcher_stats"] = {"era": _opp_era}
+        _opp_whip = game.away_starter_whip if _is_home else game.home_starter_whip
+        if _opp_era is not None or _opp_whip is not None:
+            score_kwargs["opp_pitcher_stats"] = {
+                "era": _opp_era if _opp_era is not None else DEFAULT_PITCHER_ERA,
+                "whip": _opp_whip if _opp_whip is not None else DEFAULT_PITCHER_WHIP,
+            }
         score_kwargs["batting_order"] = card.batting_order
         score_kwargs["park_team"] = game.home_team.upper()
         score_kwargs["wind_speed_mph"] = game.wind_speed_mph
@@ -246,7 +252,6 @@ async def _resolve_candidates(
                 pitcher_k_per_9=pitcher_k9,
                 park_team=park_team,
                 is_home=is_home,
-                is_debut_or_return=card.is_debut_or_return,
                 team_moneyline=team_ml,
             )
             env_unknown_count = 0  # pitchers are confirmed starters; env data is reliable
@@ -271,7 +276,6 @@ async def _resolve_candidates(
                 platoon_advantage=card.platoon_advantage,
                 batting_order=card.batting_order,
                 park_team=park_team,
-                is_debut_or_return=card.is_debut_or_return,
                 wind_speed_mph=game.wind_speed_mph,
                 wind_direction=game.wind_direction,
                 temperature_f=game.temperature_f,
@@ -347,7 +351,6 @@ async def _resolve_candidates(
             env_factors=pre["env_factors"],
             env_unknown_count=pre.get("env_unknown_count", 0),
             popularity=pop_class,
-            is_debut_or_return=card.is_debut_or_return,
             game_id=pre["game_id"],
             is_pitcher=pre["is_pitcher"],
             is_two_way_pitcher=pre["is_two_way_pitcher"],
@@ -471,6 +474,8 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             away_starter_mlb_id=g.away_starter_mlb_id,
             home_starter_era=g.home_starter_era,
             away_starter_era=g.away_starter_era,
+            home_starter_whip=g.home_starter_whip,
+            away_starter_whip=g.away_starter_whip,
             home_starter_k_per_9=g.home_starter_k_per_9,
             away_starter_k_per_9=g.away_starter_k_per_9,
             home_team_ops=g.home_team_ops,
@@ -506,7 +511,6 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             game_id=sp.game_id,
             batting_order=sp.batting_order,
             platoon_advantage=bool(sp.platoon_advantage),
-            is_debut_or_return=sp.is_debut_or_return,
             drafts=sp.drafts,
             is_most_drafted_3x=sp.is_most_drafted_3x,
         ))
@@ -534,7 +538,6 @@ def _build_lineup_out(result) -> FilterLineupOut:
             env_score=round(s.candidate.env_score, 3),
             env_factors=s.candidate.env_factors,
             popularity=s.candidate.popularity.value,
-            is_debut_or_return=s.candidate.is_debut_or_return,
             is_two_way_pitcher=s.candidate.is_two_way_pitcher,
             filter_ev=round(s.candidate.filter_ev, 2),
             expected_slot_value=s.expected_slot_value,
@@ -565,7 +568,6 @@ def _build_response(dual, candidates) -> FilterOptimizeResponse:
             env_score=round(c.env_score, 3),
             env_factors=c.env_factors,
             popularity=c.popularity.value,
-            is_debut_or_return=c.is_debut_or_return,
             is_two_way_pitcher=c.is_two_way_pitcher,
             filter_ev=round(c.filter_ev, 2),
             game_id=c.game_id,

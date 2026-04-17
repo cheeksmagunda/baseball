@@ -52,7 +52,6 @@ async def lifespan(app: FastAPI):
     from datetime import date
     from pathlib import Path
     from app.database import SessionLocal
-    from app.services.pipeline import run_full_pipeline
     from app.services.slate_monitor import targeted_slate_monitor
     from app.models.player import Player
     from app.seed import run_seed

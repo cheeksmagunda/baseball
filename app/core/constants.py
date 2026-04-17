@@ -160,9 +160,6 @@ BATTER_ENV_WEAK_PITCHER_ERA = 4.5     # opposing starter ERA above this = weak
 BATTER_ENV_TOP_LINEUP = 5             # batting 1-5 = top of lineup (§4)
 BATTER_ENV_WEAK_BULLPEN_ERA = 4.5     # opposing bullpen ERA above this = vulnerable
 
-# Debut/return premium (§2.3 Condition C)
-DEBUT_RETURN_EV_BONUS = 1.15          # 15% EV bonus for debut/return players
-
 # ---------------------------------------------------------------------------
 # Bifurcated missing-data handling
 #
@@ -356,7 +353,7 @@ PITCHER_ENV_PARK_FLOOR = 0.90         # park factor at or below this → full co
 PITCHER_ENV_PARK_CEILING = 1.05       # park factor at or above this → 0 contribution
 PITCHER_ENV_ML_FLOOR = -110           # moneyline at or above this → 0 contribution
 PITCHER_ENV_ML_CEILING = -250         # moneyline at or below this → full contribution
-PITCHER_ENV_MAX_SCORE = 6.0           # 5 main factors (1.0) + home (0.5) + debut (0.5)
+PITCHER_ENV_MAX_SCORE = 5.5           # 5 main factors (1.0 each) + home (0.5)
 
 # Batter env factors — Group A (run environment, capped at 2.0)
 BATTER_ENV_VEGAS_FLOOR = 7.0          # O/U at or below this → 0 contribution
@@ -375,7 +372,7 @@ BATTER_ENV_WIND_SPEED_MIN = 10           # mph minimum for wind bonus
 BATTER_ENV_WARM_TEMP_THRESHOLD = 80      # °F at or above → warm-weather bonus
 BATTER_ENV_WARM_TEMP_BONUS = 0.2         # venue bonus for warm conditions
 BATTER_ENV_WIND_OUT_BONUS = 0.5          # venue bonus for wind blowing out
-BATTER_ENV_WIND_OUT_DIRECTIONS = ("OUT", "L TO R", "R TO L", "OUT TO CF")
+BATTER_ENV_WIND_OUT_DIRECTIONS = ("OUT",)
 
 # Batter env factors — Group D (series/momentum)
 # Applied as bonus/deduction based on series context and recent form.
@@ -388,8 +385,7 @@ TEAM_COLD_L10_THRESHOLD = 3      # last-10 wins at or below → cold team penalt
 TEAM_HOT_L10_BONUS = 0.2         # bonus for hot team (last 10 ≥ 7 wins)
 TEAM_COLD_L10_PENALTY = 0.2      # penalty for cold team (last 10 ≤ 3 wins)
 
-# Raised from 5.5 to 6.3 to accommodate Group D headroom (max 0.8 additive).
-BATTER_ENV_MAX_SCORE = 6.3               # 2.0 (run env cap) + 2.0 (situation) + 1.0 (venue) + 0.5 (debut) + 0.8 (series/momentum)
+BATTER_ENV_MAX_SCORE = 5.8               # 2.0 (run env cap) + 2.0 (situation) + 1.0 (venue) + 0.8 (series/momentum)
 
 # Momentum gate — caps pop_factor at NEUTRAL for batters simultaneously trailing
 # in series AND on a cold L10 streak.  Prevents TARGET misclassification of

@@ -350,15 +350,11 @@ def score_ballpark_factor(
         # Wind intensity: scale from 5 mph (minimal) to 20 mph (max effect)
         wind_intensity = min(1.0, (wind_speed_mph - 5.0) / 15.0)
 
-        if any(d in direction_upper for d in ("OUT", "OUT TO CF", "OUT TO LF", "OUT TO RF")):
+        if direction_upper == "OUT":
             # Wind blowing out — balls carry further, raises HR factor
             adjustment += 0.10 * wind_intensity
             notes.append(f"wind out +{adjustment:.2f}")
-        elif any(d in direction_upper for d in ("L TO R", "R TO L")):
-            # Crosswind — moderate boost (balls pushed along the line)
-            adjustment += 0.04 * wind_intensity
-            notes.append(f"crosswind +{adjustment:.2f}")
-        elif any(d in direction_upper for d in ("IN",)):
+        elif direction_upper == "IN":
             # Wind blowing in — suppresses fly balls
             adjustment -= 0.10 * wind_intensity
             notes.append(f"wind in {adjustment:.2f}")
