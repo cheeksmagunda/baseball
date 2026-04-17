@@ -11,14 +11,23 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.core.constants import (
+    BATTER_FORM_AVG_PRODUCTION_BASELINE,
+    DEFAULT_BATTER_OPS_VS_LHP,
+    DEFAULT_BATTER_OPS_VS_RHP,
     DEFAULT_OPP_K_PCT,
     DEFAULT_OPP_OPS,
     DEFAULT_PITCHER_ERA,
     DEFAULT_PITCHER_WHIP,
+    PARK_HR_FACTOR_MAX,
+    PARK_HR_FACTOR_MIN,
     PARK_HR_FACTORS,
+    PITCHER_FORM_TRENDING_DOWN_CEILING,
+    PITCHER_FORM_TRENDING_UP_FLOOR,
     PITCHER_POSITIONS,
     SCORING_BATTER_ERA_FLOOR,
     SCORING_BATTER_ERA_RANGE,
+    SCORING_BATTER_OPS_SPLIT_FLOOR,
+    SCORING_BATTER_OPS_SPLIT_RANGE,
     SCORING_BATTER_WHIP_FLOOR,
     SCORING_BATTER_WHIP_RANGE,
     SCORING_ERA_CEILING,
@@ -142,13 +151,15 @@ def score_pitcher_recent_form(
     start_scores = [_start_quality(g) for g in recent]
     avg_score = sum(start_scores) / len(start_scores)
 
-    # Trajectory: is the most recent start better than the prior average?
+    # Trajectory: is the most recent start above/below a fixed quality baseline?
+    # Uses PITCHER_FORM_TRENDING_UP_FLOOR / TRENDING_DOWN_CEILING (league-average
+    # anchors) instead of the player's own rolling prior average, which would
+    # reintroduce historical mean weighting.
     if len(start_scores) > 1:
         most_recent = start_scores[0]
-        prior_avg = sum(start_scores[1:]) / len(start_scores[1:])
-        if most_recent > prior_avg * 1.20:
+        if most_recent >= PITCHER_FORM_TRENDING_UP_FLOOR:
             traj_mult = 1.10   # trending up
-        elif most_recent < prior_avg * 0.80:
+        elif most_recent <= PITCHER_FORM_TRENDING_DOWN_CEILING:
             traj_mult = 0.90   # trending down
         else:
             traj_mult = 1.0
@@ -241,9 +252,10 @@ def score_batter_matchup(
 ) -> TraitResult:
     """Score matchup vs opposing starter. Higher opponent ERA = better for batter.
 
-    Uses handedness-specific OPS splits when available (vs LHP or RHP) from
-    batter's season stats. Falls back to season ERA/WHIP comparison if splits
-    unavailable or if player is ambidextrous (S).
+    When starter_hand and batter splits (ops_vs_lhp / ops_vs_rhp) are available,
+    blends the batter's handedness-specific OPS into the score for a more direct
+    conditional sensitivity signal.  Falls back to ERA/WHIP-only when splits are
+    unavailable or the batter is ambidextrous (S).
     """
     if not opp_pitcher_stats:
         return TraitResult("matchup_quality", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "matchup unknown")
@@ -258,15 +270,36 @@ def score_batter_matchup(
     # Opponent WHIP: higher is better for batter
     whip_score = scale_score(opp_whip - SCORING_BATTER_WHIP_FLOOR, 0, SCORING_BATTER_WHIP_RANGE, 1.0)
 
-    combined = (era_score * 0.6 + whip_score * 0.4) * max_pts
     detail = f"vs_ERA={opp_era:.2f} vs_WHIP={opp_whip:.2f}"
 
-    # Handedness-specific note: record which platoon matchup occurred
+    # Handedness-specific OPS split: direct conditional sensitivity signal.
+    # Uses the batter's actual season OPS vs this pitcher handedness; falls back
+    # to league-average default when splits are absent.  Switch hitters (S) are
+    # skipped — they optimally face both hands and don't carry a single split.
+    ops_split_score = None
     if starter_hand and batter_hand and batter_hand != "S":
-        if starter_hand == "L" and batter_hand == "R":
-            detail += " [RHB-vs-LHP]"
-        elif starter_hand == "R" and batter_hand == "L":
-            detail += " [LHB-vs-RHP]"
+        if starter_hand == "L":
+            batter_ops = (
+                batter_stats.ops_vs_lhp
+                if batter_stats and batter_stats.ops_vs_lhp is not None
+                else DEFAULT_BATTER_OPS_VS_LHP
+            )
+            ops_split_score = scale_score(batter_ops - SCORING_BATTER_OPS_SPLIT_FLOOR, 0, SCORING_BATTER_OPS_SPLIT_RANGE, 1.0)
+            detail += f" [vs-LHP ops={batter_ops:.3f}]"
+        elif starter_hand == "R":
+            batter_ops = (
+                batter_stats.ops_vs_rhp
+                if batter_stats and batter_stats.ops_vs_rhp is not None
+                else DEFAULT_BATTER_OPS_VS_RHP
+            )
+            ops_split_score = scale_score(batter_ops - SCORING_BATTER_OPS_SPLIT_FLOOR, 0, SCORING_BATTER_OPS_SPLIT_RANGE, 1.0)
+            detail += f" [vs-RHP ops={batter_ops:.3f}]"
+
+    if ops_split_score is not None:
+        # Three-signal blend: pitcher ERA (40%), pitcher WHIP (25%), batter split (35%)
+        combined = (era_score * 0.40 + whip_score * 0.25 + ops_split_score * 0.35) * max_pts
+    else:
+        combined = (era_score * 0.6 + whip_score * 0.4) * max_pts
 
     return TraitResult("matchup_quality", round(combined, 1), max_pts, detail)
 
@@ -309,34 +342,34 @@ def score_batter_recent_form(
         prod = (g.hits / ab) + (g.hr * 0.05) + (g.rbi * 0.02)
         per_game_prod.append(prod)
 
-    # Coefficient of variation (volatility)
+    # Coefficient of variation (volatility).
+    # Variance is computed around the sample mean (correct statistical practice).
+    # The CV denominator uses BATTER_FORM_AVG_PRODUCTION_BASELINE — a fixed
+    # league-average reference — instead of the player's own rolling mean,
+    # which would reintroduce historical mean weighting through the back door.
     if per_game_prod:
         mean_prod = sum(per_game_prod) / len(per_game_prod)
-        if mean_prod > 0:
-            variance = sum((p - mean_prod) ** 2 for p in per_game_prod) / len(per_game_prod)
-            std_prod = variance ** 0.5
-            cv = std_prod / mean_prod
-        else:
-            cv = 0.0
+        variance = sum((p - mean_prod) ** 2 for p in per_game_prod) / len(per_game_prod)
+        std_prod = variance ** 0.5
+        cv = std_prod / BATTER_FORM_AVG_PRODUCTION_BASELINE
     else:
         cv = 0.0
 
     # Base score off last 3 games; harder ceiling (0.65) filters out average hot streaks
     base_score = min(max_pts, prod_new / 0.65 * max_pts)
 
-    # Trajectory: bonus for ascending players, penalty for declining ones
-    if prod_old > 0 and window_old:
-        ratio = prod_new / prod_old
-        if ratio >= 1.30:
-            traj_mult = 1.15   # clearly ascending
-        elif ratio >= 1.10:
-            traj_mult = 1.08   # trending up
-        elif ratio <= 0.70:
-            traj_mult = 0.85   # clearly declining
-        elif ratio <= 0.90:
-            traj_mult = 0.92   # slightly declining
-        else:
-            traj_mult = 1.0
+    # Trajectory: bonus for ascending players, penalty for declining ones.
+    # Uses BATTER_FORM_AVG_PRODUCTION_BASELINE — a fixed league-average reference —
+    # as the denominator instead of prod_old (per-player rolling mean anchor).
+    ratio = prod_new / BATTER_FORM_AVG_PRODUCTION_BASELINE
+    if ratio >= 1.30:
+        traj_mult = 1.15   # clearly ascending
+    elif ratio >= 1.10:
+        traj_mult = 1.08   # trending up
+    elif ratio <= 0.70:
+        traj_mult = 0.85   # clearly declining
+    elif ratio <= 0.90:
+        traj_mult = 0.92   # slightly declining
     else:
         traj_mult = 1.0
 
@@ -407,8 +440,7 @@ def score_ballpark_factor(
     if notes:
         note_str += f" ({', '.join(notes)})"
 
-    # Scale: 0.89 → 0, 1.38 → max (same range as static, but effective factor can exceed)
-    score = max(0, min(max_pts, (effective_factor - 0.89) / (1.38 - 0.89) * max_pts))
+    score = max(0, min(max_pts, (effective_factor - PARK_HR_FACTOR_MIN) / (PARK_HR_FACTOR_MAX - PARK_HR_FACTOR_MIN) * max_pts))
     return TraitResult("ballpark_factor", round(score, 1), max_pts, note_str)
 
 
@@ -507,7 +539,7 @@ def score_batter(
     traits = [
         score_power_profile(stats, w.power_profile),
         score_lineup_position(batting_order, w.lineup_position),
-        score_batter_matchup(opp_pitcher_stats, player.bat_side, w.matchup_quality, starter_hand=starter_hand),
+        score_batter_matchup(opp_pitcher_stats, player.bat_side, w.matchup_quality, starter_hand=starter_hand, batter_stats=stats),
         score_batter_recent_form(game_logs, w.recent_form),
         score_ballpark_factor(park_team, w.ballpark_factor, wind_speed_mph, wind_direction, temperature_f),
         score_hot_streak(game_logs, w.hot_streak),

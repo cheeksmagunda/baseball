@@ -102,20 +102,6 @@ BLOWOUT_MIN_GAMES_FOR_STACK_DAY = 1  # 1+ blowout game → stack day eligible
 # Forcing min/max pitchers by slate type was the #1 source of bad lineups.
 # The optimizer now uses pure EV ranking with no position constraints.
 
-# ---------------------------------------------------------------------------
-# Dynamic composition: boost-aware lineup building
-# Historical data shows winning composition is driven by boost availability,
-# not fixed position counts. From 4/2 onward, zero unboosted pitchers
-# appeared in rank-1 lineups when quality boosted alternatives existed.
-# ---------------------------------------------------------------------------
-# A card is "quality boosted" if it has meaningful boost AND env support.
-# boost >= 1.0 with env_score >= ENV_PASS_THRESHOLD.
-BOOST_QUALITY_THRESHOLD = 1.0
-
-# When this many quality boosted cards are available, let pure EV drive
-# composition with no positional constraints.
-BOOSTED_POOL_FULL_THRESHOLD = 5
-
 ENV_PASS_THRESHOLD = 0.5           # env_score >= 0.5 = passes environmental filter
 
 # Game diversification (Filter 5 — Law 9)
@@ -135,17 +121,6 @@ MAX_PLAYERS_PER_GAME = 1         # max 1 player per game per lineup — full div
 MAX_OPPONENTS_SAME_GAME = 1      # max 1 player from the opposing side of the same game
 MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup
 SAME_GAME_EXCESS_PENALTY = 0.90  # 10% penalty for 4th+ player from same game
-
-# ---------------------------------------------------------------------------
-# Team stacking constants (§2 Pillar 2 — dominant on 62% of winning days)
-# Within-lineup stacking is disabled (MAX_PLAYERS_PER_TEAM=1).  Correlation
-# value is now captured cross-lineup via CORRELATION_* constants.  These
-# constants are retained for _build_team_stack(), which is skipped when
-# MAX_PLAYERS_PER_TEAM < STACK_MIN_PLAYERS.
-# ---------------------------------------------------------------------------
-STACK_MIN_PLAYERS = 3             # minimum players from same team to form a stack
-STACK_MAX_PLAYERS = 4             # typical stack size (1-2 diversifiers from other games)
-STACK_GHOST_BOOST_PRIORITY = True # prefer ghost-ownership players when stacking
 
 # Environmental filter thresholds (Filter 2)
 # Pitcher environmental pass conditions
@@ -183,36 +158,36 @@ DNP_GHOST_UNKNOWN_PENALTY = 0.92      # GHOST UNKNOWN: 8% haircut (data scarcity
 ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data not published" (not "bad env")
 
 # ---------------------------------------------------------------------------
-# V8.0 Pre-Game Signal Architecture
+# V9.0 Pre-Game Signal Architecture
 #
 # Ownership counts and card boosts are only revealed during/after the draft
 # and CANNOT be used as predictive inputs.  The EV formula is built entirely
 # on signals that are knowable before any draft begins.
 #
-# Signal hierarchy (V8.0 — empirically calibrated):
-#   1. pop_factor   — PRIMARY: media-attention crowd-avoidance signal from
-#                    pre-game web sources (Google Trends, ESPN RSS, Reddit).
-#                    3.0x swing.  Empirical basis: TARGET batters avg RS 3.57
-#                    vs FADE batters avg RS 0.98 = 3.6x differential (20 dates).
-#                    This is the sharpest pre-game predictor of RS — the crowd
-#                    is structurally wrong about batters.  FADE aggressively.
-#                    DFS platform ownership data EXCLUDED (during-draft only).
-#   2. env_factor   — SECONDARY: game conditions available before first pitch
-#                    (Vegas O/U, opposing starter ERA, park, weather, platoon,
-#                     batting order, moneyline, bullpen ERA).  1.86x swing.
-#   3. trait_factor — TERTIARY: season-level player quality (K/9, ISO,
-#                    barrel%, SB pace, ERA, WHIP, recent form).  1.35x swing.
+# Signal hierarchy (V9.0):
+#   1. Popularity gate — FADE players (high pre-game media attention) are
+#                    EXCLUDED from the candidate pool before EV runs.
+#                    TARGET and NEUTRAL pass with no bonus or penalty.
+#                    Source: Google Trends, ESPN RSS, Reddit (NOT platform
+#                    ownership counts, which are during-draft only).
+#   2. env_factor   — PRIMARY EV signal: game conditions available before
+#                    first pitch (Vegas O/U, opposing starter ERA, park,
+#                    weather, platoon, batting order, moneyline, bullpen ERA).
+#                    Range: 0.70–1.30 (1.86x swing).
+#   3. trait_factor — SECONDARY EV signal: season-level player quality
+#                    (K/9, ISO, barrel%, SB pace, ERA, WHIP, recent form).
+#                    Range: 0.85–1.15 (1.35x swing).
 #
-# Formula: base_ev = pop_factor × env_factor × trait_factor × context × 100
+# Formula: base_ev = env_factor × trait_factor × context × 100
 # ---------------------------------------------------------------------------
 
-# Env modifier bounds — PRIMARY signal.
+# Env modifier bounds — PRIMARY EV signal.
 # Range: 0.70–1.30 (1.86x swing) — game conditions (Vegas O/U, ERA, bullpen,
 # park, weather, platoon, batting order, moneyline).
 ENV_MODIFIER_FLOOR = 0.70
 ENV_MODIFIER_CEILING = 1.30
 
-# Trait modifier bounds — SECONDARY signal.
+# Trait modifier bounds — SECONDARY EV signal.
 # Range: 0.85–1.15 (1.35x swing) — season stats (K/9, ISO, barrel%, ERA, WHIP,
 # recent form) provide fine-grained differentiation within the same env tier.
 TRAIT_MODIFIER_FLOOR = 0.85
@@ -270,13 +245,6 @@ PITCHER_ANCHOR_SLOT = 1              # pitcher always in Slot 1 (2.0x)
 STACK_BONUS = 1.20  # 20% EV bonus for players on blowout-game teams
 
 # ---------------------------------------------------------------------------
-# Boost concentration penalty (§4.2 Filter 4)
-# Don't put all boosted players in the same game.
-# ---------------------------------------------------------------------------
-BOOST_CONCENTRATION_THRESHOLD = 3     # 3+ boosted in same game triggers penalty
-BOOST_CONCENTRATION_PENALTY = 0.85    # 15% penalty for 3rd+ boosted in same game
-
-# ---------------------------------------------------------------------------
 # V5.0: Slot 1 Differentiator Principle RETIRED.
 # Slot 1 is permanently reserved for the anchor pitcher (see PITCHER_ANCHOR_SLOT).
 # The contrarian-swap heuristic no longer applies.
@@ -305,26 +273,6 @@ BOOST_CONCENTRATION_PENALTY = 0.85    # 15% penalty for 3rd+ boosted in same gam
 #   - BOOSTED_PITCHER_CAP_EXPAND_MIN
 #   - PITCHER_CAP_EV_THRESHOLD
 # ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Pitcher-specific FADE moderation
-#
-# Pitchers control their own environment — high draft count reflects real
-# ERA/K-rate performance data, not media hype.  The crowd is structurally
-# LESS wrong about pitchers than batters because pitcher outcomes are more
-# predictable (one player controls the game vs. batters needing team context).
-#
-# Historical evidence:
-#   - Apr 11: Suarez (2.2k drafts, RS 5.7), Sheehan (1.9k, RS 2.8),
-#     Bassitt (1.5k, RS 2.3) — all in 5/6 top lineups despite being FADE
-#   - Apr 7: Eovaldi (in 11/12 top lineups despite high ownership)
-#   - PITCHER_CONDITION_MATRIX chalk+max_boost = 0.50 HV rate (5x batter rate)
-#
-# Starting 5: 15% haircut (vs 25% for batters)
-# Moonshot: 30% haircut (vs 40% for batters)
-# ---------------------------------------------------------------------------
-PITCHER_FADE_PENALTY = 0.85           # S5: 15% haircut (batters: 0.75 = 25%)
-MOONSHOT_PITCHER_FADE_PENALTY = 0.70  # Moonshot: 30% haircut (batters: 0.60 = 40%)
 
 # ---------------------------------------------------------------------------
 # League-average defaults for missing opponent / pitcher stats
@@ -400,12 +348,6 @@ TEAM_COLD_L10_PENALTY = 0.2      # penalty for cold team (last 10 ≤ 3 wins)
 
 BATTER_ENV_MAX_SCORE = 5.8               # 2.0 (run env cap) + 2.0 (situation) + 1.0 (venue) + 0.8 (series/momentum)
 
-# Momentum gate — caps pop_factor at NEUTRAL for batters simultaneously trailing
-# in series AND on a cold L10 streak.  Prevents TARGET misclassification of
-# "correctly-avoided" players (e.g., Red Sox batter in a sweep).
-MOMENTUM_GATE_SERIES_DEFICIT = 2   # series deficit at or above triggers gate
-MOMENTUM_GATE_L10_CEILING = 3      # L10 wins at or below triggers gate (cold + trailing)
-
 # ---------------------------------------------------------------------------
 # Game status constants
 # Games in these statuses will never receive scores; treat as "done" so the
@@ -437,4 +379,23 @@ SCORING_BATTER_ERA_FLOOR = 2.5        # opposing ERA at or below → 0 score
 SCORING_BATTER_ERA_RANGE = 2.5        # ERA scoring range (5.0 - 2.5)
 SCORING_BATTER_WHIP_FLOOR = 0.9       # opposing WHIP at or below → 0 score
 SCORING_BATTER_WHIP_RANGE = 0.6       # WHIP scoring range (1.5 - 0.9)
+
+# Scoring engine — batter OPS-split matchup thresholds (handedness-specific)
+# When starter_hand and batter splits are known, blended into matchup score.
+SCORING_BATTER_OPS_SPLIT_FLOOR = 0.600   # batter OPS-vs-hand at or below → 0 split score
+SCORING_BATTER_OPS_SPLIT_RANGE = 0.300   # range for full split score (0.600 → 0.900)
+
+# Scoring engine — park factor range boundaries (LAD floor, COL ceiling)
+# Used in score_ballpark_factor() to normalise the effective park factor.
+PARK_HR_FACTOR_MIN = 0.89             # lowest value in PARK_HR_FACTORS (LAD)
+PARK_HR_FACTOR_MAX = 1.38             # highest value in PARK_HR_FACTORS (COL)
+
+# Scoring engine — conditional-sensitivity trajectory thresholds
+# These replace per-player rolling-mean anchors in recent-form functions.
+# All values are fixed league-average references, not player-specific history.
+PITCHER_FORM_TRENDING_UP_FLOOR = 0.60     # start quality at/above → trending up
+PITCHER_FORM_TRENDING_DOWN_CEILING = 0.40 # start quality at/below → trending down
+# Approximates league-average daily production under the _production() formula:
+# BA ≈ 0.250 + (HR/game × 0.05 ≈ 0.01) + (RBI/game × 0.02 ≈ 0.01) ≈ 0.270
+BATTER_FORM_AVG_PRODUCTION_BASELINE = 0.270
 
