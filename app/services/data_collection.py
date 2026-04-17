@@ -698,14 +698,13 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
         slate_date (the current series).
         l10_wins: wins in the 10 most recent completed games (any opponent).
 
-        Raises RuntimeError if no schedule data is available for the team.
+        Returns (0, 0, 0) when there are no prior completed games in the
+        lookback window (e.g. opening day or all recent games postponed).
+        This is the factually correct value — not a fallback.
         """
         raw = team_games.get(team, [])
         if not raw:
-            raise RuntimeError(
-                f"No schedule data returned for team {team!r} in the last 14 days — "
-                "cannot compute series context."
-            )
+            return 0, 0, 0
 
         def _game_date(g: dict) -> str:
             return g.get("officialDate", g.get("gameDate", "")[:10])
@@ -914,6 +913,17 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
         if odds.get("total") is not None:
             game.vegas_total = odds["total"]
         updated += 1
+
+    null_moneylines = [
+        f"{g.home_team} vs {g.away_team}"
+        for g in games
+        if g.home_moneyline is None or g.away_moneyline is None
+    ]
+    if null_moneylines:
+        raise RuntimeError(
+            f"Vegas lines: moneylines not populated for {len(null_moneylines)} game(s) "
+            f"on {slate.date}: {', '.join(null_moneylines)}"
+        )
 
     db.commit()
     logger.info(

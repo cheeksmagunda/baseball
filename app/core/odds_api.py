@@ -129,11 +129,10 @@ async def fetch_mlb_odds(api_key: str, game_date: date) -> list[dict]:
         home_abbr = _match_team(home_name)
         away_abbr = _match_team(away_name)
         if not home_abbr or not away_abbr:
-            logger.warning(
-                "Odds API: could not match teams '%s' vs '%s' to MLB abbreviations",
-                home_name, away_name,
+            raise RuntimeError(
+                f"Odds API: could not match teams {home_name!r} vs {away_name!r} to MLB "
+                "abbreviations. Update ODDS_API_TEAM_FRAGMENTS in app/core/odds_api.py."
             )
-            continue
 
         home_ml: int | None = None
         away_ml: int | None = None
