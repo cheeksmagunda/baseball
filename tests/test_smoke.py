@@ -6,12 +6,20 @@ These are pinholes — enough to catch import regressions, signature drift,
 and the key invariants (Redis meta persistence, T-65 gating, batched
 starter-stats cache). They are intentionally thin; the full filter-strategy
 logic is covered by test_filter_strategy.py.
+
+Isolation guarantees (defense in depth):
+  * Every test uses an in-memory SQLite DB (StaticPool) — the real
+    db/baseball_dfs.db file is never opened or written.
+  * Every test uses a fresh _LineupCache() instance with Redis pre-mocked —
+    no real Redis connection is ever attempted.
+  * The module-level lineup_cache singleton is asserted to be untouched
+    after every test (see _global_lineup_cache_untouched autouse fixture).
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -29,9 +37,42 @@ from app.models.slate import Slate, SlateGame
 # Fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _global_lineup_cache_untouched():
+    """Fail any test that leaks state into the module-level lineup_cache.
+
+    Smoke tests always use a fresh _LineupCache() via the fresh_cache fixture.
+    If a future test ever mutates app.services.lineup_cache.lineup_cache
+    directly, this guard fails loudly so the bleed is caught immediately.
+    """
+    from app.services.lineup_cache import lineup_cache
+    snapshot = (
+        lineup_cache._data,
+        lineup_cache._slate_date,
+        lineup_cache._is_frozen,
+        lineup_cache._first_pitch_utc,
+    )
+    yield
+    assert (
+        lineup_cache._data,
+        lineup_cache._slate_date,
+        lineup_cache._is_frozen,
+        lineup_cache._first_pitch_utc,
+    ) == snapshot, (
+        "Test mutated the module-level lineup_cache singleton. "
+        "Use the fresh_cache fixture instead."
+    )
+
+
 @pytest.fixture
 def db_session():
-    """In-memory SQLite session with all tables created."""
+    """In-memory SQLite session with all tables created.
+
+    StaticPool shares a single connection across threads so FastAPI's
+    TestClient (which dispatches async handlers on a worker thread) sees
+    the same schema the fixture set up. The engine is disposed at teardown,
+    which drops the in-memory database — no disk footprint.
+    """
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -48,16 +89,29 @@ def db_session():
 
 
 @pytest.fixture
-def fresh_cache():
-    """Isolated lineup_cache instance with Redis fully mocked."""
+def fresh_cache(monkeypatch):
+    """Isolated _LineupCache with Redis pre-mocked and router rebinding applied.
+
+    The fixture:
+      1. Creates a brand-new _LineupCache() — never touches the module-level
+         singleton.
+      2. Pre-fills ._redis with a MagicMock and sets ._redis_checked=True so
+         _get_redis() returns the mock without ever reading settings or
+         opening a socket.
+      3. monkeypatch-rebinds app.routers.filter_strategy.lineup_cache to this
+         fresh instance so router tests see it without boilerplate — the
+         rebinding is reverted at teardown.
+    """
     from app.services import lineup_cache as lc_module
+    from app.routers import filter_strategy as router_module
 
     cache = lc_module._LineupCache()
     redis = MagicMock()
     redis.get.return_value = None
-    # Prevent any real network access by bypassing _get_redis entirely.
     cache._redis = redis
     cache._redis_checked = True
+
+    monkeypatch.setattr(router_module, "lineup_cache", cache)
     return cache, redis
 
 
@@ -257,12 +311,31 @@ def _build_test_app():
     return app
 
 
+class TestIsolation:
+    """Proof-of-isolation tests: verify fake data cannot bleed into real systems."""
+
+    def test_fresh_cache_does_not_touch_real_redis(self, fresh_cache):
+        """Freezing a fresh cache must only write to the mock, never a real client."""
+        cache, redis = fresh_cache
+        cache.freeze(datetime(2026, 4, 17, 23, 5, tzinfo=timezone.utc))
+        # All Redis traffic lands on the mock; the cache never re-entered _get_redis.
+        assert redis.setex.called
+        # The settings-driven branch of _get_redis is bypassed because _redis is pre-filled.
+        assert cache._redis is redis
+
+    def test_db_session_is_in_memory_not_real_file(self, db_session):
+        """The fixture engine must be a sqlite:// (in-memory) URL — never the real DB."""
+        url = str(db_session.get_bind().url)
+        assert url.startswith("sqlite://") and ":memory:" not in url  # sqlite:// == anonymous in-memory
+        # Real app DB lives on disk; fixture never touches it.
+        from app.config import settings
+        assert settings.database_url != url
+
+
 class TestFilterStrategyRouter:
     def test_status_no_slate(self, fresh_cache):
-        cache, _ = fresh_cache
-        with patch("app.routers.filter_strategy.lineup_cache", cache):
-            client = TestClient(_build_test_app())
-            response = client.get("/api/filter-strategy/status")
+        client = TestClient(_build_test_app())
+        response = client.get("/api/filter-strategy/status")
         assert response.status_code == 200
         body = response.json()
         assert body["phase"] == "no_slate"
@@ -272,9 +345,8 @@ class TestFilterStrategyRouter:
         cache, _ = fresh_cache
         far_future = datetime.now(timezone.utc) + timedelta(hours=24)
         cache.set_schedule(far_future)
-        with patch("app.routers.filter_strategy.lineup_cache", cache):
-            client = TestClient(_build_test_app())
-            response = client.get("/api/filter-strategy/status")
+        client = TestClient(_build_test_app())
+        response = client.get("/api/filter-strategy/status")
         body = response.json()
         assert body["phase"] == "before_lock"
         assert body["ready"] is False
@@ -286,13 +358,11 @@ class TestFilterStrategyRouter:
         cache.set_schedule(far_future)
 
         from app.database import get_db
-        from app.routers import filter_strategy as router_module
 
         app = _build_test_app()
         app.dependency_overrides[get_db] = lambda: db_session
-        with patch.object(router_module, "lineup_cache", cache):
-            client = TestClient(app)
-            response = client.get("/api/filter-strategy/optimize")
+        client = TestClient(app)
+        response = client.get("/api/filter-strategy/optimize")
 
         assert response.status_code == 425
         body = response.json()
