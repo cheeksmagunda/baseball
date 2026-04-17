@@ -698,13 +698,15 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
         slate_date (the current series).
         l10_wins: wins in the 10 most recent completed games (any opponent).
 
-        Returns (0, 0, 0) when there are no prior completed games in the
-        lookback window (e.g. opening day or all recent games postponed).
-        This is the factually correct value — not a fallback.
+        Raises RuntimeError if no completed games are found in the lookback
+        window — indicates an API or data problem mid-season.
         """
         raw = team_games.get(team, [])
         if not raw:
-            return 0, 0, 0
+            raise RuntimeError(
+                f"No completed games found for team {team!r} in the last 14 days — "
+                "check MLB API response or extend the lookback window."
+            )
 
         def _game_date(g: dict) -> str:
             return g.get("officialDate", g.get("gameDate", "")[:10])
@@ -887,6 +889,10 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
     if not games:
         return 0
+
+    if all(g.home_moneyline is not None and g.away_moneyline is not None for g in games):
+        logger.info("Vegas lines already populated for all %d games on %s — skipping API call", len(games), slate.date)
+        return len(games)
 
     odds_data = await fetch_mlb_odds(settings.odds_api_key, slate.date)
 
