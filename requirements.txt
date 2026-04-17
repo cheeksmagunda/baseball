@@ -1,70 +1,43 @@
-annotated-doc==0.0.4
-annotated-types==0.7.0
-anyio==4.13.0
-argcomplete==3.1.4
-blinker==1.7.0
-certifi==2026.2.25
-charset-normalizer==3.4.6
-click==8.3.2
-colorama==0.4.6
-conan==2.27.0
-cryptography==41.0.7
-dbus-python==1.3.2
-distro==1.9.0
-fastapi==0.136.0
-fasteners==0.20
-greenlet==3.4.0
-h11==0.16.0
-hiredis==3.3.1
-httpcore==1.0.9
-httplib2==0.20.4
-httptools==0.7.1
-httpx==0.28.1
-idna==3.11
-iniconfig==2.3.0
-Jinja2==3.1.6
-joblib==1.5.3
-launchpadlib==1.11.0
-lazr.restfulclient==0.14.6
-lazr.uri==1.0.6
-MarkupSafe==3.0.3
-numpy==2.4.4
-oauthlib==3.2.2
-packaging==24.0
-pandas==3.0.2
-patch-ng==1.18.1
-pluggy==1.6.0
-pydantic==2.13.1
-pydantic-settings==2.13.1
-pydantic_core==2.46.1
-Pygments==2.20.0
-PyGObject==3.48.2
-PyJWT==2.7.0
-pyparsing==3.1.1
-pytest==9.0.3
-pytest-asyncio==1.3.0
-python-apt==2.7.7+ubuntu5.2
-python-dateutil==2.9.0.post0
-python-dotenv==1.2.2
-PyYAML==6.0.1
-redis==7.4.0
-requests==2.33.1
-ruff==0.15.11
-scikit-learn==1.8.0
-scipy==1.17.1
-six==1.16.0
-SQLAlchemy==2.0.49
-starlette==1.0.0
-tenacity==9.1.4
-threadpoolctl==3.6.0
-toml==0.10.2
-typing-inspection==0.4.2
-typing_extensions==4.15.0
-urllib3==2.6.3
-uvicorn==0.44.0
-uvloop==0.22.1
-wadllib==1.3.6
-watchfiles==1.1.1
-websockets==16.0
-xmltodict==0.13.0
-yq==3.1.0
+# Project runtime dependencies.
+# Source of truth for versions is pyproject.toml; this file mirrors the
+# resolved set so `pip install -r requirements.txt` works on any platform
+# (the previous contents were a full `pip freeze` from an Ubuntu host and
+# included system-only packages like dbus-python, conan, launchpadlib, etc.).
+#
+# To regenerate: pip install pip-tools && pip-compile pyproject.toml -o requirements.txt
+
+# Web framework
+fastapi>=0.115
+uvicorn[standard]>=0.30
+
+# DB + ORM
+sqlalchemy>=2.0
+alembic>=1.13
+
+# Config + validation
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# HTTP clients
+httpx>=0.27
+requests>=2.32
+
+# Cache
+redis[hiredis]>=5.0
+
+# Data / math
+pandas>=2.2
+numpy>=1.26
+scikit-learn>=1.5
+joblib>=1.4
+
+# Retry logic
+tenacity>=8.2
+
+# Security (keep current — older 41.x has known CVEs)
+cryptography>=45.0
+
+# Dev
+pytest>=8.0
+pytest-asyncio>=0.23
+ruff>=0.4
