@@ -78,6 +78,7 @@ class PlayerGameLog(Base):
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False, index=True)
     game_date: Mapped[date] = mapped_column(Date, nullable=False)
     opponent: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[str] = mapped_column(String, nullable=False, server_default="mlb_api", default="mlb_api")
 
     # Batter
     ab: Mapped[int] = mapped_column(Integer, default=0)

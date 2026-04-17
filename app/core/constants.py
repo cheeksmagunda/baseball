@@ -390,12 +390,4 @@ SCORING_BATTER_OPS_SPLIT_RANGE = 0.300   # range for full split score (0.600 →
 PARK_HR_FACTOR_MIN = 0.89             # lowest value in PARK_HR_FACTORS (LAD)
 PARK_HR_FACTOR_MAX = 1.38             # highest value in PARK_HR_FACTORS (COL)
 
-# Scoring engine — conditional-sensitivity trajectory thresholds
-# These replace per-player rolling-mean anchors in recent-form functions.
-# All values are fixed league-average references, not player-specific history.
-PITCHER_FORM_TRENDING_UP_FLOOR = 0.60     # start quality at/above → trending up
-PITCHER_FORM_TRENDING_DOWN_CEILING = 0.40 # start quality at/below → trending down
-# Approximates league-average daily production under the _production() formula:
-# BA ≈ 0.250 + (HR/game × 0.05 ≈ 0.01) + (RBI/game × 0.02 ≈ 0.01) ≈ 0.270
-BATTER_FORM_AVG_PRODUCTION_BASELINE = 0.270
 

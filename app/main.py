@@ -53,7 +53,6 @@ async def lifespan(app: FastAPI):
     from pathlib import Path
     from app.database import SessionLocal
     from app.services.slate_monitor import targeted_slate_monitor
-    from app.models.player import Player
     from app.seed import run_seed
 
     logger = logging.getLogger(__name__)
@@ -106,11 +105,9 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("DFS_ODDS_API_KEY configured — Vegas API enrichment enabled")
 
-    # Seed database if empty
+    # Seed reference data and default weights (idempotent — skips if already done)
     with SessionLocal() as db:
-        if db.query(Player).count() == 0:
-            logger.info("Database empty, loading seed data...")
-            run_seed(db)
+        run_seed(db)
 
     # Cache initialization: restore frozen picks on post-T-65 restart, otherwise purge.
     #

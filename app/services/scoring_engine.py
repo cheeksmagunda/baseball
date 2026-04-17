@@ -11,7 +11,6 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.core.constants import (
-    BATTER_FORM_AVG_PRODUCTION_BASELINE,
     DEFAULT_BATTER_OPS_VS_LHP,
     DEFAULT_BATTER_OPS_VS_RHP,
     DEFAULT_OPP_K_PCT,
@@ -21,8 +20,6 @@ from app.core.constants import (
     PARK_HR_FACTOR_MAX,
     PARK_HR_FACTOR_MIN,
     PARK_HR_FACTORS,
-    PITCHER_FORM_TRENDING_DOWN_CEILING,
-    PITCHER_FORM_TRENDING_UP_FLOOR,
     PITCHER_POSITIONS,
     SCORING_BATTER_ERA_FLOOR,
     SCORING_BATTER_ERA_RANGE,
@@ -151,16 +148,18 @@ def score_pitcher_recent_form(
     start_scores = [_start_quality(g) for g in recent]
     avg_score = sum(start_scores) / len(start_scores)
 
-    # Trajectory: is the most recent start above/below a fixed quality baseline?
-    # Uses PITCHER_FORM_TRENDING_UP_FLOOR / TRENDING_DOWN_CEILING (league-average
-    # anchors) instead of the player's own rolling prior average, which would
-    # reintroduce historical mean weighting.
+    # Trajectory: compare most recent start against the pitcher's own prior-starts average.
+    # No static historical anchor — direction is relative to the player's own recent baseline.
     if len(start_scores) > 1:
         most_recent = start_scores[0]
-        if most_recent >= PITCHER_FORM_TRENDING_UP_FLOOR:
-            traj_mult = 1.10   # trending up
-        elif most_recent <= PITCHER_FORM_TRENDING_DOWN_CEILING:
-            traj_mult = 0.90   # trending down
+        prior_avg = sum(start_scores[1:]) / len(start_scores[1:])
+        if prior_avg > 0:
+            if most_recent >= prior_avg * 1.15:
+                traj_mult = 1.10   # trending up: +15% vs own recent baseline
+            elif most_recent <= prior_avg * 0.85:
+                traj_mult = 0.90   # trending down: -15% vs own recent baseline
+            else:
+                traj_mult = 1.0
         else:
             traj_mult = 1.0
     else:
@@ -342,26 +341,26 @@ def score_batter_recent_form(
         prod = (g.hits / ab) + (g.hr * 0.05) + (g.rbi * 0.02)
         per_game_prod.append(prod)
 
-    # Coefficient of variation (volatility).
-    # Variance is computed around the sample mean (correct statistical practice).
-    # The CV denominator uses BATTER_FORM_AVG_PRODUCTION_BASELINE — a fixed
-    # league-average reference — instead of the player's own rolling mean,
-    # which would reintroduce historical mean weighting through the back door.
+    # Coefficient of variation (volatility) — player's own recent window, no historical anchor.
+    # CV = std / mean of the same 7-game sample: pure within-window variance measure.
     if per_game_prod:
         mean_prod = sum(per_game_prod) / len(per_game_prod)
         variance = sum((p - mean_prod) ** 2 for p in per_game_prod) / len(per_game_prod)
         std_prod = variance ** 0.5
-        cv = std_prod / BATTER_FORM_AVG_PRODUCTION_BASELINE
+        cv = std_prod / mean_prod if mean_prod > 0 else 0.0
     else:
         cv = 0.0
 
     # Base score off last 3 games; harder ceiling (0.65) filters out average hot streaks
     base_score = min(max_pts, prod_new / 0.65 * max_pts)
 
-    # Trajectory: bonus for ascending players, penalty for declining ones.
-    # Uses BATTER_FORM_AVG_PRODUCTION_BASELINE — a fixed league-average reference —
-    # as the denominator instead of prod_old (per-player rolling mean anchor).
-    ratio = prod_new / BATTER_FORM_AVG_PRODUCTION_BASELINE
+    # Trajectory: compare recent 2-game production against the player's own prior 5-game window.
+    # No historical constant — ratio is relative to the player's own recent baseline.
+    # Falls back to neutral (1.0) when no prior window is available.
+    if prod_old > 0:
+        ratio = prod_new / prod_old
+    else:
+        ratio = 1.0
     if ratio >= 1.30:
         traj_mult = 1.15   # clearly ascending
     elif ratio >= 1.10:
@@ -597,7 +596,7 @@ def score_player(
     )
     game_logs = (
         db.query(PlayerGameLog)
-        .filter_by(player_id=player.id)
+        .filter_by(player_id=player.id, source="mlb_api")
         .order_by(PlayerGameLog.game_date.desc())
         .limit(10)
         .all()
