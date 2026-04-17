@@ -747,6 +747,88 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
     return updated
 
 
+async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
+    """
+    Fetch weather (temperature + wind) for each game in the slate from Open-Meteo
+    and store on SlateGame.
+
+    Populates: wind_speed_mph, wind_direction, temperature_f.
+
+    wind_direction is stored as "OUT" when the wind blows toward center field at
+    the park (park-specific compass analysis), or as an 8-point compass label
+    (N/NE/E/SE/S/SW/W/NW) otherwise.  "OUT" is the only value that triggers
+    BATTER_ENV_WIND_OUT_BONUS in compute_batter_env_score().
+
+    NON-FATAL: failures are logged as warnings and skipped.  Missing weather
+    data leaves the fields NULL, which env scoring treats as neutral (no bonus,
+    no penalty).  Unlike Vegas lines, weather is best-effort.
+
+    Uses Open-Meteo archive endpoint for past dates (≥ 5 days ago) and the
+    forecast endpoint for today or near-future games.
+    """
+    from datetime import date as _date, timedelta
+
+    from app.core.open_meteo import STADIUM_COORDINATES, get_game_weather
+
+    games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+    if not games:
+        return 0
+
+    today = _date.today()
+    use_archive = (today - slate.date).days >= 5
+
+    updated = 0
+    for game in games:
+        park = game.park_team or game.home_team
+        coords = STADIUM_COORDINATES.get(park)
+        if coords is None:
+            logger.warning("No stadium coordinates for park_team=%s — skipping weather", park)
+            continue
+
+        lat, lon = coords
+
+        # Parse scheduled time to determine the closest UTC hour for weather lookup.
+        # scheduled_game_time is stored as e.g. "7:05 PM ET".  April games are EDT
+        # (UTC-4), so 7:05 PM EDT = 23:05 UTC.  Default to 23 (7 PM ET) if missing.
+        utc_hour = 23
+        if game.scheduled_game_time:
+            try:
+                time_str = game.scheduled_game_time.replace(" ET", "").strip()
+                from datetime import datetime as _dt
+                parsed = _dt.strptime(time_str, "%I:%M %p")
+                # April is EDT = UTC-4; add 4 hours
+                utc_hour = (parsed.hour + 4) % 24
+            except (ValueError, AttributeError):
+                pass
+
+        weather = await get_game_weather(
+            lat=lat,
+            lon=lon,
+            game_date=slate.date,
+            game_utc_hour=utc_hour,
+            park_team=park,
+            use_archive=use_archive,
+        )
+        if weather is None:
+            logger.warning(
+                "Weather fetch failed for %s vs %s on %s — leaving NULL",
+                game.home_team, game.away_team, slate.date,
+            )
+            continue
+
+        game.wind_speed_mph  = weather["wind_speed_mph"]
+        game.wind_direction  = weather["wind_direction"]
+        game.temperature_f   = weather["temperature_f"]
+        updated += 1
+
+    db.commit()
+    logger.info(
+        "Weather enriched for %d of %d games on %s",
+        updated, len(games), slate.date,
+    )
+    return updated
+
+
 async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
     """
     Fetch Vegas lines (moneylines + O/U totals) from The Odds API and store
