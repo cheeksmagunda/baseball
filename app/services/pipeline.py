@@ -496,6 +496,12 @@ async def run_full_pipeline(db: Session, game_date: date) -> dict:
         # no fallback per "no fallbacks ever" rule.
         await enrich_slate_game_vegas_lines(db, slate)
 
+        # Enrich weather (temperature + wind) from Open-Meteo.
+        # NON-FATAL: failures leave wind/temp fields NULL, which env scoring
+        # treats as neutral.  Never raises.
+        from app.services.data_collection import enrich_slate_game_weather
+        await enrich_slate_game_weather(db, slate)
+
     scores = run_score_slate(db, game_date)
 
     return {

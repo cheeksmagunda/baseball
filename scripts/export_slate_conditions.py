@@ -28,6 +28,7 @@ FIELDNAMES = [
     "home_bullpen_era", "away_bullpen_era",
     "series_home_wins", "series_away_wins", "home_team_l10_wins", "away_team_l10_wins",
     "park_team",
+    "wind_speed_mph", "wind_direction", "temperature_f",
 ]
 
 
@@ -87,6 +88,9 @@ def export(target_date: date) -> None:
             "home_team_l10_wins": g.home_team_l10_wins,
             "away_team_l10_wins": g.away_team_l10_wins,
             "park_team": g.park_team,
+            "wind_speed_mph": g.wind_speed_mph,
+            "wind_direction": g.wind_direction,
+            "temperature_f": g.temperature_f,
         })
 
     write_header = not CONDITIONS_CSV.exists() or CONDITIONS_CSV.stat().st_size == 0
