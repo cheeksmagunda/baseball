@@ -19,8 +19,10 @@ class GameEnvironment(BaseModel):
     away_moneyline: int | None = None
     home_starter: str | None = None
     home_starter_mlb_id: int | None = None
+    home_starter_hand: str | None = None
     away_starter: str | None = None
     away_starter_mlb_id: int | None = None
+    away_starter_hand: str | None = None
     home_starter_era: float | None = None
     away_starter_era: float | None = None
     home_starter_whip: float | None = None
@@ -52,7 +54,6 @@ class FilterCard(BaseModel):
     batting_order: int | None = None
     platoon_advantage: bool = False
     drafts: int | None = None  # ownership data
-    is_most_drafted_3x: bool = False  # 92% batter bust rate (V5.0 retrain) — hard-excluded from S5
 
 
 # ---------------------------------------------------------------------------

@@ -559,6 +559,16 @@ def compute_batter_env_score(
         venue = min(1.0, venue + BATTER_ENV_WARM_TEMP_BONUS)
         factors.append(f"Warm conditions ({temperature_f}°F)")
 
+    # Compound signal: hot day at hitter park or cold day at pitcher park
+    if temperature_f is not None and park_team:
+        pf = PARK_HR_FACTORS.get(park_team, 1.0)
+        if temperature_f > BATTER_ENV_COMPOUND_HOT_THRESHOLD and pf > BATTER_ENV_COMPOUND_PARK_THRESHOLD:
+            venue = min(1.0, venue + BATTER_ENV_COMPOUND_BONUS)
+            factors.append(f"Hot+hitter park synergy ({temperature_f}°F at {park_team})")
+        elif temperature_f < BATTER_ENV_COMPOUND_COLD_THRESHOLD and pf < BATTER_ENV_COMPOUND_PARK_THRESHOLD:
+            venue = max(0.0, venue - BATTER_ENV_COMPOUND_BONUS)
+            factors.append(f"Cold+pitcher park synergy ({temperature_f}°F at {park_team})")
+
     # ---------------------------------------------------------------
     # Group D: Series/Momentum context (±0.8 additive)
     # Addresses the "correctly-avoided player disguised as a ghost"
@@ -715,14 +725,24 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
                         barrel%, SB pace, ERA, WHIP, recent form, 0-100).
                         Range: 0.85–1.15 (1.35× swing).
 
-    Plus contextual multipliers: stack_bonus, dnp_adj.
+    Plus contextual multipliers: stack_bonus, dnp_adj, volatility_amplifier.
 
     Formula:
-        base_ev = env_factor × trait_factor × stack_bonus × dnp_adj × 100
+        base_ev = env_factor × volatility_amplifier × trait_factor × stack_bonus × dnp_adj × 100
     """
     raw_env = max(candidate.env_score, 0.0)
     env_factor = ENV_MODIFIER_FLOOR + raw_env * (ENV_MODIFIER_CEILING - ENV_MODIFIER_FLOOR)
     env_factor = max(ENV_MODIFIER_FLOOR, min(ENV_MODIFIER_CEILING, env_factor))
+
+    # Volatility amplifier: high-variance players amplify env conditions (both good and bad).
+    # Recent form CV is only available for batters; pitchers default to 1.0.
+    volatility_amplifier = 1.0
+    if candidate.traits:
+        for trait in candidate.traits:
+            if trait.name == "recent_form" and "recent_form_cv" in trait.metadata:
+                cv = trait.metadata["recent_form_cv"]
+                volatility_amplifier = 1.0 + (cv * BATTER_FORM_VOLATILITY_MAX)
+                break
 
     trait_floor = MIN_SCORE_THRESHOLD / 100.0
     raw_trait = max(candidate.total_score, float(MIN_SCORE_THRESHOLD)) / 100.0
@@ -736,6 +756,7 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
 
     return (
         env_factor
+        * volatility_amplifier
         * trait_factor
         * stack_bonus
         * dnp_adj

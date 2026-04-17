@@ -53,6 +53,8 @@ class PlayerStats(Base):
     so: Mapped[int] = mapped_column(Integer, default=0)
     avg: Mapped[float | None] = mapped_column(Float, nullable=True)
     ops: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ops_vs_lhp: Mapped[float | None] = mapped_column(Float, nullable=True)  # OPS vs left-handed pitchers
+    ops_vs_rhp: Mapped[float | None] = mapped_column(Float, nullable=True)  # OPS vs right-handed pitchers
     iso: Mapped[float | None] = mapped_column(Float, nullable=True)
     barrel_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 

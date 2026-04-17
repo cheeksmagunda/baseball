@@ -81,13 +81,15 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
 
         game_pk = game.get("gamePk")
 
-        # Extract probable pitcher names and MLB IDs from schedule hydration
+        # Extract probable pitcher names, MLB IDs, and handedness from schedule hydration
         home_prob = game.get("teams", {}).get("home", {}).get("probablePitcher", {})
         away_prob = game.get("teams", {}).get("away", {}).get("probablePitcher", {})
         home_starter_name = home_prob.get("fullName") if home_prob else None
         away_starter_name = away_prob.get("fullName") if away_prob else None
         home_starter_mlb_id = home_prob.get("id") if home_prob else None
         away_starter_mlb_id = away_prob.get("id") if away_prob else None
+        home_starter_hand = home_prob.get("pitchHand", {}).get("code") if home_prob else None
+        away_starter_hand = away_prob.get("pitchHand", {}).get("code") if away_prob else None
 
         # Extract scheduled game time from MLB API gameDate field
         # e.g. "2026-04-11T23:05:00Z" → "7:05 PM ET"
@@ -112,8 +114,10 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
                 game_status=game_status or None,
                 home_starter=home_starter_name,
                 home_starter_mlb_id=home_starter_mlb_id,
+                home_starter_hand=home_starter_hand,
                 away_starter=away_starter_name,
                 away_starter_mlb_id=away_starter_mlb_id,
+                away_starter_hand=away_starter_hand,
                 scheduled_game_time=scheduled_game_time,
             )
             # Set scores if game is Final
@@ -131,10 +135,14 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
                 existing.home_starter = home_starter_name
             if home_starter_mlb_id and not existing.home_starter_mlb_id:
                 existing.home_starter_mlb_id = home_starter_mlb_id
+            if home_starter_hand and not existing.home_starter_hand:
+                existing.home_starter_hand = home_starter_hand
             if away_starter_name and not existing.away_starter:
                 existing.away_starter = away_starter_name
             if away_starter_mlb_id and not existing.away_starter_mlb_id:
                 existing.away_starter_mlb_id = away_starter_mlb_id
+            if away_starter_hand and not existing.away_starter_hand:
+                existing.away_starter_hand = away_starter_hand
             if scheduled_game_time and not existing.scheduled_game_time:
                 existing.scheduled_game_time = scheduled_game_time
             # Update scores if game is now Final
@@ -485,6 +493,19 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
                     decision=gs.get("decision", ""),
                 )
                 db.add(log)
+
+        elif stat_type == "statSplits" and group.get("group", {}).get("displayName") == "hitting":
+            # Fetch platoon OPS splits (vs left-handed and right-handed pitchers)
+            for split in splits:
+                split_code = split.get("split", {}).get("code", "")
+                s = split.get("stat", {})
+                ops_str = s.get("ops", "")
+                ops = float(ops_str) if ops_str else None
+
+                if split_code == "vl" and ops is not None:
+                    ps.ops_vs_lhp = ops
+                elif split_code == "vr" and ops is not None:
+                    ps.ops_vs_rhp = ops
 
     db.commit()
     return ps

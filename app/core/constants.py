@@ -218,6 +218,11 @@ ENV_MODIFIER_CEILING = 1.30
 TRAIT_MODIFIER_FLOOR = 0.85
 TRAIT_MODIFIER_CEILING = 1.15
 
+# Recent form volatility modifier — applies when recent_form CV is high.
+# High variance (CV near 1.0) in recent production signals sensitivity to conditions.
+# Max amplification: 1.0 + (1.0 × 0.12) = 1.12x env_score for highly volatile players.
+BATTER_FORM_VOLATILITY_MAX = 0.12
+
 # ---------------------------------------------------------------------------
 # Moonshot constants (dual-lineup optimizer)
 # ---------------------------------------------------------------------------
@@ -332,6 +337,8 @@ DEFAULT_OPP_OPS = 0.730               # 2026 league-average team OPS
 DEFAULT_OPP_K_PCT = 0.22              # 2026 league-average team K%
 DEFAULT_PITCHER_ERA = 5.0             # league-worst-tier ERA (conservative)
 DEFAULT_PITCHER_WHIP = 1.5            # league-worst-tier WHIP (conservative)
+DEFAULT_BATTER_OPS_VS_LHP = 0.720     # league-average batter OPS vs left-handed pitchers
+DEFAULT_BATTER_OPS_VS_RHP = 0.740     # league-average batter OPS vs right-handed pitchers
 
 # ---------------------------------------------------------------------------
 # Graduated env-score scaling thresholds
@@ -373,6 +380,12 @@ BATTER_ENV_WARM_TEMP_THRESHOLD = 80      # °F at or above → warm-weather bonu
 BATTER_ENV_WARM_TEMP_BONUS = 0.2         # venue bonus for warm conditions
 BATTER_ENV_WIND_OUT_BONUS = 0.5          # venue bonus for wind blowing out
 BATTER_ENV_WIND_OUT_DIRECTIONS = ("OUT",)
+
+# Batter env factors — Group C compound (temp × park interaction)
+BATTER_ENV_COMPOUND_HOT_THRESHOLD = 85      # °F above this triggers compound bonus
+BATTER_ENV_COMPOUND_COLD_THRESHOLD = 55     # °F below this triggers compound penalty
+BATTER_ENV_COMPOUND_PARK_THRESHOLD = 1.0    # park factor boundary (>1.0 = hitter, <1.0 = pitcher)
+BATTER_ENV_COMPOUND_BONUS = 0.3             # additive to Group C for favorable correlated signals
 
 # Batter env factors — Group D (series/momentum)
 # Applied as bonus/deduction based on series context and recent form.

@@ -122,6 +122,7 @@ def _prepare_batter_env_kwargs(game: GameEnvironment | None, card: FilterCard) -
         _is_home = game.home_team.upper() == card.team.upper()
         _opp_era = game.away_starter_era if _is_home else game.home_starter_era
         _opp_whip = game.away_starter_whip if _is_home else game.home_starter_whip
+        _starter_hand = game.away_starter_hand if _is_home else game.home_starter_hand
         if _opp_era is not None or _opp_whip is not None:
             score_kwargs["opp_pitcher_stats"] = {
                 "era": _opp_era if _opp_era is not None else DEFAULT_PITCHER_ERA,
@@ -132,6 +133,7 @@ def _prepare_batter_env_kwargs(game: GameEnvironment | None, card: FilterCard) -
         score_kwargs["wind_speed_mph"] = game.wind_speed_mph
         score_kwargs["wind_direction"] = game.wind_direction
         score_kwargs["temperature_f"] = game.temperature_f
+        score_kwargs["starter_hand"] = _starter_hand
     return score_kwargs
 
 
@@ -470,8 +472,10 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             away_moneyline=g.away_moneyline,
             home_starter=g.home_starter,
             home_starter_mlb_id=g.home_starter_mlb_id,
+            home_starter_hand=g.home_starter_hand,
             away_starter=g.away_starter,
             away_starter_mlb_id=g.away_starter_mlb_id,
+            away_starter_hand=g.away_starter_hand,
             home_starter_era=g.home_starter_era,
             away_starter_era=g.away_starter_era,
             home_starter_whip=g.home_starter_whip,
@@ -512,7 +516,6 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             batting_order=sp.batting_order,
             platoon_advantage=bool(sp.platoon_advantage),
             drafts=sp.drafts,
-            is_most_drafted_3x=sp.is_most_drafted_3x,
         ))
 
     return cards, games
