@@ -39,7 +39,7 @@ See CLAUDE.md § "T-65 Sniper Architecture" for complete timing details.
 
 1. **Collect** (`app/services/data_collection.py`) — Fetch fresh MLB schedule, player stats, game context, Vegas lines
 2. **Score** (`app/services/scoring_engine.py`) — Rate each player 0-100 via trait-based profiling (pitchers: 5 traits, batters: 7 traits)
-3. **Filter** (`app/services/filter_strategy.py`) — Apply V8.0 strategy: slate classification, popularity/crowd-avoidance, environmental advantage, composition rules
+3. **Filter** (`app/services/filter_strategy.py`) — Apply V9.0 strategy: exclude FADE players, score env/trait EV, enforce composition rules
 4. **Optimize** (`app/routers/filter_strategy.py` → `run_dual_filter_strategy`) — Produce Starting 5 + Moonshot lineups, freeze in cache
 
 The primary optimization path is `filter_strategy`. The `/api/pipeline/*` manual endpoints exist for post-slate testing only and are gated to prevent mid-slate interference.
@@ -72,7 +72,7 @@ It's not a machine learning model — it's a **rule-based scoring engine** backe
 
 The scoring engine outputs a **0-100 ranking signal**, not an RS prediction. We don't pretend to know Real Score — we rank players by pre-game indicators and let the optimizer do the rest.
 
-**Important:** `card_boost` is revealed during/after the draft and must NEVER be used as a scoring engine input. League-average defaults (ERA, WHIP, OPS, K%) and all scaling thresholds are centralized in `app/core/constants.py`. Env-score functions use shared `_graduated_scale()` helpers in `app/services/filter_strategy.py`.
+**Important:** `card_boost` is revealed during/after the draft and must NEVER be used as a scoring engine input. League-average defaults (ERA, WHIP, OPS, K%) and all scaling thresholds are centralized in `app/core/constants.py`. Env-score functions use shared `graduated_scale()` helpers in `app/core/utils.py`.
 
 ## Popularity Signal Aggregator (Pre-Game Signals Only)
 
@@ -86,7 +86,7 @@ The optimizer automatically fades over-hyped players and targets under-the-radar
 
 **Intentionally excluded:** RotoGrinders/NumberFire platform ownership — this is only visible during the draft and violates the pre-game signals constraint.
 
-**Classification:** FADE (3.0× EV swing: 0.50x penalty), TARGET (3.0× EV swing: 1.50x bonus), or NEUTRAL (1.0x). This is the **primary** EV signal. Target batters average RS 3.57 with 73.6% Highest-Value rate. Fade batters average RS 0.98 with 9.6% HV rate — a **3.6× differential** that dominates other pre-game signals. See CLAUDE.md § "V8.0 Core Architecture" for detailed EV formula.
+**Classification:** FADE, TARGET, or NEUTRAL. FADE players are **excluded from the candidate pool before EV runs** — they never reach the optimizer. TARGET and NEUTRAL players pass the gate and are scored identically by env/trait EV (no popularity multiplier). Target batters average RS 3.57 with 73.6% Highest-Value rate. Fade batters average RS 0.98 with 9.6% HV rate — a **3.6× differential** that makes the exclusion gate the single most impactful pre-game filter. See CLAUDE.md § "V9.0 Core Architecture" for the full EV formula.
 
 ### Sharp Signal (Underground)
 
@@ -100,7 +100,7 @@ A fifth signal source used exclusively by the Moonshot lineup:
 
 If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +35% EV boost in Moonshot only.
 
-## Dual-Lineup Optimizer (V5.0 "Pitcher-Anchor Rule")
+## Dual-Lineup Optimizer (V9.0 — Popularity Gate + Env/Trait EV)
 
 The optimizer produces **two lineups** from the same ranked candidate pool. Each lineup is structurally fixed at **exactly 1 starting pitcher + 4 batters**, with the pitcher pinned to Slot 1 (2.0x multiplier):
 
@@ -159,11 +159,17 @@ All endpoints are under `/api/`.
 | POST | `/api/score/slate/{date}` | Score all players for a slate |
 | GET | `/api/score/{date}/rankings` | Get cached rankings |
 
+### Filter Strategy (Primary Optimizer)
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/filter-strategy/status` | T-65 countdown, cache state, first-pitch time |
+| GET | `/api/filter-strategy/optimize` | Serve frozen Starting 5 + Moonshot picks |
+| POST | `/api/filter-strategy/classify-slate` | Classify a slate without running the optimizer |
+| GET | `/api/filter-strategy/diagnostics` | Pipeline health dashboard |
+
 ### Draft
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/draft/optimize` | Optimal Starting 5 lineup (popularity-aware) |
-| POST | `/api/draft/dual-optimize` | Both Starting 5 + Moonshot lineups (sharp-signal-aware) |
 | POST | `/api/draft/evaluate` | Evaluate a proposed lineup |
 
 ### Popularity
@@ -184,6 +190,7 @@ All endpoints are under `/api/`.
 | POST | `/api/pipeline/fetch/{date}` | Fetch schedule + stats |
 | POST | `/api/pipeline/score/{date}` | Score a slate |
 | POST | `/api/pipeline/run/{date}` | Full pipeline (fetch → score) |
+| POST | `/api/pipeline/filter-strategy/{date}` | Full 5-filter pipeline (post-slate/testing only) |
 
 ## Tech Stack
 
@@ -228,13 +235,13 @@ app/
     ├── data_collection.py  # MLB API data fetching
     └── pipeline.py         # Fetch → Score → Rank orchestrator
 data/
-├── historical_players.csv           # 677 rows / 19 dates — master player ledger
-├── historical_winning_drafts.csv    # 655 rows / 19 dates — top-ranked lineups (5 slots/lineup)
-├── historical_slate_results.json    # 19 entries            — per-date slate envelope
-└── hv_player_game_stats.csv         # 290 rows / 19 dates — box scores for HV players
+├── historical_players.csv           # 822 rows / 23 dates — master player ledger
+├── historical_winning_drafts.csv    # 835 rows / 23 dates — top-ranked lineups (5 slots/lineup)
+├── historical_slate_results.json    # 23 entries            — per-date slate envelope
+└── hv_player_game_stats.csv         # 357 rows / 23 dates — box scores for HV players
 ```
 
-Current coverage: 2026-03-25 → 2026-04-12 (19 consecutive slates). All four files stay in lockstep.
+Current coverage: 2026-03-25 → 2026-04-16 (23 slates). All four files stay in lockstep.
 
 ## Getting Started
 

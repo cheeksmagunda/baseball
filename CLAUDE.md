@@ -190,14 +190,14 @@ The app uses an event-driven timing model that triggers the ONLY full pipeline r
 
 ## Data Files (`/data/`)
 
-Current coverage (as of 2026-04-14): **21 consecutive dates, 2026-03-25 → 2026-04-14**. All four files stay in lockstep — every date present in one is present in all four.
+Current coverage (as of 2026-04-16): **23 slates, 2026-03-25 → 2026-04-16**. All four files stay in lockstep — every date present in one is present in all four.
 
 | File | Format | Current size | Purpose |
 |---|---|---|---|
-| `historical_players.csv` | CSV | 677 rows / 19 dates | Master player ledger (1 row per player/day). Contains total_value, card_boost, drafts, leaderboard flags. **Null `real_score` / `total_value` indicates a DNP / scratch — there is no separate flag.** Avg ~35 rows/date (range 22–56). |
-| `historical_winning_drafts.csv` | CSV | 655 rows / 19 dates | Top-ranked lineups per date (5 rows per lineup = one per slot). Collection depth varies by date (4–12 ranks observed); the collector aspires to rank-20 but does not always reach it. |
-| `historical_slate_results.json` | JSON array | 19 entries | Per-date MLB slate outcome envelope: `date`, `game_count`, `games[]`, `season_stage`, `source`, `saved_at`, `notes`. One object per slate day. |
-| `hv_player_game_stats.csv` | CSV | 290 rows / 19 dates | Actual box score stats for every Highest-Value player appearance to date (grows each slate). Batting columns (ab, r, h, hr, rbi, bb, so) and pitching columns (ip, er, k_pitching, decision) coexist in one table — blanks indicate the column does not apply to that player. |
+| `historical_players.csv` | CSV | 822 rows / 23 dates | Master player ledger (1 row per player/day). Contains total_value, card_boost, drafts, leaderboard flags. **Null `real_score` / `total_value` indicates a DNP / scratch — there is no separate flag.** Avg ~35 rows/date (range 22–56). |
+| `historical_winning_drafts.csv` | CSV | 835 rows / 23 dates | Top-ranked lineups per date (5 rows per lineup = one per slot). Collection depth varies by date (4–12 ranks observed); the collector aspires to rank-20 but does not always reach it. |
+| `historical_slate_results.json` | JSON array | 23 entries | Per-date MLB slate outcome envelope: `date`, `game_count`, `games[]`, `season_stage`, `source`, `saved_at`, `notes`. One object per slate day. |
+| `hv_player_game_stats.csv` | CSV | 357 rows / 23 dates | Actual box score stats for every Highest-Value player appearance to date (grows each slate). Batting columns (ab, r, h, hr, rbi, bb, so) and pitching columns (ip, er, k_pitching, decision) coexist in one table — blanks indicate the column does not apply to that player. |
 
 ## Env Scoring Calibration
 
@@ -367,12 +367,12 @@ All magic numbers, thresholds, and league-average defaults are centralized here.
 - **Batter env thresholds:** `BATTER_ENV_VEGAS_FLOOR/CEILING`, `BATTER_ENV_ERA_FLOOR/CEILING`, `BATTER_ENV_WIND_OUT_DIRECTIONS`, etc.
 - **Unknown-data neutral:** `UNKNOWN_SCORE_RATIO = 0.5` — used when trait data is missing
 
-## Graduated Scaling Helpers (`app/services/filter_strategy.py`)
+## Graduated Scaling Helpers (`app/core/utils.py`)
 
-The env-score functions use shared helpers instead of duplicated inline patterns:
+The env-score functions use shared helpers instead of duplicated inline patterns (defined at lines 117–143 of `app/core/utils.py`; imported by `filter_strategy.py`):
 
-- `_graduated_scale(value, floor, ceiling)` → 0.0–1.0 (works for ascending and descending ranges)
-- `_graduated_scale_moneyline(moneyline, ml_floor, ml_ceiling)` → 0.0–1.0 (negative-number-aware)
+- `graduated_scale(value, floor, ceiling)` → 0.0–1.0 (works for ascending and descending ranges)
+- `graduated_scale_moneyline(moneyline, ml_floor, ml_ceiling)` → 0.0–1.0 (negative-number-aware)
 
 ## Popularity Signal Aggregator (`app/services/popularity.py`)
 
