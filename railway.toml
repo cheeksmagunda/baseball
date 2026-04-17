@@ -2,6 +2,13 @@
 dockerfilePath = "Dockerfile"
 
 [deploy]
+# IMPORTANT: single-replica only. The T-65 slate monitor and
+# startup_done_event live in in-process memory; horizontal scaling
+# would fire the T-65 pipeline on each replica, doubling MLB + Odds
+# API calls (Odds API has a 500/month quota). Freeze-state invariants
+# are mirrored to Redis so restarts recover cleanly, but scaling out
+# is still unsupported.
+numReplicas = 1
 startCommand = "python run.py"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
