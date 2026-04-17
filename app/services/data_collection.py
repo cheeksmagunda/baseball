@@ -342,26 +342,25 @@ async def fetch_boxscore_results(db: Session, slate: Slate) -> int:
 
     Returns the number of games updated.
     """
-    import logging
-    logger = logging.getLogger(__name__)
-
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
     updated = 0
 
     for game in games:
         if game.mlb_game_pk is None:
-            logger.warning("SlateGame %s (%s @ %s) has no mlb_game_pk — skipping", game.id, game.away_team, game.home_team)
-            continue
+            raise RuntimeError(
+                f"SlateGame {game.id} ({game.away_team} @ {game.home_team}) has no "
+                f"mlb_game_pk — cannot reconcile post-game scores. Fix the schedule "
+                f"ingest rather than skipping (skipping leaves the slate stuck in "
+                f"'in_progress' and blocks tomorrow's T-65 pipeline)."
+            )
 
         # Skip if already populated
         if game.home_score is not None and game.away_score is not None:
             continue
 
-        try:
-            boxscore = await get_game_boxscore(game.mlb_game_pk)
-        except Exception as exc:
-            logger.warning("Failed to fetch boxscore for game_pk=%s: %s", game.mlb_game_pk, exc)
-            continue
+        # Let boxscore fetch failures propagate. Silent skips leave the
+        # slate permanently "in_progress" and block cache turnover.
+        boxscore = await get_game_boxscore(game.mlb_game_pk)
 
         teams = boxscore.get("teams", {})
         home_runs = teams.get("home", {}).get("teamStats", {}).get("batting", {}).get("runs")

@@ -79,19 +79,23 @@ async def lifespan(app: FastAPI):
 
     init_db()
 
-    # Startup Validation: Redis (if configured)
-    if settings.redis_url:
-        try:
-            import redis as redis_lib
-            client = redis_lib.from_url(settings.redis_url, decode_responses=True)
-            client.ping()
-            logger.info("Redis connectivity verified at startup")
-        except Exception as e:
-            raise RuntimeError(
-                f"CRITICAL: Redis configured but unreachable at startup. "
-                f"Redis is required for cache layer — no fallback to SQLite. "
-                f"Restore Redis dyno or remove DFS_REDIS_URL from config. Error: {e}"
-            )
+    # Startup Validation: Redis — REQUIRED, never optional.
+    if not settings.redis_url:
+        raise RuntimeError(
+            "CRITICAL: DFS_REDIS_URL is not set. Redis is required for the cache "
+            "layer (frozen T-65 picks, multi-replica coordination). No DB-only "
+            "fallback. Set DFS_REDIS_URL before starting the app."
+        )
+    try:
+        import redis as redis_lib
+        client = redis_lib.from_url(settings.redis_url, decode_responses=True)
+        client.ping()
+        logger.info("Redis connectivity verified at startup")
+    except Exception as e:
+        raise RuntimeError(
+            f"CRITICAL: Redis configured but unreachable at startup. "
+            f"Redis is required for cache layer — no fallback. Error: {e}"
+        )
 
     # Startup Validation: Odds API Key
     if not settings.odds_api_key:
@@ -185,7 +189,10 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    # No cookies / Authorization header are used by this API, so credentials
+    # are off. This also makes `allow_origins=["*"]` valid per the CORS spec
+    # (credentialed requests with wildcard origins are rejected by browsers).
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
