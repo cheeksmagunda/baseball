@@ -12,12 +12,13 @@ import asyncio
 import logging
 from datetime import date
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload, joinedload
 
 logger = logging.getLogger(__name__)
 
 from app.core.constants import PITCHER_POSITIONS
-from app.models.player import Player
+from app.models.player import Player, PlayerStats, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.models.scoring import PlayerScore, ScoreBreakdown
 from app.services.scoring_engine import score_player, PlayerScoreResult
@@ -38,6 +39,61 @@ from app.services.filter_strategy import (
 )
 
 
+def _build_starter_stats_cache(
+    db: Session, games: list[SlateGame], season: int
+) -> dict[str, dict]:
+    """Batch-fetch stats for every probable starter on *games* in 2 SQL queries.
+
+    Returns {starter_name: {"era", "whip", "k_per_9", "pitch_hand", "player_id"}}.
+    Starters with no matching Player/PlayerStats map to an empty dict so callers
+    can safely do cache.get(name, {}).get("era").
+    """
+    starters: list[tuple[str, str, str]] = []  # (raw_name, team, normalized_name)
+    for g in games:
+        if g.home_starter:
+            starters.append((g.home_starter, g.home_team, normalize_name(g.home_starter)))
+        if g.away_starter:
+            starters.append((g.away_starter, g.away_team, normalize_name(g.away_starter)))
+    if not starters:
+        return {}
+
+    unique_keys = {(norm, team) for _, team, norm in starters}
+    conditions = [
+        and_(Player.name_normalized == norm, Player.team == team)
+        for norm, team in unique_keys
+    ]
+    players = db.query(Player).filter(or_(*conditions)).all()
+    player_by_key = {(p.name_normalized, p.team): p for p in players}
+
+    stats_by_pid: dict[int, PlayerStats] = {}
+    if players:
+        rows = (
+            db.query(PlayerStats)
+            .filter(PlayerStats.player_id.in_([p.id for p in players]))
+            .filter(PlayerStats.season == season)
+            .all()
+        )
+        stats_by_pid = {s.player_id: s for s in rows}
+
+    cache: dict[str, dict] = {}
+    for name, team, norm in starters:
+        if name in cache:
+            continue
+        player = player_by_key.get((norm, team))
+        if not player:
+            cache[name] = {}
+            continue
+        ps = stats_by_pid.get(player.id)
+        cache[name] = {
+            "era": ps.era if ps else None,
+            "whip": ps.whip if ps else None,
+            "k_per_9": ps.k_per_9 if ps else None,
+            "pitch_hand": player.pitch_hand,
+            "player_id": player.id,
+        }
+    return cache
+
+
 async def run_fetch(db: Session, game_date: date) -> dict:
     """Stage 1: Fetch today's schedule and create slate."""
     slate = await fetch_schedule_for_date(db, game_date)
@@ -50,8 +106,6 @@ async def run_fetch(db: Session, game_date: date) -> dict:
 
 async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     """Fetch stats for all players in a slate, then backfill SlateGame starter stats."""
-    from app.models.player import PlayerStats
-
     slate = db.query(Slate).filter_by(date=game_date).first()
     if not slate:
         return {"error": "No slate found for this date"}
@@ -90,74 +144,49 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     # Backfill SlateGame starter ERA/K9 from newly-fetched PlayerStats.
     # This feeds the environmental scoring engine (Filter 2).
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+    starter_cache = _build_starter_stats_cache(db, games, game_date.year)
     for game in games:
-        for starter_field, era_field, whip_field, k9_field, team_field in [
-            ("home_starter", "home_starter_era", "home_starter_whip", "home_starter_k_per_9", "home_team"),
-            ("away_starter", "away_starter_era", "away_starter_whip", "away_starter_k_per_9", "away_team"),
+        for starter_field, era_field, whip_field, k9_field in [
+            ("home_starter", "home_starter_era", "home_starter_whip", "home_starter_k_per_9"),
+            ("away_starter", "away_starter_era", "away_starter_whip", "away_starter_k_per_9"),
         ]:
             starter_name = getattr(game, starter_field)
-            if not starter_name:
+            if not starter_name or getattr(game, era_field) is not None:
                 continue
-            if getattr(game, era_field) is not None:
-                continue  # already populated
-
-            team = getattr(game, team_field)
-            from app.models.player import normalize_name
-            norm = normalize_name(starter_name)
-            player = db.query(Player).filter_by(name_normalized=norm, team=team).first()
-            if not player:
-                continue
-
-            ps = (
-                db.query(PlayerStats)
-                .filter_by(player_id=player.id, season=game_date.year)
-                .first()
-            )
-            if not ps:
-                continue
-
-            if ps.era is not None:
-                setattr(game, era_field, ps.era)
-            if ps.whip is not None:
-                setattr(game, whip_field, ps.whip)
-            if ps.k_per_9 is not None:
-                setattr(game, k9_field, ps.k_per_9)
+            stats = starter_cache.get(starter_name, {})
+            if stats.get("era") is not None:
+                setattr(game, era_field, stats["era"])
+            if stats.get("whip") is not None:
+                setattr(game, whip_field, stats["whip"])
+            if stats.get("k_per_9") is not None:
+                setattr(game, k9_field, stats["k_per_9"])
 
     # Fetch team batting stats (OPS, K%) for all teams on the slate.
     # This feeds Filter 2 pitcher env scoring: opponent OPS (Factor 1) and K% (Factor 2).
     if slate:
         await enrich_slate_game_team_stats(db, slate, game_date.year)
 
-    # Compute platoon_advantage for each batter SlatePlayer now that bat_side
-    # and pitch_hand have been written to Player records above.
-    if slate:
-        from app.models.player import normalize_name
-        games_by_id: dict[int, SlateGame] = {
-            g.id: g for g in db.query(SlateGame).filter_by(slate_id=slate.id).all()
-        }
-        for sp in slate_players:
-            player = sp.player
-            if not player or player.position in PITCHER_POSITIONS:
-                continue
-            if not sp.game_id or sp.game_id not in games_by_id:
-                continue
-            game = games_by_id[sp.game_id]
-            is_home = game.home_team == player.team
-            opp_starter_name = game.away_starter if is_home else game.home_starter
-            opp_starter_team = game.away_team if is_home else game.home_team
-            if not opp_starter_name:
-                continue
-            norm = normalize_name(opp_starter_name)
-            opp_pitcher = db.query(Player).filter_by(
-                name_normalized=norm, team=opp_starter_team
-            ).first()
-            if not opp_pitcher or not opp_pitcher.pitch_hand or not player.bat_side:
-                continue
-            sp.platoon_advantage = (
-                (player.bat_side == "L" and opp_pitcher.pitch_hand == "R")
-                or (player.bat_side == "R" and opp_pitcher.pitch_hand == "L")
-            )
-        db.commit()
+    # Compute platoon_advantage for each batter SlatePlayer using the starter
+    # cache built above — opposing pitch_hand is already resolved there.
+    games_by_id: dict[int, SlateGame] = {g.id: g for g in games}
+    for sp in slate_players:
+        player = sp.player
+        if not player or player.position in PITCHER_POSITIONS:
+            continue
+        if not sp.game_id or sp.game_id not in games_by_id:
+            continue
+        game = games_by_id[sp.game_id]
+        is_home = game.home_team == player.team
+        opp_starter_name = game.away_starter if is_home else game.home_starter
+        if not opp_starter_name:
+            continue
+        opp_pitch_hand = starter_cache.get(opp_starter_name, {}).get("pitch_hand")
+        if not opp_pitch_hand or not player.bat_side:
+            continue
+        sp.platoon_advantage = (
+            (player.bat_side == "L" and opp_pitch_hand == "R")
+            or (player.bat_side == "R" and opp_pitch_hand == "L")
+        )
 
     db.commit()
     return {"fetched": fetched, "failed": failed}
@@ -165,8 +194,6 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
 
 def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
     """Stage 2: Score all players for a slate and store results."""
-    from app.models.player import PlayerStats, normalize_name
-
     slate = db.query(Slate).filter_by(date=game_date).first()
     if not slate:
         return []
@@ -185,30 +212,7 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
         game_lookup[g.home_team] = g
         game_lookup[g.away_team] = g
 
-    starter_stats_cache: dict[str, dict] = {}  # starter_name -> {era, whip}
-    for g in games:
-        for starter_name, team in [
-            (g.home_starter, g.home_team),
-            (g.away_starter, g.away_team),
-        ]:
-            if not starter_name or starter_name in starter_stats_cache:
-                continue
-            norm = normalize_name(starter_name)
-            starter_player = db.query(Player).filter_by(
-                name_normalized=norm, team=team
-            ).first()
-            if starter_player:
-                ps = (
-                    db.query(PlayerStats)
-                    .filter_by(player_id=starter_player.id, season=game_date.year)
-                    .first()
-                )
-                starter_stats_cache[starter_name] = {
-                    "era": ps.era if ps else None,
-                    "whip": ps.whip if ps else None,
-                }
-            else:
-                starter_stats_cache[starter_name] = {}
+    starter_stats_cache = _build_starter_stats_cache(db, games, game_date.year)
 
     # Ensure idempotency: remove any scores from a prior run of this slate.
     slate_player_ids = [sp.id for sp in slate_players]
@@ -310,31 +314,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
     slate_class = classify_slate(len(games), game_dicts)
 
     # Pre-cache opposing starter ERA/WHIP so batter matchup trait is populated.
-    from app.models.player import PlayerStats, normalize_name
-    starter_stats_cache: dict[str, dict] = {}
-    for g in games:
-        for starter_name, team in [
-            (g.home_starter, g.home_team),
-            (g.away_starter, g.away_team),
-        ]:
-            if not starter_name or starter_name in starter_stats_cache:
-                continue
-            norm = normalize_name(starter_name)
-            starter_player = db.query(Player).filter_by(
-                name_normalized=norm, team=team
-            ).first()
-            if starter_player:
-                ps = (
-                    db.query(PlayerStats)
-                    .filter_by(player_id=starter_player.id, season=game_date.year)
-                    .first()
-                )
-                starter_stats_cache[starter_name] = {
-                    "era": ps.era if ps else None,
-                    "whip": ps.whip if ps else None,
-                }
-            else:
-                starter_stats_cache[starter_name] = {}
+    starter_stats_cache = _build_starter_stats_cache(db, games, game_date.year)
 
     # Build candidates from slate players
     slate_players = (

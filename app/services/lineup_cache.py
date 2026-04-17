@@ -3,11 +3,16 @@ Persistent lineup cache.
 
 Stores the most recent dual-lineup result in three tiers:
   1. In-process memory  — fastest, zero latency
-  2. Redis              — survives restarts, shared across replicas (if configured)
-  3. SQLite DB          — durable fallback when Redis is unavailable
+  2. Redis              — REQUIRED; survives restarts, source of truth for
+                          freeze-state invariants (is_frozen, first_pitch_utc)
+  3. SQLite DB          — durable record of the frozen payload
 
-On startup the cache is warm-loaded from Redis (or DB if Redis is absent)
-so the first frontend request after a redeploy is always instant.
+Redis is NOT optional. Startup validates DFS_REDIS_URL and raises if it
+is unset or unreachable. After startup, any Redis failure also raises —
+there is no silent degradation (per CLAUDE.md "No Fallbacks. Ever.").
+
+On startup the cache is warm-loaded from Redis so the first frontend
+request after a redeploy is always instant.
 
 Turnover logic:
   - Before midnight → always serve (current slate is live).
@@ -23,6 +28,7 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 _REDIS_KEY_PREFIX = "lineup"
+_REDIS_META_PREFIX = "lineup:meta"  # freeze-state invariants, survives restarts
 _REDIS_TTL = 86400  # 24 hours
 
 
@@ -37,50 +43,82 @@ class _LineupCache:
 
     # ---------- Redis helpers ----------
 
-    def _get_redis(self) -> Optional[Any]:
-        """Return a live Redis client, or None if Redis is not configured / reachable."""
+    def _get_redis(self) -> Any:
+        """Return a live Redis client. Raises if Redis is unconfigured or unreachable."""
         if self._redis is not None:
             return self._redis
-        if self._redis_checked:
-            return None  # already tried and failed — don't retry on every call
 
-        self._redis_checked = True
         from app.config import settings
         if not settings.redis_url:
-            return None
+            raise RuntimeError(
+                "DFS_REDIS_URL is not set. Redis is required — no DB-only fallback."
+            )
 
-        try:
-            import redis as redis_lib
-            client = redis_lib.from_url(settings.redis_url, decode_responses=True)
-            client.ping()
-            self._redis = client
-            import re as _re
-            safe_url = _re.sub(r":([^@/]+)@", ":***@", settings.redis_url)
-            logger.info("Redis connected: %s", safe_url)
-        except Exception as exc:
-            logger.warning("Redis unavailable — using DB cache only: %s", exc)
-
+        import redis as redis_lib
+        client = redis_lib.from_url(settings.redis_url, decode_responses=True)
+        client.ping()
+        self._redis = client
+        self._redis_checked = True
+        import re as _re
+        safe_url = _re.sub(r":([^@/]+)@", ":***@", settings.redis_url)
+        logger.info("Redis connected: %s", safe_url)
         return self._redis
 
     def _redis_key(self, slate_date: date) -> str:
         return f"{_REDIS_KEY_PREFIX}:{slate_date.isoformat()}"
+
+    def _redis_meta_key(self, slate_date: date) -> str:
+        return f"{_REDIS_META_PREFIX}:{slate_date.isoformat()}"
+
+    def _write_meta(self) -> None:
+        """Mirror freeze-state invariants to Redis so restarts (and any sibling
+        replica) see the same view. Called whenever _is_frozen or
+        _first_pitch_utc changes."""
+        if self._slate_date is None and self._first_pitch_utc is None:
+            return
+        import json
+        slate_date = self._slate_date or date.today()
+        payload = json.dumps({
+            "frozen": self._is_frozen,
+            "first_pitch_utc": self._first_pitch_utc.isoformat()
+                if self._first_pitch_utc else None,
+        })
+        rc = self._get_redis()
+        rc.setex(self._redis_meta_key(slate_date), _REDIS_TTL, payload)
+
+    def _read_meta(self, slate_date: date) -> None:
+        """Hydrate _is_frozen and _first_pitch_utc from Redis meta, if present."""
+        import json
+        rc = self._get_redis()
+        raw = rc.get(self._redis_meta_key(slate_date))
+        if not raw:
+            return
+        meta = json.loads(raw)
+        self._is_frozen = bool(meta.get("frozen"))
+        fp = meta.get("first_pitch_utc")
+        if fp:
+            self._first_pitch_utc = datetime.fromisoformat(fp)
 
     # ---------- T-65 schedule / freeze ----------
 
     def set_schedule(self, first_pitch_utc: datetime) -> None:
         """Store first-pitch time so /status can expose the T-65 countdown before the freeze."""
         self._first_pitch_utc = first_pitch_utc
+        self._write_meta()
 
     def freeze(self, first_pitch_utc: datetime | None = None) -> None:
         """
         Freeze the cache after the T-65 final run.
 
         From this point the cache is immutable — store() calls are no-ops
-        until clear() resets state for the next day.
+        until clear() resets state for the next day. The frozen flag and
+        first-pitch time are persisted to Redis so a restart (or any sibling
+        replica) inherits the locked state without re-running the pipeline.
         """
         if first_pitch_utc is not None:
             self._first_pitch_utc = first_pitch_utc
         self._is_frozen = True
+        self._write_meta()
         logger.info("Lineup cache FROZEN — picks are locked until slate completion")
 
     def restore_and_refreeze(self, first_pitch_utc: datetime) -> bool:
@@ -88,8 +126,9 @@ class _LineupCache:
         Restore previously-frozen picks from persistent storage and re-freeze.
 
         Called on startup when T-65 has already passed for today's slate. Loads
-        from Redis/SQLite and re-freezes the cache so the monitor skips pipeline
-        regeneration (which would fail because games may be Live/Final).
+        the payload from Redis/SQLite and the freeze-state from Redis meta so
+        the monitor skips pipeline regeneration (which would fail because games
+        may be Live/Final).
 
         Only restores if the cached slate date matches today — stale picks from
         a previous day are never served.
@@ -109,8 +148,14 @@ class _LineupCache:
             self._slate_date = None
             return False
 
-        self._first_pitch_utc = first_pitch_utc
-        self._is_frozen = True
+        # load_from_db already hydrated _is_frozen / _first_pitch_utc from
+        # Redis meta. Force-set the frozen flag here as a safety belt in case
+        # meta was missing (e.g. Redis key evicted) but the payload survived.
+        if not self._is_frozen:
+            self._is_frozen = True
+        if self._first_pitch_utc is None:
+            self._first_pitch_utc = first_pitch_utc
+        self._write_meta()
         logger.info(
             "Restored and re-frozen cached picks for %s (post-T-65 restart)",
             self._slate_date,
@@ -142,7 +187,7 @@ class _LineupCache:
     # ---------- public API ----------
 
     def store(self, response: Any, slate_date: date | None = None) -> None:
-        """Cache in memory, Redis, and SQLite DB."""
+        """Cache in memory, Redis, and SQLite DB. Raises if Redis write fails."""
         if self._is_frozen:
             logger.debug("Cache is frozen — ignoring store() call (picks are locked)")
             return
@@ -150,16 +195,12 @@ class _LineupCache:
         self._slate_date = slate_date or date.today()
         payload = response.model_dump_json()
 
-        # Tier 2 — Redis
+        # Tier 2 — Redis (required)
         rc = self._get_redis()
-        if rc is not None:
-            try:
-                rc.setex(self._redis_key(self._slate_date), _REDIS_TTL, payload)
-                logger.info("Lineup cached in Redis for %s", self._slate_date)
-            except Exception as exc:
-                logger.warning("Redis write failed: %s", exc)
+        rc.setex(self._redis_key(self._slate_date), _REDIS_TTL, payload)
+        logger.info("Lineup cached in Redis for %s", self._slate_date)
 
-        # Tier 3 — SQLite (always write for durability)
+        # Tier 3 — SQLite (durable record)
         self._persist(payload, self._slate_date)
 
     def get(self) -> Optional[Any]:
@@ -207,17 +248,11 @@ class _LineupCache:
         """
         self.clear()
 
-        # Redis
+        # Redis (required) — wipe both the payload and the meta keys
         rc = self._get_redis()
-        if rc is not None:
-            try:
-                # Delete today's key plus the previous day's key to be safe
-                from datetime import timedelta
-                for d in [date.today(), date.today() - timedelta(days=1)]:
-                    rc.delete(self._redis_key(d))
-                logger.info("Redis lineup cache purged")
-            except Exception as exc:
-                logger.warning("Redis purge failed: %s", exc)
+        for d in [date.today(), date.today() - timedelta(days=1)]:
+            rc.delete(self._redis_key(d), self._redis_meta_key(d))
+        logger.info("Redis lineup cache purged")
 
         # SQLite
         from app.database import SessionLocal
@@ -228,9 +263,9 @@ class _LineupCache:
             db.query(CachedLineup).delete()
             db.commit()
             logger.info("DB lineup cache purged")
-        except Exception as exc:
-            logger.warning("DB purge failed: %s", exc)
+        except Exception:
             db.rollback()
+            raise
         finally:
             db.close()
 
@@ -282,20 +317,18 @@ class _LineupCache:
         """
         from app.schemas.filter_strategy import FilterOptimizeResponse
 
-        # Tier 2 — Redis (today's lineup)
+        # Tier 2 — Redis (today's lineup). Redis is required; connection
+        # failures raise. Missing key is fine (cache was purged).
         rc = self._get_redis()
-        if rc is not None:
-            try:
-                data = rc.get(self._redis_key(date.today()))
-                if data:
-                    self._data = FilterOptimizeResponse.model_validate_json(data)
-                    self._slate_date = date.today()
-                    logger.info("Lineup cache loaded from Redis for %s", date.today())
-                    return True
-            except Exception as exc:
-                logger.warning("Redis read failed on startup: %s", exc)
+        data = rc.get(self._redis_key(date.today()))
+        if data:
+            self._data = FilterOptimizeResponse.model_validate_json(data)
+            self._slate_date = date.today()
+            self._read_meta(self._slate_date)
+            logger.info("Lineup cache loaded from Redis for %s", date.today())
+            return True
 
-        # Tier 3 — SQLite
+        # Tier 3 — SQLite (durable record written alongside every Redis write)
         from app.database import SessionLocal
         from app.models.slate import CachedLineup
 
@@ -311,20 +344,13 @@ class _LineupCache:
 
             self._data = FilterOptimizeResponse.model_validate_json(row.response_json)
             self._slate_date = row.cache_date
+            self._read_meta(row.cache_date)
             logger.info("Lineup cache loaded from DB (slate date: %s)", row.cache_date)
 
-            # Backfill Redis so subsequent restarts are faster
-            if rc is not None:
-                try:
-                    rc.setex(self._redis_key(row.cache_date), _REDIS_TTL, row.response_json)
-                    logger.info("Redis backfilled from DB for %s", row.cache_date)
-                except Exception as exc:
-                    logger.warning("Redis backfill failed: %s", exc)
-
+            # Backfill Redis so subsequent restarts are faster.
+            rc.setex(self._redis_key(row.cache_date), _REDIS_TTL, row.response_json)
+            logger.info("Redis backfilled from DB for %s", row.cache_date)
             return True
-        except Exception as exc:
-            logger.warning("Failed to load lineup cache from DB: %s", exc)
-            return False
         finally:
             db.close()
 
@@ -344,9 +370,9 @@ class _LineupCache:
                 db.add(CachedLineup(cache_date=slate_date, response_json=payload))
             db.commit()
             logger.info("Lineup cache persisted to DB for %s", slate_date)
-        except Exception as exc:
-            logger.warning("Failed to persist lineup cache: %s", exc)
+        except Exception:
             db.rollback()
+            raise
         finally:
             db.close()
 

@@ -189,10 +189,12 @@ All endpoints are under `/api/`.
 
 - **FastAPI** — REST API framework
 - **SQLAlchemy** — ORM with SQLite (swappable to Postgres)
+- **Alembic** — schema migrations
+- **Redis** — required cache layer (startup fails without it; no DB-only fallback)
 - **Pydantic** — Request/response validation
 - **httpx** — Async MLB Stats API client
 - **NumPy** — Calibration metrics
-- **Railway** — Deployment target
+- **Railway** — Deployment target (single-replica only — the T-65 monitor is in-process singleton state)
 
 ## Project Structure
 
@@ -218,11 +220,13 @@ app/
 └── services/
     ├── scoring_engine.py   # Trait-based scorer (0-100)
     ├── filter_strategy.py  # THE HEART — EV pipeline + dual-lineup optimizer (Starting 5 + Moonshot)
+    ├── candidate_resolver.py  # Builds FilteredCandidate pool from DB (batched lookups)
     ├── draft_optimizer.py  # DEAD CODE — kept only for evaluate_lineup; superseded by filter_strategy
+    ├── lineup_cache.py     # Frozen-cache invariants (Redis + SQLite persistence)
+    ├── slate_monitor.py    # T-65 event loop
     ├── popularity.py       # Web-scraping popularity signal aggregator
     ├── data_collection.py  # MLB API data fetching
-    ├── pipeline.py         # Fetch → Score → Rank orchestrator
-    └── calibration.py      # Prediction vs actual feedback loop
+    └── pipeline.py         # Fetch → Score → Rank orchestrator
 data/
 ├── historical_players.csv           # 677 rows / 19 dates — master player ledger
 ├── historical_winning_drafts.csv    # 655 rows / 19 dates — top-ranked lineups (5 slots/lineup)

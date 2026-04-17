@@ -604,8 +604,8 @@ Every lineup is **exactly 1 SP + 4 batters**. The count is fixed, not data-drive
 - `compute_draft_entropy(draft_counts)` — Shannon entropy for meta-game monitoring (observability only, not used in EV)
 - `compute_gini_coefficient(draft_counts)` — Gini coefficient for meta-game monitoring (observability only, not used in EV)
 
-**Key functions (routers/filter_strategy.py):**
-- `_resolve_candidates()` — Builds candidate pool from DB, scores env + traits, fetches web-scraped popularity (no platform ownership sources)
+**Key functions (services/candidate_resolver.py):**
+- `resolve_candidates()` — Builds candidate pool from DB, scores env + traits, fetches web-scraped popularity (no platform ownership sources)
 
 **Dead code:** `app/services/draft_optimizer.py` — not wired to any router except `evaluate_lineup`. The filter_strategy path supersedes it entirely.
 

@@ -1,0 +1,47 @@
+# Keep Docker images free of local dev artefacts and secrets.
+# Without this, Dockerfile's `COPY . .` bakes .env, the local SQLite DB,
+# and .git history into the published image.
+
+.git
+.gitignore
+.github
+
+.env
+.env.*
+!.env.example
+
+# Local database artefacts (seeder rebuilds on startup)
+db/*.db
+db/*.sqlite
+db/*.sqlite3
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.pytest_cache
+.ruff_cache
+.venv
+venv
+
+# IDE / OS
+.idea
+.vscode
+.DS_Store
+
+# Test + tooling (not needed in image)
+tests
+scripts
+
+# Node / frontend (separate service)
+frontend/node_modules
+frontend/.next
+
+# Docs
+*.md
+!README.md
+
+# Logs / output
+*.log
+output
