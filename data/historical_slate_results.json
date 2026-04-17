@@ -2515,38 +2515,546 @@
   },
   {
     "date": "2026-04-13",
-    "game_count": 0,
-    "games": [],
+    "game_count": 10,
+    "games": [
+      {
+        "home": "SEA",
+        "away": "HOU",
+        "home_score": 6,
+        "away_score": 2,
+        "winner": "SEA",
+        "loser": "HOU",
+        "winner_score": 6,
+        "loser_score": 2
+      },
+      {
+        "home": "BAL",
+        "away": "AZ",
+        "home_score": 9,
+        "away_score": 7,
+        "winner": "BAL",
+        "loser": "AZ",
+        "winner_score": 9,
+        "loser_score": 7
+      },
+      {
+        "home": "PIT",
+        "away": "WSH",
+        "home_score": 16,
+        "away_score": 5,
+        "winner": "PIT",
+        "loser": "WSH",
+        "winner_score": 16,
+        "loser_score": 5
+      },
+      {
+        "home": "PHI",
+        "away": "CHC",
+        "home_score": 13,
+        "away_score": 7,
+        "winner": "PHI",
+        "loser": "CHC",
+        "winner_score": 13,
+        "loser_score": 7
+      },
+      {
+        "home": "NYY",
+        "away": "LAA",
+        "home_score": 11,
+        "away_score": 10,
+        "winner": "NYY",
+        "loser": "LAA",
+        "winner_score": 11,
+        "loser_score": 10
+      },
+      {
+        "home": "ATL",
+        "away": "MIA",
+        "home_score": 4,
+        "away_score": 10,
+        "winner": "MIA",
+        "loser": "ATL",
+        "winner_score": 10,
+        "loser_score": 4
+      },
+      {
+        "home": "MIN",
+        "away": "BOS",
+        "home_score": 13,
+        "away_score": 6,
+        "winner": "MIN",
+        "loser": "BOS",
+        "winner_score": 13,
+        "loser_score": 6
+      },
+      {
+        "home": "STL",
+        "away": "CLE",
+        "home_score": 3,
+        "away_score": 9,
+        "winner": "CLE",
+        "loser": "STL",
+        "winner_score": 9,
+        "loser_score": 3
+      },
+      {
+        "home": "ATH",
+        "away": "TEX",
+        "home_score": 1,
+        "away_score": 8,
+        "winner": "TEX",
+        "loser": "ATH",
+        "winner_score": 8,
+        "loser_score": 1
+      },
+      {
+        "home": "LAD",
+        "away": "NYM",
+        "home_score": 4,
+        "away_score": 0,
+        "winner": "LAD",
+        "loser": "NYM",
+        "winner_score": 4,
+        "loser_score": 0
+      }
+    ],
     "season_stage": "regular-season",
-    "source": "screenshot_ingest",
-    "saved_at": "2026-04-14T00:05:00Z",
-    "notes": "Partial ingest: player leaderboards captured (HV/MP/3x). Winning drafts not yet finalized. Ghost+boost dominance continues — Trout (34 drafts, +3.0x, TV 40.0), Jeremiah Jackson (2 drafts, +3.0x, TV 37.0), Trent Grisham (2 drafts, +3.0x, TV 38.5), Josh Naylor (1 draft, +3.0x, TV 33.0). Crochet massive bust (RS -7.8, 3.6k drafts, no boost). Most Drafted 3x all busted again (Acuña 0.1, Stanton 1.5, Smith 1.3, Tucker 0.3, Muncy -0.7). Eovaldi best pitcher (RS 6.7, +1.4x, 2.6k drafts). Game scores and HV box stats pending."
+    "source": "mlb_stats_api_backfill",
+    "saved_at": "2026-04-17T12:52:06Z",
+    "notes": "Partial ingest: player leaderboards captured (HV/MP/3x). Winning drafts not yet finalized. Ghost+boost dominance continues — Trout (34 drafts, +3.0x, TV 40.0), Jeremiah Jackson (2 drafts, +3.0x, TV 37.0), Trent Grisham (2 drafts, +3.0x, TV 38.5), Josh Naylor (1 draft, +3.0x, TV 33.0). Crochet massive bust (RS -7.8, 3.6k drafts, no boost). Most Drafted 3x all busted again (Acuña 0.1, Stanton 1.5, Smith 1.3, Tucker 0.3, Muncy -0.7). Eovaldi best pitcher (RS 6.7, +1.4x, 2.6k drafts). Game scores and HV box stats pending.",
+    "previous_source": "screenshot_ingest"
   },
   {
     "date": "2026-04-14",
-    "game_count": 0,
-    "games": [],
+    "game_count": 15,
+    "games": [
+      {
+        "home": "BAL",
+        "away": "AZ",
+        "home_score": 3,
+        "away_score": 4,
+        "winner": "AZ",
+        "loser": "BAL",
+        "winner_score": 4,
+        "loser_score": 3
+      },
+      {
+        "home": "DET",
+        "away": "KC",
+        "home_score": 2,
+        "away_score": 1,
+        "winner": "DET",
+        "loser": "KC",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "PIT",
+        "away": "WSH",
+        "home_score": 4,
+        "away_score": 5,
+        "winner": "WSH",
+        "loser": "PIT",
+        "winner_score": 5,
+        "loser_score": 4
+      },
+      {
+        "home": "CIN",
+        "away": "SF",
+        "home_score": 2,
+        "away_score": 1,
+        "winner": "CIN",
+        "loser": "SF",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "PHI",
+        "away": "CHC",
+        "home_score": 4,
+        "away_score": 10,
+        "winner": "CHC",
+        "loser": "PHI",
+        "winner_score": 10,
+        "loser_score": 4
+      },
+      {
+        "home": "NYY",
+        "away": "LAA",
+        "home_score": 1,
+        "away_score": 7,
+        "winner": "LAA",
+        "loser": "NYY",
+        "winner_score": 7,
+        "loser_score": 1
+      },
+      {
+        "home": "ATL",
+        "away": "MIA",
+        "home_score": 6,
+        "away_score": 5,
+        "winner": "ATL",
+        "loser": "MIA",
+        "winner_score": 6,
+        "loser_score": 5
+      },
+      {
+        "home": "MIN",
+        "away": "BOS",
+        "home_score": 6,
+        "away_score": 0,
+        "winner": "MIN",
+        "loser": "BOS",
+        "winner_score": 6,
+        "loser_score": 0
+      },
+      {
+        "home": "CWS",
+        "away": "TB",
+        "home_score": 5,
+        "away_score": 8,
+        "winner": "TB",
+        "loser": "CWS",
+        "winner_score": 8,
+        "loser_score": 5
+      },
+      {
+        "home": "MIL",
+        "away": "TOR",
+        "home_score": 7,
+        "away_score": 9,
+        "winner": "TOR",
+        "loser": "MIL",
+        "winner_score": 9,
+        "loser_score": 7
+      },
+      {
+        "home": "STL",
+        "away": "CLE",
+        "home_score": 6,
+        "away_score": 5,
+        "winner": "STL",
+        "loser": "CLE",
+        "winner_score": 6,
+        "loser_score": 5
+      },
+      {
+        "home": "HOU",
+        "away": "COL",
+        "home_score": 7,
+        "away_score": 6,
+        "winner": "HOU",
+        "loser": "COL",
+        "winner_score": 7,
+        "loser_score": 6
+      },
+      {
+        "home": "SD",
+        "away": "SEA",
+        "home_score": 4,
+        "away_score": 1,
+        "winner": "SD",
+        "loser": "SEA",
+        "winner_score": 4,
+        "loser_score": 1
+      },
+      {
+        "home": "ATH",
+        "away": "TEX",
+        "home_score": 2,
+        "away_score": 1,
+        "winner": "ATH",
+        "loser": "TEX",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "LAD",
+        "away": "NYM",
+        "home_score": 2,
+        "away_score": 1,
+        "winner": "LAD",
+        "loser": "NYM",
+        "winner_score": 2,
+        "loser_score": 1
+      }
+    ],
     "season_stage": "regular-season",
-    "source": "screenshot_ingest",
-    "saved_at": "2026-04-15T06:39:18Z",
-    "notes": "Pitcher-heavy slate.  Top-10 lineups stacked 3-4 pitchers (Yamamoto LAD 5.9, Ragans KC 5.0, Abel BAL 7.7, Singer CIN 2.7 w/3.0x, Misiorowski MIL 2.5) rather than the optimiser's V5.0 1P+4B shape — structural by design, not a bug.  Rank 1 (cadebrandt 70.92) was Yamamoto + Ragans + Abel + Singer + Goodman.  Mick Abel (BAL, 56 drafts, +0.8x boost) was the highest-RS pitcher at 7.7 — classic low-buzz TARGET pitcher archetype.  Buxton MIN (6 drafts, +3.0x, RS 5.9) was the top HV overall — ghost+max_boost thesis validated.  TARGET-batter archetype held: Wetherholt, Sosa, Kelly, Bogaerts, Goodman, Pereira, Murakami, Vilade, Bauers, Bregman, Guerrero Jr., Lindor all hit HV with <= 34 drafts.  FADE batters busted hard (as expected): Ohtani -0.2, Judge 0.3, Cruz -0.8, Pages -0.4, Schwarber 0.1, Henderson -0.7, J. Walker 0.5.  3x-boost batter trap held: Will Smith RS 0.2, Acuna 0.1, Alonso 0.4 all busted despite +3.0x.  Singer (CIN, 1800 drafts, +3.0x, RS 2.7) was the lone 3x-boost batter-adjacent name that paid off — and he is a pitcher, reinforcing the PITCHER_FADE_PENALTY 0.85 moderation.  No pop_factor / env_factor / matrix changes warranted — V6.2 backtest already validated cells within 3-5% over 20 dates; Apr 14 variance fits within that band.  Structural choice reaffirmed by user: keep 1P+4B anchor and MAX_PLAYERS_PER_TEAM=1."
+    "source": "mlb_stats_api_backfill",
+    "saved_at": "2026-04-17T12:52:06Z",
+    "notes": "Pitcher-heavy slate.  Top-10 lineups stacked 3-4 pitchers (Yamamoto LAD 5.9, Ragans KC 5.0, Abel BAL 7.7, Singer CIN 2.7 w/3.0x, Misiorowski MIL 2.5) rather than the optimiser's V5.0 1P+4B shape — structural by design, not a bug.  Rank 1 (cadebrandt 70.92) was Yamamoto + Ragans + Abel + Singer + Goodman.  Mick Abel (BAL, 56 drafts, +0.8x boost) was the highest-RS pitcher at 7.7 — classic low-buzz TARGET pitcher archetype.  Buxton MIN (6 drafts, +3.0x, RS 5.9) was the top HV overall — ghost+max_boost thesis validated.  TARGET-batter archetype held: Wetherholt, Sosa, Kelly, Bogaerts, Goodman, Pereira, Murakami, Vilade, Bauers, Bregman, Guerrero Jr., Lindor all hit HV with <= 34 drafts.  FADE batters busted hard (as expected): Ohtani -0.2, Judge 0.3, Cruz -0.8, Pages -0.4, Schwarber 0.1, Henderson -0.7, J. Walker 0.5.  3x-boost batter trap held: Will Smith RS 0.2, Acuna 0.1, Alonso 0.4 all busted despite +3.0x.  Singer (CIN, 1800 drafts, +3.0x, RS 2.7) was the lone 3x-boost batter-adjacent name that paid off — and he is a pitcher, reinforcing the PITCHER_FADE_PENALTY 0.85 moderation.  No pop_factor / env_factor / matrix changes warranted — V6.2 backtest already validated cells within 3-5% over 20 dates; Apr 14 variance fits within that band.  Structural choice reaffirmed by user: keep 1P+4B anchor and MAX_PLAYERS_PER_TEAM=1.",
+    "previous_source": "screenshot_ingest"
   },
   {
     "date": "2026-04-15",
-    "game_count": 0,
-    "games": [],
+    "game_count": 15,
+    "games": [
+      {
+        "home": "BAL",
+        "away": "AZ",
+        "home_score": 5,
+        "away_score": 8,
+        "winner": "AZ",
+        "loser": "BAL",
+        "winner_score": 8,
+        "loser_score": 5
+      },
+      {
+        "home": "STL",
+        "away": "CLE",
+        "home_score": 5,
+        "away_score": 3,
+        "winner": "STL",
+        "loser": "CLE",
+        "winner_score": 5,
+        "loser_score": 3
+      },
+      {
+        "home": "MIN",
+        "away": "BOS",
+        "home_score": 5,
+        "away_score": 9,
+        "winner": "BOS",
+        "loser": "MIN",
+        "winner_score": 9,
+        "loser_score": 5
+      },
+      {
+        "home": "DET",
+        "away": "KC",
+        "home_score": 2,
+        "away_score": 1,
+        "winner": "DET",
+        "loser": "KC",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "PIT",
+        "away": "WSH",
+        "home_score": 2,
+        "away_score": 0,
+        "winner": "PIT",
+        "loser": "WSH",
+        "winner_score": 2,
+        "loser_score": 0
+      },
+      {
+        "home": "CIN",
+        "away": "SF",
+        "home_score": 8,
+        "away_score": 3,
+        "winner": "CIN",
+        "loser": "SF",
+        "winner_score": 8,
+        "loser_score": 3
+      },
+      {
+        "home": "PHI",
+        "away": "CHC",
+        "home_score": 2,
+        "away_score": 11,
+        "winner": "CHC",
+        "loser": "PHI",
+        "winner_score": 11,
+        "loser_score": 2
+      },
+      {
+        "home": "NYY",
+        "away": "LAA",
+        "home_score": 5,
+        "away_score": 4,
+        "winner": "NYY",
+        "loser": "LAA",
+        "winner_score": 5,
+        "loser_score": 4
+      },
+      {
+        "home": "ATL",
+        "away": "MIA",
+        "home_score": 6,
+        "away_score": 3,
+        "winner": "ATL",
+        "loser": "MIA",
+        "winner_score": 6,
+        "loser_score": 3
+      },
+      {
+        "home": "CWS",
+        "away": "TB",
+        "home_score": 3,
+        "away_score": 8,
+        "winner": "TB",
+        "loser": "CWS",
+        "winner_score": 8,
+        "loser_score": 3
+      },
+      {
+        "home": "MIL",
+        "away": "TOR",
+        "home_score": 2,
+        "away_score": 1,
+        "winner": "MIL",
+        "loser": "TOR",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "HOU",
+        "away": "COL",
+        "home_score": 3,
+        "away_score": 1,
+        "winner": "HOU",
+        "loser": "COL",
+        "winner_score": 3,
+        "loser_score": 1
+      },
+      {
+        "home": "SD",
+        "away": "SEA",
+        "home_score": 7,
+        "away_score": 6,
+        "winner": "SD",
+        "loser": "SEA",
+        "winner_score": 7,
+        "loser_score": 6
+      },
+      {
+        "home": "ATH",
+        "away": "TEX",
+        "home_score": 6,
+        "away_score": 5,
+        "winner": "ATH",
+        "loser": "TEX",
+        "winner_score": 6,
+        "loser_score": 5
+      },
+      {
+        "home": "LAD",
+        "away": "NYM",
+        "home_score": 8,
+        "away_score": 2,
+        "winner": "LAD",
+        "loser": "NYM",
+        "winner_score": 8,
+        "loser_score": 2
+      }
+    ],
     "season_stage": "regular-season",
-    "source": "screenshot_ingest",
-    "saved_at": "2026-04-16T06:00:00Z",
-    "notes": "TARGET batter thesis strongly validated. Sal Stewart (CIN, RS 7.8, 171 drafts, +2.1x) led HV; Nico Hoerner (CHC, RS 6.5, 81 drafts, +2.2x) and Dalton Rushing (LAD, RS 5.6, 1 draft, +1.5x) also HV — extreme ghost archetype. Top 6 lineups all stacked Stewart+Hoerner+Ohtani (Stewart+Hoerner are the core; Ohtani appeared in all 6 as the FADE that still performed). FADE batters busted hard: Cruz -0.5, Lowe -0.5, Rice -0.5, Luzardo -2.2, Wood -0.6. Most Drafted 3x busted: Luis Gil -0.4, Acuña 1.3, Chisholm 1.5, Tucker 1.1, Marte 0.1. Dylan Cease (SD) pitched well (RS 5.5, 1.7k drafts, no boost) — FADE pitcher still delivered. Jack Flaherty (LAD, RS 4.7, +0.6x, 972 drafts) also positive. Rank 1 (masonplumleelover, 95.05): Ohtani+Trout+Hoerner+Stewart+Baldwin. Slot assignments estimated by descending RS order."
+    "source": "mlb_stats_api_backfill",
+    "saved_at": "2026-04-17T12:52:06Z",
+    "notes": "TARGET batter thesis strongly validated. Sal Stewart (CIN, RS 7.8, 171 drafts, +2.1x) led HV; Nico Hoerner (CHC, RS 6.5, 81 drafts, +2.2x) and Dalton Rushing (LAD, RS 5.6, 1 draft, +1.5x) also HV — extreme ghost archetype. Top 6 lineups all stacked Stewart+Hoerner+Ohtani (Stewart+Hoerner are the core; Ohtani appeared in all 6 as the FADE that still performed). FADE batters busted hard: Cruz -0.5, Lowe -0.5, Rice -0.5, Luzardo -2.2, Wood -0.6. Most Drafted 3x busted: Luis Gil -0.4, Acuña 1.3, Chisholm 1.5, Tucker 1.1, Marte 0.1. Dylan Cease (SD) pitched well (RS 5.5, 1.7k drafts, no boost) — FADE pitcher still delivered. Jack Flaherty (LAD, RS 4.7, +0.6x, 972 drafts) also positive. Rank 1 (masonplumleelover, 95.05): Ohtani+Trout+Hoerner+Stewart+Baldwin. Slot assignments estimated by descending RS order.",
+    "previous_source": "screenshot_ingest"
   },
   {
     "date": "2026-04-16",
-    "game_count": 0,
-    "games": [],
+    "game_count": 10,
+    "games": [
+      {
+        "home": "PIT",
+        "away": "WSH",
+        "home_score": 7,
+        "away_score": 8,
+        "winner": "WSH",
+        "loser": "PIT",
+        "winner_score": 8,
+        "loser_score": 7
+      },
+      {
+        "home": "CIN",
+        "away": "SF",
+        "home_score": 0,
+        "away_score": 3,
+        "winner": "SF",
+        "loser": "CIN",
+        "winner_score": 3,
+        "loser_score": 0
+      },
+      {
+        "home": "DET",
+        "away": "KC",
+        "home_score": 10,
+        "away_score": 9,
+        "winner": "DET",
+        "loser": "KC",
+        "winner_score": 10,
+        "loser_score": 9
+      },
+      {
+        "home": "NYY",
+        "away": "LAA",
+        "home_score": 4,
+        "away_score": 11,
+        "winner": "LAA",
+        "loser": "NYY",
+        "winner_score": 11,
+        "loser_score": 4
+      },
+      {
+        "home": "MIL",
+        "away": "TOR",
+        "home_score": 2,
+        "away_score": 1,
+        "winner": "MIL",
+        "loser": "TOR",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "CWS",
+        "away": "TB",
+        "home_score": 3,
+        "away_score": 5,
+        "winner": "TB",
+        "loser": "CWS",
+        "winner_score": 5,
+        "loser_score": 3
+      },
+      {
+        "home": "ATH",
+        "away": "TEX",
+        "home_score": 6,
+        "away_score": 9,
+        "winner": "TEX",
+        "loser": "ATH",
+        "winner_score": 9,
+        "loser_score": 6
+      },
+      {
+        "home": "CLE",
+        "away": "BAL",
+        "home_score": 4,
+        "away_score": 2,
+        "winner": "CLE",
+        "loser": "BAL",
+        "winner_score": 4,
+        "loser_score": 2
+      },
+      {
+        "home": "HOU",
+        "away": "COL",
+        "home_score": 2,
+        "away_score": 3,
+        "winner": "COL",
+        "loser": "HOU",
+        "winner_score": 3,
+        "loser_score": 2
+      },
+      {
+        "home": "SD",
+        "away": "SEA",
+        "home_score": 5,
+        "away_score": 2,
+        "winner": "SD",
+        "loser": "SEA",
+        "winner_score": 5,
+        "loser_score": 2
+      }
+    ],
     "season_stage": "regular-season",
-    "source": "screenshot_ingest",
-    "saved_at": "2026-04-17T06:00:00Z",
-    "notes": "Ghost+max_boost pitcher day. Brandon Sproat (MIL, RS 5.8, +3.0x, 56 HV drafts / 980 MD3x) appeared in 5 of 6 top lineups — TARGET pitcher archetype with max boost. Parker Messick (MIA, RS 8.1, no boost, 1.4k drafts) was the best raw pitcher but boost-limited; HV TV=16.2. Jacob Lopez (OAK, RS 2.8, +3.0x, 1.6k drafts) appeared in all 6 top lineups despite moderate RS — crowd convergence on 3x ghost pitcher. Nick Kurtz (OAK, 1B, RS 4.7, +3.0x, 12 drafts) TARGET batter in 5 of 6 top lineups. Rank 1 tied (mrdawson+msaddi, 89.28): Lopez+Sproat+Kurtz+Caminero+WittJr — all +3.0x boost. FADE batters busted: Judge 1.6, Alvarez 1.5, Henderson 0.2, Merrill 0.2, Luzardo not in slate. Most Drafted 3x: Sproat+Lopez led winning lineups; Raleigh, Caminero, Altuve modest. Slot assignments estimated by descending RS order."
+    "source": "mlb_stats_api_backfill",
+    "saved_at": "2026-04-17T12:52:06Z",
+    "notes": "Ghost+max_boost pitcher day. Brandon Sproat (MIL, RS 5.8, +3.0x, 56 HV drafts / 980 MD3x) appeared in 5 of 6 top lineups — TARGET pitcher archetype with max boost. Parker Messick (MIA, RS 8.1, no boost, 1.4k drafts) was the best raw pitcher but boost-limited; HV TV=16.2. Jacob Lopez (OAK, RS 2.8, +3.0x, 1.6k drafts) appeared in all 6 top lineups despite moderate RS — crowd convergence on 3x ghost pitcher. Nick Kurtz (OAK, 1B, RS 4.7, +3.0x, 12 drafts) TARGET batter in 5 of 6 top lineups. Rank 1 tied (mrdawson+msaddi, 89.28): Lopez+Sproat+Kurtz+Caminero+WittJr — all +3.0x boost. FADE batters busted: Judge 1.6, Alvarez 1.5, Henderson 0.2, Merrill 0.2, Luzardo not in slate. Most Drafted 3x: Sproat+Lopez led winning lineups; Raleigh, Caminero, Altuve modest. Slot assignments estimated by descending RS order.",
+    "previous_source": "screenshot_ingest"
   }
 ]
