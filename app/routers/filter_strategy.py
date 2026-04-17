@@ -13,16 +13,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.core.constants import (
-    DEFAULT_OPP_K_PCT,
-    DEFAULT_OPP_OPS,
-    DEFAULT_PITCHER_ERA,
-    DEFAULT_PITCHER_WHIP,
-    PITCHER_POSITIONS,
-    SCORING_K9_CEILING,
-    SCORING_K9_FLOOR,
-)
-from app.core.utils import find_players_by_name_team_batch, get_trait_score
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.schemas.scoring import TraitBreakdown
 from app.schemas.filter_strategy import (
@@ -35,373 +25,20 @@ from app.schemas.filter_strategy import (
     SlateClassificationOut,
     StackableGameOut,
 )
-from app.services.scoring_engine import score_player
 from app.services.filter_strategy import (
     FilteredCandidate,
     SlateClassification,
     StackableGame,
     classify_slate,
-    compute_pitcher_env_score,
-    compute_batter_env_score,
     run_dual_filter_strategy,
 )
-from app.services.popularity import PopularityClass, get_popularity_profile, reset_url_cache
+from app.services.candidate_resolver import resolve_candidates
 from app.services.lineup_cache import lineup_cache
+from app.services.popularity import PopularityClass
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _build_game_lookup(games: list[GameEnvironment]) -> tuple[dict, dict]:
-    """Build lookup dicts from game environment data."""
-    game_by_id = {}
-    team_to_game = {}
-    for g in games:
-        if g.game_id is not None:
-            game_by_id[g.game_id] = g
-        team_to_game[g.home_team.upper()] = g
-        team_to_game[g.away_team.upper()] = g
-    return game_by_id, team_to_game
-
-
-def _detect_two_way_pitcher(player, card, game) -> bool:
-    """Check if a non-pitcher (e.g., DH) is the confirmed starter.
-
-    Returns True if detected as a confirmed starter, False otherwise.
-    Logs the detection when found.
-    """
-    if game is None:
-        return False
-
-    _is_home = game.home_team.upper() == card.team.upper()
-    _starter_mlb_id = game.home_starter_mlb_id if _is_home else game.away_starter_mlb_id
-    _starter_name = game.home_starter if _is_home else game.away_starter
-
-    # Primary check: MLB ID match (authoritative, no name ambiguity)
-    if _starter_mlb_id is not None and player.mlb_id == _starter_mlb_id:
-        logger.info(
-            "Two-way player detected: %s (%s) is confirmed starter — treating as SP",
-            card.player_name, card.team,
-        )
-        return True
-
-    # Fallback to name match when MLB ID wasn't returned
-    if _starter_name is not None:
-        _card_name = card.player_name.lower().strip()
-        _prob_name = _starter_name.lower().strip()
-        if _card_name in _prob_name or _prob_name in _card_name:
-            logger.info(
-                "Two-way player detected (name match): %s (%s) is confirmed starter — treating as SP",
-                card.player_name, card.team,
-            )
-            return True
-
-    return False
-
-
-def _prepare_pitcher_env_kwargs(game: GameEnvironment | None, card: FilterCard) -> dict:
-    """Extract pitcher environment scoring kwargs from game context."""
-    score_kwargs = {}
-    if game:
-        _is_home = game.home_team.upper() == card.team.upper()
-        _opp_ops = game.away_team_ops if _is_home else game.home_team_ops
-        _opp_k_pct = game.away_team_k_pct if _is_home else game.home_team_k_pct
-        if _opp_ops is not None or _opp_k_pct is not None:
-            score_kwargs["opp_team_stats"] = {
-                "ops": _opp_ops if _opp_ops is not None else DEFAULT_OPP_OPS,
-                "k_pct": _opp_k_pct if _opp_k_pct is not None else DEFAULT_OPP_K_PCT,
-            }
-    return score_kwargs
-
-
-def _prepare_batter_env_kwargs(game: GameEnvironment | None, card: FilterCard) -> dict:
-    """Extract batter environment scoring kwargs from game context."""
-    score_kwargs = {}
-    if game:
-        _is_home = game.home_team.upper() == card.team.upper()
-        _opp_era = game.away_starter_era if _is_home else game.home_starter_era
-        _opp_whip = game.away_starter_whip if _is_home else game.home_starter_whip
-        _starter_hand = game.away_starter_hand if _is_home else game.home_starter_hand
-        if _opp_era is not None or _opp_whip is not None:
-            score_kwargs["opp_pitcher_stats"] = {
-                "era": _opp_era if _opp_era is not None else DEFAULT_PITCHER_ERA,
-                "whip": _opp_whip if _opp_whip is not None else DEFAULT_PITCHER_WHIP,
-            }
-        score_kwargs["batting_order"] = card.batting_order
-        score_kwargs["park_team"] = game.home_team.upper()
-        score_kwargs["wind_speed_mph"] = game.wind_speed_mph
-        score_kwargs["wind_direction"] = game.wind_direction
-        score_kwargs["temperature_f"] = game.temperature_f
-        score_kwargs["starter_hand"] = _starter_hand
-    return score_kwargs
-
-
-async def _resolve_candidates(
-    cards: list[FilterCard],
-    games: list[GameEnvironment],
-    db: Session,
-) -> list[FilteredCandidate]:
-    """
-    Resolve cards into FilteredCandidates by:
-    1. Looking up player in DB and scoring them
-    2. Computing environmental score (Filter 2)
-    3. Fetching web-scraped popularity (Filter 3) — all players in parallel
-    """
-    # Popularity fetchers hit several player-invariant URLs (RSS feeds, daily
-    # trends). Reset the slate-wide URL cache so we deduplicate the ~125
-    # candidates' fetches onto a handful of HTTP requests — and avoid serving
-    # stale bodies from a previous slate run.
-    reset_url_cache()
-
-    game_by_id, team_to_game = _build_game_lookup(games)
-
-    # Stage -1: filter out pre-game scratches only.  Draft counts come from
-    # the Real Sports platform leaderboard and are only available after
-    # manual ingest, so live slates routinely have cards with drafts=None.
-    # Those cards now flow through — the condition classifier maps
-    # drafts=None to the "medium" neutral tier, and ranking falls back onto
-    # popularity, env, and trait signals (see get_ownership_tier).
-    cards = [c for c in cards if c.player_name]
-
-    # Stage 0: map cards to Player records. All cards come from the pipeline's
-    # _load_active_slate, which derives them from SlatePlayer → Player rows
-    # already in the DB. A missing player is a pipeline data integrity error.
-    # One batched query instead of N per-card lookups.
-    pairs = [(c.player_name, c.team) for c in cards]
-    player_map = find_players_by_name_team_batch(db, pairs)
-    card_player_map: dict = {}
-    for card in cards:
-        player = player_map.get((card.player_name, card.team))
-        if not player:
-            raise ValueError(
-                f"Player {card.player_name!r} ({card.team}) not found in database — "
-                "pipeline data integrity error"
-            )
-        card_player_map[f"{card.player_name}|{card.team}"] = player
-
-    # Stage 1: synchronous work (DB lookups, scoring, env score)
-    pre_candidates = []
-    for card in cards:
-        player = card_player_map[f"{card.player_name}|{card.team}"]
-
-        is_pitcher = player.position in PITCHER_POSITIONS
-
-        # Find game context
-        game = None
-        if card.game_id is not None:
-            game = game_by_id.get(card.game_id)
-        if game is None:
-            game = team_to_game.get(card.team.upper())
-
-        # Two-way player detection: if a non-pitcher is the confirmed
-        # starter for their game, treat them as a pitcher (e.g., Ohtani as DH).
-        is_two_way_pitcher = False
-        if not is_pitcher:
-            is_two_way_pitcher = _detect_two_way_pitcher(player, card, game)
-            if is_two_way_pitcher:
-                is_pitcher = True
-
-        # Build game-aware scoring context. Without this, batters default to
-        # neutral scores on lineup_position, matchup_quality, and ballpark_factor,
-        # causing unboosted pitchers (whose ERA/K-rate come from season stats) to
-        # systematically outscore boosted batters regardless of matchup or order.
-        if is_pitcher:
-            score_kwargs = _prepare_pitcher_env_kwargs(game, card)
-        else:
-            score_kwargs = _prepare_batter_env_kwargs(game, card)
-
-        score_result = score_player(db, player, is_pitcher=is_pitcher, **score_kwargs)
-
-        # Series/momentum context — populated only for batters below
-        series_team_w: int | None = None
-        series_opp_w: int | None = None
-        team_l10: int | None = None
-
-        # Compute environmental score (Filter 2)
-        if is_pitcher and game:
-            is_home = game.home_team.upper() == card.team.upper()
-
-            # Only include the confirmed probable starter for this game.
-            # Pitchers on rest from the previous day are still on the active
-            # roster and score well — they must be excluded here.
-            # Primary check: MLB ID match (authoritative, no name ambiguity).
-            # Fallback to name only when the ID wasn't returned by the API.
-            starter_mlb_id = game.home_starter_mlb_id if is_home else game.away_starter_mlb_id
-            starter_name = game.home_starter if is_home else game.away_starter
-            if starter_mlb_id is not None:
-                if player.mlb_id != starter_mlb_id:
-                    continue
-            elif starter_name is not None:
-                card_name = card.player_name.lower().strip()
-                prob_name = starter_name.lower().strip()
-                if card_name not in prob_name and prob_name not in card_name:
-                    continue
-
-            opp_ops = game.away_team_ops if is_home else game.home_team_ops
-            opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
-            park_team = game.home_team.upper()
-
-            k_rate_score = get_trait_score(score_result.traits, "k_rate")
-            k_rate_max = next((t.max_score for t in score_result.traits if t.name == "k_rate"), 25.0)
-            # Reverse the scoring engine's linear K/9 scale (floor → 0 pts, ceiling → max pts).
-            k9_range = SCORING_K9_CEILING - SCORING_K9_FLOOR
-            pitcher_k9 = (SCORING_K9_FLOOR + k_rate_score / k_rate_max * k9_range) if k_rate_max > 0 else None
-
-            # V8.0: pass moneyline for Win bonus probability scoring
-            team_ml = game.home_moneyline if is_home else game.away_moneyline
-
-            env_score, env_factors = compute_pitcher_env_score(
-                opp_team_ops=opp_ops,
-                opp_team_k_pct=opp_k_pct,
-                pitcher_k_per_9=pitcher_k9,
-                park_team=park_team,
-                is_home=is_home,
-                team_moneyline=team_ml,
-            )
-            env_unknown_count = 0  # pitchers are confirmed starters; env data is reliable
-        elif not is_pitcher and game:
-            is_home = game.home_team.upper() == card.team.upper()
-            opp_era = game.away_starter_era if is_home else game.home_starter_era
-            park_team = game.home_team.upper()
-            # pass team's moneyline for favorite detection
-            team_ml = game.home_moneyline if is_home else game.away_moneyline
-
-            # Bullpen vulnerability: the opposing team's bullpen ERA
-            opp_bp_era = game.away_bullpen_era if is_home else game.home_bullpen_era
-
-            # Series/momentum context for Group D env scoring
-            series_team_w = game.series_home_wins if is_home else game.series_away_wins
-            series_opp_w = game.series_away_wins if is_home else game.series_home_wins
-            team_l10 = game.home_team_l10_wins if is_home else game.away_team_l10_wins
-
-            env_score, env_factors, env_unknown_count = compute_batter_env_score(
-                vegas_total=game.vegas_total,
-                opp_pitcher_era=opp_era,
-                platoon_advantage=card.platoon_advantage,
-                batting_order=card.batting_order,
-                park_team=park_team,
-                wind_speed_mph=game.wind_speed_mph,
-                wind_direction=game.wind_direction,
-                temperature_f=game.temperature_f,
-                team_moneyline=team_ml,
-                opp_bullpen_era=opp_bp_era,
-                series_team_wins=series_team_w,
-                series_opp_wins=series_opp_w,
-                team_l10_wins=team_l10,
-            )
-        else:
-            raise ValueError(
-                f"Player {card.player_name!r} has no associated game — "
-                "env_score cannot be computed"
-            )
-
-        game_id = card.game_id
-        if game_id is None and game is not None:
-            game_id = game.game_id
-
-        pre_candidates.append({
-            "card": card,
-            "player": player,
-            "is_pitcher": is_pitcher,
-            "is_two_way_pitcher": is_two_way_pitcher,
-            "score_result": score_result,
-            "env_score": env_score,
-            "env_factors": env_factors,
-            "env_unknown_count": env_unknown_count,
-            "game_id": game_id,
-            "series_team_wins": series_team_w,
-            "series_opp_wins": series_opp_w,
-            "team_l10_wins": team_l10,
-        })
-
-    # Stage 2: fetch popularity for all players in parallel (Filter 3)
-    popularity_results = await asyncio.gather(
-        *[
-            get_popularity_profile(
-                p["card"].player_name,
-                p["card"].team,
-                p["score_result"].total_score,
-                include_sharp=True,
-            )
-            for p in pre_candidates
-        ],
-        return_exceptions=True,
-    )
-
-    # Stage 3: assemble FilteredCandidates
-    candidates = []
-    for pre, pop_result in zip(pre_candidates, popularity_results):
-        card = pre["card"]
-        score_result = pre["score_result"]
-
-        if isinstance(pop_result, Exception):
-            logger.warning(
-                "Popularity fetch failed for %s — defaulting to NEUTRAL: %s",
-                card.player_name, pop_result,
-            )
-            pop_class = PopularityClass.NEUTRAL
-            sharp_score = 0.0
-        else:
-            pop_class = pop_result.classification
-            sharp_score = pop_result.sharp_score
-
-        candidates.append(FilteredCandidate(
-            player_name=card.player_name,
-            team=card.team,
-            position=pre["player"].position,
-            card_boost=card.card_boost,    # stored for display only
-            total_score=score_result.total_score,
-            env_score=pre["env_score"],
-            env_factors=pre["env_factors"],
-            env_unknown_count=pre.get("env_unknown_count", 0),
-            popularity=pop_class,
-            game_id=pre["game_id"],
-            is_pitcher=pre["is_pitcher"],
-            is_two_way_pitcher=pre["is_two_way_pitcher"],
-            sharp_score=sharp_score,
-            drafts=card.drafts,            # stored for display only
-            traits=score_result.traits,
-            batting_order=card.batting_order,
-            series_team_wins=pre.get("series_team_wins"),
-            series_opp_wins=pre.get("series_opp_wins"),
-            team_l10_wins=pre.get("team_l10_wins"),
-        ))
-
-    # Candidate pool health summary (draft counts are display-only labels).
-    ghost_count = sum(
-        1 for c in candidates
-        if c.drafts is not None and c.drafts < 100
-    )
-    logger.info(
-        "Candidate pool: %d cards in → %d candidates out "
-        "(low-draft players: %d, dropped: %d)",
-        len(cards), len(candidates), ghost_count,
-        len(cards) - len(candidates),
-    )
-
-    # Popularity distribution health check — detect wholesale scraper failure.
-    # On any real slate, some superstars (Judge, Ohtani, etc.) will always
-    # trigger at least one scraper.  If EVERY player is NEUTRAL, the scrapers
-    # are broken and the 3.6x popularity differential collapses to zero.
-    from app.services.popularity import PopularityClass as _PC
-    fade_count = sum(1 for c in candidates if c.popularity == _PC.FADE)
-    target_count = sum(1 for c in candidates if c.popularity == _PC.TARGET)
-    neutral_count = sum(1 for c in candidates if c.popularity == _PC.NEUTRAL)
-    logger.info(
-        "Popularity distribution: FADE=%d, TARGET=%d, NEUTRAL=%d",
-        fade_count, target_count, neutral_count,
-    )
-    if neutral_count == len(candidates) and len(candidates) >= 10:
-        raise RuntimeError(
-            f"All {len(candidates)} candidates classified NEUTRAL — "
-            "web scraper failure suspected. The popularity signal is the "
-            "primary ranking driver (3.6x batter RS differential); without "
-            "it the pipeline cannot produce winning lineups. Check network "
-            "connectivity and scraper endpoints."
-        )
-
-    return candidates
 
 
 def _get_active_slate_date(db: Session) -> date:
@@ -630,7 +267,7 @@ async def build_and_cache_lineups(db: Session, slate_date: date | None = None) -
     game_dicts = [g.model_dump() for g in games]
     slate_class = classify_slate(len(games), game_dicts)
 
-    candidates = await _resolve_candidates(cards, games, db)
+    candidates = await resolve_candidates(cards, games, db)
     if not candidates:
         logger.warning("build_and_cache_lineups: no matching players found, skipping cache warm")
         return None
@@ -851,7 +488,7 @@ async def diagnostics(db: Session = Depends(get_db)):
 
     game_dicts = [g.model_dump() for g in games]
     slate_class = classify_slate(len(games), game_dicts)
-    candidates = await _resolve_candidates(cards, games, db)
+    candidates = await resolve_candidates(cards, games, db)
 
     fade = sum(1 for c in candidates if c.popularity == PopularityClass.FADE)
     target = sum(1 for c in candidates if c.popularity == PopularityClass.TARGET)

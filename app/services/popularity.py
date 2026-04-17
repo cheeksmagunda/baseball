@@ -57,7 +57,7 @@ _PROFILE_SEM = asyncio.Semaphore(10)
 # This cache deduplicates concurrent callers onto a single in-flight Task per
 # URL and memoises the lowercased body for the rest of the slate run.
 # `reset_url_cache()` must be invoked once at the start of each pipeline run
-# (see `_resolve_candidates`) so stale bodies are not served on the next day.
+# (see `resolve_candidates`) so stale bodies are not served on the next day.
 
 _invariant_text_cache: dict[str, "asyncio.Task[str]"] = {}
 
