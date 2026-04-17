@@ -410,8 +410,17 @@ async def filter_optimize(db: Session = Depends(get_db)):
             },
         )
 
-    # No schedule, cache not warm → pipeline hasn't started yet
-    raise HTTPException(503, "Pipeline not ready — picks will be available once the lineup is generated.")
+    # No schedule, cache not warm → T-65 monitor hasn't started yet (pre-T-65 init)
+    return JSONResponse(
+        status_code=425,
+        content={
+            "detail": "Pipeline not yet run — picks will be available at T-65.",
+            "phase": "initializing",
+            "first_pitch_utc": None,
+            "lock_time_utc": None,
+            "minutes_until_unlock": None,
+        },
+    )
 
 
 @router.post("/classify-slate", response_model=SlateClassificationOut)
