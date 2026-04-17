@@ -236,7 +236,16 @@ def seed_default_weights(db: Session):
 
 
 def run_seed(db: Session = None):
-    """Run all seed functions."""
+    """Seed reference data and default configuration.
+
+    Player records are NOT seeded from CSV. They are created organically by
+    populate_slate_players() during the T-65 pipeline run from live MLB API
+    team rosters — ensuring the Player pool reflects only current-slate
+    released rosters, not historical leaderboard participants.
+
+    PlayerGameLog records are NOT seeded from CSV. Game logs come exclusively
+    from fetch_player_season_stats() via the live MLB API (source='mlb_api').
+    """
     close_session = False
     if db is None:
         init_db()
@@ -244,18 +253,15 @@ def run_seed(db: Session = None):
         close_session = True
 
     try:
-        # Only seed if DB is empty
-        if db.query(Player).count() == 0:
-            print("Seeding database from data files...")
-            seed_historical_players(db)
-            print(f"  Players: {db.query(Player).count()}")
+        from app.models.calibration import WeightHistory
+        if db.query(WeightHistory).count() == 0:
+            print("Seeding database (reference data + default weights)...")
             seed_winning_drafts(db)
             seed_slate_results(db)
-            seed_hv_game_stats(db)
             seed_default_weights(db)
             print("  Seed complete.")
         else:
-            print(f"Database already seeded ({db.query(Player).count()} players).")
+            print("Database already seeded.")
     finally:
         if close_session:
             db.close()

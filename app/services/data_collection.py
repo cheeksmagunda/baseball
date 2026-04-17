@@ -488,6 +488,7 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
                     player_id=player.id,
                     game_date=gd,
                     opponent=opp,
+                    source="mlb_api",
                     ab=gs.get("atBats", 0),
                     hits=gs.get("hits", 0),
                     hr=gs.get("homeRuns", 0),
