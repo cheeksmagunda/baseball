@@ -22,7 +22,7 @@ from app.core.constants import (
     SCORING_K9_CEILING,
     SCORING_K9_FLOOR,
 )
-from app.core.utils import find_player_by_name, get_trait_score
+from app.core.utils import find_players_by_name_team_batch, get_trait_score
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.schemas.scoring import TraitBreakdown
 from app.schemas.filter_strategy import (
@@ -167,9 +167,12 @@ async def _resolve_candidates(
     # Stage 0: map cards to Player records. All cards come from the pipeline's
     # _load_active_slate, which derives them from SlatePlayer → Player rows
     # already in the DB. A missing player is a pipeline data integrity error.
+    # One batched query instead of N per-card lookups.
+    pairs = [(c.player_name, c.team) for c in cards]
+    player_map = find_players_by_name_team_batch(db, pairs)
     card_player_map: dict = {}
     for card in cards:
-        player = find_player_by_name(db, card.player_name, card.team)
+        player = player_map.get((card.player_name, card.team))
         if not player:
             raise ValueError(
                 f"Player {card.player_name!r} ({card.team}) not found in database — "

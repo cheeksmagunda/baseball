@@ -36,6 +36,35 @@ def find_player_by_name(
     return q.first()
 
 
+def find_players_by_name_team_batch(
+    db: Session, pairs: list[tuple[str, str]]
+) -> dict[tuple[str, str], Player]:
+    """Batch equivalent of find_player_by_name, scoped by team.
+
+    One SQL query regardless of input size. Matches substring-on-normalized
+    name — same semantics as find_player_by_name(name, team). Returns a dict
+    keyed by the original (name, team) tuple; missing matches are absent.
+    """
+    if not pairs:
+        return {}
+    teams = {t.upper() for _, t in pairs if t}
+    rows = db.query(Player).filter(Player.team.in_(teams)).all()
+    by_team: dict[str, list[Player]] = {}
+    for p in rows:
+        by_team.setdefault(p.team, []).append(p)
+
+    result: dict[tuple[str, str], Player] = {}
+    for name, team in pairs:
+        if not team:
+            continue
+        norm = normalize_name(name)
+        for p in by_team.get(team.upper(), []):
+            if norm in p.name_normalized:
+                result[(name, team)] = p
+                break
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Score queries
 # ---------------------------------------------------------------------------
