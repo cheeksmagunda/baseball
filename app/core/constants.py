@@ -218,6 +218,11 @@ ENV_MODIFIER_CEILING = 1.30
 TRAIT_MODIFIER_FLOOR = 0.85
 TRAIT_MODIFIER_CEILING = 1.15
 
+# Recent form volatility modifier — applies when recent_form CV is high.
+# High variance (CV near 1.0) in recent production signals sensitivity to conditions.
+# Max amplification: 1.0 + (1.0 × 0.12) = 1.12x env_score for highly volatile players.
+BATTER_FORM_VOLATILITY_MAX = 0.12
+
 # ---------------------------------------------------------------------------
 # Moonshot constants (dual-lineup optimizer)
 # ---------------------------------------------------------------------------

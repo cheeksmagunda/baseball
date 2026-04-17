@@ -5,7 +5,7 @@ Scores players 0-100 based on trait profiles derived from
 Highest Value player analysis across March 25-31, 2026 data.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from sqlalchemy.orm import Session
@@ -44,6 +44,7 @@ class TraitResult:
     score: float
     max_score: float
     raw_value: str = ""
+    metadata: dict = field(default_factory=dict)  # for trait-specific data like recent_form_cv
 
 
 @dataclass
@@ -265,9 +266,12 @@ def score_batter_recent_form(
     Primary signal is last 2 games (who they are right now). A trajectory
     multiplier rewards players climbing toward their peak vs those already on
     the way down. Ceiling at 0.65 so only genuinely hot stretches hit max.
+
+    Also computes coefficient of variation (CV) of per-game production as a
+    volatility signal for env amplification. High CV = sensitive to conditions.
     """
     if not game_logs:
-        return TraitResult("recent_form", max_pts * 0.4, max_pts, "no recent games")
+        return TraitResult("recent_form", max_pts * 0.4, max_pts, "no recent games", {})
 
     recent7 = get_recent_games(game_logs, 7)
     window_new = recent7[:2]   # most recent 2 — primary signal
@@ -284,6 +288,25 @@ def score_batter_recent_form(
 
     prod_new = _production(window_new)
     prod_old = _production(window_old)
+
+    # Compute per-game production for volatility analysis
+    per_game_prod = []
+    for g in recent7:
+        ab = g.ab or 1
+        prod = (g.hits / ab) + (g.hr * 0.05) + (g.rbi * 0.02)
+        per_game_prod.append(prod)
+
+    # Coefficient of variation (volatility)
+    if per_game_prod:
+        mean_prod = sum(per_game_prod) / len(per_game_prod)
+        if mean_prod > 0:
+            variance = sum((p - mean_prod) ** 2 for p in per_game_prod) / len(per_game_prod)
+            std_prod = variance ** 0.5
+            cv = std_prod / mean_prod
+        else:
+            cv = 0.0
+    else:
+        cv = 0.0
 
     # Base score off last 3 games; harder ceiling (0.65) filters out average hot streaks
     base_score = min(max_pts, prod_new / 0.65 * max_pts)
@@ -316,6 +339,7 @@ def score_batter_recent_form(
         max_pts,
         f"L3_prod={prod_new:.3f} prev4_prod={prod_old:.3f} traj={traj_mult:.2f}x"
         f" | 7G: {all_h}/{all_ab} {all_hr}HR {all_rbi}RBI",
+        {"recent_form_cv": cv},
     )
 
 
