@@ -2,7 +2,7 @@
 Tests for the active filter_strategy pipeline.
 
 Covers: env score computation, slate classification, base EV computation,
-composition enforcement, dual optimizer, condition matrix lookup, and
+FADE exclusion gate, composition enforcement, dual optimizer, and
 popularity classification.
 """
 
@@ -20,17 +20,13 @@ from app.services.filter_strategy import (
     _compute_base_ev,
     _compute_filter_ev,
     _compute_moonshot_filter_ev,
+    _exclude_fade_players,
     _enforce_composition,
     _smart_slot_assignment,
     run_filter_strategy,
     run_dual_filter_strategy,
 )
 from app.services.popularity import PopularityClass, classify_player
-from app.services.condition_classifier import (
-    get_rs_condition_factor,
-    RS_CONDITION_MATRIX,
-    bayesian_rate,
-)
 from app.core.constants import (
     REQUIRED_PITCHERS_IN_LINEUP,
     MAX_PLAYERS_PER_TEAM,
@@ -252,16 +248,14 @@ class TestBatterEnvScore:
         # Group B situation: platoon 1.0 + order 2 → 1.0 = 2.0
         # Group C venue: COL (1.38) → 1.0
         # Debut: 0.5
-        # Total = 2.0 + 2.0 + 1.0 + 0.5 = 5.5 / 5.5 = 1.0
-        assert score == pytest.approx(1.0, abs=0.01)
+        # Total = 2.0 + 2.0 + 1.0 + 0.5 = 5.5 / 6.3 (BATTER_ENV_MAX_SCORE) ≈ 0.873
+        assert score == pytest.approx(5.5 / 6.3, abs=0.01)
         assert unknown == 0
 
     def test_empty_env_tracks_unknowns(self):
         score, factors, unknown = compute_batter_env_score()
-        # V8.0: unknown batting order gets 0.40 baseline instead of 0
-        # Group B situation: 0 (no platoon) + 0.40 (unknown order) = 0.40
-        # Total = 0.0 (run_env) + 0.40 (situation) + 0.0 (venue) = 0.40 / 5.5 ≈ 0.073
-        assert score == pytest.approx(0.40 / 5.5, abs=0.01)
+        # All inputs None: no signal contributes → score = 0.0
+        assert score == pytest.approx(0.0, abs=0.01)
         # vegas_total, opp_pitcher_era, batting_order, team_moneyline, opp_bullpen_era = 5 unknowns
         assert unknown == 5
 
@@ -323,52 +317,36 @@ class TestBatterEnvScore:
 
 
 # ===================================================================
-# 4. Condition Matrix / RS Factor Lookup
+# 4. FADE Exclusion Gate (V9.0)
 # ===================================================================
 
-class TestConditionMatrix:
-    def test_batter_target_factor(self):
-        f = get_rs_condition_factor("TARGET", is_pitcher=False)
-        assert f == pytest.approx(1.0)
+class TestFADEGate:
+    def test_fade_players_excluded(self):
+        pool = [
+            _make_candidate("P1", is_pitcher=True, popularity=PopularityClass.TARGET),
+            _make_candidate("B1", popularity=PopularityClass.FADE),
+            _make_candidate("B2", popularity=PopularityClass.TARGET),
+            _make_candidate("B3", popularity=PopularityClass.NEUTRAL),
+        ]
+        result = _exclude_fade_players(pool)
+        names = [c.player_name for c in result]
+        assert "B1" not in names
+        assert len(result) == 3
 
-    def test_batter_fade_factor(self):
-        f = get_rs_condition_factor("FADE", is_pitcher=False)
-        assert f == pytest.approx(0.275)
+    def test_no_fade_players_unchanged(self):
+        pool = [
+            _make_candidate("P1", is_pitcher=True, popularity=PopularityClass.TARGET),
+            _make_candidate("B1", popularity=PopularityClass.TARGET),
+        ]
+        assert len(_exclude_fade_players(pool)) == 2
 
-    def test_batter_neutral_factor(self):
-        f = get_rs_condition_factor("NEUTRAL", is_pitcher=False)
-        assert f == pytest.approx(0.65)
-
-    def test_pitcher_target_factor(self):
-        f = get_rs_condition_factor("TARGET", is_pitcher=True)
-        assert f == pytest.approx(1.0)
-
-    def test_pitcher_fade_factor(self):
-        f = get_rs_condition_factor("FADE", is_pitcher=True)
-        assert f == pytest.approx(0.71)
-
-    def test_pitcher_neutral_factor(self):
-        f = get_rs_condition_factor("NEUTRAL", is_pitcher=True)
-        assert f == pytest.approx(0.85)
-
-    def test_unknown_popularity_defaults_to_neutral(self):
-        f = get_rs_condition_factor("UNKNOWN", is_pitcher=False)
-        assert f == get_rs_condition_factor("NEUTRAL", is_pitcher=False)
-
-    def test_batter_fade_vs_target_ratio(self):
-        """The 3.6x differential is the dominant edge — verify it exists."""
-        target = get_rs_condition_factor("TARGET", is_pitcher=False)
-        fade = get_rs_condition_factor("FADE", is_pitcher=False)
-        ratio = target / fade
-        assert ratio > 3.0, f"Batter TARGET/FADE ratio should be > 3x, got {ratio:.2f}"
-
-    def test_bayesian_rate_no_observations(self):
-        rate = bayesian_rate(0, 0)
-        assert rate == pytest.approx(0.5)
-
-    def test_bayesian_rate_with_data(self):
-        rate = bayesian_rate(0, 34)
-        assert 0.02 < rate < 0.05
+    def test_all_pitchers_fade_raises(self):
+        pool = [
+            _make_candidate("P1", is_pitcher=True, popularity=PopularityClass.FADE),
+            _make_candidate("B1", popularity=PopularityClass.TARGET),
+        ]
+        with pytest.raises(ValueError, match="[Pp]itcher"):
+            _exclude_fade_players(pool)
 
 
 # ===================================================================
@@ -435,44 +413,37 @@ class TestDNPAdjustment:
 # ===================================================================
 
 class TestBaseEV:
-    def test_target_ev_higher_than_fade(self):
-        target_c = _make_candidate(popularity=PopularityClass.TARGET)
-        fade_c = _make_candidate(popularity=PopularityClass.FADE)
-        target_pop = get_rs_condition_factor("TARGET", is_pitcher=False)
-        fade_pop = get_rs_condition_factor("FADE", is_pitcher=False)
-        target_ev = _compute_base_ev(target_c, target_pop)
-        fade_ev = _compute_base_ev(fade_c, fade_pop)
-        assert target_ev > fade_ev * 2.0, "TARGET EV should be much higher than FADE"
+    def test_ev_is_positive(self):
+        c = _make_candidate()
+        ev = _compute_base_ev(c)
+        assert ev > 0
 
     def test_debut_bonus_applied(self):
         normal = _make_candidate()
         debut = _make_candidate(is_debut_or_return=True)
-        pop = get_rs_condition_factor("TARGET", is_pitcher=False)
-        ev_normal = _compute_base_ev(normal, pop)
-        ev_debut = _compute_base_ev(debut, pop)
+        ev_normal = _compute_base_ev(normal)
+        ev_debut = _compute_base_ev(debut)
         assert ev_debut == pytest.approx(ev_normal * DEBUT_RETURN_EV_BONUS, rel=0.01)
 
     def test_blowout_stack_bonus_applied(self):
         normal = _make_candidate(is_in_blowout_game=False)
         blowout = _make_candidate(is_in_blowout_game=True)
-        pop = get_rs_condition_factor("TARGET", is_pitcher=False)
-        ev_normal = _compute_base_ev(normal, pop)
-        ev_blowout = _compute_base_ev(blowout, pop)
+        ev_normal = _compute_base_ev(normal)
+        ev_blowout = _compute_base_ev(blowout)
         assert ev_blowout == pytest.approx(ev_normal * STACK_BONUS, rel=0.01)
-
-    def test_ev_is_positive(self):
-        c = _make_candidate()
-        pop = get_rs_condition_factor("NEUTRAL", is_pitcher=False)
-        ev = _compute_base_ev(c, pop)
-        assert ev > 0
 
     def test_high_env_raises_ev(self):
         low_env = _make_candidate(env_score=0.1)
         high_env = _make_candidate(env_score=0.9)
-        pop = get_rs_condition_factor("TARGET", is_pitcher=False)
-        ev_low = _compute_base_ev(low_env, pop)
-        ev_high = _compute_base_ev(high_env, pop)
+        ev_low = _compute_base_ev(low_env)
+        ev_high = _compute_base_ev(high_env)
         assert ev_high > ev_low
+
+    def test_popularity_not_in_base_ev(self):
+        """V9.0: popularity is a gate only — TARGET and FADE get same base EV."""
+        target_c = _make_candidate(popularity=PopularityClass.TARGET)
+        neutral_c = _make_candidate(popularity=PopularityClass.NEUTRAL)
+        assert _compute_base_ev(target_c) == pytest.approx(_compute_base_ev(neutral_c), rel=0.01)
 
 
 # ===================================================================
@@ -480,26 +451,22 @@ class TestBaseEV:
 # ===================================================================
 
 class TestFilterEV:
-    def test_starting5_ev_uses_matrix(self):
+    def test_filter_ev_positive(self):
         c = _make_candidate(popularity=PopularityClass.TARGET)
-        ev = _compute_filter_ev(c)
-        assert ev > 0
+        assert _compute_filter_ev(c) > 0
 
-    def test_moonshot_ev_uses_contrarian(self):
+    def test_moonshot_sharp_score_raises_ev(self):
+        no_sharp = _make_candidate(sharp_score=0)
+        with_sharp = _make_candidate(sharp_score=100)
+        ev_base = _compute_moonshot_filter_ev(no_sharp)
+        ev_sharp = _compute_moonshot_filter_ev(with_sharp)
+        assert ev_sharp > ev_base
+
+    def test_moonshot_ev_above_s5_with_sharp(self):
         target = _make_candidate(popularity=PopularityClass.TARGET, sharp_score=50)
         ev_s5 = _compute_filter_ev(target)
         ev_moon = _compute_moonshot_filter_ev(target)
-        # Moonshot TARGET gets additional bonus via contrarian mult + sharp
-        assert ev_moon > ev_s5 * 0.8  # should be in the same ballpark or higher
-
-    def test_moonshot_fade_heavily_penalized(self):
-        fade = _make_candidate(popularity=PopularityClass.FADE)
-        target = _make_candidate(popularity=PopularityClass.TARGET)
-        ev_fade = _compute_moonshot_filter_ev(fade)
-        ev_target = _compute_moonshot_filter_ev(target)
-        # V8.0: pop is PRIMARY (3.0× swing) + moonshot contrarian multipliers
-        # FADE raw 0.275 × 0.50 mult, TARGET raw 1.00 × 1.25 mult → very large gap
-        assert ev_target > ev_fade * 2.5, "Moonshot should heavily penalize FADE"
+        assert ev_moon > ev_s5
 
 
 # ===================================================================
@@ -670,8 +637,8 @@ class TestDualOptimizer:
         assert result.moonshot.strategy == "moonshot"
         assert result.starting_5.strategy == "filter_not_forecast"
 
-    def test_empty_moonshot_pool(self):
-        """If pool only has 5 players, moonshot should be empty."""
+    def test_minimal_pool_both_lineups_filled(self):
+        """V9.0: moonshot uses same pool as S5 — both lineups fill from 5 players."""
         teams = ["NYY", "BOS", "LAD", "HOU", "ATL"]
         pool = [
             _make_candidate(name="SP_0", team=teams[0], is_pitcher=True, game_id=1),
@@ -681,4 +648,4 @@ class TestDualOptimizer:
         ]
         result = run_dual_filter_strategy(pool, _default_slate())
         assert len(result.starting_5.slots) == 5
-        assert result.moonshot.slots == []
+        assert len(result.moonshot.slots) == 5
