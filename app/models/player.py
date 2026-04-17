@@ -23,7 +23,7 @@ class Player(Base):
     name_normalized: Mapped[str] = mapped_column(String, nullable=False, index=True)
     team: Mapped[str] = mapped_column(String, nullable=False, index=True)
     position: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    mlb_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mlb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     bat_side: Mapped[str | None] = mapped_column(String, nullable=True)   # L, R, or S
     pitch_hand: Mapped[str | None] = mapped_column(String, nullable=True)  # L or R
 
