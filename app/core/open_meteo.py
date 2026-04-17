@@ -20,6 +20,7 @@ import math
 from datetime import date
 
 import httpx
+import tenacity
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +160,7 @@ def _celsius_to_f(c: float) -> float:
     return c * 9 / 5 + 32
 
 
-def _extract_hour(data: dict, target_utc_hour: int) -> dict | None:
+def _extract_hour(data: dict, target_utc_hour: int) -> dict:
     """Pick the hourly reading closest to target_utc_hour."""
     hourly    = data.get("hourly", {})
     times     = hourly.get("time", [])
@@ -168,7 +169,7 @@ def _extract_hour(data: dict, target_utc_hour: int) -> dict | None:
     directions = hourly.get("wind_direction_10m", [])
 
     if not times:
-        return None
+        raise RuntimeError("Open-Meteo response contains no hourly time data.")
 
     best_idx, best_diff = 0, 999
     for i, t in enumerate(times):
@@ -183,7 +184,10 @@ def _extract_hour(data: dict, target_utc_hour: int) -> dict | None:
     dir_deg   = directions[best_idx] if best_idx < len(directions) else None
 
     if temp_c is None or speed_kmh is None or dir_deg is None:
-        return None
+        raise RuntimeError(
+            f"Open-Meteo response missing hourly values at index {best_idx} "
+            f"(temp={temp_c}, speed={speed_kmh}, dir={dir_deg})."
+        )
 
     return {
         "temperature_f":    round(_celsius_to_f(temp_c)),
@@ -192,7 +196,12 @@ def _extract_hour(data: dict, target_utc_hour: int) -> dict | None:
     }
 
 
-async def _fetch(url: str, lat: float, lon: float, game_date: date) -> dict | None:
+@tenacity.retry(
+    stop=tenacity.stop_after_attempt(3),
+    wait=tenacity.wait_exponential(multiplier=1, min=1, max=8),
+    reraise=True,
+)
+async def _fetch(url: str, lat: float, lon: float, game_date: date) -> dict:
     params = {
         "latitude":         lat,
         "longitude":        lon,
@@ -203,14 +212,10 @@ async def _fetch(url: str, lat: float, lon: float, game_date: date) -> dict | No
         "start_date":       game_date.isoformat(),
         "end_date":         game_date.isoformat(),
     }
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
-    except Exception as e:
-        logger.warning("Open-Meteo request failed (%s lat=%s lon=%s): %s", url, lat, lon, e)
-        return None
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
 
 
 async def get_game_weather(
@@ -220,24 +225,18 @@ async def get_game_weather(
     game_utc_hour: int,
     park_team: str | None = None,
     use_archive: bool = False,
-) -> dict | None:
+) -> dict:
     """Fetch weather for a game.
 
     Returns dict with temperature_f (int), wind_speed_mph (float),
     wind_direction (str — "OUT" or 8-point compass), and
     wind_direction_deg (int — raw degrees for observability).
 
-    Returns None on any API failure (weather is non-fatal).
+    Raises RuntimeError on API failure or missing data (3 retries via tenacity).
     """
     url = ARCHIVE_URL if use_archive else FORECAST_URL
     data = await _fetch(url, lat, lon, game_date)
-    if data is None:
-        return None
-
     extracted = _extract_hour(data, game_utc_hour)
-    if extracted is None:
-        return None
-
     extracted["wind_direction"] = _classify_wind_direction(
         extracted["wind_direction_deg"], park_team
     )

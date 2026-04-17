@@ -190,7 +190,7 @@ The app uses an event-driven timing model that triggers the ONLY full pipeline r
 
 ## Data Files (`/data/`)
 
-Current coverage (as of 2026-04-16): **23 slates, 2026-03-25 → 2026-04-16**. All four files stay in lockstep — every date present in one is present in all four.
+Current coverage (as of 2026-04-17): **23 slates, 2026-03-25 → 2026-04-16**. All four files stay in lockstep — every date present in one is present in all four. 2026-04-17 slate is pending manual ingest.
 
 | File | Format | Current size | Purpose |
 |---|---|---|---|
@@ -255,7 +255,7 @@ New slates are ingested **manually by appending rows** to the four files above �
 
 ### Reloading the database after ingest
 
-The CSV/JSON files are the source of truth; the SQLite DB is rebuilt from them via `app/seed.py`. `run_seed()` is **idempotency-guarded on an empty DB** — it only seeds if `players` is empty. To pick up freshly appended rows:
+The CSV/JSON files are the source of truth; the SQLite DB is rebuilt from them via `app/seed.py`. `run_seed()` is **idempotency-guarded** — it only seeds if the `weight_history` table is empty (guard at `app/seed.py:257`). To pick up freshly appended rows:
 
 ```bash
 rm db/baseball.db              # or DROP TABLE in Postgres
@@ -507,7 +507,7 @@ Post-EV composition (applied in `_enforce_composition`):
 
 **Fix 4 — Vegas lines** (`app/core/odds_api.py`, `app/config.py`, `app/services/data_collection.py`, `app/services/pipeline.py`)
 - New `app/core/odds_api.py` client. `DFS_ODDS_API_KEY` env var; omitting it skips enrichment with a loud warning (env scoring treats NULL lines as unknown/neutral — existing behavior).
-- `enrich_slate_game_vegas_lines()` populates `vegas_total`, `home_moneyline`, `away_moneyline`. Non-fatal in `run_full_pipeline()`.
+- `enrich_slate_game_vegas_lines()` populates `vegas_total`, `home_moneyline`, `away_moneyline`. Non-fatal in `run_full_pipeline()`. **Superseded — as of the "Vegas Lines: Required, Never Optional" policy, this call is now fatal. Any API failure or missing per-game odds raises `RuntimeError` and crashes the pipeline. The non-fatal note above applied to the initial V8.1 implementation only.**
 
 **Fix 5 — Condition matrix** (retired in V9.0)
 - `RS_CONDITION_MATRIX` and `RS_CONDITION_OBSERVATIONS` were removed in V9.0. `condition_classifier.py` now only exports `compute_draft_entropy()` and `compute_gini_coefficient()` for meta-game monitoring.

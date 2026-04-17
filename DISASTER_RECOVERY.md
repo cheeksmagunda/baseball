@@ -164,32 +164,27 @@ Bad data is worse than no data. Operations must restore the system rather than s
 - Exception raised during `run_full_pipeline()`
 - Example: SQL constraint violation, out-of-memory, network timeout, MLB API failure, Odds API failure
 
-**Recovery Behavior (REGENERATE FROM SCRATCH OR CRASH):**
+**Recovery Behavior (V8.1 Fix 1 — Restore and Refreeze):**
 1. App restarts (Railway auto-restarts)
-2. Lifespan checks: has T-65 already passed?
-3. **If T-65 has NOT passed:** Purge cache and wait for startup pipeline to run (normal)
-4. **If T-65 HAS passed:** 
-   - **Do NOT restore frozen picks from cache**
-   - Instead, immediately attempt a full pipeline run with fresh data
-   - If any dependency is unavailable (MLB API down, Odds API down, DB down, etc.), crash loudly with error
-   - Users see HTTP 503 "T-65 regeneration failed — dependencies unavailable"
+2. Lifespan checks: has T-65 already passed? (`main.py:126–145`)
+3. **If T-65 has NOT passed:** Purge cache and wait for T-65 monitor to run (normal path)
+4. **If T-65 HAS passed:**
+   - Startup automatically calls `lineup_cache.restore_and_refreeze(first_pitch_utc)`
+   - Picks are loaded from Redis (then SQLite as fallback) and re-frozen
+   - Slate monitor's Phase 3 detects `lineup_cache.is_frozen == True` and skips the full pipeline re-run (`slate_monitor.py:370`)
+   - Monitor enters Phase 4 (post-lock game-completion polling) immediately
+   - **No manual action required if restoration succeeds**
 
-**Why no restoration:** Restoration would serve cached picks (fallback behavior). The fail-loud principle requires either:
-- Fresh picks from a complete T-65 pipeline run with live data, OR
-- A clear crash with error
+**Why restoration (not regeneration):** Regenerating after T-65 from a smaller game pool (some games already Live/Final are excluded from `_load_active_slate()`) would produce different picks mid-slate — corrupting lineup integrity. The frozen picks from the original T-65 run are the authoritative result.
 
 **Manual Recovery Steps:**
-1. **Check logs:** Find the exception that caused crash
-2. **Verify dependencies:** 
-   - Check Railway database dyno status
-   - Verify MLB API is reachable (statsapi.mlb.com)
-   - Verify Odds API is reachable (check DFS_ODDS_API_KEY is set)
-   - Verify network connectivity
-3. **Fix root cause:** (e.g., add missing column, increase dyno memory, extend timeout)
-4. **Restart app:** Railway will auto-restart, or manually trigger restart
-5. **Verify picks frozen:** Check `/api/filter-strategy/status` returns 200 with picks. If HTTP 503, read error message and fix remaining dependencies.
+1. **Check logs:** Look for "Startup: frozen picks restored=true/false"
+   - `restored=True` → system self-healed; verify `/api/filter-strategy/optimize` returns 200
+   - `restored=False` → restoration failed; see Scenario 8
+2. **If restored=False:** Ensure Redis is healthy and reachable, then restart app
+3. **If dependencies are down:** Fix root cause (see Scenarios 1–4), then restart
 
-**Impact:** System either recovers with fresh T-65 picks or crashes loudly with clear error. No silent degradation, no stale data served to users.
+**Impact:** System self-heals via cache restoration. If restoration fails, falls through to Scenario 8 (loud failure, no picks for that slate).
 
 ---
 
@@ -223,6 +218,37 @@ Bad data is worse than no data. Operations must restore the system rather than s
    - Contact operations before serving cached picks from SQLite
 
 **Impact:** System crashes and requires explicit manual recovery. Clear visibility into cache corruption — no silent serving of corrupted data.
+
+---
+
+### Scenario 8: Post-T-65 Restart — Restore Fails, Candidate Pool Empty
+
+**Symptom:** App restarts after T-65. Logs show "Startup: frozen picks restored=False". Monitor re-runs pipeline. T-65 monitor crashes with `RuntimeError: "no slate data available — no candidates after filtering"` (or similar). `/api/filter-strategy/optimize` returns HTTP 503.
+
+**Root Cause:**
+- `restore_and_refreeze()` returned `False` (Redis down, date mismatch, or cache never written because the original T-65 run also failed)
+- Cache was purged on startup
+- Monitor re-ran the full pipeline
+- `_load_active_slate()` filtered out games already in `Live` or `Final` status — leaving no candidate pool
+- `build_and_cache_lineups()` returned `None` → monitor raised `RuntimeError`
+
+**Why this happens correctly:** This is correct loud failure behavior. The system cannot produce valid picks from a partial game pool mid-slate. The no-fallback rule prohibits serving yesterday's picks or running with a degraded pool.
+
+**Recovery Steps:**
+1. **Check logs:** Confirm "restored=False" and the specific RuntimeError message
+2. **Check Redis health:** Verify Redis dyno is running on Railway dashboard
+   - If Redis was down: restore Redis (Scenario 3), then restart app
+   - If Redis was healthy but cache was missing: the original T-65 run likely also failed (check earlier logs)
+3. **Accept no picks for this slate:** If games are already Live, no recovery is possible. Users see HTTP 503 for the remainder of the slate.
+4. **Notify users manually:** "System experienced a disruption during T-65; picks unavailable for today's slate."
+5. **Tomorrow:** System will self-reset. Post-lock monitor clears cache on all-final; next-day startup runs the T-65 cycle normally.
+
+**Prevention:**
+- Ensure Redis is healthy at all times (Scenario 3)
+- Monitor logs at T-65 for "Cache FROZEN" confirmation
+- If T-65 run fails, fix dependencies and manually restart before games go Live
+
+**Impact:** No picks for that slate. System is in correct loud-failure state. No silent degradation, no stale data.
 
 ---
 
@@ -334,4 +360,5 @@ DFS_DATABASE_URL=sqlite:///nonexistent/path/db.db
 | Date | Version | Changes |
 |------|---------|---------|
 | 2026-04-15 | 1.0 | Initial runbook. Seven scenarios covered. Monitoring checklist. Testing guide. |
+| 2026-04-17 | 1.1 | Corrected Scenario 6: post-T-65 restart uses `restore_and_refreeze()` (V8.1 Fix 1), not a fresh pipeline run. Added Scenario 8: post-T-65 restore failure with empty candidate pool. |
 

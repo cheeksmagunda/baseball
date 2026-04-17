@@ -647,8 +647,8 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
 
     Recent form (L10): count wins in the team's most recent 10 completed games.
 
-    Both fields remain NULL only when team_id is not in TEAM_MLB_IDS (unknown
-    abbreviation). API failures propagate — the pipeline fails loudly.
+    Raises RuntimeError if any team abbreviation is unknown or the API returns
+    no schedule data — the pipeline fails loudly with no NULL fields.
     """
     from datetime import timedelta
 
@@ -665,7 +665,10 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
     async def _fetch_team_schedule(team: str) -> tuple[str, list[dict]]:
         team_id = TEAM_MLB_IDS.get(team)
         if not team_id:
-            return team, []
+            raise RuntimeError(
+                f"Unknown team abbreviation {team!r} — not in TEAM_MLB_IDS. "
+                "Cannot fetch series context."
+            )
         from app.core.mlb_api import _get
         data = await _get("/schedule", {
             "teamId": team_id,
@@ -695,13 +698,15 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
         slate_date (the current series).
         l10_wins: wins in the 10 most recent completed games (any opponent).
 
-        Returns (None, None, None) when no schedule data is available for the
-        team (API failure). This prevents the momentum gate from firing on
-        fabricated zeros — NULL values are treated as neutral (no penalty).
+        Raises RuntimeError if no completed games are found in the lookback
+        window — indicates an API or data problem mid-season.
         """
         raw = team_games.get(team, [])
         if not raw:
-            return None, None, None
+            raise RuntimeError(
+                f"No completed games found for team {team!r} in the last 14 days — "
+                "check MLB API response or extend the lookback window."
+            )
 
         def _game_date(g: dict) -> str:
             return g.get("officialDate", g.get("gameDate", "")[:10])
@@ -788,9 +793,8 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
     (N/NE/E/SE/S/SW/W/NW) otherwise.  "OUT" is the only value that triggers
     BATTER_ENV_WIND_OUT_BONUS in compute_batter_env_score().
 
-    NON-FATAL: failures are logged as warnings and skipped.  Missing weather
-    data leaves the fields NULL, which env scoring treats as neutral (no bonus,
-    no penalty).  Unlike Vegas lines, weather is best-effort.
+    Raises RuntimeError if weather data cannot be fetched for any game.
+    All three fields must be populated — NULL weather corrupts env scoring.
 
     Uses Open-Meteo archive endpoint for past dates (≥ 5 days ago) and the
     forecast endpoint for today or near-future games.
@@ -811,8 +815,10 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
         park = game.home_team
         coords = STADIUM_COORDINATES.get(park)
         if coords is None:
-            logger.warning("No stadium coordinates for home_team=%s — skipping weather", park)
-            continue
+            raise RuntimeError(
+                f"No stadium coordinates for home_team={park!r} — "
+                "add entry to STADIUM_COORDINATES in app/core/open_meteo.py."
+            )
 
         lat, lon = coords
 
@@ -839,11 +845,10 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
             use_archive=use_archive,
         )
         if weather is None:
-            logger.warning(
-                "Weather fetch failed for %s vs %s on %s — leaving NULL",
-                game.home_team, game.away_team, slate.date,
+            raise RuntimeError(
+                f"Weather fetch failed for {game.home_team} vs {game.away_team} on {slate.date} — "
+                "pipeline cannot proceed with NULL weather data."
             )
-            continue
 
         game.wind_speed_mph  = weather["wind_speed_mph"]
         game.wind_direction  = weather["wind_direction"]
@@ -885,6 +890,10 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
     if not games:
         return 0
 
+    if all(g.home_moneyline is not None and g.away_moneyline is not None for g in games):
+        logger.info("Vegas lines already populated for all %d games on %s — skipping API call", len(games), slate.date)
+        return len(games)
+
     odds_data = await fetch_mlb_odds(settings.odds_api_key, slate.date)
 
     # Build lookup: (home_abbr, away_abbr) → odds dict
@@ -898,11 +907,10 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
         key = (game.home_team.upper(), game.away_team.upper())
         odds = odds_lookup.get(key)
         if not odds:
-            logger.warning(
-                "No odds found for %s vs %s on %s",
-                game.home_team, game.away_team, slate.date,
+            raise RuntimeError(
+                f"No odds found for {game.home_team} vs {game.away_team} on {slate.date} — "
+                "pipeline cannot proceed without moneylines for all games."
             )
-            continue
 
         if odds.get("home_moneyline") is not None:
             game.home_moneyline = odds["home_moneyline"]
@@ -911,6 +919,17 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
         if odds.get("total") is not None:
             game.vegas_total = odds["total"]
         updated += 1
+
+    null_moneylines = [
+        f"{g.home_team} vs {g.away_team}"
+        for g in games
+        if g.home_moneyline is None or g.away_moneyline is None
+    ]
+    if null_moneylines:
+        raise RuntimeError(
+            f"Vegas lines: moneylines not populated for {len(null_moneylines)} game(s) "
+            f"on {slate.date}: {', '.join(null_moneylines)}"
+        )
 
     db.commit()
     logger.info(
