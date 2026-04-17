@@ -154,6 +154,10 @@ def is_pipeline_callable_now(db: Session) -> tuple[bool, str]:
     The pipeline must NOT be called during an active slate (games in progress
     or upcoming). It ONLY runs at T-65 via the slate_monitor.
 
+    Exception: if the T-65 pipeline already failed (pipeline_failed=True),
+    the lock is bypassed so a manual recovery run can generate picks for the
+    remaining games on the slate.
+
     Returns (True, "") if OK to call, (False, reason) if NOT.
     """
     from app.models.slate import Slate, SlateGame
@@ -173,6 +177,12 @@ def is_pipeline_callable_now(db: Session) -> tuple[bool, str]:
                 for g in games
             )
             if not all_final:
+                # T-65 pipeline failed and no picks were ever frozen — allow a
+                # manual recovery run so picks can be generated for remaining games.
+                from app.services.lineup_cache import lineup_cache
+                if lineup_cache.pipeline_failed:
+                    return (True, "")
+
                 # Games still playing — pipeline must NOT be called
                 return (
                     False,
