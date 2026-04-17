@@ -8,9 +8,11 @@ from app.config import settings
 # max_overflow: Allow temporary connections above pool_size for traffic spikes
 # pool_recycle: Recycle connections every 1 hour (Railway Postgres timeout ~4 hours)
 # pool_pre_ping: Test connection before use (auto-recovery from stale connections)
+# SQLite requires check_same_thread=False; PostgreSQL does not accept this arg.
+_connect_args = {"check_same_thread": False} if "sqlite" in settings.database_url else {}
 engine = create_engine(
     settings.database_url,
-    connect_args={"check_same_thread": False},
+    connect_args=_connect_args,
     pool_size=10,
     max_overflow=20,
     pool_recycle=3600,

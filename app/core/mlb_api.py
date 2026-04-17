@@ -3,6 +3,7 @@
 import asyncio
 
 import httpx
+import tenacity
 
 from app.config import settings
 
@@ -15,6 +16,11 @@ TIMEOUT = 15.0
 _API_SEM = asyncio.Semaphore(20)
 
 
+@tenacity.retry(
+    stop=tenacity.stop_after_attempt(3),
+    wait=tenacity.wait_exponential(multiplier=1, min=1, max=8),
+    reraise=True,
+)
 async def _get(path: str, params: dict | None = None) -> dict:
     """Make a GET request to the MLB Stats API."""
     async with _API_SEM:

@@ -12,7 +12,6 @@ class PopularityProfileOut(BaseModel):
     team: str
     social_score: float
     news_score: float
-    dfs_ownership_score: float
     search_score: float
     sharp_score: float = 0.0
     composite_score: float
