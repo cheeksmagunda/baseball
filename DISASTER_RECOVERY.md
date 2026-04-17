@@ -94,7 +94,7 @@ Bad data is worse than no data. Operations must restore the system rather than s
 2. **Restart app:** App will reconnect and proceed
 3. **Verify picks frozen:** Check `/api/filter-strategy/status` returns 200 with picks
 
-**If Redis is not required:** Do NOT set `DFS_REDIS_URL` environment variable. Then SQLite is the sole cache tier (slower but acceptable for single-dyno deployments).
+**Redis is always required.** There is no SQLite-only fallback mode. `DFS_REDIS_URL` must be set and Redis must be reachable; the app raises `RuntimeError` at startup otherwise.
 
 **Impact:** System is down until Redis is restored. No silent degradation. Clear operational visibility.
 
@@ -282,9 +282,9 @@ DFS_DATABASE_URL=sqlite:///nonexistent/path/db.db
 ### Scenario 3: Redis Unavailable
 ```bash
 # Stop Redis dyno on Railway
-# Expected: App starts with warning "Redis configured but unreachable at startup"
-# Expected: POST /api/filter-strategy/optimize still returns picks (SQLite fallback)
-# Fix: Restart Redis dyno
+# Expected: App crashes at startup with RuntimeError "Redis configured but unreachable"
+# Expected: No picks served — HTTP 503 until Redis is restored
+# Fix: Restart Redis dyno, then restart app dyno
 ```
 
 ### Scenario 4: Simulate T-65 Monitor Failure (Graceful Restart)
