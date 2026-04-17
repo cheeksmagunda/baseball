@@ -20,7 +20,6 @@ import math
 from datetime import date
 
 import httpx
-import tenacity
 
 logger = logging.getLogger(__name__)
 
@@ -196,11 +195,6 @@ def _extract_hour(data: dict, target_utc_hour: int) -> dict:
     }
 
 
-@tenacity.retry(
-    stop=tenacity.stop_after_attempt(3),
-    wait=tenacity.wait_exponential(multiplier=1, min=1, max=8),
-    reraise=True,
-)
 async def _fetch(url: str, lat: float, lon: float, game_date: date) -> dict:
     params = {
         "latitude":         lat,
