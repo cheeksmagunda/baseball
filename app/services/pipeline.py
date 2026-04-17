@@ -496,8 +496,7 @@ async def run_full_pipeline(db: Session, game_date: date) -> dict:
         await enrich_slate_game_vegas_lines(db, slate)
 
         # Enrich weather (temperature + wind) from Open-Meteo.
-        # NON-FATAL: failures leave wind/temp fields NULL, which env scoring
-        # treats as neutral.  Never raises.
+        # Raises RuntimeError if any game's weather cannot be fetched.
         from app.services.data_collection import enrich_slate_game_weather
         await enrich_slate_game_weather(db, slate)
 
