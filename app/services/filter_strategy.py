@@ -559,6 +559,16 @@ def compute_batter_env_score(
         venue = min(1.0, venue + BATTER_ENV_WARM_TEMP_BONUS)
         factors.append(f"Warm conditions ({temperature_f}°F)")
 
+    # Compound signal: hot day at hitter park or cold day at pitcher park
+    if temperature_f is not None and park_team:
+        pf = PARK_HR_FACTORS.get(park_team, 1.0)
+        if temperature_f > BATTER_ENV_COMPOUND_HOT_THRESHOLD and pf > BATTER_ENV_COMPOUND_PARK_THRESHOLD:
+            venue = min(1.0, venue + BATTER_ENV_COMPOUND_BONUS)
+            factors.append(f"Hot+hitter park synergy ({temperature_f}°F at {park_team})")
+        elif temperature_f < BATTER_ENV_COMPOUND_COLD_THRESHOLD and pf < BATTER_ENV_COMPOUND_PARK_THRESHOLD:
+            venue = max(0.0, venue - BATTER_ENV_COMPOUND_BONUS)
+            factors.append(f"Cold+pitcher park synergy ({temperature_f}°F at {park_team})")
+
     # ---------------------------------------------------------------
     # Group D: Series/Momentum context (±0.8 additive)
     # Addresses the "correctly-avoided player disguised as a ghost"

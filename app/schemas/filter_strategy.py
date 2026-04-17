@@ -52,7 +52,6 @@ class FilterCard(BaseModel):
     batting_order: int | None = None
     platoon_advantage: bool = False
     drafts: int | None = None  # ownership data
-    is_most_drafted_3x: bool = False  # 92% batter bust rate (V5.0 retrain) — hard-excluded from S5
 
 
 # ---------------------------------------------------------------------------

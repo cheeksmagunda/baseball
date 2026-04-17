@@ -512,7 +512,6 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             batting_order=sp.batting_order,
             platoon_advantage=bool(sp.platoon_advantage),
             drafts=sp.drafts,
-            is_most_drafted_3x=sp.is_most_drafted_3x,
         ))
 
     return cards, games

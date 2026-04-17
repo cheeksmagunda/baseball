@@ -374,6 +374,12 @@ BATTER_ENV_WARM_TEMP_BONUS = 0.2         # venue bonus for warm conditions
 BATTER_ENV_WIND_OUT_BONUS = 0.5          # venue bonus for wind blowing out
 BATTER_ENV_WIND_OUT_DIRECTIONS = ("OUT",)
 
+# Batter env factors — Group C compound (temp × park interaction)
+BATTER_ENV_COMPOUND_HOT_THRESHOLD = 85      # °F above this triggers compound bonus
+BATTER_ENV_COMPOUND_COLD_THRESHOLD = 55     # °F below this triggers compound penalty
+BATTER_ENV_COMPOUND_PARK_THRESHOLD = 1.0    # park factor boundary (>1.0 = hitter, <1.0 = pitcher)
+BATTER_ENV_COMPOUND_BONUS = 0.3             # additive to Group C for favorable correlated signals
+
 # Batter env factors — Group D (series/momentum)
 # Applied as bonus/deduction based on series context and recent form.
 # A batter whose team trails 0-2 in a series and is on a cold L10 streak

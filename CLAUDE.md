@@ -391,7 +391,7 @@ Web-scraping signal aggregator that estimates crowd media attention. This is NOT
 - Low attention + mid performance → **TARGET** (value pick)
 - Otherwise → **NEUTRAL**
 
-**V8.0 Optimizer integration:** The popularity classification is the **primary EV signal** (3.0× swing, 0.50–1.50). It drives the core FADE/TARGET decision — the crowd is structurally wrong about batters (3.6× RS differential). Environmental and trait signals differentiate within popularity tiers. DFS platform ownership was never pre-game knowable and is fully excluded.
+**V9.0 integration:** Popularity is a **candidate pool gate**. FADE players (high pre-game media attention) are excluded from the candidate pool before EV computation begins. TARGET and NEUTRAL players pass the gate and are scored identically — no popularity multiplier in EV. The EV formula is driven purely by env (game conditions) and trait (season stats). DFS platform ownership was never pre-game knowable and is fully excluded.
 
 **Sharp signal (underground):** A 4th source scraped from Reddit (r/fantasybaseball, r/baseball), FanGraphs community blogs, and Prospects Live. Used exclusively by the Moonshot lineup. `sharp_score` is 0-100, separate from the composite score.
 
@@ -461,11 +461,13 @@ Post-EV composition (applied in `_enforce_composition`):
 
 ### V8.0 Changes (April 14 — Popularity-First Signal Hierarchy & Env Refinements)
 
-**Design change:** The signal hierarchy is inverted based on 20-date empirical analysis. The crowd-avoidance signal (FADE/TARGET/NEUTRAL) is now the **primary** EV driver with a 3.0× swing, replacing environment (demoted to secondary, 1.86× swing) and trait (demoted to tertiary, 1.35× swing). This matches the observed 3.6× RS differential between TARGET and FADE batters.
+> **Note:** V8.0 was superseded by V9.0 (April 16), which replaced the pop_factor EV multiplier with a hard FADE-exclusion gate. See the V9.0 section above for the current architecture. Production fixes in V8.0 changes 2–6 remain in effect.
+
+**Design change:** The signal hierarchy is inverted based on 20-date empirical analysis. FADE/TARGET/NEUTRAL used as primary EV driver (3.0× swing). ENV_MODIFIER set to 0.70–1.30 (secondary). TRAIT_MODIFIER set to 0.85–1.15 (tertiary). V9.0 later replaced the popularity multiplier with a hard exclusion gate; env/trait now fully drive EV.
 
 **Six changes:**
 
-1. **Signal hierarchy inversion** (`app/core/constants.py`) — `POP_MODIFIER` range expanded to 0.50–1.50 (PRIMARY). `ENV_MODIFIER` compressed to 0.70–1.30 (SECONDARY). `TRAIT_MODIFIER` compressed to 0.85–1.15 (TERTIARY). The RS_CONDITION_MATRIX raw factor (0.275 for FADE batters, 1.00 for TARGET) now maps to the full 3.0× swing instead of being compressed to ±15%.
+1. **Signal hierarchy inversion** (`app/core/constants.py`) — `ENV_MODIFIER` set to 0.70–1.30. `TRAIT_MODIFIER` set to 0.85–1.15. V8.0 used `POP_MODIFIER` 0.50–1.50 as the primary signal; V9.0 replaced this with the FADE-exclusion gate (`_exclude_fade_players()`), removing pop_factor from EV entirely.
 
 2. **Pitcher moneyline added** (`app/services/filter_strategy.py`) — `compute_pitcher_env_score()` now accepts `team_moneyline`. Win bonus probability is a major pitcher RS component; heavy favorites (-250+) get full credit. Graduated from -110 (0) to -250 (1.0). `max_score` raised from 5.5 to 6.0.
 
@@ -483,6 +485,8 @@ Post-EV composition (applied in `_enforce_composition`):
 - `TRAIT_MODIFIER_FLOOR = 0.85`, `TRAIT_MODIFIER_CEILING = 1.15` (was 0.70/1.30)
 
 ### V8.1 Changes (April 15 — Series Context, Bullpen ERA, Vegas Lines, Cache Restart Guard)
+
+> **Note:** V8.1 was superseded by V9.0 (April 16) for EV architecture. Fixes 1–4 and 6 remain in effect. Fix 5 (condition matrix observations) is no longer relevant — the condition classifier no longer stores RS observations.
 
 **Six production fixes addressing the April 14 post-mortem (0/4 batters, Buxton missed).**
 
@@ -505,8 +509,8 @@ Post-EV composition (applied in `_enforce_composition`):
 - New `app/core/odds_api.py` client. `DFS_ODDS_API_KEY` env var; omitting it skips enrichment with a loud warning (env scoring treats NULL lines as unknown/neutral — existing behavior).
 - `enrich_slate_game_vegas_lines()` populates `vegas_total`, `home_moneyline`, `away_moneyline`. Non-fatal in `run_full_pipeline()`.
 
-**Fix 5 — Condition matrix** (`app/services/condition_classifier.py`)
-- Version bumped to `"6.1"`. `RS_CONDITION_OBSERVATIONS` updated with April 14 outcomes.
+**Fix 5 — Condition matrix** (retired in V9.0)
+- `RS_CONDITION_MATRIX` and `RS_CONDITION_OBSERVATIONS` were removed in V9.0. `condition_classifier.py` now only exports `compute_draft_entropy()` and `compute_gini_coefficient()` for meta-game monitoring.
 
 **Fix 6 — Quality pass** (multiple files)
 - `NON_PLAYING_GAME_STATUSES` extracted to `constants.py`; 3 inline duplicates removed.
@@ -541,13 +545,11 @@ Post-EV composition (applied in `_enforce_composition`):
 
 3. **`_enforce_composition()` rewritten** — new signature `_enforce_composition(candidates, slate_class)` (no `pitcher_cap` param).
    - **Phase 1:** select the highest-EV pitcher as the anchor. If the pool has no pitcher, raise `ValueError` (no-fallback rule).
-   - **Phase 2:** sort batters into three tiers (auto-include → soft_auto → rest by filter_ev).
-   - **Phase 3:** fill 4 batter slots while blocking the anchor pitcher's `game_id` (no teammates or opponents in the pitcher's game).
+   - **Phase 2:** fill 4 batter slots from remaining candidates by `filter_ev` descending, blocking the anchor pitcher's `game_id`.
    - Team cap (1) and overall game cap (1) still apply.
 
 4. **`_validate_lineup_structure()` rewritten** — new signature accepts `anchor_pitcher`.
-   - Uses `_protected(idx)` helper so the anchor pitcher is exempt from every swap rule (ghost enforcement, mega-chalk cap, team/game caps, unboosted-dominance checks).
-   - Ghost-enforcement replacement candidates are filtered to `not c.is_pitcher` and exclude the anchor's game.
+   - Anchor pitcher is exempt from team/game cap checks.
    - Final sanity check asserts `pitcher_count_final == REQUIRED_PITCHERS_IN_LINEUP`.
 
 5. **`_smart_slot_assignment()` rewritten** — the anchor pitcher is pinned to `PITCHER_ANCHOR_SLOT` (Slot 1). Batters are distributed across Slots 2–5 with unboosted batters getting the highest available slots (Slot 2 → Slot 5 tail for boosted). The Slot 1 Differentiator contrarian swap is gone — Slot 1 is reserved for the anchor pitcher in every lineup.
@@ -557,229 +559,9 @@ Post-EV composition (applied in `_enforce_composition`):
 - The "unboosted players MUST go in Slot 1" guidance now applies only to batters — and only within Slots 2–5. Slot 1 is the pitcher anchor.
 - The "ghost+boost batters outweigh a 2nd pitcher slot" reasoning is no longer a dynamic comparison; the structure is pre-committed.
 
-### V2.4 Changes (April 9 — April 8 Post-Mortem)
+### Historical Strategy Log (V2.2–V3.4, April 6–12)
 
-**April 8 results:** Our draft had zero true ghost players. All five optimal plays were mega-ghosts (1–5 drafts, boost 2.5–3.0x). Five bugs caused this systematic failure:
-
-**Bug 1 — `is_most_drafted_3x` never fired on live slates.**
-The DB flag is set retrospectively only. For today's slate, all players had `is_most_drafted_3x=False`, so the V2.3 env-aware trap penalty (0.60–0.80x) never fired. **Fix (`app/routers/filter_strategy.py`):** Dynamically compute after candidate resolution — top-5 most-drafted players with `boost >= 3.0` are marked `is_most_drafted_3x = True` each run. Constant: `MOST_DRAFTED_3X_TOP_N = 5`.
-
-**Bug 2 — EV floor was completely ineffective (double failure).**
-`GHOST_BOOST_EV_FLOOR_SCORE = 18.0` was below the natural ghost trait score (~29) → floor never activated. The floor also applied `_graduated_env_penalty()`, which meant floor and natural value shared the same penalty → floor could never exceed natural. **Fix (`app/services/filter_strategy.py`, `app/core/constants.py`):**
-- Raised `GHOST_BOOST_EV_FLOOR_SCORE` 18 → **30**
-- Expanded condition: `boost >= 3.0 + drafts < 50` → `boost >= 2.5 + drafts < 100`
-- Removed env penalty from floor calculation — data scarcity suppresses env_score too (unknown batting order drops env 0.5 → 0.17), so applying env to the floor double-penalises the same gap
-
-**Bug 3 — Mega-ghost synergy bonus (1.50×) gated on `env_score >= 0.5`.**
-Mega-ghosts rarely pass env due to data sparsity. **Fix:** Removed env requirement for `drafts < 50 + boost >= 3.0`. Historical 82% win rate makes env gating counterproductive for this tier. Standard ghost-boost synergy (drafts < 200, boost ≥ 2.5) still requires env pass.
-
-**Bug 4 — Ghost enforcement swap threshold (70%) too strict.**
-`_validate_lineup_structure` only forced ghost inclusion if `best_ghost.filter_ev >= worst.filter_ev × 0.70`. With env penalty crushing ghost EV and bonuses blocked, ghosts scored ~50–60% of chalk → swap never triggered. **Fix:** Lowered to `GHOST_ENFORCE_SWAP_THRESHOLD = 0.50`. Enforcement fallback now also accepts mega-ghost+boost players when no env-passing ghost is found.
-
-**Bug 5 — Full env penalty applied to mega-ghost-boost despite unreliable env.**
-At env=0, a 40% haircut fires for any boosted player — even those whose low env_score is caused by missing batting order data, not a genuinely bad matchup. **Fix:** Added `MEGA_GHOST_ENV_PENALTY_FLOOR = 0.80`: worst-case env haircut capped at 20% for `drafts < 50 + boost >= 3.0`.
-
-**April 8 ghost+boost winners (illustrating the corrected edge):**
-| Player | Drafts | Boost | RS | TV |
-|---|---|---|---|---|
-| Angel Martínez (CLE,SS) | 2 | +3.0x | 6.9 | 34.5 |
-| Rafael Devers (STL,3B) | 4 | +3.0x | 5.1 | 25.5 |
-| Taylor Ward (BOS,OF) | 2 | +2.5x | 5.1 | 23.0 |
-| Alec Burleson (STL,OF) | 5 | +2.8x | 4.6 | 22.1 |
-| Edouard Julien (MIN,2B) | 1 | +3.0x | 3.6 | 18.0 |
-
-**April 7 ghost+boost winners (confirmed edge):**
-| Player | Drafts | Boost | RS | TV |
-|---|---|---|---|---|
-| Amed Rosario (MIL,SS) | 1 | +3.0x | 7.3 | 36.5 |
-| Willi Castro (MIN,OF) | 4 | +3.0x | 5.4 | 27.0 |
-| Curtis Mead (TB,3B) | 4 | +3.0x | 4.8 | 24.0 |
-| Pete Crow-Armstrong (CHC,OF) | 26 | +3.0x | 4.0 | 20.0 |
-
-### V2.3 Changes (April 8 Post-Mortem — April 7 slate)
-
-**April 7 results:** User scored 32.37 (2623rd of 14.8k, top 20%). Rank 1 scored 71.08.
-
-1. **Env-aware 3x trap penalty** — `_compute_filter_ev()` applies `MOST_DRAFTED_3X_ENV_PASS_PENALTY = 0.80` (20% haircut) when env passes, vs `MOST_DRAFTED_3X_PENALTY = 0.60` (40% haircut) when it doesn't. Moonshot always applies the full 40%.
-
-2. **Max 1 pitcher per lineup** — `_validate_lineup_structure()` enforces `MAX_PITCHERS_IN_LINEUP = 1`. Excess pitchers replaced by highest-EV non-pitcher.
-
-**Boost traps avoided by 3x-env rule:**
-| Player | Drafts | Boost | RS | Env |
-|---|---|---|---|---|
-| José Ramírez (CLE,3B) | 362 | +3.0x | -0.7 | fail |
-| Aaron Judge (NYY,OF) | 1800 | +1.9x | -0.2 | fail |
-| Yordan Alvarez (HOU,DH) | 2300 | +1.6x | -0.4 | fail |
-| Tarik Skubal (DET,P) | 4400 | none | 0.7 | fail |
-
-### V2.2 Changes (April 8 Post-Mortem — April 6 slate)
-
-1. **Graduated score penalty** — linear from 0.40x (score=0) to 1.0x (score=15+). See `_graduated_score_penalty()`.
-2. **Graduated env penalty** — linear from 0.60x (env=0) to 1.0x (env=0.5+). See `_graduated_env_penalty()`.
-3. **Ghost-boost EV floor** — originally set at score=18 (proved ineffective; fixed in V2.4). See `_apply_ghost_boost_ev_floor()`.
-4. **K/9 reverse-engineering fix** in `app/routers/filter_strategy.py` — `6.0 + (score/max × 6.0)`.
-
-**Old constants removed:** `MIN_SCORE_PENALTY`, `BOOST_NO_ENV_PENALTY` (replaced by `MIN_SCORE_PENALTY_FLOOR`, `BOOST_NO_ENV_PENALTY_FLOOR`).
-
-### V3.0 Changes (April 11 — Game Theory & Probabilistic Architecture)
-
-**Philosophy shift:** From heuristic rule engine to probabilistic options-pricing model. The system now treats DFS picks as options contracts: a +3.0x boost is an "in-the-money" option (low strike price), a 0.0x boost is "at-the-money," and the crowd's information asymmetry is the "implied volatility."
-
-**Pillar 1 — Bayesian Dead Capital (`app/services/condition_classifier.py`)**
-- Replaced DEAD_CAPITAL hard-blocks (returned 0.0) with Laplace-smoothed Bayesian floors.
-- Uses Beta-Binomial conjugate prior (alpha=1, beta=1): `posterior = (successes + 1) / (trials + 2)`.
-- 0/34 observations → floor of 0.028 (not 0.0). 0/8 → floor of 0.10.
-- Added `CONDITION_OBSERVATIONS` and `PITCHER_CONDITION_OBSERVATIONS` matrices tracking (successes, trials) per cell for principled updating.
-- `LEGACY_DEAD_CAPITAL_CONDITIONS` retained for logging/reference only.
-- (The V3.0 gradient-booster `ml_model.py` was removed on 2026-04-15: it accepted `drafts` and `card_boost` as predictive inputs, violating the Prime Directive that post-slate variables must never feed pre-game prediction. It was dead code — no importers, no trained artifact on disk. The Bayesian-smoothed matrix remains the sole signal for previously-dead-capital conditions.)
-
-**Pillar 2 — Bifurcated Environmental Module (`app/services/filter_strategy.py`)**
-- `compute_batter_env_score()` now returns `(env_score, factors, unknown_count)` — tracking how many environmental factors were missing (None) vs. confirmed bad.
-- Three-tier DNP handling replaces the single `DNP_RISK_PENALTY = 0.70`:
-  - `DNP_RISK_PENALTY = 0.70`: Confirmed bad (lineup published, player absent) — 30% haircut
-  - `DNP_UNKNOWN_PENALTY = 0.85`: Unknown (lineup not published, many missing factors) — 15% haircut
-  - `DNP_GHOST_UNKNOWN_PENALTY = 0.92`: Ghost unknown (data scarcity expected) — 8% haircut
-- `FilteredCandidate` carries `env_unknown_count` for downstream use.
-- Ghost players with missing batting orders no longer receive the same penalty as chalk players with published lineups.
-
-**Pillar 3 — Percentile-Based Ownership Tiers (`app/services/condition_classifier.py`)**
-- `get_ownership_tier()` now uses empirical CDF percentiles as the primary path (when slate distribution is available):
-  - Ghost: bottom 15%, Low: 15-35%, Medium: 35-65%, Chalk: 65-90%, Mega-chalk: top 10% + drafts > 3x median
-- Absolute draft-count thresholds (`GHOST_DRAFT_THRESHOLD = 100`, etc.) are fallbacks only.
-- Mega-chalk requires both percentile rank AND absolute floor (`MEGA_CHALK_MEDIAN_MULTIPLE = 3.0`) to prevent false positives on thin slates.
-- `most_drafted_3x` now scales with slate size: top 30% of the 3x-boost pool, clamped [3, 7].
-- Meta-game monitoring: `compute_draft_entropy()` and `compute_gini_coefficient()` logged per slate. Sustained entropy increase = ghost edge compression warning.
-
-**Pillar 4 — Dynamic Pitcher Cap (`app/services/filter_strategy.py`)**
-- `compute_dynamic_pitcher_cap()` replaces the rigid `MAX_PITCHERS_IN_LINEUP = 1`.
-- Rich boosted pool (>= 5 quality cards): cap at 1 pitcher (ghost+boost batter edge dominates).
-- Thin boosted pool (< 5 quality cards): cap at 2 pitchers (unboosted SPs have 93% positive RS, avg 5.4).
-- Applied independently to Starting 5 and Moonshot lineups.
-- `_enforce_composition()` and `_validate_lineup_structure()` accept `pitcher_cap` parameter.
-
-**New constants (`app/core/constants.py`):**
-- `DNP_UNKNOWN_PENALTY = 0.85`, `DNP_GHOST_UNKNOWN_PENALTY = 0.92`
-- `OWNERSHIP_PERCENTILE_GHOST = 0.15`, `OWNERSHIP_PERCENTILE_LOW = 0.35`, `OWNERSHIP_PERCENTILE_MEDIUM = 0.65`, `OWNERSHIP_PERCENTILE_CHALK = 0.90`
-- `MEGA_CHALK_MEDIAN_MULTIPLE = 3.0`
-- `MOST_DRAFTED_3X_MIN_N = 3`, `MOST_DRAFTED_3X_MAX_N = 7`, `MOST_DRAFTED_3X_PROPORTION = 0.30`
-- `MAX_PITCHERS_THIN_POOL = 2`
-
-### V3.2 Changes (April 11 — Cross-Lineup Correlation & Within-Tier Differentiation)
-
-**Context**: April 10th simulation showed optimizer captures ~10 of top 17 performers. Root causes: (a) all ghost+max_boost candidates have identical condition_hv_rate=1.00, leaving within-tier differentiation to noisy rs_prob alone; (b) ghost+mid_boost players (HV rate 0.75) blocked by binary 2.5 threshold; (c) no mechanism to capture correlated upside across two lineups when MAX_PLAYERS_PER_TEAM=1.
-
-**Change 1 — MAX_PLAYERS_PER_TEAM=1, MAX_PLAYERS_PER_GAME=1** (`app/core/constants.py`)
-- Hard constraint: max 1 player per team per individual lineup (Starting 5 or Moonshot).
-- MAX_PLAYERS_PER_GAME lowered from 3 to 2 (V3.2), then to 1 (V3.3) — full game diversification on large slates.
-- Within-lineup stacking disabled. Correlation captured cross-lineup via Change 3.
-- _build_team_stack() path in _enforce_composition() auto-skipped (MAX_PLAYERS_PER_TEAM < STACK_MIN_PLAYERS).
-
-**Change 2 — Three-Tier Lineup Construction: auto → soft_auto → rest** (`app/services/condition_classifier.py`, `app/services/filter_strategy.py`)
-- New `is_soft_auto_include()`: ghost tier + boost >= 2.0 (but < 2.5).
-- Ghost+mid_boost historical HV rate = 0.75 — excellent but below auto-include's 0.88-1.00.
-- Three-tier ordering in `_enforce_composition()`: auto-include fills first, then soft_auto, then rest by filter_ev.
-- Captures James Wood (Apr 10: 52 drafts, 2.0x, TV 16.8) who was missed by the binary 2.5 threshold.
-- New constant: `SOFT_AUTO_INCLUDE_BOOST_THRESHOLD = 2.0`.
-
-**Change 3 — Cross-Lineup Correlation Awareness** (`app/services/filter_strategy.py`)
-- `_identify_correlation_groups()`: finds teams with 2+ ghost players.
-- `correlation_bonus` field on FilteredCandidate, set before EV computation.
-- Ghost players on correlation teams get +10% EV (2 ghosts) or +15% EV (3+ ghosts).
-- Moonshot: ghost teammate of a Starting 5 player gets +20% BONUS (replaces -15% penalty).
-- Example: TOR has Vlad (56 drafts) + Schneider (7 drafts) → S5 gets one, Moonshot gets the other.
-- New constants: `CORRELATION_GHOST_MIN_PLAYERS=2`, `CORRELATION_EV_BONUS=1.10`, `CORRELATION_EV_BONUS_3PLUS=1.15`, `MOONSHOT_CORRELATION_TEAMMATE_BONUS=1.20`.
-
-**Change 4 — Environmental Tiebreaker for Auto-Include Tier** (`app/services/filter_strategy.py`)
-- When condition_hv_rate >= 0.85, add up to +15% EV based on env_score.
-- Differentiates among ghost+max_boost candidates: confirmed lineup spot at Coors > unknown order at Petco.
-- Applied in both `_compute_filter_ev()` and `_compute_moonshot_filter_ev()`.
-- New constants: `ENV_TIEBREAKER_BONUS_MAX=0.15`, `ENV_TIEBREAKER_HV_THRESHOLD=0.85`.
-
-**Change 5 — Ghost+Boost Pitcher Cap Expansion** (`app/services/filter_strategy.py`)
-- `compute_dynamic_pitcher_cap()`: when ghost+boost pitcher exists (drafts < 100, boost >= 2.5), cap raised to 2 even in rich batter pools.
-- Captures Walker Buehler-type plays (low-tier pitcher with max boost, TV 29.5).
-- Without this, ghost+boost pitchers lose to ghost+boost batters and get excluded.
-
-### V3.4 Changes (April 12 — Boosted Pitcher Expansion & Within-Tier Scarcity)
-
-**Context**: April 11th was the worst draft yet. The optimizer selected 5 ghost+3.0x batters (García RS 0, Dingler RS -0.1, Ballesteros RS 1.0, Valenzuela RS -0.4, De La Cruz RS 3.5) — 3 catchers, all busted. Meanwhile, the winning lineups (87.67 score) had 3 chalk pitchers with 3.0x boost (Suarez 2.2k drafts RS 5.7, Sheehan 1.9k RS 2.8, Bassitt 1.5k RS 2.3). Top 6 leaderboard entries ALL had 3+ pitchers.
-
-**Three root causes:**
-1. Pitcher cap (max 1-2) blocked chalk+boost pitchers — V3.2 only expanded for ghost+boost pitchers
-2. FADE popularity penalty (25%) hit chalk pitchers too hard — pitchers control their own environment, crowd is less wrong about them
-3. Zero within-tier differentiation — all ghost+max_boost had identical HV rate 1.00, so 15-draft catchers ranked equal to 1-draft outfielders
-
-**Fix 1 — Boosted Pitcher Cap Expansion** (`app/services/filter_strategy.py`, `app/core/constants.py`)
-- `compute_dynamic_pitcher_cap()` now checks ALL boosted pitchers (boost >= 2.5), not just ghost-tier.
-- 3+ boosted pitchers → cap = 3 (new `MAX_PITCHERS_BOOSTED_RICH`). Lets EV decide composition.
-- 2 boosted pitchers → cap = 2 even with rich batter pool.
-- 1 ghost+boost pitcher → cap = 2 (V3.2 preserved).
-- Apr 11 had 5 boosted pitchers (Suarez, Sheehan, Bassitt, Lopez, Walker) → cap would be 3 → allows Suarez, Sheehan, Bassitt to compete on EV.
-- New constants: `BOOSTED_PITCHER_CAP_EXPAND_MIN=3`, `MAX_PITCHERS_BOOSTED_RICH=3`.
-
-**Fix 2 — Pitcher-Specific FADE Moderation** (`app/services/filter_strategy.py`, `app/core/constants.py`)
-- `_popularity_ev_adjustment()` and `_moonshot_popularity_adj()` now accept `is_pitcher` parameter.
-- Pitchers classified FADE get 15% haircut (S5) / 30% haircut (Moonshot), vs 25%/40% for batters.
-- Rationale: pitchers control their own game — high draft count reflects real ERA/K-rate data, not media hype. Crowd is structurally less wrong about pitchers (one-player dependency vs team context for batters).
-- Evidence: Apr 11 Suarez (2.2k drafts, FADE) appeared in 6/6 top lineups with RS 5.7. Apr 7 Eovaldi in 11/12 top lineups. PITCHER_CONDITION_MATRIX chalk+max_boost=0.42 (5× batter chalk+max rate of 0.23).
-- New constants: `PITCHER_FADE_PENALTY=0.85`, `MOONSHOT_PITCHER_FADE_PENALTY=0.70`.
-
-**Fix 3 — Draft Scarcity Tiebreaker** (`app/services/filter_strategy.py`, `app/core/constants.py`)
-- Within auto-include tier (condition_hv_rate >= 0.85), fewer drafts → small EV bonus (up to +10%).
-- Uses log scale for meaningful differentiation: 1 draft → +10%, 5 → +6.5%, 15 → +4.1%, 50 → +1.5%.
-- Breaks ties among ghost+max_boost candidates where condition_hv_rate and env_score are similar.
-- Apr 11: would have ranked Moniak (1 draft, RS 6.5) above Dingler (15 drafts, RS -0.1).
-- Applied alongside existing env_tiebreaker in `_compute_base_ev()`.
-- New constant: `DRAFT_SCARCITY_TIEBREAKER_MAX=0.10`.
-
-**Fix 4 — Condition Matrix Updated with April 11 Data** (`app/services/condition_classifier.py`)
-- `CONDITION_MATRIX_VERSION` bumped to 1.1, April 11 added to training dates.
-- PITCHER_CONDITION_MATRIX updated: mega_chalk+max_boost 0.67 → 0.75 (Suarez HV), chalk+max_boost 0.50 → 0.42 (Sheehan/Bassitt NOT HV), medium+max_boost 0.14 → 0.11 (Walker/Lopez NOT HV).
-- PITCHER_CONDITION_OBSERVATIONS updated with 6 new pitcher appearances.
-
-**April 11 data (pitchers that dominated):**
-| Player | Drafts | Boost | RS | TV | Tier | HV? |
-|---|---|---|---|---|---|---|
-| Ranger Suarez | 2,200 | +3.0x | 5.7 | 28.5 | mega_chalk+max | ✓ |
-| Emmet Sheehan | 1,900 | +3.0x | 2.8 | 14.0 | chalk+max | ✗ |
-| Chris Bassitt | 1,500 | +3.0x | 2.3 | 11.5 | chalk+max | ✗ |
-| Max Fried | 3,000 | none | 6.0 | 12.0 | mega_chalk+no | ✗ |
-
-**April 11 data (ghost batters — winners vs our picks):**
-| Player | Drafts | Boost | RS | TV | Notes |
-|---|---|---|---|---|---|
-| Mickey Moniak | 1 | +3.0x | 6.5 | 32.5 | Winner — ultra-ghost |
-| Ramón Laureano | 4 | +3.0x | 6.1 | 30.3 | Winner — ultra-ghost |
-| Riley Greene | 3 | +3.0x | 5.8 | 28.8 | Winner — ultra-ghost |
-| Adolis García | 11 | +3.0x | 0.0 | 0.0 | Our pick — busted |
-| Dillon Dingler | 15 | +3.0x | -0.1 | -0.5 | Our pick — busted |
-| Brandon Valenzuela | 9 | +3.0x | -0.4 | -2.0 | Our pick — busted |
-
-### V3.1 Changes (April 11 — Empirical Calibration from April 6-9 Data)
-
-**Fix 1 — Pitcher Exemption for Most-Drafted-3x Trap** (`app/routers/filter_strategy.py`)
-- The 57% bust rate for most-drafted 3x batters does NOT apply to starting pitchers.
-- Historical evidence: Mick Abel (Apr 9, TV 23.0), Eovaldi (Apr 7, in 11/12 top lineups).
-- Pitchers inherently control their own environment — the "crowd is wrong about boost" thesis doesn't transfer.
-- `is_most_drafted_3x` flag now only applied to batters. Pitchers with 3x boost are never flagged.
-
-**Fix 2 — Stacking Re-enabled** (`app/core/constants.py`, `app/services/filter_strategy.py`)
-- V3.1: `MAX_PLAYERS_PER_GAME` raised from 1 to 3. `MAX_PLAYERS_PER_TEAM` raised from 1 to 3.
-- **Superseded by V3.2/V3.3**: `MAX_PLAYERS_PER_TEAM` lowered back to 1, `MAX_PLAYERS_PER_GAME` to 2 (V3.2), then to 1 (V3.3). Within-lineup stacking disabled. Correlation value now captured cross-lineup via `CORRELATION_*` constants. See V3.2 Changes above.
-- `MAX_OPPONENTS_SAME_GAME = 1` remains — prevents negative correlation (opposing pitcher + batters).
-- Team-aware game diversification: the selection loop tracks `(game_id, team)` tuples, not just `game_id`.
-
-**Fix 3 — Ghost Absolute Draft Floor** (`app/services/condition_classifier.py`)
-- Added `GHOST_ABSOLUTE_DRAFT_FLOOR = 25`: players with ≤25 drafts are always classified ghost.
-- Prevents the zero-draft CDF trap: when 30-40% of the pool has 0 drafts, the 15th percentile is 0, pushing mega-ghosts (1-2 drafts) into "low" tier.
-- Applied BEFORE the percentile check as an `OR` condition.
-
-**Fix 4 — Env-Scaled Unboosted Pitcher Penalty** (`app/services/filter_strategy.py`)
-- **Superseded by V4.1**: the penalty has been removed entirely. The V4.0
-  condition matrix retrain now encodes empirical HV rates per (ownership ×
-  boost) cell directly (e.g. chalk+no_boost pitcher 0.33, mega_chalk+no_boost
-  pitcher 0.19). Stacking a second 10–35% haircut on top double-counted the
-  unboosted-ness and buried anchor plays like Alcantara/McLean/Fried.
+Versions V2.2 through V3.4 explored graduated penalty mechanics (env/score), probabilistic ownership tiers, dynamic pitcher capping, and within-tier differentiation via condition matrices. Key research directions: (1) Bayesian smoothing replaced binary DEAD_CAPITAL floors (Beta-Binomial prior: 0/8 obs → 0.10 floor vs 0.0). (2) Bifurcated DNP handling (unknown=0.85, confirmed=0.70, ghost_unknown=0.92) accounted for data sparsity. (3) Percentile-based ownership tiers (empirical CDF) replaced absolute draft thresholds. (4) Dynamic pitcher caps flexed between 1–3 based on boosted-pool size and ghost tier presence. (5) Three-tier lineup construction (auto/soft_auto/rest), correlation bonuses (+10–20% EV on ghost teammates), and draft-scarcity tiebreakers (+10% EV for < 5 drafts) differentiated within ownership tiers. (6) Pitcher-specific FADE moderation (15% haircut vs 25% for batters) recognized that pitchers control their own outcomes. April 11 empirical analysis (Suarez/Sheehan/Bassitt chalk+3x dominance vs ghost+max_boost busts) revealed that dynamic pitcher capping was insufficient — the interaction between boost tier, pitcher pool richness, and playoff-style spot bias required structural redesign. All graduated-penalty functions (`_graduated_env_penalty()`, `_graduated_score_penalty()`, `_apply_ghost_boost_ev_floor()`) and condition-matrix-dependent logic (Bayesian floors, percentile tiers, three-tier fill order) are superseded by V9.0's simplified FADE-gate + env/trait EV architecture. These versions remain instructive for understanding how information asymmetry (crowd vs real outcomes) drove repeated pivots.
 
 ### Lineup Construction (V8.0 — Pitcher-Anchor + Popularity-First EV)
 Every lineup is **exactly 1 SP + 4 batters**. The count is fixed, not data-driven.
@@ -819,7 +601,8 @@ Every lineup is **exactly 1 SP + 4 batters**. The count is fixed, not data-drive
 - `_smart_slot_assignment()` — Pitcher → Slot 1; batters → Slots 2-5 by filter_ev descending.
 
 **Key functions (condition_classifier.py):**
-- `get_rs_condition_factor()` — (position_type, popularity_class) → RS factor (used as tertiary pop signal)
+- `compute_draft_entropy(draft_counts)` — Shannon entropy for meta-game monitoring (observability only, not used in EV)
+- `compute_gini_coefficient(draft_counts)` — Gini coefficient for meta-game monitoring (observability only, not used in EV)
 
 **Key functions (routers/filter_strategy.py):**
 - `_resolve_candidates()` — Builds candidate pool from DB, scores env + traits, fetches web-scraped popularity (no platform ownership sources)
