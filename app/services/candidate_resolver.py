@@ -54,14 +54,11 @@ def _build_game_lookup(games: list[GameEnvironment]) -> tuple[dict, dict]:
     return game_by_id, team_to_game
 
 
-def _detect_two_way_pitcher(player, card: FilterCard, game: GameEnvironment | None) -> bool:
+def _detect_two_way_pitcher(player, card: FilterCard, game: GameEnvironment) -> bool:
     """Check if a non-pitcher (e.g., DH) is the confirmed starter.
 
     Returns True if detected as a confirmed starter, False otherwise.
     """
-    if game is None:
-        return False
-
     is_home = game.home_team.upper() == card.team.upper()
     starter_mlb_id = game.home_starter_mlb_id if is_home else game.away_starter_mlb_id
     starter_name = game.home_starter if is_home else game.away_starter
@@ -86,40 +83,38 @@ def _detect_two_way_pitcher(player, card: FilterCard, game: GameEnvironment | No
     return False
 
 
-def _prepare_pitcher_env_kwargs(game: GameEnvironment | None, card: FilterCard) -> dict:
+def _prepare_pitcher_env_kwargs(game: GameEnvironment, card: FilterCard) -> dict:
     """Extract pitcher environment scoring kwargs from game context."""
+    is_home = game.home_team.upper() == card.team.upper()
+    opp_ops = game.away_team_ops if is_home else game.home_team_ops
+    opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
     score_kwargs: dict = {}
-    if game:
-        is_home = game.home_team.upper() == card.team.upper()
-        opp_ops = game.away_team_ops if is_home else game.home_team_ops
-        opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
-        if opp_ops is not None or opp_k_pct is not None:
-            score_kwargs["opp_team_stats"] = {
-                "ops": opp_ops if opp_ops is not None else DEFAULT_OPP_OPS,
-                "k_pct": opp_k_pct if opp_k_pct is not None else DEFAULT_OPP_K_PCT,
-            }
+    if opp_ops is not None or opp_k_pct is not None:
+        score_kwargs["opp_team_stats"] = {
+            "ops": opp_ops if opp_ops is not None else DEFAULT_OPP_OPS,
+            "k_pct": opp_k_pct if opp_k_pct is not None else DEFAULT_OPP_K_PCT,
+        }
     return score_kwargs
 
 
-def _prepare_batter_env_kwargs(game: GameEnvironment | None, card: FilterCard) -> dict:
+def _prepare_batter_env_kwargs(game: GameEnvironment, card: FilterCard) -> dict:
     """Extract batter environment scoring kwargs from game context."""
+    is_home = game.home_team.upper() == card.team.upper()
+    opp_era = game.away_starter_era if is_home else game.home_starter_era
+    opp_whip = game.away_starter_whip if is_home else game.home_starter_whip
+    starter_hand = game.away_starter_hand if is_home else game.home_starter_hand
     score_kwargs: dict = {}
-    if game:
-        is_home = game.home_team.upper() == card.team.upper()
-        opp_era = game.away_starter_era if is_home else game.home_starter_era
-        opp_whip = game.away_starter_whip if is_home else game.home_starter_whip
-        starter_hand = game.away_starter_hand if is_home else game.home_starter_hand
-        if opp_era is not None or opp_whip is not None:
-            score_kwargs["opp_pitcher_stats"] = {
-                "era": opp_era if opp_era is not None else DEFAULT_PITCHER_ERA,
-                "whip": opp_whip if opp_whip is not None else DEFAULT_PITCHER_WHIP,
-            }
-        score_kwargs["batting_order"] = card.batting_order
-        score_kwargs["park_team"] = game.home_team.upper()
-        score_kwargs["wind_speed_mph"] = game.wind_speed_mph
-        score_kwargs["wind_direction"] = game.wind_direction
-        score_kwargs["temperature_f"] = game.temperature_f
-        score_kwargs["starter_hand"] = starter_hand
+    if opp_era is not None or opp_whip is not None:
+        score_kwargs["opp_pitcher_stats"] = {
+            "era": opp_era if opp_era is not None else DEFAULT_PITCHER_ERA,
+            "whip": opp_whip if opp_whip is not None else DEFAULT_PITCHER_WHIP,
+        }
+    score_kwargs["batting_order"] = card.batting_order
+    score_kwargs["park_team"] = game.home_team.upper()
+    score_kwargs["wind_speed_mph"] = game.wind_speed_mph
+    score_kwargs["wind_direction"] = game.wind_direction
+    score_kwargs["temperature_f"] = game.temperature_f
+    score_kwargs["starter_hand"] = starter_hand
     return score_kwargs
 
 
@@ -167,6 +162,11 @@ async def resolve_candidates(
             game = game_by_id.get(card.game_id)
         if game is None:
             game = team_to_game.get(card.team.upper())
+        if game is None:
+            raise ValueError(
+                f"Player {card.player_name!r} ({card.team}) has no associated game — "
+                "pipeline data integrity error"
+            )
 
         is_two_way_pitcher = False
         if not is_pitcher:
@@ -189,7 +189,7 @@ async def resolve_candidates(
         series_opp_w: int | None = None
         team_l10: int | None = None
 
-        if is_pitcher and game:
+        if is_pitcher:
             is_home = game.home_team.upper() == card.team.upper()
 
             # Only include the confirmed probable starter for this game.
@@ -223,7 +223,7 @@ async def resolve_candidates(
                 team_moneyline=team_ml,
             )
             env_unknown_count = 0  # confirmed starters; env data is reliable
-        elif not is_pitcher and game:
+        else:
             is_home = game.home_team.upper() == card.team.upper()
             opp_era = game.away_starter_era if is_home else game.home_starter_era
             park_team = game.home_team.upper()
@@ -249,15 +249,8 @@ async def resolve_candidates(
                 series_opp_wins=series_opp_w,
                 team_l10_wins=team_l10,
             )
-        else:
-            raise ValueError(
-                f"Player {card.player_name!r} has no associated game — "
-                "env_score cannot be computed"
-            )
 
-        game_id = card.game_id
-        if game_id is None and game is not None:
-            game_id = game.game_id
+        game_id = card.game_id or game.game_id
 
         pre_candidates.append({
             "card": card,
