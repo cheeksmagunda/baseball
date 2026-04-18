@@ -171,7 +171,11 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     games_by_id: dict[int, SlateGame] = {g.id: g for g in games}
     for sp in slate_players:
         player = sp.player
-        if not player or player.position in PITCHER_POSITIONS:
+        if player is None:
+            raise ValueError(
+                f"SlatePlayer id={sp.id} has no linked Player — FK integrity error"
+            )
+        if player.position in PITCHER_POSITIONS:
             continue
         if not sp.game_id or sp.game_id not in games_by_id:
             continue
@@ -226,8 +230,10 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
 
     for sp in slate_players:
         player = sp.player
-        if not player:
-            continue
+        if player is None:
+            raise ValueError(
+                f"SlatePlayer id={sp.id} has no linked Player — FK integrity error"
+            )
 
         is_pitcher = player.position in PITCHER_POSITIONS
         game = game_lookup.get(player.team)
@@ -333,8 +339,10 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             continue
 
         player = sp.player
-        if not player:
-            continue
+        if player is None:
+            raise ValueError(
+                f"SlatePlayer id={sp.id} has no linked Player — FK integrity error"
+            )
 
         is_pitcher = player.position in PITCHER_POSITIONS
 
