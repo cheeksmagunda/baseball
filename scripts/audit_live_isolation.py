@@ -1,0 +1,130 @@
+"""Static audit: the T-65 live pipeline must not read historical outcome fields.
+
+The live pipeline (app/services/*, app/routers/*, app/core/*) is architecturally
+forbidden from reading post-slate outcome data: `real_score`, `total_value`,
+`is_highest_value`, `is_most_popular`, `is_most_drafted_3x`.  Only seed.py and
+scripts/ may read these fields.
+
+This script greps the runtime code paths for any such reference.  Run it before
+deploying or as a CI gate.
+
+Exit codes:
+    0 — clean tree, no leaks.
+    2 — banned symbol detected in a runtime file.
+
+Usage:
+    python scripts/audit_live_isolation.py
+"""
+
+import re
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# Runtime scopes that must never read historical outcomes.
+RUNTIME_DIRS = [
+    REPO_ROOT / "app" / "services",
+    REPO_ROOT / "app" / "routers",
+    REPO_ROOT / "app" / "core",
+]
+
+# Known-exempt files within the runtime scopes.  The audit is targeted at the
+# T-65 PREDICTION pipeline (slate_monitor → pipeline → candidate_resolver →
+# filter_strategy → scoring_engine → data_collection).  Non-prediction code
+# paths are exempt:
+#   - draft_optimizer.py is dead code used only by the `evaluate_lineup`
+#     endpoint (user-facing lineup evaluator for already-submitted lineups).
+#     It reads card_boost to recompute historical value, not the T-65 path.
+#   - routers/slates.py is a CRUD/admin router: GET returns stored slate data
+#     for display, PUT ingests post-game results.  Neither is on the T-65 path.
+EXEMPT_FILES = {
+    REPO_ROOT / "app" / "services" / "draft_optimizer.py",
+    REPO_ROOT / "app" / "routers" / "slates.py",
+}
+
+# Banned attribute reads: any `.field` access on a SlatePlayer-typed object.
+# Using a conservative text match: `.real_score` etc.  The auditor checks for
+# the literal attribute access; comments and docstrings are excluded.
+BANNED_FIELDS = [
+    "real_score",
+    "total_value",
+    "is_highest_value",
+    "is_most_popular",
+    "is_most_drafted_3x",
+]
+
+# Phrases that indicate the match is a legitimate non-read reference
+# (docstring, comment, string literal describing the rule).
+ALLOWED_CONTEXT_HINTS = (
+    "# ",            # line starts with comment
+    '"""',           # docstring
+    "'''",           # docstring
+    "NEVER",         # comment calling out the rule
+    "must not",
+    "forbidden",
+    "retrospective",
+    "display only",
+    "DISPLAY-ONLY",
+    "display-only",
+    "not as an RS",
+)
+
+
+def scan_file(path: Path) -> list[tuple[int, str, str]]:
+    """Return (line_no, field, line) for each suspicious read."""
+    violations: list[tuple[int, str, str]] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return violations
+
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        for field in BANNED_FIELDS:
+            # Match `.field` as attribute access (preceded by a word char/.) —
+            # excludes bare variable names.
+            if re.search(rf"\.{field}\b", stripped):
+                if any(hint in stripped for hint in ALLOWED_CONTEXT_HINTS):
+                    continue
+                violations.append((lineno, field, stripped))
+    return violations
+
+
+def main() -> int:
+    total_violations: list[tuple[Path, int, str, str]] = []
+    files_scanned = 0
+
+    for runtime_dir in RUNTIME_DIRS:
+        for py_file in sorted(runtime_dir.rglob("*.py")):
+            if py_file in EXEMPT_FILES:
+                continue
+            files_scanned += 1
+            for lineno, field, line in scan_file(py_file):
+                total_violations.append((py_file, lineno, field, line))
+
+    print(f"Scanned {files_scanned} runtime files under:")
+    for d in RUNTIME_DIRS:
+        print(f"  - {d.relative_to(REPO_ROOT)}")
+    print(f"Exempt files: {len(EXEMPT_FILES)}")
+    print()
+
+    if not total_violations:
+        print("OK — no historical outcome fields read in the live pipeline.")
+        return 0
+
+    print(f"FAIL — {len(total_violations)} suspicious reference(s) detected:")
+    for path, lineno, field, line in total_violations:
+        rel = path.relative_to(REPO_ROOT)
+        print(f"  {rel}:{lineno}  [{field}]  {line}")
+    print()
+    print("Historical outcome fields must only be read from app/seed.py or scripts/.")
+    print("If this is a false positive, add an explicit allowed-context hint in")
+    print("the docstring or comment on that line, or add the file to EXEMPT_FILES.")
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

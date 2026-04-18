@@ -195,8 +195,12 @@ TRAIT_MODIFIER_CEILING = 1.15
 
 # Recent form volatility modifier — applies when recent_form CV is high.
 # High variance (CV near 1.0) in recent production signals sensitivity to conditions.
-# Max amplification: 1.0 + (1.0 × 0.12) = 1.12x env_score for highly volatile players.
-BATTER_FORM_VOLATILITY_MAX = 0.12
+# DFS payouts are convex (Highest Value leaderboard rewards tails, not medians);
+# a volatile batter in a good matchup has more upside than a steady batter with
+# the same mean.  Max amplification: 1.0 + (1.0 × 0.20) = 1.20x for highly
+# volatile batters — still less than half the env swing (1.86×) so it cannot
+# dominate ranking, but enough to meaningfully reorder boom-or-bust profiles.
+BATTER_FORM_VOLATILITY_MAX = 0.20
 
 # ---------------------------------------------------------------------------
 # Moonshot constants (dual-lineup optimizer)
@@ -310,7 +314,7 @@ PITCHER_ENV_ML_FLOOR = -110           # moneyline at or above this → 0 contrib
 PITCHER_ENV_ML_CEILING = -250         # moneyline at or below this → full contribution
 PITCHER_ENV_MAX_SCORE = 5.5           # 5 main factors (1.0 each) + home (0.5)
 
-# Batter env factors — Group A (run environment, capped at 2.0)
+# Batter env factors — Group A (run environment, soft-capped)
 BATTER_ENV_VEGAS_FLOOR = 7.0          # O/U at or below this → 0 contribution
 BATTER_ENV_VEGAS_CEILING = 9.5        # O/U at or above this → full contribution
 BATTER_ENV_ERA_FLOOR = 3.5            # opposing starter ERA at or below → 0
@@ -319,6 +323,13 @@ BATTER_ENV_ML_FLOOR = -110            # same as pitcher (shared graduation)
 BATTER_ENV_ML_CEILING = -250          # same as pitcher (shared graduation)
 BATTER_ENV_BULLPEN_ERA_FLOOR = 3.5    # bullpen ERA at or below → 0
 BATTER_ENV_BULLPEN_ERA_CEILING = 5.5  # bullpen ERA at or above → full
+
+# Group A soft cap: first 2.0 of correlated-signal sum is taken at full value,
+# any additional sum above 2.0 contributes at 25% slope.  Preserves some upside
+# for "perfect storm" games (all 4 signals lit) without letting redundant
+# signals multiply linearly.  Raw max under 4 perfect signals: 2.0 + 0.25×2.0 = 2.5.
+BATTER_ENV_GROUP_A_SOFT_CAP_POINT = 2.0
+BATTER_ENV_GROUP_A_SOFT_CAP_SLOPE = 0.25
 
 # Batter env factors — Group C (venue)
 BATTER_ENV_PARK_HITTER_FRIENDLY = 1.05   # park factor at or above → full venue credit
@@ -346,7 +357,9 @@ TEAM_COLD_L10_THRESHOLD = 3      # last-10 wins at or below → cold team penalt
 TEAM_HOT_L10_BONUS = 0.2         # bonus for hot team (last 10 ≥ 7 wins)
 TEAM_COLD_L10_PENALTY = 0.2      # penalty for cold team (last 10 ≤ 3 wins)
 
-BATTER_ENV_MAX_SCORE = 5.8               # 2.0 (run env cap) + 2.0 (situation) + 1.0 (venue) + 0.8 (series/momentum)
+BATTER_ENV_MAX_SCORE = 5.8               # 2.0 (run env soft-cap point) + 2.0 (situation) + 1.0 (venue) + 0.8 (series/momentum).
+                                         # Group A can reach 2.5 via soft slope in perfect-storm cases; the final
+                                         # `min(1.0, total / max_score)` clamp preserves correct normalization.
 
 # ---------------------------------------------------------------------------
 # Game status constants

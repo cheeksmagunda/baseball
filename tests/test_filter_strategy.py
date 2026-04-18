@@ -239,12 +239,13 @@ class TestBatterEnvScore:
             team_moneyline=-250,
             opp_bullpen_era=5.5,
         )
-        # Group A run_env: 4 signals at 1.0, capped at 2.0
+        # Group A run_env: 4 signals at 1.0 = 4.0 raw.  Soft cap: first 2.0 taken
+        #   at full value, excess 2.0 contributes at 25% slope → 2.0 + 0.5 = 2.5
         # Group B situation: platoon 1.0 + order 2 → 1.0 = 2.0
         # Group C venue: COL (1.38) → 1.0
         # Group D (momentum): none provided → 0.0
-        # Total = 2.0 + 2.0 + 1.0 = 5.0 / 5.8 (BATTER_ENV_MAX_SCORE) ≈ 0.862
-        assert score == pytest.approx(5.0 / 5.8, abs=0.01)
+        # Total = 2.5 + 2.0 + 1.0 = 5.5 / 5.8 (BATTER_ENV_MAX_SCORE) ≈ 0.948
+        assert score == pytest.approx(5.5 / 5.8, abs=0.01)
         assert unknown == 0
 
     def test_empty_env_tracks_unknowns(self):
@@ -255,23 +256,31 @@ class TestBatterEnvScore:
         assert unknown == 5
 
     def test_correlated_signal_cap(self):
-        """V8.0: run-env signals (O/U, ERA, ML, bullpen) capped at 2.0."""
-        # All 4 run-env signals maxed = 4.0, but capped at 2.0
+        """Run-env signals (O/U, ERA, ML, bullpen) compressed via soft cap.
+
+        Soft cap: first 2.0 of sum at full value, excess at 25% slope.  Four
+        maxed signals yield 2.5 (vs 4.0 raw), still far below a naive sum and
+        close in env_score to the 2-signal case — preserving the anti-
+        redundancy spirit of the original hard cap while keeping some upside.
+        """
+        # All 4 run-env signals maxed = 4.0 raw → soft-capped to 2.5
         score_all, _, _ = compute_batter_env_score(
             vegas_total=10.0, opp_pitcher_era=5.5,
             team_moneyline=-250, opp_bullpen_era=5.5,
             batting_order=5,
         )
-        # Only 2 run-env signals
+        # Only 2 run-env signals maxed = 2.0 (below soft-cap point)
         score_two, _, _ = compute_batter_env_score(
             vegas_total=10.0, opp_pitcher_era=5.5,
             batting_order=5,
         )
-        # Due to cap at 2.0, adding 2 more maxed signals shouldn't help much
-        assert score_all == pytest.approx(score_two, abs=0.05)
+        # Soft cap keeps the 4-signal case close to the 2-signal case (≤ 10% apart)
+        # while still rewarding the extra signal density.
+        assert score_all > score_two, "soft cap still rewards extra maxed signals"
+        assert score_all - score_two < 0.10, "soft cap prevents redundant multiplication"
 
     def test_max_score_denominator_is_5_8(self):
-        """max_score = 5.8 (run_env cap 2.0 + situation 2.0 + venue 1.0 + momentum 0.8)."""
+        """max_score = 5.8.  Group A soft cap can reach 2.5 (in a perfect-storm)."""
         score, _, unknown = compute_batter_env_score(
             vegas_total=10.0,
             opp_pitcher_era=5.5,
@@ -281,12 +290,14 @@ class TestBatterEnvScore:
             team_moneyline=-250,
             opp_bullpen_era=5.5,
         )
-        # Without Group D (momentum), total = 2.0+2.0+1.0 = 5.0 / 5.8 ≈ 0.862
+        # Without Group D (momentum), total = 2.5+2.0+1.0 = 5.5 / 5.8 ≈ 0.948
         assert score < 1.0, "Without momentum context, score should be < 1.0"
-        assert score == pytest.approx(5.0 / 5.8, abs=0.01)
+        assert score == pytest.approx(5.5 / 5.8, abs=0.01)
 
-    def test_batting_order_unknown_gets_baseline(self):
-        """V8.0: unknown batting order gets 0.40 baseline, not 0."""
+    def test_batting_order_unknown_contributes_zero(self):
+        """Unknown batting order contributes 0 to situation — DNP risk is
+        handled separately by _compute_dnp_adjustment (single multiplier),
+        so env scoring stays faithful to actual pre-game signals."""
         score_unknown, _, unknown = compute_batter_env_score(
             vegas_total=9.0,
             opp_pitcher_era=5.0,
@@ -297,9 +308,10 @@ class TestBatterEnvScore:
             opp_pitcher_era=5.0,
             batting_order=7,  # middle of lineup = 0.50
         )
-        # Unknown (0.40) should be slightly less than confirmed middle (0.50)
+        # Unknown (0 contribution) should be strictly less than any confirmed order.
         assert score_unknown < score_known
-        assert score_unknown > 0, "Unknown order should not zero out env score"
+        # Non-zero because Vegas+ERA still contribute to Group A run_env.
+        assert score_unknown > 0, "Group A signals carry the env score when order is unknown"
         # batting_order + team_moneyline + opp_bullpen_era = 3 unknowns
         assert unknown == 3
 
@@ -337,10 +349,17 @@ class TestFADEGate:
         assert len(_exclude_fade_players(pool)) == 2
 
     def test_all_pitchers_fade_raises(self):
+        """Fail fast: a pool with zero non-FADE pitchers is unrecoverable upstream."""
         pool = [
             _make_candidate("P1", is_pitcher=True, popularity=PopularityClass.FADE),
+            _make_candidate("P2", is_pitcher=True, popularity=PopularityClass.FADE),
             _make_candidate("B1", popularity=PopularityClass.TARGET),
         ]
+        with pytest.raises(ValueError, match="[Pp]itcher"):
+            _exclude_fade_players(pool)
+
+    def test_no_pitchers_at_all_raises(self):
+        pool = [_make_candidate("B1", popularity=PopularityClass.TARGET)]
         with pytest.raises(ValueError, match="[Pp]itcher"):
             _exclude_fade_players(pool)
 
