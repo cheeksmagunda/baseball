@@ -24,10 +24,8 @@ from app.core.constants import (
     DEFAULT_PITCHER_ERA,
     DEFAULT_PITCHER_WHIP,
     PITCHER_POSITIONS,
-    SCORING_K9_CEILING,
-    SCORING_K9_FLOOR,
 )
-from app.core.utils import find_players_by_name_team_batch, get_trait_score
+from app.core.utils import find_players_by_name_team_batch
 from app.schemas.filter_strategy import FilterCard, GameEnvironment
 from app.services.filter_strategy import (
     FilteredCandidate,
@@ -212,17 +210,7 @@ async def resolve_candidates(
             opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
             park_team = game.home_team.upper()
 
-            k_rate_score = get_trait_score(score_result.traits, "k_rate")
-            k_rate_max = next(
-                (t.max_score for t in score_result.traits if t.name == "k_rate"),
-                25.0,
-            )
-            # Reverse the scoring engine's linear K/9 scale (floor → 0 pts, ceiling → max pts).
-            k9_range = SCORING_K9_CEILING - SCORING_K9_FLOOR
-            pitcher_k9 = (
-                SCORING_K9_FLOOR + k_rate_score / k_rate_max * k9_range
-                if k_rate_max > 0 else None
-            )
+            pitcher_k9 = game.home_starter_k_per_9 if is_home else game.away_starter_k_per_9
 
             team_ml = game.home_moneyline if is_home else game.away_moneyline
 

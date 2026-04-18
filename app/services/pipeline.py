@@ -412,11 +412,10 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 team_l10_wins=team_l10,
             )
         else:
-            env_score = 0.5
-            env_factors = []
-            series_team_w = None
-            series_opp_w = None
-            team_l10 = None
+            raise ValueError(
+                f"Player {player.name!r} ({player.team}) has no associated game — "
+                "env_score cannot be computed. Pipeline data integrity error."
+            )
 
         # Store env_score on slate player for reference
         sp.env_score = env_score
