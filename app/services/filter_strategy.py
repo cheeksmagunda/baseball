@@ -129,6 +129,13 @@ from app.core.constants import (
     TEAM_COLD_L10_THRESHOLD,
     TEAM_HOT_L10_BONUS,
     TEAM_COLD_L10_PENALTY,
+    # Batter env Group C compound (temp × park interaction)
+    BATTER_ENV_COMPOUND_HOT_THRESHOLD,
+    BATTER_ENV_COMPOUND_COLD_THRESHOLD,
+    BATTER_ENV_COMPOUND_PARK_THRESHOLD,
+    BATTER_ENV_COMPOUND_BONUS,
+    # Volatility amplifier
+    BATTER_FORM_VOLATILITY_MAX,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score, graduated_scale, graduated_scale_moneyline
 from app.services.popularity import PopularityClass
