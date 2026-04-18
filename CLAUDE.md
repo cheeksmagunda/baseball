@@ -217,8 +217,6 @@ Output shows RS and HV-rate distributions across each threshold bucket (below fl
 
 **Step 3 — Edit constants directly.** Read the output, decide which thresholds are misaligned, and update `app/core/constants.py`. Add or remove env factors by editing `compute_batter_env_score()` / `compute_pitcher_env_score()` in `app/services/filter_strategy.py`. Historical data teaches which conditions are predictive — it does not update the model automatically.
 
-`scripts/recalibrate_condition_matrix.py` is dead code (the matrix it calibrated was removed in V9.0).
-
 ## Ingesting New Slate Data
 
 New slates are ingested **manually by appending rows** to the four files above — there is no automated collector. After a slate completes, capture the platform's leaderboards and append to each file. The canonical column-by-column reference lives in `.claude/hooks/session-start.sh` (reproduced below). Keep all four files in lockstep — a date missing from any one of them will break cross-validation.
@@ -690,7 +688,7 @@ Post-EV composition (applied in `_enforce_composition`):
 
 3. **Batter env correlated-signal cap** (`app/services/filter_strategy.py`) — `compute_batter_env_score()` restructured into three signal groups. Group A (run environment: O/U, opposing ERA, moneyline, bullpen) **capped at 2.0** to prevent 4 correlated signals from inflating env score. Group B (player situation: platoon, batting order) up to 2.0. Group C (venue: park + weather) up to 1.0. `max_score` reduced from 7.5 to 5.5.
 
-4. **Batting order graduated** — Hard top-5 gate replaced with graduated scale: order 1-3 → 1.0, 4-5 → 0.75, 6-7 → 0.50, 8-9 → 0.25. **Unknown batting order gets 0.40 baseline** (neutral assumption) instead of 0, removing the structural penalty on ghost players whose orders are unpublished pre-game.
+4. **Batting order graduated** — Hard top-5 gate replaced with graduated scale: order 1-3 → 1.0, 4-5 → 0.75, 6-7 → 0.50, 8-9 → 0.25. **Unknown batting order contributes 0 to the env situation group** — no mathematical guessing of a baseline. Missing-data risk is handled separately by `_compute_dnp_adjustment()`: ≥3 unknown env factors → DNP_UNKNOWN_PENALTY (0.85, data not published); <3 unknown → DNP_RISK_PENALTY (0.70, lineup published without player). This keeps env scoring faithful to actual pre-game signals while isolating DNP risk to a single multiplier — avoiding a double-penalty on ghost players whose orders are simply unpublished.
 
 5. **All thresholds graduated** — Binary thresholds replaced with linear interpolation across both pitcher and batter env functions. Examples: K/9 from 6.0 (0) to 10.0 (1.0); opposing OPS from 0.780 (0) to 0.650 (1.0); park factor from 1.05 (0) to 0.90 (1.0). Eliminates false-precision cliffs on early-season sample sizes.
 

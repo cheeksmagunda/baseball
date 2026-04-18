@@ -114,6 +114,8 @@ from app.core.constants import (
     BATTER_ENV_ML_CEILING,
     BATTER_ENV_BULLPEN_ERA_FLOOR,
     BATTER_ENV_BULLPEN_ERA_CEILING,
+    BATTER_ENV_GROUP_A_SOFT_CAP_POINT,
+    BATTER_ENV_GROUP_A_SOFT_CAP_SLOPE,
     BATTER_ENV_PARK_HITTER_FRIENDLY,
     BATTER_ENV_PARK_NEUTRAL,
     BATTER_ENV_WIND_SPEED_MIN,
@@ -505,8 +507,14 @@ def compute_batter_env_score(
     else:
         unknown_count += 1
 
-    # Cap correlated group at 2.0 — getting 3+ perfect signals adds nothing.
-    run_env = min(2.0, run_env)
+    # Soft cap: first 2.0 of correlated-signal sum is taken full; sum above 2.0
+    # contributes at 25% slope.  Preserves a little upside for "perfect storm"
+    # games (all 4 signals lit) without letting redundant signals multiply
+    # linearly.  Previous hard cap at 2.0 was discarding all signal above the
+    # saturation point; the soft cap keeps a small share of it.
+    if run_env > BATTER_ENV_GROUP_A_SOFT_CAP_POINT:
+        excess = run_env - BATTER_ENV_GROUP_A_SOFT_CAP_POINT
+        run_env = BATTER_ENV_GROUP_A_SOFT_CAP_POINT + excess * BATTER_ENV_GROUP_A_SOFT_CAP_SLOPE
 
     # ---------------------------------------------------------------
     # Group B: Player situation (independent signals — up to 2.0)
@@ -1081,7 +1089,9 @@ def _exclude_fade_players(candidates: list[FilteredCandidate]) -> list[FilteredC
     These players are excluded from the candidate pool entirely — not penalised
     via EV, not ranked last, just removed.  TARGET and NEUTRAL pass with no bonus.
 
-    Raises ValueError if no pitcher remains after exclusion (fail loudly).
+    Fails fast if the gate leaves no pitchers.  No fallback: a pool that cannot
+    supply an SP anchor is a data/classification problem upstream, not something
+    the optimizer should paper over.
     """
     filtered = [c for c in candidates if c.popularity != PopularityClass.FADE]
     excluded = len(candidates) - len(filtered)
@@ -1092,9 +1102,8 @@ def _exclude_fade_players(candidates: list[FilteredCandidate]) -> list[FilteredC
         )
     if not any(c.is_pitcher for c in filtered):
         raise ValueError(
-            "Popularity gate excluded all pitchers from the candidate pool. "
-            "Cannot build a lineup without an SP anchor. "
-            "Excluded %d players total." % excluded
+            "Candidate pool contains no non-FADE pitchers. "
+            "Cannot build a lineup without an SP anchor."
         )
     return filtered
 
@@ -1102,6 +1111,7 @@ def _exclude_fade_players(candidates: list[FilteredCandidate]) -> list[FilteredC
 def run_filter_strategy(
     candidates: list[FilteredCandidate],
     slate_classification: SlateClassification,
+    skip_fade_gate: bool = False,
 ) -> FilterOptimizedLineup:
     """
     Run the full "Filter, Not Forecast" pipeline.
@@ -1110,11 +1120,15 @@ def run_filter_strategy(
     candidates and produces an optimized lineup following all 5 filters.
 
     Steps:
-    1. Exclude FADE players (popularity gate)
+    1. Exclude FADE players (popularity gate) — unless skip_fade_gate=True
     2. Compute filter-adjusted EV for each candidate (env + trait + context)
     3. Enforce composition (pitcher anchor + 4 batters)
     4. Check game diversification
     5. Smart slot assignment
+
+    The `skip_fade_gate` flag exists so `run_dual_filter_strategy` can filter
+    FADE once up-front and then re-use the filtered pool for both Starting 5
+    and Moonshot, avoiding a redundant exclusion pass (and duplicate log lines).
     """
     if not candidates:
         return FilterOptimizedLineup(
@@ -1125,7 +1139,8 @@ def run_filter_strategy(
         )
 
     # Step 1: Popularity gate — remove FADE players before EV computation.
-    candidates = _exclude_fade_players(candidates)
+    if not skip_fade_gate:
+        candidates = _exclude_fade_players(candidates)
 
     # Mark blowout-game players before EV computation so _compute_filter_ev()
     # can apply the stack_bonus without needing slate_classification as a parameter.
@@ -1215,10 +1230,8 @@ def run_dual_filter_strategy(
     # Apply popularity gate once — both lineups draw from this filtered pool.
     candidates = _exclude_fade_players(candidates)
 
-    # Phase 1: Starting 5
-    # run_filter_strategy calls _exclude_fade_players internally, but candidates
-    # are already filtered here so it will be a no-op exclusion pass.
-    starting_5 = run_filter_strategy(candidates, slate_classification)
+    # Phase 1: Starting 5 — pass skip_fade_gate=True since we already filtered.
+    starting_5 = run_filter_strategy(candidates, slate_classification, skip_fade_gate=True)
 
     s5_teams = {s.candidate.team.upper() for s in starting_5.slots}
 
