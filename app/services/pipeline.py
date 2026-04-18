@@ -171,7 +171,11 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     games_by_id: dict[int, SlateGame] = {g.id: g for g in games}
     for sp in slate_players:
         player = sp.player
-        if not player or player.position in PITCHER_POSITIONS:
+        if player is None:
+            raise ValueError(
+                f"SlatePlayer id={sp.id} has no linked Player — FK integrity error"
+            )
+        if player.position in PITCHER_POSITIONS:
             continue
         if not sp.game_id or sp.game_id not in games_by_id:
             continue
@@ -226,21 +230,26 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
 
     for sp in slate_players:
         player = sp.player
-        if not player:
-            continue
+        if player is None:
+            raise ValueError(
+                f"SlatePlayer id={sp.id} has no linked Player — FK integrity error"
+            )
 
         is_pitcher = player.position in PITCHER_POSITIONS
         game = game_lookup.get(player.team)
+        if game is None:
+            raise ValueError(
+                f"Player {player.name!r} ({player.team}) has no associated game — "
+                "pipeline data integrity error"
+            )
 
+        is_home = game.home_team == player.team
+        park_team = game.home_team
         opp_pitcher_stats = None
-        park_team = None
-        if game:
-            is_home = game.home_team == player.team
-            park_team = game.home_team
-            if not is_pitcher:
-                opp_starter_name = game.away_starter if is_home else game.home_starter
-                if opp_starter_name:
-                    opp_pitcher_stats = starter_stats_cache.get(opp_starter_name)
+        if not is_pitcher:
+            opp_starter_name = game.away_starter if is_home else game.home_starter
+            if opp_starter_name:
+                opp_pitcher_stats = starter_stats_cache.get(opp_starter_name)
 
         result = score_player(
             db, player,
@@ -248,9 +257,9 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
             opp_pitcher_stats=opp_pitcher_stats,
             batting_order=sp.batting_order,
             park_team=park_team,
-            wind_speed_mph=game.wind_speed_mph if game else None,
-            wind_direction=game.wind_direction if game else None,
-            temperature_f=game.temperature_f if game else None,
+            wind_speed_mph=game.wind_speed_mph,
+            wind_direction=game.wind_direction,
+            temperature_f=game.temperature_f,
         )
 
         # Store in DB
@@ -330,23 +339,28 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             continue
 
         player = sp.player
-        if not player:
-            continue
+        if player is None:
+            raise ValueError(
+                f"SlatePlayer id={sp.id} has no linked Player — FK integrity error"
+            )
 
         is_pitcher = player.position in PITCHER_POSITIONS
 
         # Find associated game
         game = game_lookup.get(player.team)
+        if game is None:
+            raise ValueError(
+                f"Player {player.name!r} ({player.team}) has no associated game — "
+                "pipeline data integrity error"
+            )
 
+        is_home_p = game.home_team == player.team
+        park_team = game.home_team
         opp_pitcher_stats = None
-        park_team = None
-        if game:
-            is_home_p = game.home_team == player.team
-            park_team = game.home_team
-            if not is_pitcher:
-                opp_starter_name = game.away_starter if is_home_p else game.home_starter
-                if opp_starter_name:
-                    opp_pitcher_stats = starter_stats_cache.get(opp_starter_name)
+        if not is_pitcher:
+            opp_starter_name = game.away_starter if is_home_p else game.home_starter
+            if opp_starter_name:
+                opp_pitcher_stats = starter_stats_cache.get(opp_starter_name)
 
         result = score_player(
             db, player,
@@ -355,10 +369,10 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             batting_order=sp.batting_order,
             park_team=park_team,
         )
-        game_id = sp.game_id or (game.id if game else None)
+        game_id = sp.game_id or game.id
 
         # Compute environmental score
-        if is_pitcher and game:
+        if is_pitcher:
             is_home = game.home_team == player.team
 
             # Only include the confirmed probable starter — same guard as the router.
@@ -388,7 +402,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             series_team_w: int | None = None
             series_opp_w: int | None = None
             team_l10: int | None = None
-        elif not is_pitcher and game:
+        else:
             is_home = game.home_team == player.team
             opp_era = game.away_starter_era if is_home else game.home_starter_era
             team_ml = game.home_moneyline if is_home else game.away_moneyline
@@ -411,12 +425,6 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 series_opp_wins=series_opp_w,
                 team_l10_wins=team_l10,
             )
-        else:
-            env_score = 0.5
-            env_factors = []
-            series_team_w = None
-            series_opp_w = None
-            team_l10 = None
 
         # Store env_score on slate player for reference
         sp.env_score = env_score
