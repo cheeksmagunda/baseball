@@ -279,6 +279,223 @@ On Railway, the seed runs automatically via the FastAPI lifespan hook on a fresh
 2026-03-25,Austin Wells,NYY,C,1.2,,SF 0 NYY 7,3.0,1.0,2.0,0.0,0.0,1.0,0.0,,,,,2-for-3 | vs SF (away)
 ```
 
+---
+
+## Improved Ingest Process (V9.1)
+
+This section documents best practices for accurate, repeatable historical data ingestion based on 2026-04-17 slate analysis.
+
+### 1. Player Deduplication Algorithm
+
+**Goal:** Consolidate players appearing in multiple leaderboards into single rows with combined flags.
+
+**Process:**
+1. Extract all players from three leaderboards: Most Popular (MP), Highest Value (HV), Most Drafted 3x (3X)
+2. Build a dict keyed by `(player_name_normalized, team_abbreviation)`
+3. For each unique player, merge all occurrences:
+   - Use the best-quality data source (HV > MP > 3X for real_score, card_boost)
+   - Take the maximum `drafts` count from any source
+   - Set flags: `is_highest_value=1` if in HV list, `is_most_popular=1` if in MP, `is_most_drafted_3x=1` if in 3X
+4. Output one row per unique (name, team) pair with combined flags
+
+**Python example:**
+```python
+players = {}  # (name, team) -> {rs, boost, drafts, is_hv, is_mp, is_3x}
+for source, source_list in [("HV", hv_players), ("MP", mp_players), ("3X", _3x_players)]:
+    for p in source_list:
+        key = (p["name"], p["team"])
+        if key not in players:
+            players[key] = {**p, "is_hv": 0, "is_mp": 0, "is_3x": 0}
+        else:
+            # Merge: keep best RS/boost, max drafts
+            if source == "HV":
+                players[key]["is_hv"] = 1
+            elif source == "MP":
+                players[key]["is_mp"] = 1
+            elif source == "3X":
+                players[key]["is_3x"] = 1
+            players[key]["drafts"] = max(players[key]["drafts"], p["drafts"])
+```
+
+**Verification:**
+- Each player appears exactly once per date
+- Flag sum per player ∈ [1, 3] (at least one source, up to three)
+- No duplicate (date, name, team) rows after consolidation
+
+### 2. Position Inference Guide
+
+**Pitcher identification:**
+- Known pitchers (RS ≥ 5.0, or in pitcher-specific lists like "Glasnow", "Suarez", "Soriano"): position = "P"
+- All others: position = "OF" (generic outfielder for unknown position batters)
+- Manual override: If player identity is ambiguous, check MLB roster or platform UI before assigning position
+
+**Why generic outfielder?**
+- Real Sports leaderboards do not always specify detailed positions (SS, 3B, C, etc.)
+- Using "OF" avoids false precision; position doesn't affect historical scoring
+- When building lineups post-hoc, detailed positions can be backfilled from MLB API if needed
+
+### 3. Slot Assignment Algorithm (Winning Drafts)
+
+**Goal:** Reconstruct the five-slot lineup structure from a list of 5 players (order may be ambiguous).
+
+**Recommended approach (V8.0-aligned):**
+1. Identify the pitcher (highest RS, or known pitcher names)
+2. Assign pitcher to slot 1 (multiplier 2.0)
+3. Sort remaining 4 batters by RS descending
+4. Assign batters to slots 2–5 with multipliers [1.8, 1.6, 1.4, 1.2]
+
+**Why this approach?**
+- Aligns with V8.0 pitcher-anchor architecture (pitcher in slot 1, always 2.0x)
+- Uses RS to break ties, which correlates with draft performance
+- Ensures structural consistency across all historical lineups
+
+**Python example:**
+```python
+pitcher = max(players, key=lambda p: p["rs"])  # Highest RS is likely pitcher
+batters = [p for p in players if p != pitcher]
+batters.sort(key=lambda p: p["rs"], reverse=True)
+
+slot_mults = [2.0, 1.8, 1.6, 1.4, 1.2]
+output_rows = []
+output_rows.append((pitcher["name"], pitcher["team"], "P", 1, pitcher["rs"], pitcher["boost"], slot_mults[0]))
+for slot, batter in enumerate(batters, start=2):
+    output_rows.append((batter["name"], batter["team"], "OF", slot, batter["rs"], batter["boost"], slot_mults[slot - 1]))
+```
+
+### 4. Game Result Inference (HV Game Stats)
+
+**Goal:** For each HV player, match their team to the day's games and populate `game_result`.
+
+**Process:**
+1. For each HV player, identify their team (e.g., "LAD")
+2. Scan the games list for team in either home or away column
+3. Build game_result string: `"{home_abbr} {home_score} {away_abbr} {away_score}"`
+4. If no game found for that team, log a warning (that team may not have played)
+
+**Format examples:**
+- LAD player in LAD 7, COL 1 (home) → game_result = "LAD 7 COL 1"
+- SF player in WSH 5, SF 10 (away) → game_result = "WSH 5 SF 10"
+
+**Limitation:** Images do not provide per-player box-score stats (AB, R, H, HR, RBI, IP, ER, K). These columns remain null. Future ingests should use `backfill_slate_results_and_hv_stats.py` to populate from MLB API post-game.
+
+### 5. Capture Checklist (Pre-Ingest QA)
+
+Before appending rows to CSV files, verify:
+
+- [ ] **Player names:** All normalized (accent removal: Á→A, é→e, ó→o)
+- [ ] **Teams:** All 3-letter MLB abbreviations (BAL, BOS, LAD, NYY, etc.)
+- [ ] **Real scores:** Extracted accurately (negative values allowed for poor performance)
+- [ ] **Card boosts:** Numeric values or blank (null → no boost; "—" → 0.0; "2.3x" → 2.3)
+- [ ] **Draft counts:** Correctly converted ("1.5k" → 1500, not 150 or 15000)
+- [ ] **Formulas:** `total_value = real_score × (2 + card_boost)` verified for each row
+- [ ] **Leaderboard lineups:** Exactly 5 players per lineup, pitcher in slot 1 (or documented alternative)
+- [ ] **Game results:** 14+ games, all teams valid, scores non-negative
+- [ ] **Flags:** Assigned correctly after deduplication (one row per player, multiple flags possible)
+- [ ] **Duplicates:** No (date, player_name, team) appears twice in historical_players.csv
+
+### 6. Team Abbreviation Reference
+
+Standard MLB 3-letter codes (by division):
+
+| AL East | AL Central | AL West | NL East | NL Central | NL West |
+|---------|-----------|---------|---------|-----------|---------|
+| BAL | CWS | HOU | ATL | CHC | ARI |
+| BOS | CLE | LAA | MIA | CIN | COL |
+| NYY | DET | OAK | NYM | MIL | LAD |
+| TB | KC | SEA | PHI | PIT | SD |
+| TOR | MIN | TEX | WSH | STL | SF |
+
+**Non-standard names to avoid:** "Oh God" (should be MIL or another team). If uncertain, ask rather than guess.
+
+### 7. Data Quality Gate (Pre-Reseed)
+
+Create and run a validation script before `rm db/baseball.db && python -m app.seed`:
+
+```bash
+python scripts/validate_ingest.py --date 2026-04-17
+```
+
+This script checks:
+- All three CSV files have the new date in lockstep (count match)
+- No duplicate (date, player_name, team) in historical_players.csv
+- All `total_value` formulas are correct (RS × (2 + boost))
+- All `slot_mult` values are in {2.0, 1.8, 1.6, 1.4, 1.2}
+- Pitcher count in historical_winning_drafts.csv = 1 per lineup (4 per date)
+- Flag counts are consistent (HV + MP + 3X ≤ total unique players)
+- real_score in reasonable range (typically -5 to +10, warn on outliers)
+
+**Exit codes:**
+- 0: All checks passed, safe to reseed
+- 1: Warnings (e.g., unusual values) — review before proceeding
+- 2: Errors (e.g., duplicates, formula failures) — fix and rerun
+
+### 8. Estimated Row Counts Per Slate
+
+Use these estimates to flag incomplete ingests:
+
+| File | Minimum | Target | Maximum |
+|------|---------|--------|---------|
+| historical_players.csv | 20 unique | 30–40 | 60+ |
+| historical_winning_drafts.csv | 20 rows (4 lineups) | 50–100 rows (5–20 lineups) | 500+ |
+| hv_player_game_stats.csv | 10 rows | 20–30 | 50+ |
+
+If captured lineups < 4 or unique players < 20, flag the ingest as incomplete and document what was missing.
+
+### 9. Full Data Flow Example (2026-04-17)
+
+**Input:** 7 images with leaderboard, HV, MP, 3X, and games data.
+
+**Step 1 — Extract & deduplicate:**
+- Extract 4 leaderboard lineups (oshavis, cheezit_man, texastechf4n, adivv) = ~20 player occurrences
+- Extract 14 HV players, 14 MP players, 5 3X players
+- Merge by (name, team): Tyler Glasnow (LAD) in leaderboard + MP = single row with is_mp=1
+- Result: 36–37 unique players
+
+**Step 2 — Build historical_players.csv rows:**
+```
+2026-04-17,Tyler Glasnow,LAD,P,6.4,0.0,2100,12.8,0,1,0
+2026-04-17,Ranger Suarez,PHI,P,7.7,0.4,54,18.48,1,0,0
+2026-04-17,Max Muncy,LAD,OF,5.6,3.0,1,28.0,1,0,0
+```
+
+**Step 3 — Build historical_winning_drafts.csv rows:**
+- Rank 1 (oshavis): T. Glasnow (P) → Slot 1; remaining 4 by RS descending → Slots 2–5
+- Rank 2–4: repeat structure
+- Result: 4 × 5 = 20 rows
+
+**Step 4 — Build hv_player_game_stats.csv rows:**
+- For each of 14 HV players, match team to game
+- Populate game_result; leave batting/pitching columns null (no image data)
+- Result: 13 rows (1 player's team not in games list)
+
+**Step 5 — Validate & reseed:**
+```bash
+python scripts/validate_ingest.py --date 2026-04-17
+rm db/baseball.db
+python -m app.seed
+```
+
+### 10. Future Enhancements (Post-V9.1)
+
+**Candidates for automation (do NOT implement in this task):**
+
+1. **CSV Builder Tool** (`scripts/build_ingest_csvs.py`):
+   - Accepts JSON input (leaderboards, HV, MP, 3X, games)
+   - Auto-deduplicates, assigns slots, populates game_results
+   - Outputs three CSVs with validation
+
+2. **Position Lookup Service:**
+   - Query MLB API or cached roster for exact position (SS, 3B, C, etc.)
+   - Fallback to generic "OF" if not found
+
+3. **Box-Score Backfill:**
+   - Post-ingest, run `backfill_slate_results_and_hv_stats.py`
+   - Populates AB, R, H, HR, RBI, IP, ER, K from MLB Stats API
+
+4. **Validation Script** (`scripts/validate_ingest.py`):
+   - Implement full data quality gate (see section 7 above)
+   - Exit with clear error messages on failure
+
 ## Database Models (9 tables)
 
 | Model | Table | Key Fields |
