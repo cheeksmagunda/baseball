@@ -155,10 +155,7 @@ async def _post_lock_monitor(today: date) -> None:
     from app.database import SessionLocal
     from app.models.slate import Slate, SlateGame
     from app.services.lineup_cache import lineup_cache
-    from app.services.pipeline import run_full_pipeline
     from app.services.data_collection import fetch_schedule_for_date
-
-    tomorrow_warmed = False
 
     logger.info("Post-lock monitor active — watching %s for completion", today)
 
@@ -196,25 +193,20 @@ async def _post_lock_monitor(today: date) -> None:
                 )
                 lineup_cache.clear()
 
-                if not tomorrow_warmed:
-                    tomorrow = today + timedelta(days=1)
-                    try:
-                        logger.info("Pre-warming tomorrow's pipeline (%s)", tomorrow)
-                        await run_full_pipeline(db, tomorrow)
+                # Fetch tomorrow's schedule so Phase 1 of the next cycle has
+                # game times immediately (countdown shows right after restart).
+                # Best-effort only — Phase 1 re-fetches if this fails.
+                tomorrow = today + timedelta(days=1)
+                try:
+                    await fetch_schedule_for_date(db, tomorrow)
+                    logger.info("Tomorrow's schedule pre-fetched (%s)", tomorrow)
+                except Exception as exc:
+                    logger.warning(
+                        "Tomorrow schedule pre-fetch failed — Phase 1 will retry: %s", exc
+                    )
 
-                        from app.routers.filter_strategy import build_and_cache_lineups
-                        cached = await build_and_cache_lineups(db, slate_date=tomorrow)
-                        if cached:
-                            logger.info("Tomorrow's cache warmed (%s)", tomorrow)
-                            tomorrow_warmed = True
-                    except Exception as exc:
-                        logger.warning(
-                            "Tomorrow pre-warm failed — will retry next cycle: %s", exc
-                        )
-
-                if tomorrow_warmed:
-                    logger.info("Post-lock monitor done for %s", today)
-                    break
+                logger.info("Post-lock monitor done for %s", today)
+                break
 
             finally:
                 db.close()
@@ -427,6 +419,7 @@ async def targeted_slate_monitor(
             )
 
             db = SessionLocal()
+            pipeline_ok = False
             try:
                 try:
                     await run_full_pipeline(db, monitor_date)
@@ -437,6 +430,7 @@ async def targeted_slate_monitor(
                     cached = await build_and_cache_lineups(
                         db, slate_date=monitor_date
                     )
+                    pipeline_ok = True
                 except Exception:
                     logger.exception(
                         "T-%d PIPELINE FAILED — see traceback below. "
@@ -444,20 +438,21 @@ async def targeted_slate_monitor(
                         LOCK_MINUTES_BEFORE_PITCH,
                     )
                     lineup_cache.mark_failed()
-                    raise
-                if cached:
-                    lineup_cache.freeze(first_pitch_utc=first_pitch_utc)
-                    logger.info(
-                        "Cache FROZEN. First pitch: %s UTC. Picks are locked.",
-                        first_pitch_utc.strftime("%H:%M"),
-                    )
-                else:
-                    lineup_cache.mark_failed()
-                    raise RuntimeError(
-                        f"T-{LOCK_MINUTES_BEFORE_PITCH} lineup build "
-                        "returned nothing — no slate data available; "
-                        "pipeline must fail loudly"
-                    )
+
+                if pipeline_ok:
+                    if cached:
+                        lineup_cache.freeze(first_pitch_utc=first_pitch_utc)
+                        logger.info(
+                            "Cache FROZEN. First pitch: %s UTC. Picks are locked.",
+                            first_pitch_utc.strftime("%H:%M"),
+                        )
+                    else:
+                        lineup_cache.mark_failed()
+                        logger.error(
+                            "T-%d lineup build returned nothing — no slate data "
+                            "available. /optimize will return 503.",
+                            LOCK_MINUTES_BEFORE_PITCH,
+                        )
             finally:
                 db.close()
 

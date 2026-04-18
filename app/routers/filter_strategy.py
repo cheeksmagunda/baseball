@@ -273,6 +273,14 @@ async def build_and_cache_lineups(db: Session, slate_date: date | None = None) -
         return None
 
     dual = run_dual_filter_strategy(candidates, slate_class)
+
+    # run_dual_filter_strategy overwrites filter_ev on shared candidate objects
+    # with moonshot EVs during Phase 2.  Re-compute S5 EVs so all_candidates
+    # in the response reflects the Starting 5 ranking (what users see first).
+    from app.services.filter_strategy import _compute_filter_ev
+    for c in candidates:
+        c.filter_ev = _compute_filter_ev(c)
+
     response = _build_response(dual, candidates)
     lineup_cache.store(response, slate_date=active_date)
     logger.info(
