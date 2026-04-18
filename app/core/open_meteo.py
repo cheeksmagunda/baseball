@@ -15,6 +15,7 @@ is in STADIUM_WIND_OUT_FROM_DEG:
   "IN"  — wind blowing in from CF (±45° of the opposite bearing) → suppresses HR
   compass label — crosswind or park not in STADIUM_WIND_OUT_FROM_DEG
 """
+import asyncio
 import logging
 import math
 from datetime import date
@@ -206,10 +207,18 @@ async def _fetch(url: str, lat: float, lon: float, game_date: date) -> dict:
         "start_date":       game_date.isoformat(),
         "end_date":         game_date.isoformat(),
     }
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        resp = await client.get(url, params=params)
-        resp.raise_for_status()
-        return resp.json()
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                return resp.json()
+        except Exception as exc:
+            last_exc = exc
+            if attempt < 2:
+                await asyncio.sleep(2 ** attempt)
+    raise last_exc  # type: ignore[misc]
 
 
 async def get_game_weather(
