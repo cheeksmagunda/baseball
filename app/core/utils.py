@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
+from app.core.constants import NON_PLAYING_GAME_STATUSES
 from app.models.player import Player, PlayerGameLog, normalize_name
 from app.models.scoring import PlayerScore
 
@@ -173,7 +174,7 @@ def is_pipeline_callable_now(db: Session) -> tuple[bool, str]:
             # Slate exists with games — check if any are still in progress
             all_final = all(
                 (g.home_score is not None and g.away_score is not None)
-                or g.game_status in ("Postponed", "Cancelled", "Suspended")
+                or g.game_status in NON_PLAYING_GAME_STATUSES
                 for g in games
             )
             if not all_final:
