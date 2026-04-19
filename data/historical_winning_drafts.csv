@@ -866,11 +866,11 @@ date,winner_rank,slot_index,player_name,team,position,real_score,slot_mult,card_
 2026-04-18,2,5,Jordan Walker,STL,OF,0.7,1.2,2.1
 2026-04-18,3,1,Tarik Skubal,DET,P,5.4,2.0,0.0
 2026-04-18,3,2,Corbin Carroll,ARI,OF,6.4,1.8,1.6
-2026-04-18,3,3,Kyle Tucker,CHC,OF,4.1,1.6,2.6
+2026-04-18,3,3,Kyle Tucker,LAD,OF,4.1,1.6,2.6
 2026-04-18,3,4,Emmet Sheehan,LAD,P,2.9,1.4,1.6
 2026-04-18,3,5,Yordan Alvarez,HOU,OF,2.7,1.2,2.1
 2026-04-18,4,1,Corbin Carroll,ARI,OF,6.4,2.0,2.0
-2026-04-18,4,2,Kyle Tucker,CHC,OF,4.1,1.8,2.6
+2026-04-18,4,2,Kyle Tucker,LAD,OF,4.1,1.8,2.6
 2026-04-18,4,3,Yordan Alvarez,HOU,OF,2.7,1.6,1.9
 2026-04-18,4,4,Gunnar Henderson,BAL,SS,2.4,1.4,2.5
 2026-04-18,4,5,Nolan Schanuel,LAA,1B,1.1,1.2,3.0
@@ -886,7 +886,7 @@ date,winner_rank,slot_index,player_name,team,position,real_score,slot_mult,card_
 2026-04-18,6,5,Cole Young,SEA,OF,3.1,1.2,3.0
 2026-04-18,7,1,Yusei Kikuchi,LAA,P,4.9,2.0,1.7
 2026-04-18,7,2,Nick Kurtz,OAK,1B,4.3,1.8,2.6
-2026-04-18,7,3,Kyle Tucker,CHC,OF,4.1,1.6,3.0
+2026-04-18,7,3,Kyle Tucker,LAD,OF,4.1,1.6,3.0
 2026-04-18,7,4,Emmet Sheehan,LAD,P,2.9,1.4,1.8
 2026-04-18,7,5,Ketel Marte,ARI,2B,0.1,1.2,3.0
 2026-04-18,8,1,Corbin Carroll,ARI,OF,6.4,2.0,2.0
@@ -897,5 +897,15 @@ date,winner_rank,slot_index,player_name,team,position,real_score,slot_mult,card_
 2026-04-18,9,1,Tarik Skubal,DET,P,5.4,2.0,0.0
 2026-04-18,9,2,Yusei Kikuchi,LAA,P,4.9,1.8,1.5
 2026-04-18,9,3,Dean Kremer,BAL,P,4.3,1.6,1.2
-2026-04-18,9,4,Kyle Tucker,CHC,OF,4.1,1.4,2.8
+2026-04-18,9,4,Kyle Tucker,LAD,OF,4.1,1.4,2.8
 2026-04-18,9,5,Emmet Sheehan,LAD,P,2.9,1.2,1.8
+2026-04-17,5,1,Austin Riley,ATL,3B,4.5,2.0,3.0
+2026-04-17,5,2,Francisco Lindor,NYM,SS,1.0,1.8,3.0
+2026-04-17,5,3,Will Smith,LAD,C,2.6,1.6,3.0
+2026-04-17,5,4,Michael Harris II,ATL,OF,2.8,1.4,3.0
+2026-04-17,5,5,Michael Busch,CHC,1B,1.4,1.2,3.0
+2026-04-17,6,1,Jose Soriano,LAA,P,5.2,2.0,0.0
+2026-04-17,6,2,Ian Happ,CHC,OF,2.1,1.8,2.8
+2026-04-17,6,3,Moises Ballesteros,CHC,C,4.1,1.6,2.6
+2026-04-17,6,4,Brandon Lowe,TB,2B,3.5,1.4,2.3
+2026-04-17,6,5,Yordan Alvarez,HOU,OF,2.2,1.2,1.9
