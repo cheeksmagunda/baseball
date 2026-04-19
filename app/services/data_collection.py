@@ -831,10 +831,14 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
                 time_str = game.scheduled_game_time.replace(" ET", "").strip()
                 from datetime import datetime as _dt
                 parsed = _dt.strptime(time_str, "%I:%M %p")
-                # April is EDT = UTC-4; add 4 hours
+                # Regular season is EDT (UTC-4); correct for April–September.
                 utc_hour = (parsed.hour + 4) % 24
             except (ValueError, AttributeError):
-                pass
+                logger.warning(
+                    "Could not parse scheduled_game_time %r for %s vs %s"
+                    " — defaulting utc_hour to 23 for weather lookup",
+                    game.scheduled_game_time, game.home_team, game.away_team,
+                )
 
         weather = await get_game_weather(
             lat=lat,

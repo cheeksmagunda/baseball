@@ -245,6 +245,12 @@ def run_seed(db: Session = None):
 
     PlayerGameLog records are NOT seeded from CSV. Game logs come exclusively
     from fetch_player_season_stats() via the live MLB API (source='mlb_api').
+
+    Re-ingestion workflow: the idempotency guard (WeightHistory count == 0)
+    prevents double-seeding on normal restarts. To pick up freshly-appended
+    CSV rows after a new slate is ingested, delete the database first:
+        rm db/ben_oracle.db && python -m app.seed
+    On Railway, a fresh DB seeds automatically via the FastAPI lifespan hook.
     """
     close_session = False
     if db is None:

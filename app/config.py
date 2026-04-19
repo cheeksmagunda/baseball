@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     redis_url: str | None = None
 
     # The Odds API key for fetching pre-game Vegas lines (moneyline + O/U totals).
-    # Free tier: 500 requests/month.  Optional — omitting skips Vegas enrichment with a warning.
-    # Reads from BO_ODDS_API_KEY (standard BO_ prefix).
+    # Free tier: 500 requests/month.  REQUIRED — T-65 pipeline raises RuntimeError if
+    # unset or unreachable.  Reads from BO_ODDS_API_KEY (standard BO_ prefix).
     odds_api_key: str | None = None
 
 

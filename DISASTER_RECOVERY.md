@@ -257,7 +257,8 @@ Bad data is worse than no data. Operations must restore the system rather than s
 ### At App Startup (Every Day)
 - [ ] Logs show "BO_DATABASE_URL validated" (database URL format correct)
 - [ ] Logs show "Redis connectivity verified" OR "Redis configured but unreachable..." (if Redis configured)
-- [ ] Logs show "BO_ODDS_API_KEY configured — Vegas API enrichment enabled" OR critical warning (Vegas warning is OK if key is set but not shown in logs)
+- [ ] Logs show "MLB season: BO_CURRENT_SEASON=2026" (confirms env var was read; missing means app crashed at import)
+- [ ] Logs show "BO_ODDS_API_KEY configured — Vegas API enrichment enabled" (REQUIRED — if absent, T-65 will crash)
 - [ ] Logs show "Startup: frozen picks restored=true/false" (restore guard activated)
 - [ ] App is healthy on Railway dashboard
 
@@ -361,4 +362,5 @@ BO_DATABASE_URL=sqlite:///nonexistent/path/db.db
 |------|---------|---------|
 | 2026-04-15 | 1.0 | Initial runbook. Seven scenarios covered. Monitoring checklist. Testing guide. |
 | 2026-04-17 | 1.1 | Corrected Scenario 6: post-T-65 restart uses `restore_and_refreeze()` (V8.1 Fix 1), not a fresh pipeline run. Added Scenario 8: post-T-65 restore failure with empty candidate pool. |
+| 2026-04-19 | 1.2 | Production audit fixes: corrected `.env` prefix (DFS_ → BO_), marked `BO_ODDS_API_KEY` as REQUIRED in config comment, added `BO_CURRENT_SEASON` to startup monitoring checklist, removed silent weather-parse fallback (`pass` → `logger.warning()`), documented seed re-ingestion workflow in `run_seed()` docstring. |
 
