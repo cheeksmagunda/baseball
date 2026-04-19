@@ -539,16 +539,10 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
     teams = {g.home_team for g in games} | {g.away_team for g in games}
 
     async def _fetch_batting(team: str) -> tuple[str, dict]:
-        team_id = TEAM_MLB_IDS.get(team)
-        if not team_id:
-            raise ValueError(f"No MLB team ID for {team!r} — add to TEAM_MLB_IDS in app/core/mlb_api.py")
-        return team, await get_team_stats(team_id, season)
+        return team, await get_team_stats(TEAM_MLB_IDS[team], season)
 
     async def _fetch_pitching(team: str) -> tuple[str, dict]:
-        team_id = TEAM_MLB_IDS.get(team)
-        if not team_id:
-            raise ValueError(f"No MLB team ID for {team!r} — add to TEAM_MLB_IDS in app/core/mlb_api.py")
-        return team, await get_team_pitching_stats(team_id, season)
+        return team, await get_team_pitching_stats(TEAM_MLB_IDS[team], season)
 
     batting_results, pitching_results = await asyncio.gather(
         asyncio.gather(*[_fetch_batting(t) for t in teams]),
