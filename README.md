@@ -1,6 +1,6 @@
 # Ben Oracle
 
-A rule-based scoring engine and draft optimizer for **Real Sports DFS** (baseball), backed by live MLB API data with a feedback loop that gets smarter over time.
+A rule-based scoring engine and draft optimizer for **Real Sports DFS** (baseball), backed by live MLB API data.
 
 > **This is NOT traditional DFS.** In Real Sports, there is no salary cap. You draft 5 players into 5 slots with fixed multipliers. Each player has a **card boost** (0 to +3.0x). The core formula:
 >
@@ -212,16 +212,18 @@ app/
 ├── database.py             # SQLAlchemy engine + session
 ├── seed.py                 # Historical data loader
 ├── core/
-│   ├── constants.py        # Slot multipliers, RS ranges, park factors
+│   ├── constants.py        # Slot multipliers, RS ranges, park factors, all thresholds
 │   ├── weights.py          # Configurable scoring weights
-│   ├── utils.py            # Shared formulas (compute_total_value, etc.)
-│   └── mlb_api.py          # MLB Stats API client
+│   ├── utils.py            # Shared formulas (compute_total_value, scale_score, etc.)
+│   ├── mlb_api.py          # MLB Stats API client
+│   ├── odds_api.py         # The Odds API client (Vegas moneyline + O/U)
+│   └── open_meteo.py       # Weather API client (temperature, wind)
 ├── models/
 │   ├── player.py           # Player, PlayerStats, PlayerGameLog
 │   ├── slate.py            # Slate, SlateGame, SlatePlayer
 │   ├── scoring.py          # PlayerScore, ScoreBreakdown
 │   ├── draft.py            # DraftLineup, DraftSlot
-│   └── calibration.py      # CalibrationResult, WeightHistory
+│   └── calibration.py      # WeightHistory
 ├── schemas/                # Pydantic request/response models
 ├── routers/                # API route handlers
 └── services/
@@ -233,15 +235,16 @@ app/
     ├── slate_monitor.py    # T-65 event loop
     ├── popularity.py       # Web-scraping popularity signal aggregator
     ├── data_collection.py  # MLB API data fetching
-    └── pipeline.py         # Fetch → Score → Rank orchestrator
+    ├── pipeline.py         # Fetch → Score → Rank orchestrator
+    └── condition_classifier.py  # Meta-game monitoring (entropy, Gini)
 data/
-├── historical_players.csv           # 822 rows / 23 dates — master player ledger
-├── historical_winning_drafts.csv    # 835 rows / 23 dates — top-ranked lineups (5 slots/lineup)
-├── historical_slate_results.json    # 23 entries            — per-date slate envelope
-└── hv_player_game_stats.csv         # 357 rows / 23 dates — box scores for HV players
+├── historical_players.csv           # 904 rows / 25 dates — master player ledger
+├── historical_winning_drafts.csv    # 910 rows / 25 dates — top-ranked lineups (5 slots/lineup)
+├── historical_slate_results.json    # 25 entries            — per-date slate envelope
+└── hv_player_game_stats.csv         # 396 rows / 25 dates — box scores for HV players
 ```
 
-Current coverage: 2026-03-25 → 2026-04-16 (23 slates). All four files stay in lockstep.
+Current coverage: 2026-03-25 → 2026-04-18 (25 slates). All four files stay in lockstep.
 
 ## Getting Started
 
