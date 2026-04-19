@@ -10,35 +10,6 @@ from app.database import init_db
 from app.routers import players, slates, scoring, draft, calibration, pipeline, popularity, filter_strategy
 
 
-# Live startup state — each step of _sync_startup_init writes a status here so
-# /api/debug/startup can report which step is running, which hung, or which
-# raised, without relying on Railway's log capture (which truncates before the
-# full boot sequence is flushed).
-startup_state: dict = {
-    "steps": {},           # step_name -> {started_at, completed_at, error}
-    "event_set": False,    # True once startup_done_event is set
-    "background_task_done": False,  # True when _startup_init returns (success OR failure)
-}
-
-
-def _mark_step(name: str, *, started: bool = False, completed: bool = False, error: str | None = None) -> None:
-    """Record step progress to startup_state and flush stdout for Railway logs."""
-    from datetime import datetime, timezone
-    import sys
-    ts = datetime.now(timezone.utc).isoformat()
-    step = startup_state["steps"].setdefault(name, {})
-    if started:
-        step["started_at"] = ts
-        print(f"STARTUP STEP [{name}] started at {ts}", flush=True)
-    if completed:
-        step["completed_at"] = ts
-        print(f"STARTUP STEP [{name}] completed at {ts}", flush=True)
-    if error is not None:
-        step["error"] = error
-        print(f"STARTUP STEP [{name}] FAILED at {ts}: {error}", flush=True)
-    sys.stdout.flush()
-
-
 # Centralized logging configuration
 LOGGING_CONFIG = {
     "version": 1,
@@ -85,26 +56,6 @@ async def lifespan(app: FastAPI):
     from app.seed import run_seed
 
     logger = logging.getLogger(__name__)
-
-    # Startup Diagnostic: which env vars are present? (names only, never values — secrets).
-    # This is the definitive source of truth for debugging Railway env-var injection.
-    import os as _os
-    _env_presence = {
-        "BO_REDIS_URL": bool(_os.environ.get("BO_REDIS_URL")),
-        "REDIS_URL": bool(_os.environ.get("REDIS_URL")),
-        "REDIS_PRIVATE_URL": bool(_os.environ.get("REDIS_PRIVATE_URL")),
-        "BO_DATABASE_URL": bool(_os.environ.get("BO_DATABASE_URL")),
-        "DATABASE_URL": bool(_os.environ.get("DATABASE_URL")),
-        "BO_CURRENT_SEASON": bool(_os.environ.get("BO_CURRENT_SEASON")),
-        "BO_ODDS_API_KEY": bool(_os.environ.get("BO_ODDS_API_KEY")),
-        "PORT": _os.environ.get("PORT", "unset"),
-    }
-    logger.info("STARTUP ENV PRESENCE: %s", _env_presence)
-    logger.info(
-        "STARTUP RESOLVED: settings.redis_url=%s, settings.database_url_scheme=%s",
-        "SET" if settings.redis_url else "UNSET",
-        settings.database_url.split("://", 1)[0] if "://" in settings.database_url else "unknown",
-    )
 
     # Startup Validation: Database URL
     try:
@@ -165,11 +116,11 @@ async def lifespan(app: FastAPI):
         import redis as redis_lib
         import time as _time
 
-        _mark_step("init_db", started=True)
+        logger.info("STARTUP STEP: calling init_db() (alembic migrations)")
         init_db()
-        _mark_step("init_db", completed=True)
+        logger.info("STARTUP STEP: init_db() completed successfully")
 
-        _mark_step("redis_ping", started=True)
+        logger.info("STARTUP STEP: validating Redis connectivity")
         _redis_error: Exception | None = None
         for _attempt in range(1, 6):
             try:
@@ -180,27 +131,27 @@ async def lifespan(app: FastAPI):
                     socket_timeout=10,
                 )
                 client.ping()
-                print(f"Redis ping OK on attempt {_attempt}", flush=True)
+                logger.info("Redis connectivity verified at startup (attempt %d)", _attempt)
                 _redis_error = None
                 break
             except Exception as e:
                 _redis_error = e
                 if _attempt < 5:
-                    print(f"Redis ping failed attempt {_attempt}/5: {e} — retry in 2s", flush=True)
+                    logger.warning(
+                        "Redis ping failed (attempt %d/5): %s — retrying in 2s", _attempt, e
+                    )
                     _time.sleep(2)
         if _redis_error is not None:
             raise RuntimeError(
                 f"CRITICAL: Redis unreachable after 5 startup attempts. "
                 f"Redis is required for cache layer — no fallback. Last error: {_redis_error}"
             )
-        _mark_step("redis_ping", completed=True)
 
-        _mark_step("seed", started=True)
+        logger.info("STARTUP STEP: running seed")
         with SessionLocal() as db:
             run_seed(db)
-        _mark_step("seed", completed=True)
 
-        _mark_step("cache_init", started=True)
+        logger.info("STARTUP STEP: initializing lineup cache")
         _restored = False
         with SessionLocal() as _check_db:
             _today_slate = _check_db.query(_Slate).filter_by(date=date.today()).first()
@@ -222,30 +173,18 @@ async def lifespan(app: FastAPI):
                             )
         if not _restored:
             lineup_cache.purge()
-        _mark_step("cache_init", completed=True)
 
     async def _startup_init():
         try:
             await asyncio.to_thread(_sync_startup_init)
-        except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            # Mark whichever step was in-flight as failed so /api/debug/startup
-            # surfaces the exception.
-            for _name, _step in startup_state["steps"].items():
-                if "started_at" in _step and "completed_at" not in _step and "error" not in _step:
-                    _mark_step(_name, error=f"{type(e).__name__}: {e}\n{tb}")
-                    break
+        except Exception:
             logger.critical(
                 "STARTUP FAILED: background init raised. /api/filter-strategy/optimize "
                 "will stay in 503 until the underlying issue is fixed and the app is "
                 "restarted. No fallback.",
                 exc_info=True,
             )
-            startup_state["background_task_done"] = True
             return
-        startup_state["background_task_done"] = True
-        startup_state["event_set"] = True
         startup_done_event.set()
         logger.info(
             "Startup complete. "
@@ -298,28 +237,3 @@ app.include_router(filter_strategy.router, prefix="/api/filter-strategy", tags=[
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "version": "0.1.0"}
-
-
-@app.get("/api/debug/startup")
-async def debug_startup():
-    """Reports the live state of the background init task.
-
-    Read-only. No DB writes. Exists purely to debug silent startup hangs on
-    Railway where log capture truncates before full boot sequence is flushed.
-    Shows which step is running, completed, or raised.
-    """
-    from app.services.lineup_cache import lineup_cache
-    return {
-        "steps": startup_state["steps"],
-        "background_task_done": startup_state["background_task_done"],
-        "event_set": startup_state["event_set"],
-        "lineup_cache_first_pitch_utc": (
-            lineup_cache.first_pitch_utc.isoformat()
-            if lineup_cache.first_pitch_utc else None
-        ),
-        "lineup_cache_lock_time_utc": (
-            lineup_cache.lock_time_utc.isoformat()
-            if lineup_cache.lock_time_utc else None
-        ),
-        "lineup_cache_is_frozen": lineup_cache.is_frozen,
-    }
