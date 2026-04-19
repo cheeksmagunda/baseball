@@ -54,16 +54,13 @@ def _format_game_time_et(game_date_iso: str | None) -> str | None:
     """
     if not game_date_iso:
         return None
-    try:
-        utc_dt = _datetime.fromisoformat(game_date_iso.replace("Z", "+00:00"))
-        et_dt = utc_dt.astimezone(_ET)
-        formatted = et_dt.strftime("%I:%M %p")
-        # Strip leading zero: "07:05 PM" → "7:05 PM"
-        if formatted.startswith("0"):
-            formatted = formatted[1:]
-        return f"{formatted} ET"
-    except (ValueError, TypeError):
-        return None
+    utc_dt = _datetime.fromisoformat(game_date_iso.replace("Z", "+00:00"))
+    et_dt = utc_dt.astimezone(_ET)
+    formatted = et_dt.strftime("%I:%M %p")
+    # Strip leading zero: "07:05 PM" → "7:05 PM"
+    if formatted.startswith("0"):
+        formatted = formatted[1:]
+    return f"{formatted} ET"
 
 
 async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
