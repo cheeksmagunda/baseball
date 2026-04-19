@@ -252,7 +252,7 @@ Output shows RS and HV-rate distributions across each threshold bucket (below fl
 
 ## Ingesting New Slate Data
 
-New slates are ingested **manually by appending rows** to the four files above — there is no automated collector. After a slate completes, capture the platform's leaderboards and append to each file. The canonical column-by-column reference lives in `.claude/hooks/session-start.sh` (reproduced below). Keep all four files in lockstep — a date missing from any one of them will break cross-validation.
+New slates are ingested **manually by appending rows** to the four files above — there is no automated collector. After a slate completes, capture the platform's leaderboards and append to each file. The canonical column-by-column reference is reproduced below. Keep all four files in lockstep — a date missing from any one of them will break cross-validation.
 
 ### Per-slate ingest checklist
 

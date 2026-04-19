@@ -262,6 +262,12 @@ uvicorn app.main:app --reload
 pytest tests/
 ```
 
+### Claude Code cloud
+
+`scripts/cloud-setup.sh` is a **reference copy** of the bootstrap script that runs when the Claude Code cloud container is provisioned. The canonical runtime lives in the Claude Code cloud environment "Setup script" field — paste the contents of `scripts/cloud-setup.sh` there to restore or rebuild the environment. The repo copy does not auto-execute.
+
+The script requires `GITHUB_PAT` in cloud secrets (for `gh` CLI + `git push` auth) plus the `BO_*` env vars listed in `.env.example`.
+
 ## Ingesting a New Slate
 
 New slates are added **manually** — there is no automated collector. After a slate completes, append rows to the four files in `/data/` (see the **"Ingesting New Slate Data"** section in [CLAUDE.md](CLAUDE.md) for the full column-by-column reference and platform → CSV mapping). The short version:
