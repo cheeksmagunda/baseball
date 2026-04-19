@@ -113,7 +113,7 @@ set -euo pipefail
 #   [ ] Verify total_value = real_score × (2 + card_boost) for each row
 #       (card_boost is for historical data ONLY — never used in scoring/prediction)
 #   [ ] Players appearing in multiple leaderboards → single row, multiple flags
-#   [ ] Reload DB: rm db/baseball.db && python -m app.seed
+#   [ ] Reload DB: rm db/ben_oracle.db && python -m app.seed
 #       (the seeder is idempotency-guarded on an empty DB — no incremental mode)
 # =============================================================================
 
