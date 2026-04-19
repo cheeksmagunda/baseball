@@ -76,8 +76,7 @@ def _assign_to_slots(cards: list[CardWithScore], strategy: str) -> OptimizedLine
     total = 0.0
     for i, card in enumerate(top_cards):
         slot_idx, slot_mult = slot_mults[i]
-        # Additive formula: total_value = RS × (slot_mult + card_boost)
-        # expected_value = intrinsic × (BASE_MULTIPLIER + card_boost), so reverse to get intrinsic
+        # slot_value = intrinsic × (slot_mult + card_boost); reverse expected_value to recover intrinsic
         intrinsic = card.expected_value / (BASE_MULTIPLIER + card.card_boost)
         slot_value = intrinsic * (slot_mult + card.card_boost)
         slots.append(SlotAssignment(
@@ -130,7 +129,6 @@ def evaluate_lineup(
     for i, card in enumerate(cards_in_order[:5]):
         slot_idx, slot_mult = slot_mults[i]
         ev = compute_expected_value(card.score_result, card.card_boost)
-        # Additive formula: total_value = RS × (slot_mult + card_boost)
         intrinsic = ev / (BASE_MULTIPLIER + card.card_boost)
         slot_value = intrinsic * (slot_mult + card.card_boost)
         slots.append(SlotAssignment(
