@@ -316,8 +316,8 @@ BATTER_ENV_VEGAS_FLOOR = 7.0          # O/U at or below this → 0 contribution
 BATTER_ENV_VEGAS_CEILING = 9.5        # O/U at or above this → full contribution
 BATTER_ENV_ERA_FLOOR = 3.5            # opposing starter ERA at or below → 0
 BATTER_ENV_ERA_CEILING = 5.5          # opposing starter ERA at or above → full
-BATTER_ENV_ML_FLOOR = -110            # same as pitcher (shared graduation)
-BATTER_ENV_ML_CEILING = -250          # same as pitcher (shared graduation)
+BATTER_ENV_ML_FLOOR = PITCHER_ENV_ML_FLOOR    # moneyline graduation shared with pitcher env
+BATTER_ENV_ML_CEILING = PITCHER_ENV_ML_CEILING
 BATTER_ENV_BULLPEN_ERA_FLOOR = 3.5    # bullpen ERA at or below → 0
 BATTER_ENV_BULLPEN_ERA_CEILING = 5.5  # bullpen ERA at or above → full
 
