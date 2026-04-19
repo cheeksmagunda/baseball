@@ -54,16 +54,13 @@ def _format_game_time_et(game_date_iso: str | None) -> str | None:
     """
     if not game_date_iso:
         return None
-    try:
-        utc_dt = _datetime.fromisoformat(game_date_iso.replace("Z", "+00:00"))
-        et_dt = utc_dt.astimezone(_ET)
-        formatted = et_dt.strftime("%I:%M %p")
-        # Strip leading zero: "07:05 PM" → "7:05 PM"
-        if formatted.startswith("0"):
-            formatted = formatted[1:]
-        return f"{formatted} ET"
-    except (ValueError, TypeError):
-        return None
+    utc_dt = _datetime.fromisoformat(game_date_iso.replace("Z", "+00:00"))
+    et_dt = utc_dt.astimezone(_ET)
+    formatted = et_dt.strftime("%I:%M %p")
+    # Strip leading zero: "07:05 PM" → "7:05 PM"
+    if formatted.startswith("0"):
+        formatted = formatted[1:]
+    return f"{formatted} ET"
 
 
 async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
@@ -538,17 +535,11 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
     teams = {g.home_team for g in games} | {g.away_team for g in games}
 
-    async def _fetch_batting(team: str) -> tuple[str, dict | None]:
-        team_id = TEAM_MLB_IDS.get(team)
-        if not team_id:
-            return team, None
-        return team, await get_team_stats(team_id, season)
+    async def _fetch_batting(team: str) -> tuple[str, dict]:
+        return team, await get_team_stats(TEAM_MLB_IDS[team], season)
 
-    async def _fetch_pitching(team: str) -> tuple[str, dict | None]:
-        team_id = TEAM_MLB_IDS.get(team)
-        if not team_id:
-            return team, None
-        return team, await get_team_pitching_stats(team_id, season)
+    async def _fetch_pitching(team: str) -> tuple[str, dict]:
+        return team, await get_team_pitching_stats(TEAM_MLB_IDS[team], season)
 
     batting_results, pitching_results = await asyncio.gather(
         asyncio.gather(*[_fetch_batting(t) for t in teams]),
@@ -557,8 +548,6 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
 
     team_batting: dict[str, dict] = {}
     for team, data in batting_results:
-        if data is None:
-            continue
         splits = (data.get("stats") or [{}])[0].get("splits", [])
         if not splits:
             continue
@@ -572,8 +561,6 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
 
     team_pitching: dict[str, dict] = {}
     for team, data in pitching_results:
-        if data is None:
-            continue
         splits = (data.get("stats") or [{}])[0].get("splits", [])
         if not splits:
             continue
@@ -823,18 +810,16 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
         lat, lon = coords
 
         # Parse scheduled time to determine the closest UTC hour for weather lookup.
-        # scheduled_game_time is stored as e.g. "7:05 PM ET".  April games are EDT
-        # (UTC-4), so 7:05 PM EDT = 23:05 UTC.  Default to 23 (7 PM ET) if missing.
+        # scheduled_game_time is stored as "H:MM AM/PM ET" by _format_game_time_et().
+        # Regular season is EDT (UTC-4), so 7:05 PM EDT = 23:05 UTC.
+        # Default to 23 only when scheduled_game_time is absent (NULL game time).
+        # A present-but-malformed value raises ValueError — no silent fallback.
         utc_hour = 23
         if game.scheduled_game_time:
-            try:
-                time_str = game.scheduled_game_time.replace(" ET", "").strip()
-                from datetime import datetime as _dt
-                parsed = _dt.strptime(time_str, "%I:%M %p")
-                # April is EDT = UTC-4; add 4 hours
-                utc_hour = (parsed.hour + 4) % 24
-            except (ValueError, AttributeError):
-                pass
+            time_str = game.scheduled_game_time.replace(" ET", "").strip()
+            from datetime import datetime as _dt
+            parsed = _dt.strptime(time_str, "%I:%M %p")
+            utc_hour = (parsed.hour + 4) % 24
 
         weather = await get_game_weather(
             lat=lat,

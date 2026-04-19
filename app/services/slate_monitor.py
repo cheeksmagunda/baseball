@@ -57,12 +57,8 @@ def _parse_game_time(game_time_str: str, game_date: date) -> datetime | None:
     """
     Parse a scheduled game time string into a UTC-aware datetime.
 
-    Handles formats stored by fetch_schedule_for_date, e.g.:
-      "7:05 PM ET"   "1:10 PM ET"   "10:10 AM PT"
-
-    The suffix is stripped; the time is interpreted as America/New_York
-    (handles EDT vs EST automatically via DST). Returns None on any parse
-    failure so missing times never crash the monitor.
+    Input is always "H:MM AM/PM ET" as written by _format_game_time_et().
+    Returns None only for null/empty input (game has no scheduled time).
     """
     if not game_time_str:
         return None
@@ -73,14 +69,7 @@ def _parse_game_time(game_time_str: str, game_date: date) -> datetime | None:
             time_str = time_str[: -len(suffix)].strip()
             break
 
-    try:
-        naive_time = datetime.strptime(time_str, "%I:%M %p")
-    except ValueError:
-        try:
-            naive_time = datetime.strptime(time_str, "%H:%M")
-        except ValueError:
-            logger.warning("Cannot parse game time string: %r", game_time_str)
-            return None
+    naive_time = datetime.strptime(time_str, "%I:%M %p")
 
     # Late West Coast games (e.g. 10:10 PM PT) convert to early-AM ET times
     # (1:10 AM ET) that belong to the *next* calendar day.  Without this

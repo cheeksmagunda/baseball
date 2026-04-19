@@ -98,6 +98,10 @@ async def lifespan(app: FastAPI):
             f"Redis is required for cache layer — no fallback. Error: {e}"
         )
 
+    # Startup Validation: current_season (confirmed readable — Pydantic required field,
+    # so a missing BO_CURRENT_SEASON would have already crashed at import time)
+    logger.info("MLB season: BO_CURRENT_SEASON=%d", settings.current_season)
+
     # Startup Validation: Odds API Key
     if not settings.odds_api_key:
         logger.critical(

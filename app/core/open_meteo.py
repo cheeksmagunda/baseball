@@ -179,9 +179,9 @@ def _extract_hour(data: dict, target_utc_hour: int) -> dict:
             best_diff = diff
             best_idx = i
 
-    temp_c    = temps[best_idx]     if best_idx < len(temps)      else None
-    speed_kmh = speeds[best_idx]    if best_idx < len(speeds)     else None
-    dir_deg   = directions[best_idx] if best_idx < len(directions) else None
+    temp_c    = temps[best_idx]
+    speed_kmh = speeds[best_idx]
+    dir_deg   = directions[best_idx]
 
     if temp_c is None or speed_kmh is None or dir_deg is None:
         raise RuntimeError(
