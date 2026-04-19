@@ -9,7 +9,9 @@ class Settings(BaseSettings):
     mlb_api_base_url: str = "https://statsapi.mlb.com/api/v1"
     cors_origins: list[str] = ["*"]
     log_level: str = "INFO"
-    current_season: int = 2026
+    # REQUIRED: set via BO_CURRENT_SEASON env var. No default — the operator must
+    # explicitly pick the active MLB season year. See "MLB Season Calendar" in CLAUDE.md.
+    current_season: int
     redis_url: str | None = None
 
     # The Odds API key for fetching pre-game Vegas lines (moneyline + O/U totals).
