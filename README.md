@@ -1,4 +1,4 @@
-# Baseball DFS Predictor — Real Sports Edition
+# Ben Oracle
 
 A rule-based scoring engine and draft optimizer for **Real Sports DFS** (baseball), backed by live MLB API data with a feedback loop that gets smarter over time.
 
@@ -208,7 +208,7 @@ All endpoints are under `/api/`.
 ```
 app/
 ├── main.py                 # FastAPI app + CORS + lifespan
-├── config.py               # pydantic-settings (DFS_ prefix)
+├── config.py               # pydantic-settings (BO_ prefix)
 ├── database.py             # SQLAlchemy engine + session
 ├── seed.py                 # Historical data loader
 ├── core/
@@ -250,7 +250,7 @@ Current coverage: 2026-03-25 → 2026-04-16 (23 slates). All four files stay in 
 pip install -e ".[dev]"
 
 # Set environment variables (or copy .env.example → .env)
-export DFS_DATABASE_URL=sqlite:///db/baseball.db
+export BO_DATABASE_URL=sqlite:///db/ben_oracle.db
 
 # Seed historical data
 python -m app.seed
@@ -275,7 +275,7 @@ New slates are added **manually** — there is no automated collector. After a s
 
 ## Deployment (Railway)
 
-The app includes a `Dockerfile` and `Procfile` for Railway deployment. Set `DFS_DATABASE_URL` and `PORT` as environment variables. The database is seeded automatically on first startup via the lifespan hook.
+The app includes a `Dockerfile` and `Procfile` for Railway deployment. Set `BO_DATABASE_URL` and `PORT` as environment variables. The database is seeded automatically on first startup via the lifespan hook.
 
 ## License
 

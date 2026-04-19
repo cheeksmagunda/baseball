@@ -1,4 +1,4 @@
-# Baseball DFS Predictor - AI Assistant Guide
+# Ben Oracle - AI Assistant Guide
 
 ## General Engineering Principles
 
@@ -81,10 +81,10 @@ The pipeline either works with real data or it fails loudly. Fallbacks mask bugs
 
 ## Vegas Lines: Required, Never Optional
 
-**Critical Requirement:** Vegas lines (moneyline + over/under totals) are **mandatory inputs** to the T-65 pipeline. The Odds API (`DFS_ODDS_API_KEY` environment variable) must be configured and operational.
+**Critical Requirement:** Vegas lines (moneyline + over/under totals) are **mandatory inputs** to the T-65 pipeline. The Odds API (`BO_ODDS_API_KEY` environment variable) must be configured and operational.
 
 **Behavior:**
-- `DFS_ODDS_API_KEY` **must be set** at startup. If missing, the app logs a critical warning at initialization.
+- `BO_ODDS_API_KEY` **must be set** at startup. If missing, the app logs a critical warning at initialization.
 - When the T-65 pipeline runs (`app/services/pipeline.py:500`), `enrich_slate_game_vegas_lines()` **raises `RuntimeError`** if:
   - The API key is unset
   - The API request fails (network error, timeout)
@@ -98,7 +98,7 @@ The pipeline either works with real data or it fails loudly. Fallbacks mask bugs
 
 Missing Vegas data corrupts the EV formula and produces suboptimal lineups. The system cannot proceed without it. If The Odds API fails, operations must investigate and restore it — there is no graceful degradation.
 
-**Configuration:** Set `DFS_ODDS_API_KEY` to your The Odds API key (free tier: 500 requests/month, sufficient for one pipeline run per day).
+**Configuration:** Set `BO_ODDS_API_KEY` to your The Odds API key (free tier: 500 requests/month, sufficient for one pipeline run per day).
 
 ## ABSOLUTE RULE: Historical Data Is Reference Only
 
@@ -721,7 +721,7 @@ Post-EV composition (applied in `_enforce_composition`):
 - **Momentum gate** (removed in V9.0): previously capped `pop_factor` at NEUTRAL for cold/trailing teams. Removed when pop_factor was removed from EV. Series context still contributes to env Group D scoring.
 
 **Fix 4 — Vegas lines** (`app/core/odds_api.py`, `app/config.py`, `app/services/data_collection.py`, `app/services/pipeline.py`)
-- New `app/core/odds_api.py` client. `DFS_ODDS_API_KEY` env var; omitting it skips enrichment with a loud warning (env scoring treats NULL lines as unknown/neutral — existing behavior).
+- New `app/core/odds_api.py` client. `BO_ODDS_API_KEY` env var; omitting it skips enrichment with a loud warning (env scoring treats NULL lines as unknown/neutral — existing behavior).
 - `enrich_slate_game_vegas_lines()` populates `vegas_total`, `home_moneyline`, `away_moneyline`. Non-fatal in `run_full_pipeline()`. **Superseded — as of the "Vegas Lines: Required, Never Optional" policy, this call is now fatal. Any API failure or missing per-game odds raises `RuntimeError` and crashes the pipeline. The non-fatal note above applied to the initial V8.1 implementation only.**
 
 **Fix 5 — Condition matrix** (retired in V9.0)
@@ -903,8 +903,8 @@ Every lineup is 1 pitcher + 4 batters. The pitcher is the best-condition pre-gam
 ## Deployment
 
 - **Dockerfile** + **Procfile** included for Railway
-- Environment vars use `DFS_` prefix (see `.env.example`)
-- SQLite by default, swap `DFS_DATABASE_URL` for Postgres in production
+- Environment vars use `BO_` prefix (see `.env.example`)
+- SQLite by default, swap `BO_DATABASE_URL` for Postgres in production
 - Database seeds automatically on startup via FastAPI lifespan
 - Startup does **zero** pipeline work — the T-65 slate monitor is the sole pipeline trigger
 - If the T-65 pipeline fails, the app returns HTTP 503 from `/api/filter-strategy/optimize` — this is correct behavior
