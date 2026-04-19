@@ -21,4 +21,6 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Pytest
+        env:
+          BO_CURRENT_SEASON: "2026"
         run: pytest -q
