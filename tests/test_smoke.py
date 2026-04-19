@@ -265,9 +265,10 @@ class TestParseGameTime:
         result = _parse_game_time("1:10 AM PT", date(2026, 4, 17))
         assert result == datetime(2026, 4, 18, 5, 10, tzinfo=timezone.utc)
 
-    def test_unparseable_returns_none(self):
+    def test_unparseable_raises(self):
         from app.services.slate_monitor import _parse_game_time
-        assert _parse_game_time("not a time", date(2026, 4, 17)) is None
+        with pytest.raises(ValueError):
+            _parse_game_time("not a time", date(2026, 4, 17))
 
     def test_empty_returns_none(self):
         from app.services.slate_monitor import _parse_game_time
