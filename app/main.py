@@ -96,55 +96,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         raise RuntimeError(f"Database URL validation failed at startup: {e}")
 
-    logger.info("STARTUP STEP: calling init_db() (alembic migrations)")
-    try:
-        init_db()
-        logger.info("STARTUP STEP: init_db() completed successfully")
-    except Exception as e:
-        logger.exception("STARTUP STEP: init_db() FAILED")
-        raise RuntimeError(f"init_db() failed: {e}")
-
-    # Startup Validation: Redis — REQUIRED, never optional.
-    logger.info("STARTUP STEP: validating Redis connectivity")
+    # Fast pre-yield validation: URL-format checks only (no I/O).
+    # Railway's container runtime requires the process to bind $PORT within a
+    # short grace window (empirically <10s). FastAPI's lifespan blocks uvicorn
+    # from binding until yield is reached, so all I/O-heavy startup work
+    # (alembic migrations, Redis ping, seed, cache restore) is moved to a
+    # background task that runs AFTER yield. This lets /api/health respond
+    # immediately for the Railway healthcheck while readiness for the pipeline
+    # endpoints stays gated on startup_done_event.
+    #
+    # Failure semantics are preserved: if any step in _startup_init fails, the
+    # event stays unset, the T-65 monitor never fires, and
+    # /api/filter-strategy/optimize returns 503. No silent fallbacks — the
+    # failure is logged at CRITICAL and surfaced on the pipeline endpoints.
     if not settings.redis_url:
         raise RuntimeError(
             "CRITICAL: BO_REDIS_URL is not set. Redis is required for the cache "
             "layer (frozen T-65 picks, multi-replica coordination). No DB-only "
             "fallback. Set BO_REDIS_URL before starting the app."
         )
-    import redis as redis_lib
-    _redis_error = None
-    for _attempt in range(1, 6):
-        try:
-            client = redis_lib.from_url(
-                settings.redis_url,
-                decode_responses=True,
-                socket_connect_timeout=5,
-                socket_timeout=10,
-            )
-            client.ping()
-            logger.info("Redis connectivity verified at startup (attempt %d)", _attempt)
-            _redis_error = None
-            break
-        except Exception as e:
-            _redis_error = e
-            if _attempt < 5:
-                import time as _time
-                logger.warning(
-                    "Redis ping failed (attempt %d/5): %s — retrying in 2s", _attempt, e
-                )
-                _time.sleep(2)
-    if _redis_error is not None:
-        raise RuntimeError(
-            f"CRITICAL: Redis unreachable after 5 startup attempts. "
-            f"Redis is required for cache layer — no fallback. Last error: {_redis_error}"
-        )
 
-    # Startup Validation: current_season (confirmed readable — Pydantic required field,
-    # so a missing BO_CURRENT_SEASON would have already crashed at import time)
     logger.info("MLB season: BO_CURRENT_SEASON=%d", settings.current_season)
-
-    # Startup Validation: Odds API Key
     if not settings.odds_api_key:
         logger.critical(
             "BO_ODDS_API_KEY not configured. Vegas lines are REQUIRED for optimal lineup generation. "
@@ -153,58 +125,88 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("BO_ODDS_API_KEY configured — Vegas API enrichment enabled")
 
-    # Seed reference data and default weights (idempotent — skips if already done)
-    with SessionLocal() as db:
-        run_seed(db)
-
-    # Cache initialization: restore frozen picks on post-T-65 restart, otherwise purge.
-    #
-    # If T-65 has already passed for today's slate, the pipeline cannot regenerate
-    # picks because _load_active_slate filters out Live/Final games. Instead,
-    # restore the previously-frozen picks from SQLite/Redis and re-freeze them.
-    # The monitor's "if lineup_cache.is_frozen" guard (Phase 3) will skip the
-    # pipeline run and proceed directly to post-lock monitoring.
-    #
-    # On normal (pre-T-65) startups, purge the cache so the T-65 pipeline builds
-    # fresh picks from live data.
-    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
-    from app.services.lineup_cache import lineup_cache
-    from app.services.slate_monitor import _get_first_pitch_utc, LOCK_MINUTES_BEFORE_PITCH
-
-    _restored = False
-    with SessionLocal() as _check_db:
-        from app.models.slate import Slate as _Slate
-        _today_slate = _check_db.query(_Slate).filter_by(date=date.today()).first()
-        if _today_slate:
-            _first_pitch = _get_first_pitch_utc(_check_db, date.today())
-            if _first_pitch:
-                _lock_time = _first_pitch - _td(minutes=LOCK_MINUTES_BEFORE_PITCH)
-                if _dt.now(_tz.utc) >= _lock_time:
-                    _restored = lineup_cache.restore_and_refreeze(_first_pitch)
-                    if _restored:
-                        logger.info(
-                            "Post-T-65 restart: restored frozen picks. "
-                            "Monitor will skip pipeline and proceed to post-lock monitoring."
-                        )
-                    else:
-                        logger.warning(
-                            "Post-T-65 restart: no cached picks to restore. "
-                            "Monitor will attempt pipeline regeneration (may fail if games are Live)."
-                        )
-
-    if not _restored:
-        lineup_cache.purge()
-
-    # startup_done_event signals the T-65 monitor that initialization is complete.
     startup_done_event = asyncio.Event()
 
-    # Minimal startup: zero API calls, zero pipeline work, zero optimization.
-    # The T-65 monitor is the SOLE trigger for the full pipeline (fetch→score→optimize).
-    # Picks are locked at T-65 and served from cache until slate completion.
-    # See CLAUDE.md § "T-65 Sniper Architecture" for detailed timing model.
+    def _sync_startup_init() -> None:
+        """Blocking startup work. Runs in a worker thread via asyncio.to_thread."""
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        from app.services.lineup_cache import lineup_cache
+        from app.services.slate_monitor import _get_first_pitch_utc, LOCK_MINUTES_BEFORE_PITCH
+        from app.models.slate import Slate as _Slate
+        import redis as redis_lib
+        import time as _time
+
+        logger.info("STARTUP STEP: calling init_db() (alembic migrations)")
+        init_db()
+        logger.info("STARTUP STEP: init_db() completed successfully")
+
+        logger.info("STARTUP STEP: validating Redis connectivity")
+        _redis_error: Exception | None = None
+        for _attempt in range(1, 6):
+            try:
+                client = redis_lib.from_url(
+                    settings.redis_url,
+                    decode_responses=True,
+                    socket_connect_timeout=5,
+                    socket_timeout=10,
+                )
+                client.ping()
+                logger.info("Redis connectivity verified at startup (attempt %d)", _attempt)
+                _redis_error = None
+                break
+            except Exception as e:
+                _redis_error = e
+                if _attempt < 5:
+                    logger.warning(
+                        "Redis ping failed (attempt %d/5): %s — retrying in 2s", _attempt, e
+                    )
+                    _time.sleep(2)
+        if _redis_error is not None:
+            raise RuntimeError(
+                f"CRITICAL: Redis unreachable after 5 startup attempts. "
+                f"Redis is required for cache layer — no fallback. Last error: {_redis_error}"
+            )
+
+        logger.info("STARTUP STEP: running seed")
+        with SessionLocal() as db:
+            run_seed(db)
+
+        logger.info("STARTUP STEP: initializing lineup cache")
+        _restored = False
+        with SessionLocal() as _check_db:
+            _today_slate = _check_db.query(_Slate).filter_by(date=date.today()).first()
+            if _today_slate:
+                _first_pitch = _get_first_pitch_utc(_check_db, date.today())
+                if _first_pitch:
+                    _lock_time = _first_pitch - _td(minutes=LOCK_MINUTES_BEFORE_PITCH)
+                    if _dt.now(_tz.utc) >= _lock_time:
+                        _restored = lineup_cache.restore_and_refreeze(_first_pitch)
+                        if _restored:
+                            logger.info(
+                                "Post-T-65 restart: restored frozen picks. "
+                                "Monitor will skip pipeline and proceed to post-lock monitoring."
+                            )
+                        else:
+                            logger.warning(
+                                "Post-T-65 restart: no cached picks to restore. "
+                                "Monitor will attempt pipeline regeneration (may fail if games are Live)."
+                            )
+        if not _restored:
+            lineup_cache.purge()
+
     async def _startup_init():
+        try:
+            await asyncio.to_thread(_sync_startup_init)
+        except Exception:
+            logger.critical(
+                "STARTUP FAILED: background init raised. /api/filter-strategy/optimize "
+                "will stay in 503 until the underlying issue is fixed and the app is "
+                "restarted. No fallback.",
+                exc_info=True,
+            )
+            return
         logger.info(
-            "Startup complete. Cache purged. "
+            "Startup complete. "
             "T-65 monitor will fetch fresh data and generate lineups at T-65 lock time. "
             "No other pipeline work allowed during active slate."
         )
