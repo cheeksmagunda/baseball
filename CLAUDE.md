@@ -149,6 +149,8 @@ This means:
 
 **Why?** Using historical RS or leaderboard outcomes as predictive inputs creates data leakage — you'd be learning from outcomes that weren't knowable before the draft. The condition matrix in earlier versions (`RS_CONDITION_MATRIX`) was removed in V9.0 for exactly this reason.
 
+**ABSOLUTE RULE: Do not create scripts that analyse historical outcome data.** Scripts that read `real_score`, `total_value`, `is_highest_value`, `is_most_popular`, `is_most_drafted_3x`, or `drafts` for any calibration, training, or threshold-recommendation purpose are forbidden — even if they only write to stdout. They create a feedback loop risk: analysis outputs inform constant edits, which moves the scoring model toward historical outcomes, which is exactly the data leakage the architecture is designed to prevent. Calibration is done manually by Claude reading the files directly.
+
 ### What historical data IS for: calibration
 
 The historical files exist to answer one question: **do the live signals we score on actually correlate with real outcomes?**
@@ -248,33 +250,20 @@ Current coverage (as of 2026-04-18): **25 slates, 2026-03-25 → 2026-04-18**. A
 |---|---|---|---|
 | `historical_players.csv` | Outcome labels | 904 rows / 25 dates | Master player ledger: real_score, card_boost, drafts, leaderboard flags (HV/MP/3X). **Null `real_score` / `total_value` = DNP/scratch.** Avg ~36 rows/date (range 22–56). |
 | `historical_winning_drafts.csv` | Outcome labels | 910 rows / 25 dates | Top-ranked lineups per date (5 rows per lineup). 4–12 ranks captured per date; target is 20. |
-| `historical_slate_results.json` | Calibration ground truth | 25 entries | Per-date game context: game results, scores, and env conditions per game object (Vegas lines, ERA/K9/WHIP/hand, team OPS/K%, bullpen ERA, series context, weather — populated by `export_slate_conditions.py` after each slate). Cross-reference with historical_players.csv by (date, team) for calibration. |
+| `historical_slate_results.json` | Calibration ground truth | 25 entries | Per-date game context: game results and scores. Game objects can be extended with env condition fields (Vegas lines, ERA/K9/WHIP/hand, team OPS/K%, bullpen ERA, series context, weather) when needed for manual calibration analysis. Cross-reference with historical_players.csv by (date, team). |
 | `hv_player_game_stats.csv` | Calibration ground truth | 396 rows / 25 dates | Actual box scores for every Highest-Value player appearance. Batting (ab, r, h, hr, rbi, bb, so) and pitching (ip, er, k_pitching, decision) coexist — blanks = not applicable. |
 
 ## Env Scoring Calibration
 
-The env scoring thresholds in `app/core/constants.py` (BATTER_ENV_VEGAS_FLOOR, ERA floors/ceilings, etc.) are set by reasoning, not automation. The calibration loop validates them against real outcomes.
+The env scoring thresholds in `app/core/constants.py` (BATTER_ENV_VEGAS_FLOOR, ERA floors/ceilings, etc.) are set by reasoning, not automation.
 
-**What the calibration loop does:**
-It joins two datasets on `(date, team)`:
-- **Conditions** — the game context signals that were present before each slate (Vegas lines, ERA, weather, etc.), stored in `historical_slate_results.json` game objects
-- **Outcomes** — what players actually scored and whether they made the HV leaderboard, from `historical_players.csv`
+**ABSOLUTE RULE: No automated calibration or training scripts.** Do not create scripts that read historical outcome data (real_score, HV flags, drafts, total_value) and produce threshold recommendations, condition matrices, or any analysis intended to inform scoring parameters. This is a one-way door to data leakage. Any such script that is accidentally run could start a feedback loop where post-game outcomes corrupt pre-game scoring logic.
 
-This answers: *when the live pipeline would have rated a condition favorably, did players in those conditions actually score well?*
+**How calibration is done:** Manually, by Claude reading `historical_players.csv` and `historical_slate_results.json` directly and reasoning about whether conditions correlate with outcomes. The question is: *when the live pipeline would have rated a condition favorably, did players in those conditions actually score well?* The answer is evaluated by inspection, not by script. If a threshold is clearly miscalibrated (e.g., O/U > 9.5 is favored but RS distribution shows no difference vs mid-range), edit `app/core/constants.py` directly.
 
-**Step 1 — Capture conditions after each slate** (alongside the manual player ingest):
-```bash
-python scripts/export_slate_conditions.py   # patches today's SlateGame env data into historical_slate_results.json
-```
-This patches env fields (Vegas lines, ERA, weather, etc.) directly into each game object in `historical_slate_results.json` for that date. Idempotent — safe to re-run.
+**The only permitted script in `/scripts/` that touches `/data/`:** `backfill_slate_results_and_hv_stats.py` — fetches from the MLB Stats API to fill missing box scores and game results. It reads and writes `/data/` files only; it does not touch the live pipeline or DB, and it does not use outcome data as inputs to any scoring logic.
 
-**Step 2 — Run calibration analysis** (after accumulating 10+ new dates, or when pick quality degrades):
-```bash
-python scripts/calibrate_env_scoring.py
-```
-Output shows RS and HV-rate distributions across each threshold bucket (below floor / mid / above ceiling). No code is modified.
-
-**Step 3 — Edit constants directly.** Read the output, decide which thresholds are misaligned, and update `app/core/constants.py`. Add or remove env factors by editing `compute_batter_env_score()` / `compute_pitcher_env_score()` in `app/services/filter_strategy.py`. Historical data teaches which conditions are predictive — it does not update the model automatically.
+**CI gate:** `scripts/audit_live_isolation.py` — static grep-based scan of `app/` for banned outcome fields (`real_score`, `total_value`, `is_highest_value`, `is_most_popular`, `is_most_drafted_3x`) in runtime code paths. Run before every deploy.
 
 ## Ingesting New Slate Data
 
