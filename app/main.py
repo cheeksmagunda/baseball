@@ -57,6 +57,26 @@ async def lifespan(app: FastAPI):
 
     logger = logging.getLogger(__name__)
 
+    # Startup Diagnostic: which env vars are present? (names only, never values — secrets).
+    # This is the definitive source of truth for debugging Railway env-var injection.
+    import os as _os
+    _env_presence = {
+        "BO_REDIS_URL": bool(_os.environ.get("BO_REDIS_URL")),
+        "REDIS_URL": bool(_os.environ.get("REDIS_URL")),
+        "REDIS_PRIVATE_URL": bool(_os.environ.get("REDIS_PRIVATE_URL")),
+        "BO_DATABASE_URL": bool(_os.environ.get("BO_DATABASE_URL")),
+        "DATABASE_URL": bool(_os.environ.get("DATABASE_URL")),
+        "BO_CURRENT_SEASON": bool(_os.environ.get("BO_CURRENT_SEASON")),
+        "BO_ODDS_API_KEY": bool(_os.environ.get("BO_ODDS_API_KEY")),
+        "PORT": _os.environ.get("PORT", "unset"),
+    }
+    logger.info("STARTUP ENV PRESENCE: %s", _env_presence)
+    logger.info(
+        "STARTUP RESOLVED: settings.redis_url=%s, settings.database_url_scheme=%s",
+        "SET" if settings.redis_url else "UNSET",
+        settings.database_url.split("://", 1)[0] if "://" in settings.database_url else "unknown",
+    )
+
     # Startup Validation: Database URL
     try:
         db_url = settings.database_url
