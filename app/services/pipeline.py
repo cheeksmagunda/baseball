@@ -133,13 +133,16 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
         else:
             fetched += 1
 
-    if players and failed >= len(players) * 0.5:
+    if players and failed >= len(players) * 0.2:
         raise RuntimeError(
             f"fetch_player_stats: {failed}/{len(players)} players failed — "
-            "cannot produce a reliable lineup with fewer than half of player stats available"
+            "cannot produce a reliable lineup with more than 20% of player stats unavailable"
         )
     if failed:
-        logger.warning("fetch_player_stats: %d/%d players failed, continuing", failed, len(players))
+        logger.critical(
+            "fetch_player_stats: %d/%d players failed — lineup quality degraded, proceeding",
+            failed, len(players),
+        )
 
     # Backfill SlateGame starter ERA/K9 from newly-fetched PlayerStats.
     # This feeds the environmental scoring engine (Filter 2).

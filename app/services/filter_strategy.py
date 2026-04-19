@@ -546,10 +546,9 @@ def compute_batter_env_score(
     else:
         # Unknown batting order contributes 0 to env — no mathematical
         # guessing ("assume they bat 6th/7th").  DNP risk for unpublished
-        # lineups is handled separately by _compute_dnp_adjustment() with
-        # ghost-awareness (DNP_GHOST_UNKNOWN_PENALTY / DNP_UNKNOWN_PENALTY),
-        # so this branch already avoids double-counting the missing-data
-        # penalty while staying faithful to the no-fallback rule.
+        # lineups is handled separately by _compute_dnp_adjustment() via
+        # DNP_UNKNOWN_PENALTY, so this branch avoids double-counting the
+        # missing-data penalty while staying faithful to the no-fallback rule.
         unknown_count += 1
 
     # ---------------------------------------------------------------
@@ -1000,21 +999,17 @@ def _apply_game_diversification(
 
     games_represented = len(game_counts) if game_counts else 0
 
-    # Safety-net: warn if any game has more than the cap (shouldn't happen
-    # after _enforce_composition + _validate_lineup_structure, but belt+suspenders).
+    # Invariant check: _enforce_composition + _validate_lineup_structure guarantee
+    # max 1 player per game.  If that guarantee is ever broken, raise loudly
+    # rather than papering over the violation with a silent EV penalty.
     for gid, count in game_counts.items():
         if count > MAX_PLAYERS_PER_GAME:
-            warnings.append(
-                f"Game {gid} has {count} players (cap={MAX_PLAYERS_PER_GAME}). "
-                f"Game diversification may not have been fully enforced."
+            violators = [c.player_name for c in lineup if c.game_id == gid]
+            raise ValueError(
+                f"Game-cap invariant violated: game {gid} has {count} players "
+                f"(cap={MAX_PLAYERS_PER_GAME}): {violators}. "
+                "This is a bug in _enforce_composition or _validate_lineup_structure."
             )
-            # Soft penalty on excess as fallback
-            game_players = sorted(
-                [c for c in lineup if c.game_id == gid],
-                key=lambda c: c.filter_ev,
-            )
-            for p in game_players[:count - MAX_PLAYERS_PER_GAME]:
-                p.filter_ev *= SAME_GAME_EXCESS_PENALTY
 
     logger.info(
         "Game diversification: %d games represented across %d players",
