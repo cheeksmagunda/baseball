@@ -144,17 +144,14 @@ BATTER_ENV_WEAK_BULLPEN_ERA = 4.5     # opposing bullpen ERA above this = vulner
 # penalizing as if it's DNP is asymmetrically wrong for high-boost players
 # where any positive outcome crosses the threshold.
 #
-# Three tiers:
+# Two tiers (see _compute_dnp_adjustment() in filter_strategy.py):
 #   CONFIRMED_BAD: batting_order=None AND the player's team's lineup is
 #                  published (so absence = genuinely not starting).
 #   UNKNOWN:       batting_order=None AND lineup not yet published.
 #                  Applies a lighter penalty reflecting true uncertainty.
-#   GHOST_UNKNOWN: batting_order=None AND ghost-tier player.
-#                  Lightest penalty — data scarcity is expected, not a signal.
 # ---------------------------------------------------------------------------
 DNP_RISK_PENALTY = 0.70               # CONFIRMED bad: 30% haircut (lineup published, player absent)
 DNP_UNKNOWN_PENALTY = 0.85            # UNKNOWN: 15% haircut (lineup not published, could go either way)
-DNP_GHOST_UNKNOWN_PENALTY = 0.92      # GHOST UNKNOWN: 8% haircut (data scarcity expected for ghosts)
 ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data not published" (not "bad env")
 
 # ---------------------------------------------------------------------------

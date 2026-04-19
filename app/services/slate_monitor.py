@@ -26,9 +26,8 @@ Design decisions
 * 65-minute buffer = 60-min user draft window + 5-min generation headroom.
 * Uses ZoneInfo("America/New_York") to parse "H:MM AM/PM ET" game times stored
   in SlateGame.scheduled_game_time. Automatically handles EDT vs EST via DST.
-* If no scheduled_game_time values are present in the DB, falls back to the
-  original status-polling approach (Preview→Live transition = freeze trigger).
-  In fallback mode the "come back later" gate is skipped (no known lock time).
+* Raises RuntimeError if no scheduled_game_time values are present — there is
+  no fallback mode.  Missing game times are a critical error requiring investigation.
 * Chunked async sleep (≤60 s per chunk) keeps CancelledError responsive.
 """
 

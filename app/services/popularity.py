@@ -114,6 +114,7 @@ class SignalResult:
     source: str
     score: float  # 0-100 (0 = invisible, 100 = everywhere)
     context: str = ""
+    failed: bool = False  # True = HTTP request failed (not "found nothing")
 
 
 @dataclass
@@ -155,7 +156,11 @@ async def fetch_social_signal(player_name: str, team: str) -> SignalResult:
     query = f"{player_name} MLB"
     last_name = player_name.split()[-1].lower()
 
+    _autocomplete_failed = False
+    _dailytrends_failed = False
+
     async def _autocomplete() -> bool:
+        nonlocal _autocomplete_failed
         try:
             async with httpx.AsyncClient(
                 timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT}
@@ -168,9 +173,11 @@ async def fetch_social_signal(player_name: str, team: str) -> SignalResult:
                 return last_name in r.text.lower()
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.debug("Google autocomplete failed for %s: %s", player_name, exc)
+            _autocomplete_failed = True
             return False
 
     async def _dailytrends() -> bool:
+        nonlocal _dailytrends_failed
         try:
             text = await _fetch_text_cached(
                 key="google_daily_trends",
@@ -180,6 +187,7 @@ async def fetch_social_signal(player_name: str, team: str) -> SignalResult:
             return last_name in text
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.debug("Google daily trends failed for %s: %s", player_name, exc)
+            _dailytrends_failed = True
             return False
 
     in_autocomplete, in_daily = await asyncio.gather(
@@ -189,7 +197,8 @@ async def fetch_social_signal(player_name: str, team: str) -> SignalResult:
         return SignalResult("social", 85.0, f"In Google daily trends: '{player_name}'")
     if in_autocomplete:
         return SignalResult("social", 70.0, f"Trending on Google: '{query}'")
-    return SignalResult("social", 0.0, "No social signal detected")
+    all_failed = _autocomplete_failed and _dailytrends_failed
+    return SignalResult("social", 0.0, "No social signal detected", failed=all_failed)
 
 
 async def fetch_news_signal(player_name: str, team: str) -> SignalResult:
@@ -203,12 +212,16 @@ async def fetch_news_signal(player_name: str, team: str) -> SignalResult:
     """
     last_name = player_name.split()[-1].lower()
 
+    _feed_failures: list[bool] = []
+
     async def _feed(name: str, url: str) -> str | None:
         try:
             text = await _fetch_text_cached(key=url, url=url)
+            _feed_failures.append(False)
             return name if last_name in text else None
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.debug("%s RSS feed failed for %s: %s", name, player_name, exc)
+            _feed_failures.append(True)
             return None
 
     results = await asyncio.gather(
@@ -218,7 +231,8 @@ async def fetch_news_signal(player_name: str, team: str) -> SignalResult:
     sources_found = [s for s in results if s]
     score = min(len(sources_found) * 40.0, 100.0)
     context = f"Found in: {', '.join(sources_found)}" if sources_found else "No news mentions"
-    return SignalResult("news", score, context)
+    all_failed = bool(_feed_failures) and all(_feed_failures)
+    return SignalResult("news", score, context, failed=all_failed)
 
 
 async def fetch_search_signal(player_name: str, team: str) -> SignalResult:
@@ -237,7 +251,7 @@ async def fetch_search_signal(player_name: str, team: str) -> SignalResult:
         suggestions = resp.text.lower()
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:
         logger.debug("Google search signal failed for %s: %s", player_name, exc)
-        return SignalResult("search", 0.0, "Search signal unavailable")
+        return SignalResult("search", 0.0, "Search signal unavailable", failed=True)
 
     hot_terms = ["stats", "today", "home run", "injury", "lineup", "dfs"]
     matches = sum(1 for term in hot_terms if term in suggestions)
@@ -380,6 +394,15 @@ async def get_popularity_profile(
 
         social, news, search = results[0], results[1], results[2]
         sharp = results[3] if include_sharp else SignalResult("sharp", 0.0, "Not fetched")
+
+        if social.failed and news.failed and search.failed:
+            raise RuntimeError(
+                f"All popularity signal fetches failed for {player_name} ({team}). "
+                "Google Trends and RSS feeds are unreachable — cannot classify players "
+                "as FADE/TARGET. The popularity gate is the primary pipeline guard; "
+                "operating without it would pass FADE players through unchecked. "
+                "Investigate network connectivity or rate-limiting at T-65."
+            )
 
         signals = [social, news, search, sharp]
         composite = compute_composite_score(signals)  # sharp excluded from composite
