@@ -9,7 +9,7 @@ logic is covered by test_filter_strategy.py.
 
 Isolation guarantees (defense in depth):
   * Every test uses an in-memory SQLite DB (StaticPool) — the real
-    db/baseball_dfs.db file is never opened or written.
+    db/ben_oracle.db file is never opened or written.
   * Every test uses a fresh _LineupCache() instance with Redis pre-mocked —
     no real Redis connection is ever attempted.
   * The module-level lineup_cache singleton is asserted to be untouched

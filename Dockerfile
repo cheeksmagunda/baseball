@@ -7,7 +7,7 @@ COPY . .
 
 # Install dependencies and create db directory
 # Seed runs at startup via FastAPI lifespan hook — not at build time,
-# since env vars (DFS_ODDS_API_KEY etc.) are not available during build.
+# since env vars (BO_ODDS_API_KEY etc.) are not available during build.
 RUN pip install --no-cache-dir . && mkdir -p db
 
 EXPOSE 8000

@@ -499,7 +499,7 @@ async def run_full_pipeline(db: Session, game_date: date) -> dict:
         await enrich_slate_game_series_context(db, slate)
 
         # Enrich Vegas lines (moneyline + O/U) for pitcher/batter env scoring.
-        # Raises RuntimeError if DFS_ODDS_API_KEY is missing or the API fails —
+        # Raises RuntimeError if BO_ODDS_API_KEY is missing or the API fails —
         # no fallback per "no fallbacks ever" rule.
         await enrich_slate_game_vegas_lines(db, slate)
 

@@ -81,9 +81,9 @@ async def lifespan(app: FastAPI):
     # Startup Validation: Redis — REQUIRED, never optional.
     if not settings.redis_url:
         raise RuntimeError(
-            "CRITICAL: DFS_REDIS_URL is not set. Redis is required for the cache "
+            "CRITICAL: BO_REDIS_URL is not set. Redis is required for the cache "
             "layer (frozen T-65 picks, multi-replica coordination). No DB-only "
-            "fallback. Set DFS_REDIS_URL before starting the app."
+            "fallback. Set BO_REDIS_URL before starting the app."
         )
     try:
         import redis as redis_lib
@@ -101,11 +101,11 @@ async def lifespan(app: FastAPI):
     # Startup Validation: Odds API Key
     if not settings.odds_api_key:
         logger.critical(
-            "DFS_ODDS_API_KEY not configured. Vegas lines are REQUIRED for optimal lineup generation. "
-            "T-65 pipeline will crash if Vegas API cannot be called. Set DFS_ODDS_API_KEY environment variable."
+            "BO_ODDS_API_KEY not configured. Vegas lines are REQUIRED for optimal lineup generation. "
+            "T-65 pipeline will crash if Vegas API cannot be called. Set BO_ODDS_API_KEY environment variable."
         )
     else:
-        logger.info("DFS_ODDS_API_KEY configured — Vegas API enrichment enabled")
+        logger.info("BO_ODDS_API_KEY configured — Vegas API enrichment enabled")
 
     # Seed reference data and default weights (idempotent — skips if already done)
     with SessionLocal() as db:
@@ -179,8 +179,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Baseball DFS Engine",
-    description="Pre-draft scoring, ranking, and lineup optimization for baseball DFS",
+    title="Ben Oracle",
+    description="MLB lineup draft optimizer",
     version="0.1.0",
     lifespan=lifespan,
 )

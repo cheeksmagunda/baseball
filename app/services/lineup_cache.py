@@ -7,7 +7,7 @@ Stores the most recent dual-lineup result in three tiers:
                           freeze-state invariants (is_frozen, first_pitch_utc)
   3. SQLite DB          — durable record of the frozen payload
 
-Redis is NOT optional. Startup validates DFS_REDIS_URL and raises if it
+Redis is NOT optional. Startup validates BO_REDIS_URL and raises if it
 is unset or unreachable. After startup, any Redis failure also raises —
 there is no silent degradation (per CLAUDE.md "No Fallbacks. Ever.").
 
@@ -52,7 +52,7 @@ class _LineupCache:
         from app.config import settings
         if not settings.redis_url:
             raise RuntimeError(
-                "DFS_REDIS_URL is not set. Redis is required — no DB-only fallback."
+                "BO_REDIS_URL is not set. Redis is required — no DB-only fallback."
             )
 
         import redis as redis_lib

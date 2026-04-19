@@ -876,7 +876,7 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
 
     CRITICAL: Vegas lines are REQUIRED, never optional.
 
-    Raises RuntimeError if DFS_ODDS_API_KEY is not set, quota is exhausted,
+    Raises RuntimeError if BO_ODDS_API_KEY is not set, quota is exhausted,
     or the request fails. There is no fallback to NULL moneylines. Missing Vegas
     data corrupts the EV formula and produces suboptimal lineups. The T-65 pipeline
     must crash loudly rather than proceed with degraded data.

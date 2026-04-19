@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup_dev.sh — Bootstrap a local dev environment for baseball-dfs
+# setup_dev.sh — Bootstrap a local dev environment for ben-oracle
 set -euo pipefail
 
 VENV_DIR=".venv"

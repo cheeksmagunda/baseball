@@ -1,4 +1,4 @@
-# Disaster Recovery Runbook — Baseball DFS Optimizer
+# Disaster Recovery Runbook — Ben Oracle
 
 **Date:** April 15, 2026  
 **Version:** 1.0  
@@ -24,14 +24,14 @@ Bad data is worse than no data. Operations must restore the system rather than s
 - Database dyno down or unreachable (network failure, connection timeout)
 - Connection pool exhausted (too many concurrent connections)
 - Disk space full (Postgres/SQLite)
-- Invalid DFS_DATABASE_URL configuration
+- Invalid BO_DATABASE_URL configuration
 
 **Recovery Steps:**
 1. **Check Railway dashboard:** Verify database dyno status is "Running"
 2. **Verify connectivity:** From app dyno, test `psql -h <host> -U <user> -d <dbname>` (if Postgres)
 3. **Restart database dyno:** If hung, restart from Railway dashboard
-4. **Check DFS_DATABASE_URL:** Ensure format is correct:
-   - SQLite: `sqlite:///db/baseball_dfs.db`
+4. **Check BO_DATABASE_URL:** Ensure format is correct:
+   - SQLite: `sqlite:///db/ben_oracle.db`
    - Postgres: `postgresql+psycopg2://user:pass@host:5432/dbname`
 5. **Restart app dyno:** Lifespan will re-attempt initialization
 6. **Verify picks frozen:** Check logs for "Cache FROZEN" message
@@ -48,20 +48,20 @@ Bad data is worse than no data. Operations must restore the system rather than s
 **Symptom:** T-65 monitor crashes with `RuntimeError: "The Odds API: invalid API key (401)"` or `RuntimeError: "The Odds API: quota exhausted (422)"`
 
 **Root Cause:**
-- `DFS_ODDS_API_KEY` environment variable is unset
+- `BO_ODDS_API_KEY` environment variable is unset
 - API key is incorrect or revoked
 - Monthly quota (500 free-tier requests) has been exhausted
 - API endpoint is down (rare)
 
 **Recovery Steps:**
-1. **Check environment variable:** Verify `DFS_ODDS_API_KEY` is set in Railway Config Vars
+1. **Check environment variable:** Verify `BO_ODDS_API_KEY` is set in Railway Config Vars
    ```bash
-   echo $DFS_ODDS_API_KEY  # In app dyno terminal
+   echo $BO_ODDS_API_KEY  # In app dyno terminal
    ```
 2. **Verify API key validity:** Log in to The Odds API dashboard (https://the-odds-api.com)
    - Check "API Key" page for active key
    - Check "Usage" page for remaining quota
-3. **If key is wrong:** Update `DFS_ODDS_API_KEY` in Railway Config Vars
+3. **If key is wrong:** Update `BO_ODDS_API_KEY` in Railway Config Vars
 4. **If quota exhausted:** 
    - No immediate fix (API tier is monthly; quota resets next month)
    - Contact Real Sports platform if additional quota needed
@@ -84,7 +84,7 @@ Bad data is worse than no data. Operations must restore the system rather than s
 - Redis memory limit exceeded
 
 **Recovery Behavior (FAIL LOUDLY):**
-- If `DFS_REDIS_URL` is set, Redis is REQUIRED
+- If `BO_REDIS_URL` is set, Redis is REQUIRED
 - App fails loudly at startup with clear error message
 - **No fallback to SQLite** — performance degradation is unacceptable for production
 - Users see HTTP 503 "System unavailable — cache layer down"
@@ -94,7 +94,7 @@ Bad data is worse than no data. Operations must restore the system rather than s
 2. **Restart app:** App will reconnect and proceed
 3. **Verify picks frozen:** Check `/api/filter-strategy/status` returns 200 with picks
 
-**Redis is always required.** There is no SQLite-only fallback mode. `DFS_REDIS_URL` must be set and Redis must be reachable; the app raises `RuntimeError` at startup otherwise.
+**Redis is always required.** There is no SQLite-only fallback mode. `BO_REDIS_URL` must be set and Redis must be reachable; the app raises `RuntimeError` at startup otherwise.
 
 **Impact:** System is down until Redis is restored. No silent degradation. Clear operational visibility.
 
@@ -255,9 +255,9 @@ Bad data is worse than no data. Operations must restore the system rather than s
 ## Monitoring Checklist
 
 ### At App Startup (Every Day)
-- [ ] Logs show "DFS_DATABASE_URL validated" (database URL format correct)
+- [ ] Logs show "BO_DATABASE_URL validated" (database URL format correct)
 - [ ] Logs show "Redis connectivity verified" OR "Redis configured but unreachable..." (if Redis configured)
-- [ ] Logs show "DFS_ODDS_API_KEY configured — Vegas API enrichment enabled" OR critical warning (Vegas warning is OK if key is set but not shown in logs)
+- [ ] Logs show "BO_ODDS_API_KEY configured — Vegas API enrichment enabled" OR critical warning (Vegas warning is OK if key is set but not shown in logs)
 - [ ] Logs show "Startup: frozen picks restored=true/false" (restore guard activated)
 - [ ] App is healthy on Railway dashboard
 
@@ -293,16 +293,16 @@ Bad data is worse than no data. Operations must restore the system rather than s
 ### Scenario 1: Invalid Database URL
 ```bash
 # In Railway Config Vars, set:
-DFS_DATABASE_URL=sqlite:///nonexistent/path/db.db
+BO_DATABASE_URL=sqlite:///nonexistent/path/db.db
 # Expected: App crashes at startup with "Cannot create database directory"
 # Fix: Restore correct path
 ```
 
 ### Scenario 2: Missing Odds API Key
 ```bash
-# In Railway Config Vars, unset DFS_ODDS_API_KEY:
+# In Railway Config Vars, unset BO_ODDS_API_KEY:
 # Expected: App starts with critical log, T-65 pipeline crashes with RuntimeError
-# Fix: Set DFS_ODDS_API_KEY to valid key
+# Fix: Set BO_ODDS_API_KEY to valid key
 ```
 
 ### Scenario 3: Redis Unavailable

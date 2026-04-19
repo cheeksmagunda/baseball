@@ -1,7 +1,7 @@
 [project]
-name = "baseball-dfs"
+name = "ben-oracle"
 version = "0.1.0"
-description = "Baseball DFS prediction and draft optimization engine"
+description = "Ben Oracle — MLB lineup draft optimizer"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
