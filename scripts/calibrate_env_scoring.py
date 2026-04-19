@@ -4,16 +4,15 @@ The live pipeline scores players using pre-game conditions (Vegas lines, ERA, we
 etc.) to compute env_factor. This script validates whether those conditions actually
 correlate with real outcomes by joining two datasets on (date, team):
 
-  - CONDITIONS  historical_conditions.csv — the game context signals that existed
-                before each slate. These mirror exactly what the T-65 pipeline reads
-                from live APIs (Vegas, bullpen ERA, series context, weather, etc.).
-                NOTE: planned to move these fields into historical_slate_results.json
-                game objects; the join logic here will update accordingly.
+  - CONDITIONS  historical_slate_results.json game objects — the pre-game context
+                signals the T-65 pipeline consumed live (Vegas lines, starter ERA/K9,
+                team OPS/K%, bullpen ERA, series context, weather). Populated by
+                running scripts/export_slate_conditions.py after each slate.
 
   - OUTCOMES    historical_players.csv — real_score and HV/MP/3X flags per player
-                per slate. These are retrospective outcome labels; they are never
-                used as pipeline inputs. Here they serve as ground truth to measure
-                whether condition-based scoring predicted performance correctly.
+                per slate. Retrospective outcome labels; never pipeline inputs.
+                Used here as ground truth to measure whether condition-based scoring
+                predicted performance correctly.
 
 Output shows RS and HV-rate distributions across each threshold bucket (below floor /
 mid / above ceiling). No code is modified. Read the results and edit
@@ -25,12 +24,13 @@ Run after accumulating new slates:
 """
 
 import csv
+import json
 import statistics
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 PLAYERS_CSV = DATA_DIR / "historical_players.csv"
-CONDITIONS_CSV = DATA_DIR / "historical_conditions.csv"
+RESULTS_JSON = DATA_DIR / "historical_slate_results.json"
 
 RS_SUCCESS_THRESHOLD = 3.0
 MIN_N_FOR_SUGGESTION = 20
@@ -89,58 +89,58 @@ TEMP_BUCKETS = [
 
 # ── Data loading ─────────────────────────────────────────────────────────────
 
-def _f(val: str) -> float | None:
-    if not val or val.strip() == "":
-        return None
-    try:
-        return float(val)
-    except ValueError:
-        return None
-
 
 def _load_conditions() -> dict[tuple[str, str], dict]:
-    """Returns {(date, team): perspective-dict} for both home and away teams."""
-    if not CONDITIONS_CSV.exists() or CONDITIONS_CSV.stat().st_size < 50:
+    """Returns {(date, team): perspective-dict} for both home and away teams.
+
+    Reads from historical_slate_results.json game objects. Only processes games
+    that have been enriched with env fields (vegas_total present).
+    """
+    if not RESULTS_JSON.exists():
         return {}
 
+    data = json.loads(RESULTS_JSON.read_text())
     index: dict[tuple[str, str], dict] = {}
-    with CONDITIONS_CSV.open() as f:
-        for row in csv.DictReader(f):
-            d = row["date"]
-            home, away = row["home_team"], row["away_team"]
 
-            # Shared game-level fields (same for both teams)
+    for entry in data:
+        d = entry["date"]
+        for g in entry.get("games") or []:
+            if g.get("vegas_total") is None:
+                continue  # not yet enriched by export_slate_conditions.py
+
+            home, away = g["home"], g["away"]
             shared = {
-                "vegas_total":    _f(row["vegas_total"]),
-                "wind_speed_mph": _f(row.get("wind_speed_mph", "")),
-                "wind_direction": row.get("wind_direction", "").strip() or None,
-                "temperature_f":  _f(row.get("temperature_f", "")),
+                "vegas_total":    g.get("vegas_total"),
+                "wind_speed_mph": g.get("wind_speed_mph"),
+                "wind_direction": g.get("wind_direction"),
+                "temperature_f":  g.get("temperature_f"),
             }
 
             index[(d, home)] = {
                 **shared,
-                "opp_starter_era":  _f(row["away_starter_era"]),
-                "pitcher_k9":       _f(row["home_starter_k9"]),
-                "opp_team_ops":     _f(row["away_team_ops"]),
-                "opp_team_k_pct":   _f(row["away_team_k_pct"]),
-                "opp_bullpen_era":  _f(row["away_bullpen_era"]),
-                "team_moneyline":   _f(row["home_moneyline"]),
-                "series_team_wins": _f(row["series_home_wins"]),
-                "series_opp_wins":  _f(row["series_away_wins"]),
-                "team_l10_wins":    _f(row["home_team_l10_wins"]),
+                "opp_starter_era":  g.get("away_starter_era"),
+                "pitcher_k9":       g.get("home_starter_k9"),
+                "opp_team_ops":     g.get("away_team_ops"),
+                "opp_team_k_pct":   g.get("away_team_k_pct"),
+                "opp_bullpen_era":  g.get("away_bullpen_era"),
+                "team_moneyline":   g.get("home_moneyline"),
+                "series_team_wins": g.get("series_home_wins"),
+                "series_opp_wins":  g.get("series_away_wins"),
+                "team_l10_wins":    g.get("home_team_l10_wins"),
             }
             index[(d, away)] = {
                 **shared,
-                "opp_starter_era":  _f(row["home_starter_era"]),
-                "pitcher_k9":       _f(row["away_starter_k9"]),
-                "opp_team_ops":     _f(row["home_team_ops"]),
-                "opp_team_k_pct":   _f(row["home_team_k_pct"]),
-                "opp_bullpen_era":  _f(row["home_bullpen_era"]),
-                "team_moneyline":   _f(row["away_moneyline"]),
-                "series_team_wins": _f(row["series_away_wins"]),
-                "series_opp_wins":  _f(row["series_home_wins"]),
-                "team_l10_wins":    _f(row["away_team_l10_wins"]),
+                "opp_starter_era":  g.get("home_starter_era"),
+                "pitcher_k9":       g.get("away_starter_k9"),
+                "opp_team_ops":     g.get("home_team_ops"),
+                "opp_team_k_pct":   g.get("home_team_k_pct"),
+                "opp_bullpen_era":  g.get("home_bullpen_era"),
+                "team_moneyline":   g.get("away_moneyline"),
+                "series_team_wins": g.get("series_away_wins"),
+                "series_opp_wins":  g.get("series_home_wins"),
+                "team_l10_wins":    g.get("away_team_l10_wins"),
             }
+
     return index
 
 
@@ -318,8 +318,8 @@ def _analyze_wind(players, conditions):
 def main() -> None:
     conditions = _load_conditions()
     if not conditions:
-        print("No data in historical_conditions.csv yet.")
-        print("Run scripts/export_slate_conditions.py after each slate to populate it.")
+        print("No env-enriched games in historical_slate_results.json yet.")
+        print("Run scripts/export_slate_conditions.py after each slate to populate them.")
         return
 
     players = _load_players()
