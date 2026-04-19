@@ -228,7 +228,7 @@ app/
     ├── scoring_engine.py   # Trait-based scorer (0-100)
     ├── filter_strategy.py  # THE HEART — EV pipeline + dual-lineup optimizer (Starting 5 + Moonshot)
     ├── candidate_resolver.py  # Builds FilteredCandidate pool from DB (batched lookups)
-    ├── draft_optimizer.py  # DEAD CODE — kept only for evaluate_lineup; superseded by filter_strategy
+    ├── draft_optimizer.py  # User-proposed-lineup evaluator (/api/draft/evaluate only)
     ├── lineup_cache.py     # Frozen-cache invariants (Redis + SQLite persistence)
     ├── slate_monitor.py    # T-65 event loop
     ├── popularity.py       # Web-scraping popularity signal aggregator

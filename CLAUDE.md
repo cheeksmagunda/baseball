@@ -120,7 +120,7 @@ This means:
 
 ### Active Pipeline
 
-The active optimization path is `filter_strategy` — **not** `draft_optimizer.py` (which is dead code kept only for `evaluate_lineup`).
+The active optimization path is `filter_strategy` — **not** `draft_optimizer.py` (which only powers the `/api/draft/evaluate` user-proposed-lineup endpoint).
 
 **Four-Stage Pipeline:**
 1. **Collect** (`app/services/data_collection.py`) — Fetch MLB schedule + boxscores + player stats
@@ -822,7 +822,7 @@ Every lineup is **exactly 1 SP + 4 batters**. The count is fixed, not data-drive
 **Key functions (services/candidate_resolver.py):**
 - `resolve_candidates()` — Builds candidate pool from DB, scores env + traits, fetches web-scraped popularity (no platform ownership sources)
 
-**Dead code:** `app/services/draft_optimizer.py` — not wired to any router except `evaluate_lineup`. The filter_strategy path supersedes it entirely.
+**Scope note:** `app/services/draft_optimizer.py` is used only by `/api/draft/evaluate` to score a user-proposed lineup and warn on suboptimal slot assignment. All automated lineup construction lives in `filter_strategy`.
 
 ## API Structure (8 routers under `/api/`)
 
