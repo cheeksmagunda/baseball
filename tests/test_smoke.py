@@ -265,13 +265,29 @@ class TestParseGameTime:
         result = _parse_game_time("1:10 AM PT", date(2026, 4, 17))
         assert result == datetime(2026, 4, 18, 5, 10, tzinfo=timezone.utc)
 
-    def test_unparseable_returns_none(self):
+    def test_unparseable_raises(self):
         from app.services.slate_monitor import _parse_game_time
-        assert _parse_game_time("not a time", date(2026, 4, 17)) is None
+        with pytest.raises(ValueError):
+            _parse_game_time("not a time", date(2026, 4, 17))
 
     def test_empty_returns_none(self):
         from app.services.slate_monitor import _parse_game_time
         assert _parse_game_time("", date(2026, 4, 17)) is None
+
+    @pytest.mark.parametrize("iso_utc,game_date,expected_utc", [
+        ("2026-04-17T23:05:00Z", date(2026, 4, 17), datetime(2026, 4, 17, 23, 5, tzinfo=timezone.utc)),
+        ("2026-04-17T17:10:00Z", date(2026, 4, 17), datetime(2026, 4, 17, 17, 10, tzinfo=timezone.utc)),
+        # 10:10 PM PT = 1:10 AM ET next day = 05:10 UTC next day
+        ("2026-04-18T05:10:00Z", date(2026, 4, 17), datetime(2026, 4, 18, 5, 10, tzinfo=timezone.utc)),
+    ])
+    def test_format_parse_roundtrip(self, iso_utc, game_date, expected_utc):
+        """_format_game_time_et output is always parseable by _parse_game_time."""
+        from app.services.data_collection import _format_game_time_et
+        from app.services.slate_monitor import _parse_game_time
+        formatted = _format_game_time_et(iso_utc)
+        assert formatted is not None
+        result = _parse_game_time(formatted, game_date)
+        assert result == expected_utc
 
 
 class TestGetFirstPitchUtc:
