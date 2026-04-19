@@ -289,7 +289,7 @@ New slates are ingested **manually by appending rows** to the four files above �
 The CSV/JSON files are the source of truth; the SQLite DB is rebuilt from them via `app/seed.py`. `run_seed()` is **idempotency-guarded** — it only seeds if the `weight_history` table is empty (guard at `app/seed.py:257`). To pick up freshly appended rows:
 
 ```bash
-rm db/baseball.db              # or DROP TABLE in Postgres
+rm db/ben_oracle.db              # or DROP TABLE in Postgres
 python -m app.seed             # re-seeds from /data/
 ```
 
@@ -440,7 +440,7 @@ Standard MLB 3-letter codes (by division):
 
 ### 7. Data Quality Gate (Pre-Reseed)
 
-Create and run a validation script before `rm db/baseball.db && python -m app.seed`:
+Create and run a validation script before `rm db/ben_oracle.db && python -m app.seed`:
 
 ```bash
 python scripts/validate_ingest.py --date 2026-04-17
@@ -502,7 +502,7 @@ If captured lineups < 4 or unique players < 20, flag the ingest as incomplete an
 **Step 5 — Validate & reseed:**
 ```bash
 python scripts/validate_ingest.py --date 2026-04-17
-rm db/baseball.db
+rm db/ben_oracle.db
 python -m app.seed
 ```
 

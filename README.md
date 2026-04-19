@@ -271,7 +271,7 @@ New slates are added **manually** — there is no automated collector. After a s
 3. Append one slate envelope object to `historical_slate_results.json`.
 4. Append HV box-score rows to `hv_player_game_stats.csv`.
 5. Verify `total_value = real_score × (2 + card_boost)` for each player row. (Note: `card_boost` is used only for computing historical total_value — never as a scoring/prediction input.)
-6. Reload the DB: `rm db/baseball.db && python -m app.seed` (the seeder is idempotency-guarded on an empty DB — there is no incremental mode).
+6. Reload the DB: `rm db/ben_oracle.db && python -m app.seed` (the seeder is idempotency-guarded on an empty DB — there is no incremental mode).
 
 ## Deployment (Railway)
 
