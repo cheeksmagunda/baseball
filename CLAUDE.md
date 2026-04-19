@@ -49,6 +49,39 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ---
 
+## MLB Season Calendar (Basic Sport Knowledge)
+
+**One MLB season is fully contained within a single calendar year.** There is no cross-year ambiguity — the 2026 season starts and ends in 2026.
+
+Rough calendar (dates drift slightly year to year, but this is the shape):
+
+| Phase | When | Activity |
+|---|---|---|
+| Spring Training | Mid-February → late March | Exhibition games in Arizona (Cactus League) and Florida (Grapefruit League). Not counted in season stats. |
+| Regular Season | Late March → late September / early October | 162 games per team. This is what Ben Oracle optimizes for. |
+| Postseason | October → early November | Wild Card, Division Series (LDS), League Championship (LCS), World Series. Single-elimination / short series — no DFS slates here. |
+| Offseason | November → mid-February | No games. Free agency, trades, roster construction. |
+
+**Operational implications:**
+- `BO_CURRENT_SEASON` is the year of the regular season Ben Oracle is running against (e.g., `2026`). It does **not** auto-derive from `datetime.now().year` — it's explicitly set per deploy. Change it once a year when spring training ends, and leave it alone otherwise.
+- During the offseason (November → February), the pipeline is idle. `BO_CURRENT_SEASON` still points at the just-completed season for reference/backfill purposes.
+- Don't think about "next season" while the current season is live. One season at a time.
+
+### MLB Data Sources & Concepts (quick reference)
+
+- **MLB Stats API** (`https://statsapi.mlb.com/api/v1`) — primary data source. Used for schedule, boxscores, player season stats, team records. Free, no key required.
+- **The Odds API** (`BO_ODDS_API_KEY`) — source for Vegas lines (moneyline, over/under totals). Mandatory per-slate input.
+- **Season stats** — cumulative across the regular season, fetched via `get_player_stats(mlb_id, BO_CURRENT_SEASON)`.
+- **Slate** — the set of games on a given day that users can draft from.
+- **First pitch** — the earliest game's scheduled start. T-65 is 65 minutes before this.
+- **Probable pitcher** — the announced starting pitcher for a team in an upcoming game. Available 1–3 days in advance.
+- **Lineup card** — the batting order for a team in a specific game. Usually published 2–4 hours before first pitch; sometimes delayed on weather-threatened slates.
+- **Position codes** — `P` (pitcher), `C` (catcher), `1B/2B/3B` (infield), `SS` (shortstop), `OF` (outfielder), `DH` (designated hitter).
+- **Stat abbreviations** — `AB` (at-bats), `H` (hits), `HR` (home runs), `RBI` (runs batted in), `SB` (stolen bases), `OPS` (on-base plus slugging), `ISO` (isolated power), `ERA` (earned run average), `WHIP` (walks+hits per inning), `K/9` (strikeouts per nine innings), `IP` (innings pitched).
+- **Home/away convention** — home team listed second in standard notation (`BOS @ NYY` means Boston at New York).
+
+---
+
 ## CRITICAL: This Is NOT Traditional DFS
 
 This is **Real Sports DFS**. There is no salary cap. Players are drafted into 5 fixed slots with multipliers (2.0, 1.8, 1.6, 1.4, 1.2). Each player card has a **card_boost** (0 to +3.0x).
