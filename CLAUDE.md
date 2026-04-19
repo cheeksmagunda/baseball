@@ -138,7 +138,7 @@ Missing Vegas data corrupts the EV formula and produces suboptimal lineups. The 
 **Historical stats from CSV/DB must NEVER be used as a direct input feature, normalization anchor, or baseline weight in the live daily pipeline.**
 
 This means:
-- `total_value`, `card_boost`, `drafts`, and leaderboard flags from `historical_players.csv` are **never** EV inputs — they're retrospective labels only.
+- `total_value`, `card_boost`, `drafts`, and leaderboard flags from `historical_players.csv` are **never** EV inputs — they're retrospective outcome labels only.
 - Past slate real scores and total values cannot feed forward into prediction or scoring.
 - If a scoring baseline is needed, derive it from archetypal expectations (league-average defaults in `constants.py`) or conditional variables (pre-game conditions), not past performance.
 
@@ -148,6 +148,21 @@ This means:
 - `historical_players.csv` for building the initial `Player` table (name, team, position, MLB ID) — identifying data, not predictive inputs.
 
 **Why?** Using historical RS or leaderboard outcomes as predictive inputs creates data leakage — you'd be learning from outcomes that weren't knowable before the draft. The condition matrix in earlier versions (`RS_CONDITION_MATRIX`) was removed in V9.0 for exactly this reason.
+
+### What historical data IS for: calibration
+
+The historical files exist to answer one question: **do the live signals we score on actually correlate with real outcomes?**
+
+The live pipeline consumes two categories of signal at T-65:
+1. **Player performance signals** — season stats (ERA, K/9, OPS, recent form) from the MLB Stats API
+2. **Game context signals** — Vegas lines, weather, bullpen ERA, series context, etc.
+
+The historical data captures outcomes of those same conditions:
+- `hv_player_game_stats.csv` — what the top players actually did (box scores). Ground truth on player performance.
+- `historical_slate_results.json` (game objects, including env fields once populated) — what the game context actually looked like. Ground truth on game conditions.
+- `historical_players.csv` — real_score and HV/MP/3X flags. Outcome labels to measure prediction quality against.
+
+The calibration loop: join game context conditions (historical_slate_results.json) with player outcomes (real_score, HV flags from historical_players.csv) on (date, team) → see how outcomes distribute across each scoring threshold → tune `app/core/constants.py`. `scripts/calibrate_env_scoring.py` automates this join and analysis.
 
 ## Architecture Overview
 
@@ -223,24 +238,35 @@ The app uses an event-driven timing model that triggers the ONLY full pipeline r
 
 ## Data Files (`/data/`)
 
-Current coverage (as of 2026-04-17): **23 slates, 2026-03-25 → 2026-04-16**. All four files stay in lockstep — every date present in one is present in all four. 2026-04-17 slate is pending manual ingest.
+Current coverage (as of 2026-04-18): **25 slates, 2026-03-25 → 2026-04-18**. All four files stay in lockstep — every date present in one is present in all four.
 
-| File | Format | Current size | Purpose |
+**Two roles — do not confuse them:**
+- **Outcome labels** (`historical_players.csv`, `historical_winning_drafts.csv`) — retrospective results. What players scored, who won, what lineups paid off. Never used as live pipeline inputs.
+- **Calibration ground truth** (`hv_player_game_stats.csv`, `historical_slate_results.json`) — what the conditions and player performances actually were. Used to validate that the live scoring signals correlate with real outcomes.
+
+| File | Role | Current size | Contents |
 |---|---|---|---|
-| `historical_players.csv` | CSV | 822 rows / 23 dates | Master player ledger (1 row per player/day). Contains total_value, card_boost, drafts, leaderboard flags. **Null `real_score` / `total_value` indicates a DNP / scratch — there is no separate flag.** Avg ~35 rows/date (range 22–56). |
-| `historical_winning_drafts.csv` | CSV | 835 rows / 23 dates | Top-ranked lineups per date (5 rows per lineup = one per slot). Collection depth varies by date (4–12 ranks observed); the collector aspires to rank-20 but does not always reach it. |
-| `historical_slate_results.json` | JSON array | 23 entries | Per-date MLB slate outcome envelope: `date`, `game_count`, `games[]`, `season_stage`, `source`, `saved_at`, `notes`. One object per slate day. |
-| `hv_player_game_stats.csv` | CSV | 357 rows / 23 dates | Actual box score stats for every Highest-Value player appearance to date (grows each slate). Batting columns (ab, r, h, hr, rbi, bb, so) and pitching columns (ip, er, k_pitching, decision) coexist in one table — blanks indicate the column does not apply to that player. |
+| `historical_players.csv` | Outcome labels | 904 rows / 25 dates | Master player ledger: real_score, card_boost, drafts, leaderboard flags (HV/MP/3X). **Null `real_score` / `total_value` = DNP/scratch.** Avg ~36 rows/date (range 22–56). |
+| `historical_winning_drafts.csv` | Outcome labels | 910 rows / 25 dates | Top-ranked lineups per date (5 rows per lineup). 4–12 ranks captured per date; target is 20. |
+| `historical_slate_results.json` | Calibration ground truth | 25 entries | Per-date game context: game results, scores, env conditions (Vegas lines, ERA, weather, etc. — fields to be added to game objects). Cross-reference with historical_players.csv by (date, team) for calibration. |
+| `hv_player_game_stats.csv` | Calibration ground truth | 396 rows / 25 dates | Actual box scores for every Highest-Value player appearance. Batting (ab, r, h, hr, rbi, bb, so) and pitching (ip, er, k_pitching, decision) coexist — blanks = not applicable. |
 
 ## Env Scoring Calibration
 
-The env scoring thresholds in `app/core/constants.py` (BATTER_ENV_VEGAS_FLOOR, ERA floors/ceilings, etc.) are set by reasoning, not automation. To validate and adjust them from real outcome data:
+The env scoring thresholds in `app/core/constants.py` (BATTER_ENV_VEGAS_FLOOR, ERA floors/ceilings, etc.) are set by reasoning, not automation. The calibration loop validates them against real outcomes.
+
+**What the calibration loop does:**
+It joins two datasets on `(date, team)`:
+- **Conditions** — the game context signals that were present before each slate (Vegas lines, ERA, weather, etc.), stored in `historical_slate_results.json` game objects
+- **Outcomes** — what players actually scored and whether they made the HV leaderboard, from `historical_players.csv`
+
+This answers: *when the live pipeline would have rated a condition favorably, did players in those conditions actually score well?*
 
 **Step 1 — Capture conditions after each slate** (alongside the manual player ingest):
 ```bash
 python scripts/export_slate_conditions.py   # exports today's SlateGame env data
 ```
-This appends one row per game to `data/historical_conditions.csv`. Idempotent — safe to re-run.
+This currently writes to `data/historical_conditions.csv`. Planned: merge env fields into the game objects in `historical_slate_results.json` instead (one fewer file).
 
 **Step 2 — Run calibration analysis** (after accumulating 10+ new dates, or when pick quality degrades):
 ```bash

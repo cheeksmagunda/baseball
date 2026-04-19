@@ -1,5 +1,15 @@
 """Export SlateGame env conditions for a completed slate to historical_conditions.csv.
 
+These are the pre-game context signals that the T-65 pipeline consumed live —
+Vegas lines, starter ERA/K9, team OPS/K%, bullpen ERA, series context, weather.
+Capturing them here makes them available for calibration: cross-referencing with
+player outcomes (real_score, HV flags in historical_players.csv) shows whether
+the env scoring thresholds in constants.py are actually predictive.
+
+NOTE: The plan is to store these fields directly in the game objects in
+historical_slate_results.json instead of a separate CSV. This script will be
+updated or retired when that migration happens.
+
 Run after each slate alongside the manual player/draft data ingest:
 
     python scripts/export_slate_conditions.py             # today's date

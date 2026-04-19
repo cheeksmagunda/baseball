@@ -1,15 +1,27 @@
 """Calibrate env scoring thresholds from historical condition + outcome data.
 
-Joins historical_players.csv (outcomes) with historical_conditions.csv (env inputs)
-on (date, team), then shows how RS and HV rate distribute across each env factor's
-current threshold range.
+The live pipeline scores players using pre-game conditions (Vegas lines, ERA, weather,
+etc.) to compute env_factor. This script validates whether those conditions actually
+correlate with real outcomes by joining two datasets on (date, team):
+
+  - CONDITIONS  historical_conditions.csv — the game context signals that existed
+                before each slate. These mirror exactly what the T-65 pipeline reads
+                from live APIs (Vegas, bullpen ERA, series context, weather, etc.).
+                NOTE: planned to move these fields into historical_slate_results.json
+                game objects; the join logic here will update accordingly.
+
+  - OUTCOMES    historical_players.csv — real_score and HV/MP/3X flags per player
+                per slate. These are retrospective outcome labels; they are never
+                used as pipeline inputs. Here they serve as ground truth to measure
+                whether condition-based scoring predicted performance correctly.
+
+Output shows RS and HV-rate distributions across each threshold bucket (below floor /
+mid / above ceiling). No code is modified. Read the results and edit
+app/core/constants.py directly to adjust thresholds, add, or remove factors.
 
 Run after accumulating new slates:
 
     python scripts/calibrate_env_scoring.py
-
-Output is printed — no code is modified. Claude reads the results and edits
-app/core/constants.py directly to adjust thresholds, add, or remove factors.
 """
 
 import csv
