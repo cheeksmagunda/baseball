@@ -85,17 +85,32 @@ async def lifespan(app: FastAPI):
             "layer (frozen T-65 picks, multi-replica coordination). No DB-only "
             "fallback. Set BO_REDIS_URL before starting the app."
         )
-    try:
-        import redis as redis_lib
-        client = redis_lib.from_url(
-            settings.redis_url, decode_responses=True, socket_connect_timeout=5
-        )
-        client.ping()
-        logger.info("Redis connectivity verified at startup")
-    except Exception as e:
+    import redis as redis_lib
+    _redis_error = None
+    for _attempt in range(1, 6):
+        try:
+            client = redis_lib.from_url(
+                settings.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=10,
+            )
+            client.ping()
+            logger.info("Redis connectivity verified at startup (attempt %d)", _attempt)
+            _redis_error = None
+            break
+        except Exception as e:
+            _redis_error = e
+            if _attempt < 5:
+                import time as _time
+                logger.warning(
+                    "Redis ping failed (attempt %d/5): %s — retrying in 2s", _attempt, e
+                )
+                _time.sleep(2)
+    if _redis_error is not None:
         raise RuntimeError(
-            f"CRITICAL: Redis configured but unreachable at startup. "
-            f"Redis is required for cache layer — no fallback. Error: {e}"
+            f"CRITICAL: Redis unreachable after 5 startup attempts. "
+            f"Redis is required for cache layer — no fallback. Last error: {_redis_error}"
         )
 
     # Startup Validation: current_season (confirmed readable — Pydantic required field,
