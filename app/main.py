@@ -96,9 +96,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         raise RuntimeError(f"Database URL validation failed at startup: {e}")
 
-    init_db()
+    logger.info("STARTUP STEP: calling init_db() (alembic migrations)")
+    try:
+        init_db()
+        logger.info("STARTUP STEP: init_db() completed successfully")
+    except Exception as e:
+        logger.exception("STARTUP STEP: init_db() FAILED")
+        raise RuntimeError(f"init_db() failed: {e}")
 
     # Startup Validation: Redis — REQUIRED, never optional.
+    logger.info("STARTUP STEP: validating Redis connectivity")
     if not settings.redis_url:
         raise RuntimeError(
             "CRITICAL: BO_REDIS_URL is not set. Redis is required for the cache "

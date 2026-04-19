@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+# Unbuffered stdout/stderr so crash tracebacks flush before the process exits.
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # Copy everything first so pip install can find the package
