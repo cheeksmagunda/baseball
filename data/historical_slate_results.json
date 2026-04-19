@@ -3056,5 +3056,326 @@
     "saved_at": "2026-04-17T12:52:06Z",
     "notes": "Ghost+max_boost pitcher day. Brandon Sproat (MIL, RS 5.8, +3.0x, 56 HV drafts / 980 MD3x) appeared in 5 of 6 top lineups — TARGET pitcher archetype with max boost. Parker Messick (MIA, RS 8.1, no boost, 1.4k drafts) was the best raw pitcher but boost-limited; HV TV=16.2. Jacob Lopez (OAK, RS 2.8, +3.0x, 1.6k drafts) appeared in all 6 top lineups despite moderate RS — crowd convergence on 3x ghost pitcher. Nick Kurtz (OAK, 1B, RS 4.7, +3.0x, 12 drafts) TARGET batter in 5 of 6 top lineups. Rank 1 tied (mrdawson+msaddi, 89.28): Lopez+Sproat+Kurtz+Caminero+WittJr — all +3.0x boost. FADE batters busted: Judge 1.6, Alvarez 1.5, Henderson 0.2, Merrill 0.2, Luzardo not in slate. Most Drafted 3x: Sproat+Lopez led winning lineups; Raleigh, Caminero, Altuve modest. Slot assignments estimated by descending RS order.",
     "previous_source": "screenshot_ingest"
+  },
+  {
+    "date": "2026-04-17",
+    "game_count": 15,
+    "games": [
+      {
+        "home": "CHC",
+        "away": "NYM",
+        "home_score": 12,
+        "away_score": 4,
+        "winner": "CHC",
+        "loser": "NYM",
+        "winner_score": 12,
+        "loser_score": 4
+      },
+      {
+        "home": "CLE",
+        "away": "BAL",
+        "home_score": 4,
+        "away_score": 6,
+        "winner": "BAL",
+        "loser": "CLE",
+        "winner_score": 6,
+        "loser_score": 4
+      },
+      {
+        "home": "PHI",
+        "away": "ATL",
+        "home_score": 0,
+        "away_score": 9,
+        "winner": "ATL",
+        "loser": "PHI",
+        "winner_score": 9,
+        "loser_score": 0
+      },
+      {
+        "home": "WSH",
+        "away": "SF",
+        "home_score": 5,
+        "away_score": 10,
+        "winner": "SF",
+        "loser": "WSH",
+        "winner_score": 10,
+        "loser_score": 5
+      },
+      {
+        "home": "PIT",
+        "away": "TB",
+        "home_score": 5,
+        "away_score": 1,
+        "winner": "PIT",
+        "loser": "TB",
+        "winner_score": 5,
+        "loser_score": 1
+      },
+      {
+        "home": "NYY",
+        "away": "KC",
+        "home_score": 4,
+        "away_score": 2,
+        "winner": "NYY",
+        "loser": "KC",
+        "winner_score": 4,
+        "loser_score": 2
+      },
+      {
+        "home": "MIA",
+        "away": "MIL",
+        "home_score": 5,
+        "away_score": 7,
+        "winner": "MIL",
+        "loser": "MIA",
+        "winner_score": 7,
+        "loser_score": 5
+      },
+      {
+        "home": "BOS",
+        "away": "DET",
+        "home_score": 1,
+        "away_score": 0,
+        "winner": "BOS",
+        "loser": "DET",
+        "winner_score": 1,
+        "loser_score": 0
+      },
+      {
+        "home": "HOU",
+        "away": "STL",
+        "home_score": 4,
+        "away_score": 9,
+        "winner": "STL",
+        "loser": "HOU",
+        "winner_score": 9,
+        "loser_score": 4
+      },
+      {
+        "home": "MIN",
+        "away": "CIN",
+        "home_score": 1,
+        "away_score": 2,
+        "winner": "CIN",
+        "loser": "MIN",
+        "winner_score": 2,
+        "loser_score": 1
+      },
+      {
+        "home": "COL",
+        "away": "LAD",
+        "home_score": 1,
+        "away_score": 7,
+        "winner": "LAD",
+        "loser": "COL",
+        "winner_score": 7,
+        "loser_score": 1
+      },
+      {
+        "home": "LAA",
+        "away": "SD",
+        "home_score": 8,
+        "away_score": 0,
+        "winner": "LAA",
+        "loser": "SD",
+        "winner_score": 8,
+        "loser_score": 0
+      },
+      {
+        "home": "SEA",
+        "away": "TEX",
+        "home_score": 0,
+        "away_score": 5,
+        "winner": "TEX",
+        "loser": "SEA",
+        "winner_score": 5,
+        "loser_score": 0
+      },
+      {
+        "home": "AZ",
+        "away": "TOR",
+        "home_score": 6,
+        "away_score": 3,
+        "winner": "AZ",
+        "loser": "TOR",
+        "winner_score": 6,
+        "loser_score": 3
+      },
+      {
+        "home": "ATH",
+        "away": "CWS",
+        "home_score": 2,
+        "away_score": 9,
+        "winner": "CWS",
+        "loser": "ATH",
+        "winner_score": 9,
+        "loser_score": 2
+      }
+    ],
+    "season_stage": "regular-season",
+    "source": "mlb_stats_api_backfill",
+    "saved_at": "2026-04-19T09:16:49Z",
+    "notes": "Thursday slate. 15 Final games. CHC 12-4 blowout vs NYM; ATL 9-0 blowout at PHI; STL 9-4 at HOU. Luisangel Acuna (NYM) top HV RS 7.4 unboosted. CWS won at ATH 9-2. Data ingested retroactively from MLB Stats API."
+  },
+  {
+    "date": "2026-04-18",
+    "game_count": 15,
+    "games": [
+      {
+        "home": "NYY",
+        "away": "KC",
+        "home_score": 13,
+        "away_score": 4,
+        "winner": "NYY",
+        "loser": "KC",
+        "winner_score": 13,
+        "loser_score": 4
+      },
+      {
+        "home": "MIN",
+        "away": "CIN",
+        "home_score": 4,
+        "away_score": 5,
+        "winner": "CIN",
+        "loser": "MIN",
+        "winner_score": 5,
+        "loser_score": 4
+      },
+      {
+        "home": "CHC",
+        "away": "NYM",
+        "home_score": 4,
+        "away_score": 2,
+        "winner": "CHC",
+        "loser": "NYM",
+        "winner_score": 4,
+        "loser_score": 2
+      },
+      {
+        "home": "PIT",
+        "away": "TB",
+        "home_score": 7,
+        "away_score": 8,
+        "winner": "TB",
+        "loser": "PIT",
+        "winner_score": 8,
+        "loser_score": 7
+      },
+      {
+        "home": "WSH",
+        "away": "SF",
+        "home_score": 6,
+        "away_score": 7,
+        "winner": "SF",
+        "loser": "WSH",
+        "winner_score": 7,
+        "loser_score": 6
+      },
+      {
+        "home": "ATH",
+        "away": "CWS",
+        "home_score": 7,
+        "away_score": 6,
+        "winner": "ATH",
+        "loser": "CWS",
+        "winner_score": 7,
+        "loser_score": 6
+      },
+      {
+        "home": "BOS",
+        "away": "DET",
+        "home_score": 1,
+        "away_score": 4,
+        "winner": "DET",
+        "loser": "BOS",
+        "winner_score": 4,
+        "loser_score": 1
+      },
+      {
+        "home": "MIA",
+        "away": "MIL",
+        "home_score": 2,
+        "away_score": 5,
+        "winner": "MIL",
+        "loser": "MIA",
+        "winner_score": 5,
+        "loser_score": 2
+      },
+      {
+        "home": "CLE",
+        "away": "BAL",
+        "home_score": 4,
+        "away_score": 2,
+        "winner": "CLE",
+        "loser": "BAL",
+        "winner_score": 4,
+        "loser_score": 2
+      },
+      {
+        "home": "HOU",
+        "away": "STL",
+        "home_score": 5,
+        "away_score": 7,
+        "winner": "STL",
+        "loser": "HOU",
+        "winner_score": 7,
+        "loser_score": 5
+      },
+      {
+        "home": "SEA",
+        "away": "TEX",
+        "home_score": 7,
+        "away_score": 3,
+        "winner": "SEA",
+        "loser": "TEX",
+        "winner_score": 7,
+        "loser_score": 3
+      },
+      {
+        "home": "PHI",
+        "away": "ATL",
+        "home_score": 1,
+        "away_score": 3,
+        "winner": "ATL",
+        "loser": "PHI",
+        "winner_score": 3,
+        "loser_score": 1
+      },
+      {
+        "home": "COL",
+        "away": "LAD",
+        "home_score": 4,
+        "away_score": 3,
+        "winner": "COL",
+        "loser": "LAD",
+        "winner_score": 4,
+        "loser_score": 3
+      },
+      {
+        "home": "AZ",
+        "away": "TOR",
+        "home_score": 6,
+        "away_score": 2,
+        "winner": "AZ",
+        "loser": "TOR",
+        "winner_score": 6,
+        "loser_score": 2
+      },
+      {
+        "home": "LAA",
+        "away": "SD",
+        "home_score": 1,
+        "away_score": 4,
+        "winner": "SD",
+        "loser": "LAA",
+        "winner_score": 4,
+        "loser_score": 1
+      }
+    ],
+    "season_stage": "regular-season",
+    "source": "mlb_stats_api_backfill",
+    "saved_at": "2026-04-19T08:59:37Z",
+    "notes": "Saturday slate. Corbin Carroll (ARI, OF, RS 6.4, +2.0x, 1400 drafts) dominant — appeared in ranks 1-5, 8. G. Williams (CLE, P, RS 6.8, 0 boost) high-value pick in ranks 1 and 5. Cody Bellinger (CHC, OF, RS 6.2, +3.0x) highest total_value in HV at 31.0. Tarik Skubal (DET, P, RS 5.4, 3.4k drafts) Most Popular anchor — slot1 in ranks 3, 9; slot3 in rank 8. Paul Skenes (PIT, P, RS 4.0, 2.9k drafts) in rank 6. Kyle Tucker (CHC, OF, RS 4.1, +3.0x) TARGET batter in ranks 3, 4, 7, 9. FADE busts: Shohei Ohtani RS 0.6, Aaron Judge RS 0.4, Andy Pages RS -0.7, CJ Abrams RS -0.7, Manny Machado RS -0.6, Vladimir Guerrero Jr. RS -0.1. No game scores captured. Slot assignments estimated by RS-desc algorithm.",
+    "previous_source": "screenshot_ingest"
   }
 ]
