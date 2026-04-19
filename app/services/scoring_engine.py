@@ -439,7 +439,7 @@ def score_ballpark_factor(
     if notes:
         note_str += f" ({', '.join(notes)})"
 
-    score = max(0, min(max_pts, (effective_factor - PARK_HR_FACTOR_MIN) / (PARK_HR_FACTOR_MAX - PARK_HR_FACTOR_MIN) * max_pts))
+    score = scale_score(effective_factor, PARK_HR_FACTOR_MIN, PARK_HR_FACTOR_MAX, max_pts)
     return TraitResult("ballpark_factor", round(score, 1), max_pts, note_str)
 
 
