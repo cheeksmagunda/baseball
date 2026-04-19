@@ -68,7 +68,10 @@ def _parse_game_time(game_time_str: str, game_date: date) -> datetime | None:
             time_str = time_str[: -len(suffix)].strip()
             break
 
-    naive_time = datetime.strptime(time_str, "%I:%M %p")
+    try:
+        naive_time = datetime.strptime(time_str, "%I:%M %p")
+    except ValueError:
+        return None
 
     # Late West Coast games (e.g. 10:10 PM PT) convert to early-AM ET times
     # (1:10 AM ET) that belong to the *next* calendar day.  Without this

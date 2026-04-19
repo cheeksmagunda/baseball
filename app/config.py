@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="BO_")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="BO_", extra="ignore")
 
     database_url: str = f"sqlite:///{Path(__file__).resolve().parent.parent / 'db' / 'ben_oracle.db'}"
     mlb_api_base_url: str = "https://statsapi.mlb.com/api/v1"
