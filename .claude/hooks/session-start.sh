@@ -8,7 +8,7 @@ set -euo pipefail
 # Canonical reference: see "Ingesting New Slate Data" in CLAUDE.md. This
 # comment block is a startup cheat-sheet — keep it in sync with CLAUDE.md.
 #
-# Current coverage (2026-04-14): 21 consecutive dates, 2026-03-25 → 2026-04-14.
+# Current coverage (2026-04-17): 23 slates, 2026-03-25 → 2026-04-16.
 # All four files stay in lockstep — a date present in one must be present in
 # all four. After each slate, append to these four files in data/:
 #
@@ -124,20 +124,53 @@ fi
 
 cd "$CLAUDE_PROJECT_DIR"
 
-echo "==> Installing Python dependencies..."
-pip install --quiet -e ".[dev]"
+# ── 1. Verify Python version ────────────────────────────────────────────────
+REQUIRED_PYTHON_MINOR=11
+PYTHON=$(command -v python3 || command -v python || echo "")
+if [ -z "$PYTHON" ]; then
+    echo "ERROR: Python not found. Install Python 3.11+ and re-run."
+    exit 1
+fi
 
+MINOR=$("$PYTHON" -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo 0)
+MAJOR=$("$PYTHON" -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo 0)
+if [ "$MAJOR" -ne 3 ] || [ "$MINOR" -lt "$REQUIRED_PYTHON_MINOR" ]; then
+    echo "ERROR: Python 3.${REQUIRED_PYTHON_MINOR}+ required. Found ${MAJOR}.${MINOR}."
+    exit 1
+fi
+echo "==> Python $("$PYTHON" --version 2>&1) ✓"
+
+# ── 2. Validate required files ──────────────────────────────────────────────
+if [ ! -f ".env.example" ]; then
+    echo "ERROR: .env.example not found. This file is required to set up .env."
+    exit 1
+fi
+
+# ── 3. Install Python dependencies ──────────────────────────────────────────
+echo "==> Installing Python dependencies..."
+if ! pip install --quiet -e ".[dev]"; then
+    echo "ERROR: pip install failed. Check dependencies in pyproject.toml."
+    exit 1
+fi
+
+# ── 4. Create db/ directory ────────────────────────────────────────────────
 echo "==> Creating db/ directory if missing..."
 mkdir -p db
 
-echo "==> Creating .env if missing..."
+# ── 5. Create .env if missing ──────────────────────────────────────────────
 if [ ! -f ".env" ]; then
-  cp .env.example .env
+    echo "==> Creating .env from .env.example..."
+    cp .env.example .env
+    echo "    → BO_CURRENT_SEASON and BO_ODDS_API_KEY must be set in .env"
+else
+    echo "==> .env already exists ✓"
 fi
 
+# ── 6. Set PYTHONPATH ──────────────────────────────────────────────────────
 echo "==> Setting PYTHONPATH..."
 echo 'export PYTHONPATH="$CLAUDE_PROJECT_DIR"' >> "$CLAUDE_ENV_FILE"
 
+# ── 7. Read project documentation into context ─────────────────────────────
 echo "==> Reading project documentation into context..."
 echo "--- CLAUDE.md (full) ---"
 cat "$CLAUDE_PROJECT_DIR/CLAUDE.md" 2>/dev/null || echo "(CLAUDE.md not found)"
@@ -145,4 +178,12 @@ echo "--- README.md (full) ---"
 cat "$CLAUDE_PROJECT_DIR/README.md" 2>/dev/null || echo "(README.md not found)"
 echo "---"
 
-echo "==> Session start complete."
+# ── 8. Print next steps ────────────────────────────────────────────────────
+echo ""
+echo "==> Session start complete ✓"
+echo ""
+echo "Next steps:"
+echo "  1. Check .env: BO_CURRENT_SEASON=2026, BO_ODDS_API_KEY set"
+echo "  2. If CSV data in data/ changed: rm db/ben_oracle.db && python -m app.seed"
+echo "  3. Start the app: python run.py"
+echo ""
