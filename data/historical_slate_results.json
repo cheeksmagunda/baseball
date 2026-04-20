@@ -3377,5 +3377,30 @@
     "saved_at": "2026-04-19T08:59:37Z",
     "notes": "Saturday slate. Corbin Carroll (ARI, OF, RS 6.4, +2.0x, 1400 drafts) dominant — appeared in ranks 1-5, 8. G. Williams (CLE, P, RS 6.8, 0 boost) high-value pick in ranks 1 and 5. Cody Bellinger (CHC, OF, RS 6.2, +3.0x) highest total_value in HV at 31.0. Tarik Skubal (DET, P, RS 5.4, 3.4k drafts) Most Popular anchor — slot1 in ranks 3, 9; slot3 in rank 8. Paul Skenes (PIT, P, RS 4.0, 2.9k drafts) in rank 6. Kyle Tucker (CHC, OF, RS 4.1, +3.0x) TARGET batter in ranks 3, 4, 7, 9. FADE busts: Shohei Ohtani RS 0.6, Aaron Judge RS 0.4, Andy Pages RS -0.7, CJ Abrams RS -0.7, Manny Machado RS -0.6, Vladimir Guerrero Jr. RS -0.1. No game scores captured. Slot assignments estimated by RS-desc algorithm.",
     "previous_source": "screenshot_ingest"
+  },
+  {
+    "date": "2026-04-19",
+    "game_count": 15,
+    "games": [
+      {"home": "WSH", "away": "SF", "home_score": 3, "away_score": 0, "winner": "WSH", "loser": "SF", "winner_score": 3, "loser_score": 0},
+      {"home": "PIT", "away": "TB", "home_score": 6, "away_score": 3, "winner": "PIT", "loser": "TB", "winner_score": 6, "loser_score": 3},
+      {"home": "NYY", "away": "KC", "home_score": 7, "away_score": 0, "winner": "NYY", "loser": "KC", "winner_score": 7, "loser_score": 0},
+      {"home": "CLE", "away": "BAL", "home_score": 8, "away_score": 4, "winner": "CLE", "loser": "BAL", "winner_score": 8, "loser_score": 4},
+      {"home": "MIA", "away": "MIL", "home_score": 5, "away_score": 3, "winner": "MIA", "loser": "MIL", "winner_score": 5, "loser_score": 3},
+      {"home": "HOU", "away": "STL", "home_score": 5, "away_score": 7, "winner": "STL", "loser": "HOU", "winner_score": 7, "loser_score": 5},
+      {"home": "MIN", "away": "CIN", "home_score": 4, "away_score": 7, "winner": "CIN", "loser": "MIN", "winner_score": 7, "loser_score": 4},
+      {"home": "CHC", "away": "NYM", "home_score": 2, "away_score": 1, "winner": "CHC", "loser": "NYM", "winner_score": 2, "loser_score": 1},
+      {"home": "COL", "away": "LAD", "home_score": 9, "away_score": 6, "winner": "COL", "loser": "LAD", "winner_score": 9, "loser_score": 6},
+      {"home": "ATH", "away": "CWS", "home_score": 4, "away_score": 7, "winner": "CWS", "loser": "ATH", "winner_score": 7, "loser_score": 4},
+      {"home": "LAA", "away": "SD", "home_score": 1, "away_score": 2, "winner": "SD", "loser": "LAA", "winner_score": 2, "loser_score": 1},
+      {"home": "AZ", "away": "TOR", "home_score": 4, "away_score": 10, "winner": "TOR", "loser": "AZ", "winner_score": 10, "loser_score": 4},
+      {"home": "SEA", "away": "TEX", "home_score": 5, "away_score": 2, "winner": "SEA", "loser": "TEX", "winner_score": 5, "loser_score": 2},
+      {"home": "BOS", "away": "DET", "home_score": 2, "away_score": 6, "winner": "DET", "loser": "BOS", "winner_score": 6, "loser_score": 2},
+      {"home": "PHI", "away": "ATL", "home_score": 2, "away_score": 4, "winner": "ATL", "loser": "PHI", "winner_score": 4, "loser_score": 2}
+    ],
+    "season_stage": "regular-season",
+    "source": "screenshot_ingest",
+    "saved_at": "2026-04-20T00:00:00Z",
+    "notes": "Sunday slate. 15 games. Dillon Dingler (DET, C, RS 7.1, +2.7x, 11 drafts) top HV anchor. TARGET wins: TJ Friedl (CIN, RS 4.9), Masyn Winn (STL, RS 4.9), Walbert Urena (MIA, RS 4.7), Mickey Moniak (LAA, RS 4.8), Edouard Julien (MIN, RS 4.7). Ryan Weathers (MIA, P, RS 6.4) high-value underused pitcher appearing in ranks 1 and 3. Bryan Woo (SEA, RS 5.5) and Jacob Misiorowski (MIL, RS 4.2) MP pitchers not in HV. FADE busts: Shohei Ohtani RS 2.1 (3.4k drafts), Aaron Judge RS 2.8 (2.9k), Mike Trout RS 0.3 (2.3k), Roki Sasaki RS 0.1 (2.1k, also 3X), Drake Baldwin RS -0.4 (1.5k), Corbin Carroll RS -0.2 (1.3k). 3X busts: Will Smith RS 0.7, Ronald Acuna Jr. RS 0.6, Trea Turner RS 0.2. Rank 1 (cooperprowler, 68.16): double-pitcher K. Gausman + R. Weathers stacked with 3 TOR batters (Guerrero Jr., Lukes, Okamoto). Rank 2 (spursglazer): Dingler anchor, 2 PHI batters (Schwarber, Harper). Rank 3 (sami12344): Weathers anchor, Dingler in slot 3. Kazuma Okamoto (COL) team assignment estimated. Box scores pending backfill."
   }
 ]
