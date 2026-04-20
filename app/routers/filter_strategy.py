@@ -55,9 +55,11 @@ def _get_active_slate_date(db: Session) -> date:
 
     # Today has games — check if any are still in progress
     if today_slate and today_slate.game_count and today_slate.game_count > 0:
+        from app.core.constants import NON_PLAYING_GAME_STATUSES
         games = db.query(SlateGame).filter_by(slate_id=today_slate.id).all()
         all_final = games and all(
-            g.home_score is not None and g.away_score is not None
+            (g.home_score is not None and g.away_score is not None)
+            or g.game_status in NON_PLAYING_GAME_STATUSES
             for g in games
         )
         if not all_final:
