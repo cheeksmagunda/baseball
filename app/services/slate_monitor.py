@@ -271,40 +271,58 @@ async def targeted_slate_monitor(
 
         today = date.today()
         db = SessionLocal()
+        _phase1_error: Exception | None = None
+        monitor_date: date = today
+        first_pitch_utc = None
         try:
             # Use _get_first_pitch_utc as the "do we know T-65?" probe.
             # fetch_schedule_for_date is idempotent (upserts), so it's safe
             # to call whether the Slate row is missing OR present-but-empty.
             if _get_first_pitch_utc(db, today) is None:
                 logger.info("Monitor bootstrap: fetching schedule for %s", today)
-                await fetch_schedule_for_date(db, today)
+                try:
+                    await fetch_schedule_for_date(db, today)
+                except Exception as exc:
+                    _phase1_error = exc
 
-            monitor_date = _get_active_slate_date(db)
-            first_pitch_utc = _get_first_pitch_utc(db, monitor_date)
-
-            # If _get_active_slate_date targeted tomorrow (today's slate
-            # empty or all-final), make sure tomorrow's schedule is
-            # populated too.
-            if first_pitch_utc is None and monitor_date != today:
-                logger.info(
-                    "Monitor bootstrap: fetching schedule for %s", monitor_date
-                )
-                await fetch_schedule_for_date(db, monitor_date)
+            if _phase1_error is None:
+                monitor_date = _get_active_slate_date(db)
                 first_pitch_utc = _get_first_pitch_utc(db, monitor_date)
+
+                # If _get_active_slate_date targeted tomorrow (today's slate
+                # empty or all-final), make sure tomorrow's schedule is
+                # populated too.
+                if first_pitch_utc is None and monitor_date != today:
+                    logger.info(
+                        "Monitor bootstrap: fetching schedule for %s", monitor_date
+                    )
+                    try:
+                        await fetch_schedule_for_date(db, monitor_date)
+                    except Exception as exc:
+                        _phase1_error = exc
+                    else:
+                        first_pitch_utc = _get_first_pitch_utc(db, monitor_date)
         finally:
             db.close()
+
+        if _phase1_error is not None:
+            logger.error(
+                "Monitor bootstrap: schedule fetch failed (%s) — retrying in 5 min",
+                _phase1_error,
+            )
+            await asyncio.sleep(300)
+            continue
 
         logger.info("T-65 monitor targeting date: %s", monitor_date)
 
         if first_pitch_utc is None:
-            raise RuntimeError(
-                f"No scheduled_game_time values found for {monitor_date}. "
-                "Cannot determine first pitch time. "
-                "Cannot build lineups without knowing when games start. "
-                "Pipeline must fail loudly (no fallback to default times). "
-                "This is a critical error that requires investigation. "
-                "See DISASTER_RECOVERY.md § Scenario 1 for debugging steps."
+            logger.critical(
+                "No scheduled_game_time values found for %s — retrying in 5 min. "
+                "See DISASTER_RECOVERY.md § Scenario 1 for debugging steps.",
+                monitor_date,
             )
+            await asyncio.sleep(300)
+            continue
 
         lock_time_utc = first_pitch_utc - timedelta(
             minutes=LOCK_MINUTES_BEFORE_PITCH
