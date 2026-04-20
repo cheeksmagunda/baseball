@@ -906,14 +906,14 @@ date,player_name,team,position,real_score,card_boost,drafts,total_value,is_highe
 2026-04-19,Dillon Dingler,DET,C,7.1,2.7,11,33.37,1,0,0
 2026-04-19,TJ Friedl,CIN,OF,4.9,3.0,1,24.5,1,0,0
 2026-04-19,Masyn Winn,STL,SS,4.9,3.0,1,24.5,1,0,0
-2026-04-19,Walbert Urena,MIA,OF,4.7,3.0,4,23.5,1,0,0
-2026-04-19,Mickey Moniak,LAA,OF,4.8,2.7,2,22.56,1,0,0
-2026-04-19,Taylor Ward,LAA,OF,4.0,3.0,2,20.0,1,0,0
-2026-04-19,Edouard Julien,MIN,OF,4.7,3.0,1,23.5,1,0,0
+2026-04-19,Walbert Urena,LAA,OF,4.7,3.0,4,23.5,1,0,0
+2026-04-19,Mickey Moniak,COL,OF,4.8,2.7,2,22.56,1,0,0
+2026-04-19,Taylor Ward,BAL,OF,4.0,3.0,2,20.0,1,0,0
+2026-04-19,Edouard Julien,COL,OF,4.7,3.0,1,23.5,1,0,0
 2026-04-19,Nathan Lukes,TOR,OF,3.8,3.0,1,19.0,1,0,0
 2026-04-19,Brayan Rocchio,CLE,SS,3.9,3.0,1,19.5,1,0,0
 2026-04-19,Vladimir Guerrero Jr.,TOR,1B,3.7,3.0,29,18.5,1,0,0
-2026-04-19,Kazuma Okamoto,COL,OF,3.9,3.0,1,19.5,1,0,0
+2026-04-19,Kazuma Okamoto,TOR,OF,3.9,3.0,1,19.5,1,0,0
 2026-04-19,Miguel Vargas,CWS,OF,3.8,3.0,1,19.0,1,0,0
 2026-04-19,Kyle Schwarber,PHI,1B,4.0,2.6,135,18.4,1,0,0
 2026-04-19,Trent Grisham,NYY,OF,3.8,3.0,1,19.0,1,0,0
@@ -929,7 +929,7 @@ date,player_name,team,position,real_score,card_boost,drafts,total_value,is_highe
 2026-04-19,Andy Pages,LAD,OF,0.3,1.6,1500,1.08,0,1,0
 2026-04-19,Garrett Crochet,BOS,P,0.1,0.0,1400,0.2,0,1,0
 2026-04-19,Corbin Carroll,AZ,OF,-0.2,1.7,1300,-0.74,0,1,0
-2026-04-19,Brady Singer,KC,P,2.6,1.3,1200,8.58,0,1,0
+2026-04-19,Brady Singer,CIN,P,2.6,1.3,1200,8.58,0,1,0
 2026-04-19,Nico Hoerner,CHC,2B,2.3,1.8,1100,8.74,0,1,0
 2026-04-19,Will Smith,LAD,C,0.7,3.0,641,3.5,0,0,1
 2026-04-19,Ronald Acuna Jr.,ATL,OF,0.6,3.0,557,3.0,0,0,1

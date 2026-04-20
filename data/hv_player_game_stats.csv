@@ -395,17 +395,17 @@ date,player_name,team_actual,position,real_score,card_boost,game_result,ab,r,h,h
 2026-04-17,Nolan Arenado,STL,3B,3.2,3.0,,,,,,,,,,,,,Stats pending backfill
 2026-04-17,Andrew Benintendi,CWS,OF,3.1,3.0,CWS 9 ATH 2,6.0,2.0,3.0,0.0,1.0,0.0,1.0,,,,,"3-6 | 2 2B, K, RBI | vs ATH (away)"
 2026-04-17,Luisangel Acuna,NYM,2B,7.4,0.0,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Dillon Dingler,DET,C,7.1,2.7,DET 6 BOS 2,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,TJ Friedl,CIN,OF,4.9,3.0,CIN 7 MIN 4,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Masyn Winn,STL,SS,4.9,3.0,STL 7 HOU 5,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Walbert Urena,MIA,OF,4.7,3.0,MIL 3 MIA 5,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Mickey Moniak,LAA,OF,4.8,2.7,SD 2 LAA 1,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Taylor Ward,LAA,OF,4.0,3.0,SD 2 LAA 1,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Edouard Julien,MIN,OF,4.7,3.0,CIN 7 MIN 4,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Nathan Lukes,TOR,OF,3.8,3.0,TOR 10 AZ 4,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Brayan Rocchio,CLE,SS,3.9,3.0,BAL 4 CLE 8,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Vladimir Guerrero Jr.,TOR,1B,3.7,3.0,TOR 10 AZ 4,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Kazuma Okamoto,COL,OF,3.9,3.0,LAD 6 COL 9,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Miguel Vargas,CWS,OF,3.8,3.0,CWS 7 ATH 4,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Kyle Schwarber,PHI,1B,4.0,2.6,ATL 4 PHI 2,,,,,,,,,,,,,Stats pending backfill
-2026-04-19,Trent Grisham,NYY,OF,3.8,3.0,KC 0 NYY 7,,,,,,,,,,,,,Stats pending backfill
+2026-04-19,Dillon Dingler,DET,C,7.1,2.7,DET 6 BOS 2,5.0,1.0,4.0,1.0,4.0,0.0,0.0,,,,,"4-5 | HR, 2B, 4 RBI | vs BOS (away)"
+2026-04-19,TJ Friedl,CIN,OF,4.9,3.0,CIN 7 MIN 4,5.0,0.0,2.0,0.0,3.0,0.0,1.0,,,,,"2-5 | 2B, K, 3 RBI | vs MIN (away)"
+2026-04-19,Masyn Winn,STL,SS,4.9,3.0,STL 7 HOU 5,5.0,1.0,3.0,0.0,3.0,0.0,2.0,,,,,"3-5 | 2B, 2 K, 3 RBI | vs HOU (away)"
+2026-04-19,Walbert Urena,LAA,OF,4.7,3.0,SD 2 LAA 1,,,,,,,,,,,,DNP - no batting stats per MLB API; RS 4.7 is platform projection
+2026-04-19,Mickey Moniak,COL,OF,4.8,2.7,LAD 6 COL 9,5.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, 2 R | vs LAD (home)"
+2026-04-19,Taylor Ward,BAL,OF,4.0,3.0,BAL 4 CLE 8,5.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, R | vs CLE (away)"
+2026-04-19,Edouard Julien,COL,OF,4.7,3.0,LAD 6 COL 9,5.0,1.0,3.0,0.0,3.0,0.0,0.0,,,,,"3-5 | 2B, 3 RBI, R | vs LAD (home)"
+2026-04-19,Nathan Lukes,TOR,OF,3.8,3.0,TOR 10 AZ 4,5.0,1.0,3.0,0.0,3.0,0.0,0.0,,,,,"3-5 | 2 2B, 3 RBI, R | vs AZ (away)"
+2026-04-19,Brayan Rocchio,CLE,SS,3.9,3.0,BAL 4 CLE 8,4.0,0.0,3.0,0.0,3.0,0.0,1.0,,,,,"3-4 | K, 3 RBI | vs BAL (home)"
+2026-04-19,Vladimir Guerrero Jr.,TOR,1B,3.7,3.0,TOR 10 AZ 4,5.0,2.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-5 | 2B, K, 2 RBI | vs AZ (away)"
+2026-04-19,Kazuma Okamoto,TOR,OF,3.9,3.0,TOR 10 AZ 4,4.0,2.0,2.0,1.0,3.0,1.0,2.0,,,,,"2-4 | HR, 2B, BB | vs AZ (away)"
+2026-04-19,Miguel Vargas,CWS,OF,3.8,3.0,CWS 7 ATH 4,3.0,2.0,2.0,1.0,2.0,2.0,0.0,,,,,"2-3 | HR, 2 BB, 2 RBI | vs ATH (away)"
+2026-04-19,Kyle Schwarber,PHI,1B,4.0,2.6,ATL 4 PHI 2,4.0,1.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-4 | HR, 2B, BB | vs ATL (home)"
+2026-04-19,Trent Grisham,NYY,OF,3.8,3.0,KC 0 NYY 7,4.0,1.0,2.0,1.0,3.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs KC (home)"
