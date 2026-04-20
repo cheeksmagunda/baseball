@@ -88,12 +88,8 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
 
     # Filter out games that have already started (Live) or finished (Final).
     # Games with NULL game_status are treated as not-yet-started (safe default).
-    # None is not in STARTED_STATUSES, so null-status games pass through.
-    STARTED_STATUSES = {"Live", "Final"}
-    remaining_games = [
-        g for g in slate.games
-        if g.game_status not in STARTED_STATUSES
-    ]
+    from app.core.constants import is_game_remaining
+    remaining_games = [g for g in slate.games if is_game_remaining(g.game_status)]
     remaining_game_ids = {g.id for g in remaining_games}
 
     filtered_count = len(slate.games) - len(remaining_games)

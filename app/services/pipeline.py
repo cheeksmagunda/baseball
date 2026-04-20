@@ -17,7 +17,11 @@ from sqlalchemy.orm import Session, selectinload, joinedload
 
 logger = logging.getLogger(__name__)
 
-from app.core.constants import PITCHER_POSITIONS
+from app.core.constants import (
+    PITCHER_POSITIONS,
+    MIN_GAMES_REPRESENTED,
+    is_game_remaining,
+)
 from app.models.player import Player, PlayerStats, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.models.scoring import PlayerScore, ScoreBreakdown
@@ -246,6 +250,12 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
                 "pipeline data integrity error"
             )
 
+        # Skip players whose game has already started. Belt-and-suspenders:
+        # a prior failed pipeline run may have left SlatePlayer rows for
+        # started games in the DB.
+        if not is_game_remaining(game.game_status):
+            continue
+
         is_home = game.home_team == player.team
         park_team = game.home_team
         opp_pitcher_stats = None
@@ -356,6 +366,12 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 f"Player {player.name!r} ({player.team}) has no associated game — "
                 "pipeline data integrity error"
             )
+
+        # Skip players whose game has already started. Belt-and-suspenders:
+        # a prior failed pipeline run may have left SlatePlayer rows for
+        # started games in the DB.
+        if not is_game_remaining(game.game_status):
+            continue
 
         is_home_p = game.home_team == player.team
         park_team = game.home_team
@@ -486,8 +502,24 @@ async def run_full_pipeline(db: Session, game_date: date) -> dict:
     """Full pipeline: fetch schedule → populate rosters → fetch stats → score → rank."""
     fetch_result = await run_fetch(db, game_date)
 
-    # Auto-populate SlatePlayer records from MLB API boxscores
+    # Mid-slate cold-start guard: when the app redeploys after the day's first
+    # pitch, some games are already Live/Final. Every downstream enrichment and
+    # scoring stage filters to is_game_remaining, so surface an explicit,
+    # diagnosable error here if fewer than MIN_GAMES_REPRESENTED games remain.
+    # Otherwise the failure would surface as a cryptic ValueError deep inside
+    # _enforce_composition during the filter strategy run.
     slate = db.query(Slate).filter_by(date=game_date).first()
+    if slate:
+        all_games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+        remaining = [g for g in all_games if is_game_remaining(g.game_status)]
+        if len(remaining) < MIN_GAMES_REPRESENTED:
+            raise RuntimeError(
+                f"Insufficient remaining games ({len(remaining)} of {len(all_games)}) "
+                f"for {game_date} — T-65 aborted. Slate already active and too few "
+                "games have yet to start."
+            )
+
+    # Auto-populate SlatePlayer records from MLB API boxscores
     roster_result = {"added": 0, "skipped": 0}
     if slate:
         roster_result = await populate_slate_players(db, slate)

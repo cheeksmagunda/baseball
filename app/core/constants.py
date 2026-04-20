@@ -365,6 +365,18 @@ BATTER_ENV_MAX_SCORE = 5.8               # 2.0 (run env soft-cap point) + 2.0 (s
 # ---------------------------------------------------------------------------
 NON_PLAYING_GAME_STATUSES = frozenset({"Postponed", "Cancelled", "Suspended"})
 
+# Games that have already started (in-progress or completed). The T-65
+# pipeline filters these out of every enrichment, scoring, and candidate-pool
+# stage so a mid-slate app redeploy (slate already active) runs cold on the
+# remaining games only — the Odds API does not return lines for started games,
+# so re-enriching them would crash the pipeline.
+STARTED_GAME_STATUSES = frozenset({"Live", "Final"})
+
+
+def is_game_remaining(game_status: str | None) -> bool:
+    """True if the game hasn't started. Null status = safe default (remaining)."""
+    return game_status not in STARTED_GAME_STATUSES
+
 # Scoring engine scaling (K/9 shared between scoring_engine and filter_strategy)
 SCORING_K9_FLOOR = 6.0                # K/9 at or below → 0 pts
 SCORING_K9_CEILING = 12.0             # K/9 at or above → max pts

@@ -221,34 +221,31 @@ Bad data is worse than no data. Operations must restore the system rather than s
 
 ---
 
-### Scenario 8: Post-T-65 Restart — Restore Fails, Candidate Pool Empty
+### Scenario 8: Post-T-65 Restart — Mid-Slate Cold Run on Remaining Games
 
-**Symptom:** App restarts after T-65. Logs show "Startup: frozen picks restored=False". Monitor re-runs pipeline. T-65 monitor crashes with `RuntimeError: "no slate data available — no candidates after filtering"` (or similar). `/api/filter-strategy/optimize` returns HTTP 503.
+**Symptom:** App restarts after the day's first pitch. Logs show "Startup: frozen picks restored=False". Monitor observes `lock_time < now` (full-slate first pitch already elapsed), skips Phase 2 sleep, and runs the pipeline **cold** on whatever games are still in `Preview`. `/api/filter-strategy/optimize` returns 200 with lineups built from only the remaining games, or 503 if too few games remain.
 
-**Root Cause:**
-- `restore_and_refreeze()` returned `False` (Redis down, date mismatch, or cache never written because the original T-65 run also failed)
-- Cache was purged on startup
-- Monitor re-ran the full pipeline
-- `_load_active_slate()` filtered out games already in `Live` or `Final` status — leaving no candidate pool
-- `build_and_cache_lineups()` returned `None` → monitor raised `RuntimeError`
-
-**Why this happens correctly:** This is correct loud failure behavior. The system cannot produce valid picks from a partial game pool mid-slate. The no-fallback rule prohibits serving yesterday's picks or running with a degraded pool.
+**Expected behavior (post-2026-04-20 fix):**
+- `restore_and_refreeze()` returns `False` (Redis down, date mismatch, or cache never written)
+- `_get_first_pitch_utc()` still returns the earliest of ALL games, so `lock_time` is in the past
+- Monitor skips Phase 2 sleep — this is the intended "run cold when slate is already active" trigger
+- `run_full_pipeline()` runs immediately. Every enrichment/scoring/filter stage filters to `is_game_remaining(g.game_status)` via `app/core/constants.is_game_remaining`. Only `fetch_schedule_for_date` still ingests all games so `game_status` stays current.
+- If ≥ `MIN_GAMES_REPRESENTED` (2) games remain, the pipeline succeeds and freezes a fresh lineup built from them
+- If fewer than 2 games remain, `run_full_pipeline` raises `RuntimeError("Insufficient remaining games (N of M) for <date> — T-65 aborted")` and `/optimize` returns 503
 
 **Recovery Steps:**
-1. **Check logs:** Confirm "restored=False" and the specific RuntimeError message
-2. **Check Redis health:** Verify Redis dyno is running on Railway dashboard
-   - If Redis was down: restore Redis (Scenario 3), then restart app
-   - If Redis was healthy but cache was missing: the original T-65 run likely also failed (check earlier logs)
-3. **Accept no picks for this slate:** If games are already Live, no recovery is possible. Users see HTTP 503 for the remainder of the slate.
-4. **Notify users manually:** "System experienced a disruption during T-65; picks unavailable for today's slate."
-5. **Tomorrow:** System will self-reset. Post-lock monitor clears cache on all-final; next-day startup runs the T-65 cycle normally.
+1. **Check logs:** Confirm whether you see `Vegas lines enriched for N of M games` (success path — N < M means started games were correctly filtered) or `Insufficient remaining games` (too few games to build a lineup).
+2. **If cold run succeeded:** No recovery needed. Users see lineups built from remaining games; frozen cache protects them for the rest of the slate.
+3. **If `Insufficient remaining games`:** No recovery is possible for this slate. Most games have already started. Users see HTTP 503 until the slate rolls over.
+4. **If Redis was down:** Restore Redis (Scenario 3). A subsequent restart will either restore from Redis (if the original T-65 run succeeded before Redis went down) or run cold on remaining games.
+5. **Tomorrow:** System self-resets. Post-lock monitor clears cache on all-final; next-day startup runs the full T-65 cycle normally.
 
 **Prevention:**
-- Ensure Redis is healthy at all times (Scenario 3)
+- Keep Railway deploys outside the active-slate window whenever possible. Mid-slate redeploys now produce picks on remaining games automatically, but earlier-in-day deploys give users the full slate.
 - Monitor logs at T-65 for "Cache FROZEN" confirmation
-- If T-65 run fails, fix dependencies and manually restart before games go Live
+- Ensure Redis is healthy so a post-T-65 restart restores the already-frozen payload rather than re-running the pipeline cold
 
-**Impact:** No picks for that slate. System is in correct loud-failure state. No silent degradation, no stale data.
+**Impact:** Best-effort picks from remaining games when redeploying mid-slate. No silent degradation — the pipeline either produces a valid lineup from ≥ 2 remaining games or fails loudly with a diagnosable `Insufficient remaining games` error.
 
 ---
 
@@ -363,4 +360,5 @@ BO_DATABASE_URL=sqlite:///nonexistent/path/db.db
 | 2026-04-15 | 1.0 | Initial runbook. Seven scenarios covered. Monitoring checklist. Testing guide. |
 | 2026-04-17 | 1.1 | Corrected Scenario 6: post-T-65 restart uses `restore_and_refreeze()` (V8.1 Fix 1), not a fresh pipeline run. Added Scenario 8: post-T-65 restore failure with empty candidate pool. |
 | 2026-04-19 | 1.2 | Production audit fixes: corrected `.env` prefix (DFS_ → BO_), marked `BO_ODDS_API_KEY` as REQUIRED in config comment, added `BO_CURRENT_SEASON` to startup monitoring checklist, removed silent weather-parse fallback (`pass` → `logger.warning()`), documented seed re-ingestion workflow in `run_seed()` docstring. |
+| 2026-04-20 | 1.3 | Rewrote Scenario 8: mid-slate redeploys no longer fail by design. The pipeline now filters started games (`is_game_remaining` in `app/core/constants.py`) at every enrichment/scoring stage, so a cold run on remaining games produces valid picks as long as ≥ `MIN_GAMES_REPRESENTED` (2) games remain. If too few games remain, `run_full_pipeline` raises the new `Insufficient remaining games` `RuntimeError`. |
 

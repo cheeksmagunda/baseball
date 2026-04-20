@@ -230,6 +230,21 @@ The app uses an event-driven timing model that triggers the ONLY full pipeline r
 3. **No Generational Drift**: No risk of serving lineups built from different versions of the schedule (e.g., lineup A built at 6:00 PM from 8 games, lineup B built at 6:15 PM from 7 games after a cancellation).
 4. **Testability**: Manual endpoints (`/api/pipeline/*`) exist for post-slate analysis and testing, but are gated and only work after all games finish.
 
+**Mid-slate cold start (app redeploys after the day's first pitch):**
+
+When the app restarts *after* the day's first pitch — e.g. an early afternoon game is already Live when the Railway dyno cycles — the full-slate `first_pitch` timestamp is in the past, so `lock_time = first_pitch − 65 min` is also in the past. The monitor's Phase 2 sleep naturally skips (lock already elapsed) and the pipeline runs **cold, immediately, on the remaining games only**.
+
+Timing logic is unchanged: `_get_first_pitch_utc()` still returns the earliest of ALL games, and `app/main.py`'s startup restore guard still compares `now >= lock_time` against the full-slate first pitch. What changed is that every downstream stage filters to `is_game_remaining(g.game_status)`:
+
+- `fetch_schedule_for_date()` — still ingests ALL games. This is the only stage that sees started games, so `game_status` keeps progressing `Preview → Live → Final` over the day.
+- `populate_slate_players()`, `enrich_slate_game_team_stats()`, `enrich_slate_game_series_context()`, `enrich_slate_game_weather()`, `enrich_slate_game_vegas_lines()` — all filter to `is_game_remaining`. The Odds API does not return lines for started games; unfiltered, this was the crash that surfaced as HTTP 503 on the 2026-04-20 mid-slate redeploy.
+- `run_score_slate()` and `run_filter_strategy_from_slate()` — skip SlatePlayers whose game has started (belt-and-suspenders for stale DB rows from a prior failed run).
+- `run_full_pipeline()` — raises a clean `RuntimeError("Insufficient remaining games (N of M) for <date> — T-65 aborted")` if fewer than `MIN_GAMES_REPRESENTED` (2) games still remain, so the failure is diagnosable rather than surfacing as a cryptic `ValueError` from `_enforce_composition`.
+
+If a Redis-frozen T-65 payload from earlier in the day exists, the standard `restore_and_refreeze` path in `app/main.py` brings those picks back unchanged. The cold pipeline run only fires when no frozen payload can be restored.
+
+One source of truth: `STARTED_GAME_STATUSES = frozenset({"Live", "Final"})` and `is_game_remaining(game_status)` live in `app/core/constants.py`.
+
 **Key Functions:**
 
 - `app.services.slate_monitor.targeted_slate_monitor()` — Main T-65 event loop
@@ -237,6 +252,7 @@ The app uses an event-driven timing model that triggers the ONLY full pipeline r
 - `app.services.slate_monitor._sleep_until()` — Chunked async sleep for responsive cancellation
 - `app.services.lineup_cache.freeze()` — Freeze picks after T-65 run
 - `app.core.utils.is_pipeline_callable_now()` — Gate manual pipeline endpoints
+- `app.core.constants.is_game_remaining()` — Shared filter for started-game exclusion
 
 ## Data Files (`/data/`)
 

@@ -45,7 +45,6 @@ LOCK_MINUTES_BEFORE_PITCH = 65
 POST_LOCK_CHECK_INTERVAL = 60  # seconds
 
 _ET = ZoneInfo("America/New_York")
-_STARTED_STATUSES = {"Live", "Final"}
 
 
 # ---------------------------------------------------------------------------
