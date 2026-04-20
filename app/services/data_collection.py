@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.constants import canonicalize_team
+from app.core.constants import canonicalize_team, NON_PLAYING_GAME_STATUSES
 from app.core.mlb_api import (
     get_schedule,
     get_game_boxscore,
@@ -106,8 +106,13 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
         # e.g. "2026-04-11T23:05:00Z" → "7:05 PM ET"
         scheduled_game_time = _format_game_time_et(game.get("gameDate"))
 
-        # Capture scores from schedule response for completed games
-        game_status = game.get("status", {}).get("abstractGameState", "")
+        # Capture game status. Use detailedState for non-playing games (Postponed,
+        # Cancelled, Suspended) so the post-lock monitor can match them against
+        # NON_PLAYING_GAME_STATUSES. For all other states use abstractGameState
+        # ("Preview" / "Live" / "Final") which is what the rest of the system expects.
+        abstract_state = game.get("status", {}).get("abstractGameState", "")
+        detailed_state = game.get("status", {}).get("detailedState", "")
+        game_status = detailed_state if detailed_state in NON_PLAYING_GAME_STATUSES else abstract_state
         home_score = game.get("teams", {}).get("home", {}).get("score")
         away_score = game.get("teams", {}).get("away", {}).get("score")
 
