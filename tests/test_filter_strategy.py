@@ -29,7 +29,8 @@ from app.services.filter_strategy import (
 from app.services.popularity import PopularityClass, classify_player
 from app.core.constants import (
     REQUIRED_PITCHERS_IN_LINEUP,
-    MAX_PLAYERS_PER_TEAM_BATTERS,
+    MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE,
+    MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT,
     PITCHER_ANCHOR_SLOT,
     SLOT_MULTIPLIERS,
     STACK_BONUS,
@@ -37,6 +38,7 @@ from app.core.constants import (
     DNP_UNKNOWN_PENALTY,
     ENV_UNKNOWN_COUNT_THRESHOLD,
 )
+from app.services.filter_strategy import StackableGame
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +82,30 @@ def _default_slate() -> SlateClassification:
         slate_type=SlateType.STANDARD,
         game_count=10,
         reason="Standard test slate",
+    )
+
+
+def _stack_eligible_slate(favored_team: str, moneyline: int = -220, vegas_total: float = 9.5) -> SlateClassification:
+    """Slate classification where `favored_team` clears the stack-eligibility gate.
+
+    A team is stack-eligible iff its game has moneyline ≤ -200 AND O/U ≥ 9.0.
+    Tests that want stacking to fire must use this helper; without it the
+    default 1-batter-per-team cap applies.
+    """
+    return SlateClassification(
+        slate_type=SlateType.HITTER_DAY,
+        game_count=10,
+        blowout_games=1,
+        high_total_games=1,
+        stackable_games=[
+            StackableGame(
+                game_id=None,
+                favored_team=favored_team,
+                moneyline=moneyline,
+                vegas_total=vegas_total,
+            ),
+        ],
+        reason="stack-eligible test slate",
     )
 
 
@@ -492,8 +518,8 @@ class TestComposition:
         pitcher_count = sum(1 for c in lineup if c.is_pitcher)
         assert pitcher_count == REQUIRED_PITCHERS_IN_LINEUP
 
-    def test_batter_team_cap(self):
-        """V10.0: batter stacking up to MAX_PLAYERS_PER_TEAM_BATTERS is allowed."""
+    def test_default_slate_caps_batters_at_one_per_team(self):
+        """V10.1: with no stack-eligible games, every team is capped at 1 batter."""
         pool = _make_pool()
         for c in pool:
             c.filter_ev = _compute_filter_ev(c)
@@ -501,10 +527,84 @@ class TestComposition:
         from collections import Counter
         batter_team_counts = Counter(c.team for c in lineup if not c.is_pitcher)
         for team, count in batter_team_counts.items():
-            assert count <= MAX_PLAYERS_PER_TEAM_BATTERS
+            assert count <= MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT, (
+                f"{team} has {count} batters on a non-stack-eligible slate"
+            )
+
+    def test_stack_eligible_team_allows_mini_stack(self):
+        """V10.1: a team in a blowout + high-total game may contribute up to 2 batters (mini-stack)."""
+        pool = [
+            _make_candidate(name="SP_0", team="BOS", is_pitcher=True, game_id=1, total_score=80, env_score=0.7),
+            _make_candidate(name="NYY_1", team="NYY", is_pitcher=False, game_id=2, total_score=75, env_score=0.95),
+            _make_candidate(name="NYY_2", team="NYY", is_pitcher=False, game_id=2, total_score=72, env_score=0.93),
+            _make_candidate(name="NYY_3", team="NYY", is_pitcher=False, game_id=2, total_score=70, env_score=0.92),
+            _make_candidate(name="NYY_4", team="NYY", is_pitcher=False, game_id=2, total_score=68, env_score=0.90),
+            _make_candidate(name="LAD_1", team="LAD", is_pitcher=False, game_id=3, total_score=55, env_score=0.6),
+            _make_candidate(name="HOU_1", team="HOU", is_pitcher=False, game_id=4, total_score=50, env_score=0.55),
+        ]
+        for c in pool:
+            c.filter_ev = _compute_filter_ev(c)
+        slate = _stack_eligible_slate(favored_team="NYY")
+        lineup = _enforce_composition(pool, slate)
+        nyy = [c for c in lineup if c.team == "NYY"]
+        assert len(nyy) == 2, f"NYY mini-stack should fill 2 on eligible day, got {len(nyy)}"
+
+    def test_per_game_cap_two(self):
+        """V10.1: never more than 2 batters from the same game, even across teams."""
+        pool = [
+            _make_candidate(name="SP_0", team="CHC", is_pitcher=True, game_id=99, total_score=80, env_score=0.7),
+            # Two NYY + two BOS batters all from the same game (game_id=2)
+            _make_candidate(name="NYY_1", team="NYY", is_pitcher=False, game_id=2, total_score=75, env_score=0.95),
+            _make_candidate(name="NYY_2", team="NYY", is_pitcher=False, game_id=2, total_score=74, env_score=0.94),
+            _make_candidate(name="BOS_1", team="BOS", is_pitcher=False, game_id=2, total_score=73, env_score=0.93),
+            _make_candidate(name="BOS_2", team="BOS", is_pitcher=False, game_id=2, total_score=72, env_score=0.92),
+            # Fallback picks from other games
+            _make_candidate(name="LAD_1", team="LAD", is_pitcher=False, game_id=3, total_score=55, env_score=0.6),
+            _make_candidate(name="HOU_1", team="HOU", is_pitcher=False, game_id=4, total_score=50, env_score=0.55),
+        ]
+        for c in pool:
+            c.filter_ev = _compute_filter_ev(c)
+        # Both NYY and BOS are "stack-eligible" here so per-team is 2 for each.
+        # The per-game cap must prevent all four game_id=2 picks from being drafted.
+        slate = SlateClassification(
+            slate_type=SlateType.HITTER_DAY,
+            game_count=10,
+            blowout_games=2,
+            high_total_games=2,
+            stackable_games=[
+                StackableGame(game_id=2, favored_team="NYY", moneyline=-210, vegas_total=10.5),
+                StackableGame(game_id=2, favored_team="BOS", moneyline=-210, vegas_total=10.5),
+            ],
+            reason="two-team stack-eligible",
+        )
+        lineup = _enforce_composition(pool, slate)
+        from collections import Counter
+        game_counts = Counter(c.game_id for c in lineup if not c.is_pitcher)
+        assert all(v <= 2 for v in game_counts.values()), f"Per-game cap violated: {game_counts}"
+
+    def test_stack_eligible_requires_both_moneyline_and_total(self):
+        """V10.1: moneyline-only favorite (O/U below 9.0) does NOT unlock a stack."""
+        pool = [
+            _make_candidate(name="SP_0", team="BOS", is_pitcher=True, game_id=1, total_score=80, env_score=0.7),
+            _make_candidate(name="NYY_1", team="NYY", is_pitcher=False, game_id=2, total_score=75, env_score=0.95),
+            _make_candidate(name="NYY_2", team="NYY", is_pitcher=False, game_id=2, total_score=72, env_score=0.93),
+            _make_candidate(name="LAD_1", team="LAD", is_pitcher=False, game_id=3, total_score=55, env_score=0.6),
+            _make_candidate(name="HOU_1", team="HOU", is_pitcher=False, game_id=4, total_score=50, env_score=0.55),
+            _make_candidate(name="SF_1", team="SF", is_pitcher=False, game_id=5, total_score=48, env_score=0.5),
+        ]
+        for c in pool:
+            c.filter_ev = _compute_filter_ev(c)
+        # Blowout ML but low total — should NOT unlock stacking.
+        slate = _stack_eligible_slate(favored_team="NYY", moneyline=-230, vegas_total=7.5)
+        lineup = _enforce_composition(pool, slate)
+        from collections import Counter
+        nyy_count = Counter(c.team for c in lineup if not c.is_pitcher)["NYY"]
+        assert nyy_count <= MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT, (
+            f"Low-O/U game should not unlock NYY stack, got {nyy_count}"
+        )
 
     def test_no_opposing_batter_in_anchor_game(self):
-        """V10.0: the only game-level rule — never draft an opposing batter against our anchor."""
+        """V10.1: the only game-level rule — never draft an opposing batter against our anchor."""
         pool = _make_pool()
         for c in pool:
             c.filter_ev = _compute_filter_ev(c)
@@ -519,9 +619,8 @@ class TestComposition:
                     f"Opposing batter {b.player_name} ({b.team}) in anchor's game"
                 )
 
-    def test_anchor_teammate_allowed(self):
-        """V10.0: stacking batters alongside the anchor (same team, same game) is explicitly permitted."""
-        # Build a pool where the top-EV batter shares the anchor's team.
+    def test_anchor_teammate_allowed_when_stack_eligible(self):
+        """V10.1: anchor + teammate-stack in a stack-eligible game is permitted."""
         pool = [
             _make_candidate(name="SP_0", team="NYY", is_pitcher=True, game_id=1, total_score=80, env_score=0.8),
             _make_candidate(name="Teammate_1", team="NYY", is_pitcher=False, game_id=1, total_score=70, env_score=0.9),
@@ -531,9 +630,10 @@ class TestComposition:
         ]
         for c in pool:
             c.filter_ev = _compute_filter_ev(c)
-        lineup = _enforce_composition(pool, _default_slate())
+        slate = _stack_eligible_slate(favored_team="NYY")
+        lineup = _enforce_composition(pool, slate)
         names = [c.player_name for c in lineup]
-        assert "Teammate_1" in names, "V10.0 should allow anchor teammates in the stack"
+        assert "Teammate_1" in names, "Stack-eligible anchor teammate should be allowed"
 
     def test_no_pitcher_raises(self):
         batters_only = [

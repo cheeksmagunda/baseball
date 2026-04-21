@@ -449,7 +449,6 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             player_name=player.name,
             team=player.team,
             position=player.position,
-            card_boost=sp.card_boost,
             total_score=result.total_score,
             env_score=env_score,
             env_factors=env_factors,
@@ -468,6 +467,15 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
     # Run the filter strategy
     lineup_result = run_filter_strategy(candidates, slate_class)
 
+    # V10.0: card_boost lives on SlatePlayer (storage) — the optimizer does NOT
+    # carry it on FilteredCandidate.  Build a display-only lookup keyed by
+    # (player_name, team) so the response payload can surface it.
+    boost_lookup = {
+        (sp.player.name, sp.player.team): sp.card_boost
+        for sp in slate_players
+        if sp.player is not None
+    }
+
     return {
         "date": game_date.isoformat(),
         "slate_type": slate_class.slate_type.value,
@@ -482,7 +490,9 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 "player": s.candidate.player_name,
                 "team": s.candidate.team,
                 "position": s.candidate.position,
-                "boost": s.candidate.card_boost,
+                "boost": boost_lookup.get(
+                    (s.candidate.player_name, s.candidate.team), 0.0
+                ),
                 "score": s.candidate.total_score,
                 "env_score": round(s.candidate.env_score, 3),
                 "env_factors": s.candidate.env_factors,

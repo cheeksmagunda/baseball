@@ -39,14 +39,16 @@ See CLAUDE.md § "T-65 Sniper Architecture" for complete timing details.
 
 1. **Collect** (`app/services/data_collection.py`) — Fetch fresh MLB schedule, player stats, game context, Vegas lines
 2. **Score** (`app/services/scoring_engine.py`) — Rate each player 0-100 via trait-based profiling (pitchers: 5 traits, batters: 7 traits)
-3. **Filter** (`app/services/filter_strategy.py`) — Apply V9.0 strategy: exclude FADE players, score env/trait EV, enforce composition rules
+3. **Filter** (`app/services/filter_strategy.py`) — Apply V10.1 strategy: exclude FADE players, score env/trait EV (with Statcast kinematics), enforce composition rules with conditional stacking
 4. **Optimize** (`app/routers/filter_strategy.py` → `run_dual_filter_strategy`) — Produce Starting 5 + Moonshot lineups, freeze in cache
 
 The primary optimization path is `filter_strategy`. The `/api/pipeline/*` manual endpoints exist for post-slate testing only and are gated to prevent mid-slate interference.
 
 ### Philosophy
 
-It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and season-level traits (trait_factor), then excludes high-media-attention players (FADE gate) before selecting the lineup. **Historical stats are reference data only — they never feed the live scoring pipeline directly.**
+It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor), then excludes high-media-attention players (FADE gate) before selecting the lineup. **Historical stats are reference data only — they never feed the live scoring pipeline directly.**
+
+Stacking (multiple batters from the same team) is powerful but correlated. V10.1 only unlocks a **mini-stack** (cap 2 per team, cap 2 per game) when a team plays in a game with BOTH `moneyline ≤ -200` AND `vegas_total ≥ 9.0` — see `is_stack_eligible_game()` in `app/core/constants.py`. Every other team is capped at one batter per lineup.
 
 ## Scoring Engine
 
@@ -54,7 +56,7 @@ It's not a machine learning model — it's a **rule-based scoring engine** backe
 | Trait | Default Weight | What It Measures |
 |---|---|---|
 | ace_status | 25 | ERA-based rotation rank proxy |
-| k_rate | 25 | K/9 strikeout rate |
+| k_rate | 25 | **Statcast (FB velo / IVB / extension / whiff% / chase% — 70% weight) + K/9 (30%)** |
 | matchup_quality | 20 | Opponent offensive weakness |
 | recent_form | 15 | Last 3 starts quality |
 | era_whip | 15 | Combined ERA + WHIP |
@@ -62,17 +64,19 @@ It's not a machine learning model — it's a **rule-based scoring engine** backe
 ### Batter Traits (7 traits, 0-100 total)
 | Trait | Default Weight | What It Measures |
 |---|---|---|
-| power_profile | 25 | HR rate, barrel%, ISO |
+| power_profile | 25 | **avg EV (8 pts) / hard-hit% (7) / barrel% (6) / max EV (2) / HR/PA (2)** |
 | matchup_quality | 20 | Opposing pitcher weakness |
-| lineup_position | 15 | Batting order (2-4 = best) |
+| lineup_position | 15 | Batting order (slots 1-4 = equal max) |
 | recent_form | 15 | Last 7 games production |
 | ballpark_factor | 10 | Home park HR factor |
 | hot_streak | 10 | Multi-hit games in last 3 |
 | speed_component | 5 | Stolen base pace |
 
-The scoring engine outputs a **0-100 ranking signal**, not an RS prediction. We don't pretend to know Real Score — we rank players by pre-game indicators and let the optimizer do the rest.
+The scoring engine outputs a **0-100 ranking signal**, not an RS prediction.
 
-**Important:** `card_boost` is revealed during/after the draft and must NEVER be used as a scoring engine input. League-average defaults (ERA, WHIP, OPS, K%) and all scaling thresholds are centralized in `app/core/constants.py`. Env-score functions use shared `graduated_scale()` helpers in `app/core/utils.py`.
+**Statcast kinematics** (exit velocity, barrel %, hard-hit %, FB velocity, induced vertical break, extension, whiff %, chase %) are fetched from Baseball Savant via `pybaseball` — see `app/core/statcast.py`. When no Savant row exists yet (new call-ups pre-50 BBE), the engine transparently falls back to the non-Statcast path.
+
+**Important:** `card_boost` is revealed during/after the draft and is **structurally absent from `FilteredCandidate`** — the optimizer cannot read it even by accident. League-average defaults (ERA, WHIP, OPS, K%) and all scaling thresholds are centralized in `app/core/constants.py`. Env-score functions use shared `graduated_scale()` helpers in `app/core/utils.py`.
 
 ## Popularity Signal Aggregator (Pre-Game Signals Only)
 

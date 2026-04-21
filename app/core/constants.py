@@ -97,14 +97,57 @@ BLOWOUT_MIN_GAMES_FOR_STACK_DAY = 1  # 1+ blowout game → stack day eligible
 
 ENV_PASS_THRESHOLD = 0.5           # env_score >= 0.5 = passes environmental filter
 
-# V10.0 stacking architecture — restored after V8/V9 over-diversification broke
-# the mathematical cascade (pitcher shuts down opposing offense → teammates
-# cash the run/RBI bonuses).  The strategy document's winning lineups are
-# consistently full 4-batter team stacks or split 3+2 stacks.  The optimizer
-# must allow this; game/team caps only exist to avoid degenerate 5-of-5 stacks
-# and pitcher/opposing-batter negative correlation.
-MAX_PLAYERS_PER_TEAM_BATTERS = 4 # 4-batter team stack permitted (whole lineup outside SP slot)
+# V10.1 conservative stacking architecture.
+#
+# Stacking is powerful (pitcher shuts down opposing offense → teammates cash
+# the run/RBI bonuses) but it is also correlated — when the favorite loses,
+# an oversized stack crashes the whole lineup.  The strategy doc only
+# recommends stacks when the game script is overwhelmingly favorable, and
+# even then a MINI-stack (two teammates) captures most of the correlation
+# edge without the correlated-downside tail.
+#
+# Two gates must BOTH be satisfied for a team to be stack-eligible
+# (see is_stack_eligible_game() below):
+#
+#   1. Blowout favorite     — moneyline ≤ STACK_ELIGIBILITY_MONEYLINE
+#   2. High run environment — Vegas O/U  ≥ STACK_ELIGIBILITY_VEGAS_TOTAL
+#
+# Only teams on the favored side of a game satisfying BOTH gates may provide
+# more than one batter to a lineup.  All other teams fall back to the
+# one-batter-per-team default.  A heavy favorite in a low-scoring pitcher's
+# duel (-220 with O/U 7.0) is NOT stack-eligible.
+STACK_ELIGIBILITY_MONEYLINE = -200     # favorite threshold (reuses BLOWOUT_MONEYLINE)
+STACK_ELIGIBILITY_VEGAS_TOTAL = 9.0    # min O/U for stacks to fire
+
+# Caps applied downstream of the stack-eligibility gate.  MAX=2 is the
+# deliberate mini-stack ceiling — never more than two teammates in a
+# lineup, regardless of how overwhelming the game script is.
+MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE = 2  # 2-batter mini-stack on eligible teams
+MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT = 1    # every other team: one batter per lineup
+
+# Independent per-game cap: even across opposing teams, never more than two
+# batters from the same game.  Combined with the "no opposing batter in the
+# anchor's game" rule this means: the anchor's game may contribute at most
+# two batters (the anchor's teammates); every other game may contribute at
+# most two batters (from the same team, since mixing sides in a non-anchor
+# game is naturally allowed but capped here).
+MAX_PLAYERS_PER_GAME_BATTERS = 2
+
 MIN_GAMES_REPRESENTED = 2        # pipeline-level data-sufficiency guard (not a lineup rule)
+
+
+def is_stack_eligible_game(
+    moneyline: int | None, vegas_total: float | None
+) -> bool:
+    """True if a game meets BOTH the moneyline and O/U thresholds for stacking.
+
+    Evaluated on the favored side only — the caller is responsible for
+    identifying which team is the favorite.  Unknown fields return False
+    (no fallback; absence of signal is treated as absence of stack license).
+    """
+    if moneyline is None or vegas_total is None:
+        return False
+    return moneyline <= STACK_ELIGIBILITY_MONEYLINE and vegas_total >= STACK_ELIGIBILITY_VEGAS_TOTAL
 
 # Environmental filter thresholds (Filter 2)
 # Pitcher environmental pass conditions

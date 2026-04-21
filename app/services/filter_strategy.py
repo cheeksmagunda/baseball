@@ -1,23 +1,27 @@
 """
-Filter Strategy V9.0: "Filter, Not Forecast" — the five-filter pipeline.
+Filter Strategy V10.1: "Filter, Not Forecast" + conditional stacking.
 
 This is the core strategic engine from the Master Strategy Document.
 We do NOT predict RS. We identify conditions under which high RS is
 most likely to emerge, then select from that filtered pool.
 
 Five filters applied sequentially:
-  1. Slate Architecture    — classify the day type (informational only)
+  1. Slate Architecture    — classify the day type + identify blowout/high-total
+                             games that unlock stacking for their favored team.
   2. Popularity gate       — FADE players (high pre-game media attention) are
                              excluded from the candidate pool.  TARGET/NEUTRAL
                              pass with no bonus.  No RS data involved.
   3. Environmental Advantage — PRIMARY signal: game conditions (Vegas O/U,
                              opposing ERA, bullpen ERA, park, weather, platoon,
                              batting order, moneyline). Groups A/B/C/D.
-  4. Individual Explosive Traits — SECONDARY: K/9, ISO, barrel%, speed, form.
-  5. Slot Sequencing (Pitcher-Anchor) — 1 SP pinned to Slot 1 (2.0×);
-                             4 batters fill Slots 2–5 by filter_ev.
+  4. Individual Explosive Traits — SECONDARY: Statcast kinematics (FB velo/IVB/
+                             extension/whiff/chase for SP; avg EV/hard-hit%/
+                             barrel% for batters) + K/9 / HR/PA fallback.
+  5. Slot Sequencing (Pitcher-Anchor + conditional stacks) — 1 SP pinned to
+                             Slot 1 (2.0×); 4 batters fill Slots 2–5 honouring
+                             per-team caps that vary by stack eligibility.
 
-EV formula (V9.0):
+EV formula (V10.1 — unchanged from V9.0 at this layer):
     base_ev = env_factor × trait_factor × stack_bonus × dnp_adj × 100
 
     Starting 5:  base_ev (pure env + trait ranking)
@@ -25,6 +29,11 @@ EV formula (V9.0):
                  sharp_bonus    — underground Reddit/FanGraphs analyst buzz (+35% max)
                  explosive_bonus — power_profile / k_rate upside (+20% max)
 
+Stacking (V10.1):
+    A team contributes more than one batter ONLY if its game clears both
+    is_stack_eligible_game() gates (ML ≤ -200 AND O/U ≥ 9.0).  Every other
+    team is capped at one batter per lineup.  See _compute_stack_eligible_teams
+    and _team_batter_cap below.
 """
 
 from __future__ import annotations
@@ -50,7 +59,10 @@ from app.core.constants import (
     MOONSHOT_EXPLOSIVE_BONUS_MAX,
     REQUIRED_PITCHERS_IN_LINEUP,
     PITCHER_ANCHOR_SLOT,
-    MAX_PLAYERS_PER_TEAM_BATTERS,
+    MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE,
+    MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT,
+    MAX_PLAYERS_PER_GAME_BATTERS,
+    is_stack_eligible_game,
     STACK_BONUS,
     DNP_RISK_PENALTY,
     DNP_UNKNOWN_PENALTY,
@@ -738,27 +750,56 @@ def _compute_filter_ev(candidate: FilteredCandidate) -> float:
     return _compute_base_ev(candidate)
 
 
+def _compute_stack_eligible_teams(slate_class: SlateClassification) -> set[str]:
+    """Return the set of team abbreviations allowed to contribute a stack today.
+
+    A team is stack-eligible only if its game satisfies BOTH the blowout
+    moneyline gate AND the high-total Vegas O/U gate (see is_stack_eligible_game
+    in app/core/constants.py).  Only teams on the favored side of qualifying
+    games are returned; every other team falls back to 1-batter-per-team in
+    the composition phase.
+    """
+    eligible: set[str] = set()
+    for sg in slate_class.stackable_games:
+        if is_stack_eligible_game(sg.moneyline, sg.vegas_total) and sg.favored_team:
+            eligible.add(sg.favored_team.upper())
+    return eligible
+
+
+def _team_batter_cap(team: str, stack_eligible_teams: set[str]) -> int:
+    """Max batters from a given team for today's lineup.
+
+    Conservative default: 1 batter per team.  Only teams that cleared the
+    is_stack_eligible_game gate may contribute up to 4.
+    """
+    if team.upper() in stack_eligible_teams:
+        return MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE
+    return MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT
+
+
 def _enforce_composition(
     candidates: list[FilteredCandidate],
     slate_class: SlateClassification,
 ) -> list[FilteredCandidate]:
     """
-    V10.0 pitcher-anchored composition: 1 pitcher + 4 batters, STACKING ENABLED.
+    V10.1 pitcher-anchored composition: 1 pitcher + 4 batters, MINI-STACK.
 
-    Composition is fixed at 1 SP (Slot 1) + 4 batters (Slots 2-5).  Unlike
-    V8/V9, batters may now stack — up to 4 teammates in the batter slots —
-    because the strategy document's winning lineups consistently deploy full
-    4-man team stacks or 3+2 split stacks to capture correlated scoring events
-    (R → RBI → HR cascades).
+    Composition is fixed at 1 SP (Slot 1) + 4 batters (Slots 2-5).  Stacking
+    is gated on overwhelming game-script evidence — a team must be in a game
+    with moneyline ≤ -200 AND O/U ≥ 9.0 for its batters to be eligible as a
+    mini-stack (max 2 teammates).  Every other team is capped at one batter
+    per lineup, preserving diversification on normal slates.
 
     Construction:
-    1. Select highest-EV pitcher as anchor. Pin to Slot 1.
-    2. NEVER draft a batter from the opposing side of the anchor's game
+    1. Compute stack-eligible teams from slate_class.stackable_games.
+    2. Select highest-EV pitcher as anchor. Pin to Slot 1.
+    3. NEVER draft a batter from the opposing side of the anchor's game
        (pitcher ↔ hitter negative correlation).  Teammates of the anchor
-       are allowed because SP success implies low opposing offense but says
-       nothing adverse about his own team's hitting.
-    3. Fill 4 batter slots by filter_ev descending, allowing stacks up to
-       MAX_PLAYERS_PER_TEAM_BATTERS.
+       are allowed because SP success implies low opposing offense.
+    4. Fill 4 batter slots by filter_ev descending, applying BOTH caps:
+       per-team  — 2 for stackable teams, 1 otherwise
+       per-game  — at most 2 batters from any single game (even across
+                   teams, for non-anchor games with mixed-side picks).
     """
     all_sorted = sorted(candidates, key=lambda c: c.filter_ev, reverse=True)
 
@@ -773,13 +814,18 @@ def _enforce_composition(
     anchor_game_id = anchor_pitcher.game_id
     anchor_team = anchor_pitcher.team.upper()
 
+    stack_eligible_teams = _compute_stack_eligible_teams(slate_class)
+
     # Phase 2: Batters ordered by filter_ev (env×trait ranking).
     ordered_batters = [c for c in all_sorted if not c.is_pitcher]
 
-    # Phase 3: Fill 4 batter slots. Stacking allowed; only hard rule is
-    # "never a batter from the opposing side of the anchor's game".
+    # Phase 3: Fill 4 batter slots.  Stacking permitted only for teams the
+    # game-script gate qualified (cap 2); every other team caps at 1.
+    # Independent per-game cap (2) prevents mixing two-per-team picks into
+    # a four-batter same-game clump.
     lineup: list[FilteredCandidate] = [anchor_pitcher]
     team_batter_count: dict[str, int] = {}
+    game_batter_count: dict[int | str, int] = {}
 
     for c in ordered_batters:
         if len(lineup) == 5:
@@ -792,20 +838,28 @@ def _enforce_composition(
         if anchor_game_id is not None and c.game_id == anchor_game_id and team_key != anchor_team:
             continue
 
-        if team_batter_count.get(team_key, 0) >= MAX_PLAYERS_PER_TEAM_BATTERS:
+        cap = _team_batter_cap(team_key, stack_eligible_teams)
+        if team_batter_count.get(team_key, 0) >= cap:
+            continue
+
+        if c.game_id is not None and game_batter_count.get(c.game_id, 0) >= MAX_PLAYERS_PER_GAME_BATTERS:
             continue
 
         team_batter_count[team_key] = team_batter_count.get(team_key, 0) + 1
+        if c.game_id is not None:
+            game_batter_count[c.game_id] = game_batter_count.get(c.game_id, 0) + 1
         lineup.append(c)
 
     lineup = _validate_lineup_structure(
-        lineup, ordered_batters, anchor_pitcher=anchor_pitcher
+        lineup, ordered_batters, anchor_pitcher=anchor_pitcher,
+        stack_eligible_teams=stack_eligible_teams,
     )
     batter_count = len(lineup) - 1
-    stack_teams = [t for t, n in team_batter_count.items() if n >= 3]
+    stack_teams = [t for t, n in team_batter_count.items() if n >= 2]
     logger.info(
-        "V10.0 composition: 1P/%dH — anchor=%s (EV=%.2f) stacks=%s (candidates: %d)",
+        "V10.1 composition: 1P/%dH — anchor=%s (EV=%.2f) stack_eligible=%s mini_stacks_used=%s (candidates: %d)",
         batter_count, anchor_pitcher.player_name, anchor_pitcher.filter_ev,
+        sorted(stack_eligible_teams) or "none",
         stack_teams or "none", len(candidates),
     )
     return lineup
@@ -815,21 +869,24 @@ def _validate_lineup_structure(
     lineup: list[FilteredCandidate],
     all_candidates_sorted: list[FilteredCandidate],
     anchor_pitcher: FilteredCandidate | None = None,
+    stack_eligible_teams: set[str] | None = None,
 ) -> list[FilteredCandidate]:
-    """V10.0 validation — enforces:
+    """V10.1 validation — enforces:
 
       1. Exactly 1 pitcher (anchor).
       2. No batter from the opposing side of the anchor's game.
-      3. No more than MAX_PLAYERS_PER_TEAM_BATTERS batters from any single team.
+      3. Per-team batter cap: stack-eligible teams allow up to 2, all others 1.
+      4. Per-game batter cap: at most 2 batters from any single game.
 
-    Batter stacking up to the team-batter cap is permitted and encouraged;
-    anchor-teammate batters are explicitly allowed.
+    Anchor-teammate batters are explicitly allowed (within caps).  The only
+    absolute game-level prohibition is opposing batters against our own SP.
     """
     if len(lineup) < 5:
         return lineup
 
     anchor_team = anchor_pitcher.team.upper() if anchor_pitcher else None
     anchor_game = anchor_pitcher.game_id if anchor_pitcher else None
+    stack_eligible_teams = stack_eligible_teams or set()
 
     anchor_idx: int | None = None
     if anchor_pitcher is not None:
@@ -870,13 +927,18 @@ def _validate_lineup_structure(
                     removed_name, anchor_pitcher.player_name, replacement.player_name,
                 )
 
-    # Rule 2: Max batters-per-team.
+    # Rule 2: Per-team batter cap — conservative default 1, lifts to 2
+    # only for teams that cleared the is_stack_eligible_game gate.
     def _batter_team_counts(current):
         return Counter(c.team for c in current if not c.is_pitcher)
 
+    def _batter_game_counts(current):
+        return Counter(c.game_id for c in current if not c.is_pitcher and c.game_id is not None)
+
     batter_counts = _batter_team_counts(lineup)
     for team, count in batter_counts.items():
-        if count > MAX_PLAYERS_PER_TEAM_BATTERS:
+        team_cap = _team_batter_cap(team, stack_eligible_teams)
+        if count > team_cap:
             team_indices = sorted(
                 [i for i, c in enumerate(lineup)
                  if not _protected(i) and c.team == team],
@@ -884,14 +946,19 @@ def _validate_lineup_structure(
                 reverse=True,
             )
             lineup_names = {c.player_name for c in lineup}
-            for idx in team_indices[MAX_PLAYERS_PER_TEAM_BATTERS:]:
+            for idx in team_indices[team_cap:]:
                 current_counts = _batter_team_counts(lineup)
+                current_game_counts = _batter_game_counts(lineup)
                 replacement = next(
                     (c for c in all_candidates_sorted
                      if c.player_name not in lineup_names
                      and not c.is_pitcher
                      and not (c.game_id == anchor_game and c.team.upper() != anchor_team)
-                     and current_counts.get(c.team, 0) < MAX_PLAYERS_PER_TEAM_BATTERS),
+                     and current_counts.get(c.team, 0)
+                         < _team_batter_cap(c.team, stack_eligible_teams)
+                     and (c.game_id is None
+                          or current_game_counts.get(c.game_id, 0)
+                              < MAX_PLAYERS_PER_GAME_BATTERS)),
                     None,
                 )
                 if replacement:
@@ -900,12 +967,51 @@ def _validate_lineup_structure(
                     lineup[idx] = replacement
                     lineup_names.add(replacement.player_name)
                     logger.info(
-                        "Batter-team cap: replaced %s (%s) with %s (%s)",
-                        removed_name, team,
+                        "Batter-team cap (%d): replaced %s (%s) with %s (%s)",
+                        team_cap, removed_name, team,
                         replacement.player_name, replacement.team,
                     )
 
-    # Rule 3: Exactly 1 pitcher.
+    # Rule 3: Per-game batter cap — at most 2 batters from any one game.
+    # Catches the mixed-side case: 2 batters from team A + 2 from team B
+    # in the same game would be 4-per-game despite each team being capped at 2.
+    game_counts = _batter_game_counts(lineup)
+    for game_id, count in game_counts.items():
+        if count > MAX_PLAYERS_PER_GAME_BATTERS:
+            game_indices = sorted(
+                [i for i, c in enumerate(lineup)
+                 if not _protected(i) and c.game_id == game_id],
+                key=lambda i: lineup[i].filter_ev,
+                reverse=True,
+            )
+            lineup_names = {c.player_name for c in lineup}
+            for idx in game_indices[MAX_PLAYERS_PER_GAME_BATTERS:]:
+                current_team_counts = _batter_team_counts(lineup)
+                current_game_counts = _batter_game_counts(lineup)
+                replacement = next(
+                    (c for c in all_candidates_sorted
+                     if c.player_name not in lineup_names
+                     and not c.is_pitcher
+                     and not (c.game_id == anchor_game and c.team.upper() != anchor_team)
+                     and current_team_counts.get(c.team, 0)
+                         < _team_batter_cap(c.team, stack_eligible_teams)
+                     and (c.game_id is None
+                          or current_game_counts.get(c.game_id, 0)
+                              < MAX_PLAYERS_PER_GAME_BATTERS)),
+                    None,
+                )
+                if replacement:
+                    removed_name = lineup[idx].player_name
+                    lineup_names.discard(removed_name)
+                    lineup[idx] = replacement
+                    lineup_names.add(replacement.player_name)
+                    logger.info(
+                        "Per-game batter cap (%d): replaced %s (game=%s) with %s (game=%s)",
+                        MAX_PLAYERS_PER_GAME_BATTERS, removed_name, game_id,
+                        replacement.player_name, replacement.game_id,
+                    )
+
+    # Rule 4: Exactly 1 pitcher.
     pitcher_count_final = sum(1 for c in lineup if c.is_pitcher)
     if pitcher_count_final != REQUIRED_PITCHERS_IN_LINEUP:
         logger.warning(

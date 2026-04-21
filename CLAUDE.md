@@ -676,19 +676,26 @@ Web-scraping signal aggregator that estimates crowd media attention. This is NOT
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V10.0 "Stack the Alpha — Statcast Kinematics + Team Correlation"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs and do not exist on `FilteredCandidate`**. FADE players (high pre-game media attention) are **excluded from the candidate pool** before EV computation begins. EV is driven by Statcast pitch physics, exit-velocity kinematics, game conditions, and series context.
+**Strategy Version: V10.1 "Mini-Stack the Alpha — Statcast Kinematics + Game-Script-Gated Correlation"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs and do not exist on `FilteredCandidate`**. FADE players (high pre-game media attention) are **excluded from the candidate pool** before EV computation begins. EV is driven by Statcast pitch physics, exit-velocity kinematics, game conditions, and series context. **Stacking is capped at 2 batters per team AND 2 per game, and only fires on overwhelmingly clear game scripts.**
 
-### V10.0 Structural Changes (April 21)
+### V10.1 Structural Changes (April 21)
 
-V10.0 is a strategic alignment release — previous V8/V9 versions introduced artificial diversification caps that directly contradicted the master strategy document's correlation-stacking principle, and trait scoring was reading `ps.iso` / `ps.barrel_pct` columns the live pipeline never populated. This release fixes both:
+V10.1 keeps the correlation edge of stacking but restricts the blast radius. Two gates must BOTH be satisfied for a team to contribute more than one batter:
 
-1. **Stacking re-enabled.** `MAX_PLAYERS_PER_TEAM_BATTERS = 4` and `MAX_PLAYERS_PER_GAME = 5` — a full four-batter team stack plus the pitcher anchor in a different game is the canonical winning shape. The only hard structural rule is "never a batter from the opposing side of the anchor's game" (negative correlation).
-2. **MOONSHOT_SAME_TEAM_PENALTY deleted.** Moonshot naturally diverges from Starting 5 via `sharp_bonus × explosive_bonus`; artificially penalising stacks was anti-strategy.
-3. **Statcast kinematics wired.** `app/core/statcast.py` pulls season exit-velocity, barrel %, hard-hit %, fastball velocity, induced vertical break, extension, whiff %, and chase % from Baseball Savant via `pybaseball`. These replace the previously-NULL `ps.iso` / `ps.barrel_pct` columns and drive both `score_power_profile` (batters) and `score_pitcher_k_rate` (pitchers).
-4. **Sacramento (ATH) park factor corrected.** Raised from 0.90 (pre-season guess) to 1.09 (observed 2026 Statcast PF of 1.091 — short RF porch).
-5. **Leadoff slot no longer penalised.** `score_lineup_position` gives spots 1-4 equal max points (all top-of-order volume tiers); the strategy doc treats leadoff as equivalent to the 2-3-4 RBI spots for late-inning leverage probability.
-6. **card_boost / drafts removed from `FilteredCandidate`.** They never touched EV in V9.0 but were kept on the dataclass as "display only". V10.0 pulls them off entirely; the router layer reads them straight from the source `FilterCard` for the response payload, so the optimizer is structurally incapable of consuming them.
-7. **`app/services/condition_classifier.py` deleted.** It was unused — only exported entropy/Gini helpers on ownership data.
+- Moneyline ≤ `STACK_ELIGIBILITY_MONEYLINE` (−200) — a genuine blowout favorite
+- Vegas O/U ≥ `STACK_ELIGIBILITY_VEGAS_TOTAL` (9.0) — a high-run game script
+
+Even when the gate is cleared, the per-team cap is **2** (`MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE`) — a mini-stack, never a full 4-man team stack. An independent per-game cap of 2 (`MAX_PLAYERS_PER_GAME_BATTERS`) prevents mixed-side clumps (2 from team A + 2 from team B in the same game). Every other team stays capped at one batter per lineup. `is_stack_eligible_game()` in `app/core/constants.py` is the single source of truth for the gate.
+
+V10.1 preserves all V10.0 structural fixes:
+
+1. **Statcast kinematics wired.** `app/core/statcast.py` pulls season exit-velocity, barrel %, hard-hit %, fastball velocity, induced vertical break, extension, whiff %, and chase % from Baseball Savant via `pybaseball`. These replace the previously-NULL `ps.iso` / `ps.barrel_pct` columns and drive both `score_power_profile` (batters) and `score_pitcher_k_rate` (pitchers).
+2. **Sacramento (ATH) park factor corrected.** Raised from 0.90 (pre-season guess) to 1.09 (observed 2026 Statcast PF of 1.091 — short RF porch).
+3. **Leadoff slot no longer penalised.** `score_lineup_position` gives spots 1-4 equal max points (all top-of-order volume tiers).
+4. **card_boost / drafts removed from `FilteredCandidate`.** The optimizer is structurally incapable of consuming them. The router layer joins them from the source `FilterCard` for display only.
+5. **`app/services/condition_classifier.py` deleted.** Was unused — only exported entropy/Gini helpers on ownership data.
+6. **`MOONSHOT_SAME_TEAM_PENALTY` deleted.** Moonshot naturally diverges from Starting 5 via `sharp_bonus × explosive_bonus`.
+7. **`run_filter_strategy_from_slate` call site fixed** (V10.1 patch) — `pipeline.py` no longer passes `card_boost=` to the `FilteredCandidate` constructor; the display join uses a `(name, team) → card_boost` lookup built from `SlatePlayer`.
 
 ### V10.0 Core Architecture (Popularity Gate + Env/Trait EV + Statcast + Stacking)
 
@@ -717,14 +724,21 @@ moonshot_ev = base_ev × sharp_bonus × explosive_bonus
 - `explosive_bonus`: up to +20% from power_profile (batters) or k_rate (pitchers)
 - Player overlap with Starting 5 is allowed; formula divergence naturally reorders picks. No same-team penalty.
 
-### V10.0 Lineup Composition: 1P + 4B with Stacking
+### V10.1 Lineup Composition: 1P + 4B with Mini-Stack Only
 
-Exactly 1 pitcher + 4 batters. The pitcher anchors Slot 1 (2.0×). Batters may be drawn from up to a full 4-man team stack — this is the strategy document's canonical winning shape.
+Exactly 1 pitcher + 4 batters. The pitcher anchors Slot 1 (2.0×).
+
+**Dual cap system** (both must be satisfied):
+
+| Cap | Value | When |
+|---|---|---|
+| `MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE` | 2 | team is in a stack-eligible game |
+| `MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT` | 1 | every other team |
+| `MAX_PLAYERS_PER_GAME_BATTERS` | 2 | always — per-game hard cap |
 
 Structural constraints:
 - `REQUIRED_PITCHERS_IN_LINEUP = 1` (exactly 1 pitcher per lineup)
-- `MAX_PLAYERS_PER_TEAM_BATTERS = 4` (a full team stack is allowed)
-- `MAX_PLAYERS_PER_GAME = 5` (pitcher + 4 teammates from the same game are allowed)
+- **Stacking gate**: see `is_stack_eligible_game()` in `app/core/constants.py`
 - **Never an opposing batter in the anchor's game** — pitcher ↔ hitter negative correlation
 - Slot 1 = pitcher anchor, Slots 2-5 = batters by filter_ev descending
 
@@ -747,8 +761,9 @@ filter_ev = env_factor                           # PRIMARY: 0.70–1.30 (1.86× 
 card_boost and draft counts **are not present on `FilteredCandidate` at all**. The optimizer is structurally incapable of reading them. The router joins them onto the response from the source `FilterCard` for display only.
 
 Post-EV composition (applied in `_enforce_composition`):
+- **Phase 0:** compute `stack_eligible_teams` from `slate_class.stackable_games` (favored team in a game that cleared BOTH the moneyline AND Vegas-total gates).
 - **Pitcher anchor (Phase 1):** highest-EV pitcher selected, pinned to Slot 1. Only opposing batters in his game are blocked from batter picks.
-- **Batter fill (Phase 2):** top-4 batters by filter_ev, honouring MAX_PLAYERS_PER_TEAM_BATTERS=4. Stacking up to four teammates is the expected winning shape.
+- **Batter fill (Phase 2):** top-4 batters by filter_ev. Teams in `stack_eligible_teams` may contribute up to 2 batters (mini-stack); every other team is capped at 1. Independent per-game cap of 2 prevents mixed-side clumps. Stacking therefore fires only on overwhelmingly clear game scripts AND is size-limited to mini-stacks.
 
 ### V8.0 Changes (April 14 — Popularity-First Signal Hierarchy & Env Refinements)
 
@@ -854,15 +869,17 @@ Post-EV composition (applied in `_enforce_composition`):
 
 Versions V2.2 through V3.4 explored graduated penalty mechanics (env/score), probabilistic ownership tiers, dynamic pitcher capping, and within-tier differentiation via condition matrices. Key research directions: (1) Bayesian smoothing replaced binary DEAD_CAPITAL floors (Beta-Binomial prior: 0/8 obs → 0.10 floor vs 0.0). (2) Bifurcated DNP handling (unknown=0.85, confirmed=0.70, ghost_unknown=0.92) accounted for data sparsity. (3) Percentile-based ownership tiers (empirical CDF) replaced absolute draft thresholds. (4) Dynamic pitcher caps flexed between 1–3 based on boosted-pool size and ghost tier presence. (5) Three-tier lineup construction (auto/soft_auto/rest), correlation bonuses (+10–20% EV on ghost teammates), and draft-scarcity tiebreakers (+10% EV for < 5 drafts) differentiated within ownership tiers. (6) Pitcher-specific FADE moderation (15% haircut vs 25% for batters) recognized that pitchers control their own outcomes. April 11 empirical analysis (Suarez/Sheehan/Bassitt chalk+3x dominance vs ghost+max_boost busts) revealed that dynamic pitcher capping was insufficient — the interaction between boost tier, pitcher pool richness, and playoff-style spot bias required structural redesign. All graduated-penalty functions (`_graduated_env_penalty()`, `_graduated_score_penalty()`, `_apply_ghost_boost_ev_floor()`) and condition-matrix-dependent logic (Bayesian floors, percentile tiers, three-tier fill order) are superseded by V9.0's simplified FADE-gate + env/trait EV architecture. These versions remain instructive for understanding how information asymmetry (crowd vs real outcomes) drove repeated pivots.
 
-### Lineup Construction (V10.0 — Pitcher-Anchor + Stacking)
-Every lineup is **exactly 1 SP + 4 batters**. Stacking (up to 4 teammates in the batter slots) is the expected winning shape — see strategy doc §"Constructing the Optimal Draft".
+### Lineup Construction (V10.1 — Pitcher-Anchor + Game-Script-Gated Mini-Stack)
+Every lineup is **exactly 1 SP + 4 batters**. Stacking is conditional AND size-limited — it only fires when a team plays in a game that cleared both gates of `is_stack_eligible_game` (moneyline ≤ −200 AND O/U ≥ 9.0), and even then is capped at 2 teammates.
 
-1. **Pitcher anchor (Phase 1)**: pick the highest-EV pitcher (by pre-game EV: Statcast FB velo/IVB/extension/whiff/chase + opponent K%/OPS + park + home + moneyline). Pin to Slot 1 (`PITCHER_ANCHOR_SLOT = 1`, 2.0× multiplier). Block **only opposing batters in his game** (pitcher ↔ hitter negative correlation). Teammates of the anchor are allowed.
-2. **Fill 4 batter slots (Phase 2)**: fill from batters sorted by filter_ev descending, honouring `MAX_PLAYERS_PER_TEAM_BATTERS = 4` (full team stack allowed).
-3. **No-fallback rule**: if the pool contains no pitcher, raise `ValueError` — do not substitute.
+1. **Stack-eligibility (Phase 0)**: compute the set of teams whose game satisfies both gates, from `slate_class.stackable_games`.
+2. **Pitcher anchor (Phase 1)**: pick the highest-EV pitcher (by pre-game EV: Statcast FB velo/IVB/extension/whiff/chase + opponent K%/OPS + park + home + moneyline). Pin to Slot 1 (`PITCHER_ANCHOR_SLOT = 1`, 2.0× multiplier). Block **only opposing batters in his game** (pitcher ↔ hitter negative correlation). Teammates of the anchor are allowed (within caps).
+3. **Fill 4 batter slots (Phase 2)**: fill from batters sorted by filter_ev descending. Per-team batter cap is `MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE` (2) for stack-eligible teams, `MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT` (1) for all others. Independent per-game cap is `MAX_PLAYERS_PER_GAME_BATTERS` (2).
+4. **No-fallback rule**: if the pool contains no pitcher, raise `ValueError` — do not substitute.
 
-### Lineup Validation (V10.0)
-- **Max 4 batters per team** per individual lineup (the whole batter half of the lineup may stack)
+### Lineup Validation (V10.1)
+- **Per-team batter cap varies** — 2 for stack-eligible teams, 1 for all others
+- **Per-game batter cap always 2** — prevents mixed-side 4-batter clumps
 - **No opposing batter in the anchor's game** — anti-correlation guard
 - **Exactly 1 pitcher** (`REQUIRED_PITCHERS_IN_LINEUP = 1`) — enforced by final assertion in `_validate_lineup_structure`
 
@@ -870,8 +887,8 @@ Every lineup is **exactly 1 SP + 4 batters**. Stacking (up to 4 teammates in the
 - Classification exists for blowout detection and display only
 - **No slate type forces pitcher/hitter counts.**
 
-**Moonshot** — V10.0: draws from the same FADE-excluded pool as Starting 5. Player overlap is allowed.
-- Same structural shape: **1 SP anchor in Slot 1 + 4 batters in Slots 2–5** with stacking allowed
+**Moonshot** — V10.1: draws from the same FADE-excluded pool as Starting 5. Player overlap is allowed.
+- Same structural shape: **1 SP anchor in Slot 1 + 4 batters in Slots 2–5** with the same conditional stacking gate
 - Only the anchor's opposing game-side is blocked from batter picks
 - **No contrarian multipliers** — FADE players excluded at the gate, not penalised in EV
 - Sharp signal bonus: up to +35% EV from underground analyst buzz (Reddit, FanGraphs, Prospects Live)
@@ -879,15 +896,17 @@ Every lineup is **exactly 1 SP + 4 batters**. Stacking (up to 4 teammates in the
 - Natural formula divergence (sharp × explosive re-ranks candidates differently from env × trait alone)
 
 **Key functions (filter_strategy.py):**
-- `run_filter_strategy()` — Starting 5 (V10.0: env/trait EV, pitcher-anchor, stacking)
+- `run_filter_strategy()` — Starting 5 (V10.1: env/trait EV, pitcher-anchor, gated stacking)
 - `run_dual_filter_strategy()` — One call, two lineups from same FADE-excluded pool
 - `_exclude_fade_players()` — Hard gate: removes FADE candidates before EV, raises ValueError if no pitchers remain
 - `_compute_base_ev()` — Shared formula: env × trait × context × 100
 - `_compute_filter_ev()` — Starting 5 EV (delegates to `_compute_base_ev`)
 - `_compute_moonshot_filter_ev()` — Moonshot EV (delegates to `_compute_base_ev` + sharp/explosive bonuses)
 - `_compute_dnp_adjustment()` — Bifurcated DNP risk (unknown=0.85, confirmed_bad=0.70)
-- `_enforce_composition()` — Phase 1 picks highest-EV pitcher; Phase 2 fills 4 batters by filter_ev with batter-team cap. Raises `ValueError` if pool has no pitcher.
-- `_validate_lineup_structure()` — Enforces batter-team cap; blocks opposing batters in anchor's game; final pitcher-count assertion.
+- `_compute_stack_eligible_teams()` — Returns the set of team abbreviations whose game clears the moneyline AND Vegas-total stacking gate
+- `_team_batter_cap()` — Returns the per-team batter cap (4 for stack-eligible, 1 otherwise)
+- `_enforce_composition()` — Phase 1 picks highest-EV pitcher; Phase 2 fills 4 batters with conditional per-team caps. Raises `ValueError` if pool has no pitcher.
+- `_validate_lineup_structure()` — Enforces per-team batter cap using `stack_eligible_teams`; blocks opposing batters in anchor's game; final pitcher-count assertion.
 - `_smart_slot_assignment()` — Pitcher → Slot 1; batters → Slots 2-5 by filter_ev descending.
 
 **Key functions (services/candidate_resolver.py):**
@@ -968,12 +987,12 @@ Not multiplicative. Proven from historical data. This means:
 - Speed upside: SB pace ≥ 30/season → elevated `speed_component` score.
 - These flow through the trait_factor (secondary signal, 0.85–1.15) — they break ties within the same pop+env tier.
 
-**Filter 5 — Slot Sequencing (V10.0 pitcher-anchor + stacking)**
+**Filter 5 — Slot Sequencing (V10.1 pitcher-anchor + gated mini-stack)**
 - **Slot 1 (2.0×) is always the anchor pitcher.** Pitcher is selected by highest pre-game EV.
-- Slots 2–5 are batters, ordered by filter_ev descending. Up to four teammates may fill the batter slots (full team stack).
+- Slots 2–5 are batters, ordered by filter_ev descending. Per-team cap is 2 for stack-eligible teams (moneyline ≤ −200 AND O/U ≥ 9.0), otherwise 1. Per-game cap is always 2.
 
-### Fixed Composition (V10.0): 1 SP + 4 Batters, Stacking Allowed
-Every lineup is 1 pitcher + 4 batters. The pitcher is the best-condition pre-game SP. The 4 batters are the highest-EV batters from any teams (up to a full 4-man stack) — except never from the opposing side of the anchor's game.
+### Fixed Composition (V10.1): 1 SP + 4 Batters, Mini-Stacks Only When Overwhelmingly Clear
+Every lineup is 1 pitcher + 4 batters. The pitcher is the best-condition pre-game SP. Batters are the highest-EV picks honouring the dual caps — at most 2 from any one team (only on stack-eligible game scripts), at most 2 from any one game, 1 per team otherwise. Opposing batters in the anchor's game are never drafted.
 
 ## Deployment
 
