@@ -289,10 +289,14 @@ async def _enrich_batting_order(db: Session, slate: Slate, games: list, logger) 
             )
         return game, await get_game_boxscore(game.mlb_game_pk)
 
-    game_boxscores = await asyncio.gather(*[_fetch_boxscore(g) for g in games])
+    game_boxscores = await asyncio.gather(*[_fetch_boxscore(g) for g in games], return_exceptions=True)
     enriched = 0
 
-    for game, boxscore in game_boxscores:
+    for result in game_boxscores:
+        if isinstance(result, Exception):
+            logger.warning("Batting order enrichment: skipping game — %s", result)
+            continue
+        game, boxscore = result
         if boxscore is None:
             continue
 
@@ -579,8 +583,7 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
         if not splits:
             continue
         s = splits[0].get("stat", {})
-        ops_str = s.get("ops", "")
-        ops = float(ops_str) if ops_str else None
+        ops = _safe_float(s.get("ops", ""))
         pa = s.get("plateAppearances", 0)
         so = s.get("strikeOuts", 0)
         k_pct = (so / pa) if pa > 0 else None
@@ -592,8 +595,7 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
         if not splits:
             continue
         s = splits[0].get("stat", {})
-        era_str = s.get("era", "")
-        era = float(era_str) if era_str else None
+        era = _safe_float(s.get("era", ""))
         team_pitching[team] = {"era": era}
 
     updated = 0
