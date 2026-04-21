@@ -20,6 +20,12 @@ jobs:
       - name: Install project + dev extras
         run: pip install -e ".[dev]"
 
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Live-isolation audit (no historical outcomes in T-65 path)
+        run: python scripts/audit_live_isolation.py
+
       - name: Pytest
         env:
           BO_CURRENT_SEASON: "2026"

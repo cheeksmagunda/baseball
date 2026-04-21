@@ -13,9 +13,7 @@ import logging
 from datetime import date
 
 from sqlalchemy import and_, or_
-from sqlalchemy.orm import Session, selectinload, joinedload
-
-logger = logging.getLogger(__name__)
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.constants import (
     PITCHER_POSITIONS,
@@ -41,6 +39,8 @@ from app.services.filter_strategy import (
     compute_batter_env_score,
     run_filter_strategy,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _build_starter_stats_cache(

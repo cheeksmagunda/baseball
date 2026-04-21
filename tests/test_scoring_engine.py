@@ -11,7 +11,6 @@ from app.services.scoring_engine import (
     score_ballpark_factor,
     score_hot_streak,
 )
-from app.core.weights import ScoringWeights
 
 
 def test_ace_status_great_era():

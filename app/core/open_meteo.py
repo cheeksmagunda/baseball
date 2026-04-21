@@ -17,7 +17,6 @@ is in STADIUM_WIND_OUT_FROM_DEG:
 """
 import asyncio
 import logging
-import math
 from datetime import date
 
 import httpx

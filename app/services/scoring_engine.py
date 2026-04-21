@@ -21,6 +21,10 @@ from app.core.constants import (
     PARK_HR_FACTOR_MIN,
     PARK_HR_FACTORS,
     PITCHER_POSITIONS,
+    POWER_PROFILE_BARREL_PCT_MAX,
+    POWER_PROFILE_DENOM,
+    POWER_PROFILE_HR_PA_MAX,
+    POWER_PROFILE_ISO_MAX,
     SCORING_BATTER_ERA_FLOOR,
     SCORING_BATTER_ERA_RANGE,
     SCORING_BATTER_OPS_SPLIT_FLOOR,
@@ -209,14 +213,14 @@ def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResul
     iso = stats.iso or 0.0
     barrel_pct = stats.barrel_pct or 0.0
 
-    # HR/PA: .06+ = max (10pts), scale from 0
-    hr_score = min(10, hr_per_pa / 0.06 * 10)
-    # Barrel%: 15%+ = max (8pts)
-    barrel_score = min(8, barrel_pct / 15.0 * 8)
-    # ISO: .250+ = max (7pts)
-    iso_score = min(7, iso / 0.250 * 7)
+    # HR/PA: at HR_PA_MAX+ = full 10pts, scale linearly from 0
+    hr_score = min(10, hr_per_pa / POWER_PROFILE_HR_PA_MAX * 10)
+    # Barrel%: at BARREL_PCT_MAX+ = full 8pts
+    barrel_score = min(8, barrel_pct / POWER_PROFILE_BARREL_PCT_MAX * 8)
+    # ISO: at ISO_MAX+ = full 7pts
+    iso_score = min(7, iso / POWER_PROFILE_ISO_MAX * 7)
 
-    total = (hr_score + barrel_score + iso_score) / 25.0 * max_pts
+    total = (hr_score + barrel_score + iso_score) / POWER_PROFILE_DENOM * max_pts
     return TraitResult(
         "power_profile",
         round(total, 1),

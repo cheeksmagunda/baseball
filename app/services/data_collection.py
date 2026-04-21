@@ -8,12 +8,15 @@ import logging
 from datetime import date, datetime as _datetime
 from zoneinfo import ZoneInfo
 
-logger = logging.getLogger(__name__)
-
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.constants import canonicalize_team, NON_PLAYING_GAME_STATUSES, is_game_remaining
+from app.core.constants import (
+    ET_TO_UTC_OFFSET_HOURS,
+    NON_PLAYING_GAME_STATUSES,
+    canonicalize_team,
+    is_game_remaining,
+)
 from app.core.mlb_api import (
     get_schedule,
     get_game_boxscore,
@@ -25,6 +28,8 @@ from app.core.mlb_api import (
 )
 from app.models.player import Player, PlayerStats, PlayerGameLog, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
+
+logger = logging.getLogger(__name__)
 
 _ET = ZoneInfo("America/New_York")
 
@@ -794,7 +799,7 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
     Uses Open-Meteo archive endpoint for past dates (≥ 5 days ago) and the
     forecast endpoint for today or near-future games.
     """
-    from datetime import date as _date, timedelta
+    from datetime import date as _date
 
     from app.core.open_meteo import STADIUM_COORDINATES, get_game_weather
 
@@ -828,7 +833,7 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
             time_str = game.scheduled_game_time.replace(" ET", "").strip()
             from datetime import datetime as _dt
             parsed = _dt.strptime(time_str, "%I:%M %p")
-            utc_hour = (parsed.hour + 4) % 24
+            utc_hour = (parsed.hour + ET_TO_UTC_OFFSET_HOURS) % 24
 
         weather = await get_game_weather(
             lat=lat,

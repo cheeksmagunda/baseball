@@ -33,12 +33,9 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum
 
-from sqlalchemy.orm import Session
 
 from app.core.constants import (
     PARK_HR_FACTORS,
-    PITCHER_POSITIONS,
-    BATTER_POSITIONS,
     SLOT_MULTIPLIERS,
     TINY_SLATE_MAX_GAMES,
     PITCHER_DAY_MIN_QUALITY_SP,
@@ -46,24 +43,12 @@ from app.core.constants import (
     HITTER_DAY_VEGAS_TOTAL_THRESHOLD,
     BLOWOUT_MONEYLINE_THRESHOLD,
     BLOWOUT_MIN_GAMES_FOR_STACK_DAY,
-    ENV_PASS_THRESHOLD,
-    MIN_GAMES_REPRESENTED,
-    SAME_GAME_EXCESS_PENALTY,
     MIN_SCORE_THRESHOLD,
-    MIN_SCORE_PENALTY_FLOOR,
     PITCHER_ENV_WEAK_OPP_OPS,
-    PITCHER_ENV_WEAK_OPP_K_PCT,
     PITCHER_ENV_MIN_K_PER_9,
-    PITCHER_ENV_FRIENDLY_PARK,
-    BATTER_ENV_HIGH_VEGAS_TOTAL,
-    BATTER_ENV_WEAK_PITCHER_ERA,
-    BATTER_ENV_TOP_LINEUP,
-    BATTER_ENV_WEAK_BULLPEN_ERA,
     MOONSHOT_SHARP_BONUS_MAX,
     MOONSHOT_EXPLOSIVE_BONUS_MAX,
     MOONSHOT_SAME_TEAM_PENALTY,
-    GHOST_DRAFT_THRESHOLD,
-    MAX_PITCHERS_IN_LINEUP,
     REQUIRED_PITCHERS_IN_LINEUP,
     PITCHER_ANCHOR_SLOT,
     MAX_PLAYERS_PER_TEAM,
@@ -121,6 +106,8 @@ from app.core.constants import (
     BATTER_ENV_COMPOUND_BONUS,
     # Volatility amplifier
     BATTER_FORM_VOLATILITY_MAX,
+    # Slate classification — quality-SP ERA gate
+    QUALITY_SP_ERA_THRESHOLD,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score, graduated_scale, graduated_scale_moneyline
 from app.services.popularity import PopularityClass
@@ -215,7 +202,7 @@ def classify_slate(
         h_era = g.get("home_starter_era")
         h_k9 = g.get("home_starter_k_per_9")
         a_ops = g.get("away_team_ops")
-        if h_era is not None and h_era < 3.5:
+        if h_era is not None and h_era < QUALITY_SP_ERA_THRESHOLD:
             if a_ops is not None and a_ops < PITCHER_ENV_WEAK_OPP_OPS:
                 quality_sp += 1
             elif h_k9 is not None and h_k9 >= PITCHER_ENV_MIN_K_PER_9:
@@ -225,7 +212,7 @@ def classify_slate(
         a_era = g.get("away_starter_era")
         a_k9 = g.get("away_starter_k_per_9")
         h_ops = g.get("home_team_ops")
-        if a_era is not None and a_era < 3.5:
+        if a_era is not None and a_era < QUALITY_SP_ERA_THRESHOLD:
             if h_ops is not None and h_ops < PITCHER_ENV_WEAK_OPP_OPS:
                 quality_sp += 1
             elif a_k9 is not None and a_k9 >= PITCHER_ENV_MIN_K_PER_9:

@@ -195,16 +195,14 @@ class TestLineupCache:
         assert cache.is_warm is False
         assert cache.first_pitch_utc is None
         assert cache.lock_time_utc is None
-        assert cache.unlock_time_utc is None
 
-    def test_set_schedule_computes_lock_and_unlock(self, fresh_cache):
+    def test_set_schedule_computes_lock_time(self, fresh_cache):
         cache, _ = fresh_cache
         first_pitch = datetime(2026, 4, 17, 23, 5, tzinfo=timezone.utc)
         cache.set_schedule(first_pitch)
 
         assert cache.first_pitch_utc == first_pitch
         assert cache.lock_time_utc == first_pitch - timedelta(minutes=65)
-        assert cache.unlock_time_utc == first_pitch - timedelta(minutes=60)
 
     def test_freeze_sets_frozen_and_persists_meta(self, fresh_cache):
         cache, redis = fresh_cache
@@ -366,7 +364,7 @@ class TestFilterStrategyRouter:
         body = response.json()
         assert body["phase"] == "before_lock"
         assert body["ready"] is False
-        assert body["minutes_until_unlock"] > 0
+        assert body["minutes_until_lock"] > 0
 
     def test_optimize_returns_425_before_lock(self, db_session, fresh_cache):
         cache, _ = fresh_cache

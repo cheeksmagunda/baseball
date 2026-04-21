@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas.calibration import WeightsOut, WeightsIn
-from app.core.weights import get_current_weights, save_weights, ScoringWeights
+from app.core.weights import get_current_weights, save_weights
 
 router = APIRouter()
 
