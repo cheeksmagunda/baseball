@@ -5,13 +5,13 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Copy everything first so pip install can find the package
-COPY . .
-
-# Install dependencies and create db directory
+# Install dependencies first (separate layer for better cache reuse).
 # Seed runs at startup via FastAPI lifespan hook — not at build time,
 # since env vars (BO_ODDS_API_KEY etc.) are not available during build.
-RUN pip install --no-cache-dir . && mkdir -p db
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt && mkdir -p db
+
+COPY . .
 
 EXPOSE 8000
 
