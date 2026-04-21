@@ -383,3 +383,101 @@ class TestFilterStrategyRouter:
         assert response.status_code == 425
         body = response.json()
         assert "Pipeline runs at T-65" in body["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Mid-slate cold-start: started-game filtering
+# ---------------------------------------------------------------------------
+
+class TestStartedGameFiltering:
+    """
+    Regression tests for the mid-slate cold-start fix (2026-04-20).
+
+    When the app redeploys after the day's first pitch, the T-65 monitor runs
+    the pipeline cold immediately. Every downstream stage (enrichment, scoring,
+    filter strategy) must skip games whose game_status is 'Live' or 'Final' —
+    the Odds API does not return lines for started games, and scoring them
+    would feed corrupt signals into the EV formula.
+    """
+
+    def test_is_game_remaining_helper(self):
+        from app.core.constants import is_game_remaining
+        assert is_game_remaining(None) is True
+        assert is_game_remaining("Preview") is True
+        assert is_game_remaining("Scheduled") is True
+        assert is_game_remaining("Live") is False
+        assert is_game_remaining("Final") is False
+
+    def test_vegas_enrichment_skips_started_games(self, db_session, monkeypatch):
+        """
+        Regression for today's production crash:
+        enrich_slate_game_vegas_lines must not request odds for started games.
+        """
+        import asyncio
+        from app.services.data_collection import enrich_slate_game_vegas_lines
+
+        slate = Slate(date=date(2026, 4, 20))
+        db_session.add(slate)
+        db_session.flush()
+        db_session.add_all([
+            SlateGame(slate_id=slate.id, home_team="NYY", away_team="BOS",
+                      game_status="Live"),
+            SlateGame(slate_id=slate.id, home_team="LAD", away_team="SF",
+                      game_status="Preview"),
+            SlateGame(slate_id=slate.id, home_team="CHC", away_team="STL",
+                      game_status="Final"),
+        ])
+        db_session.commit()
+
+        async def fake_fetch(_key, _date):
+            return [{
+                "home_team": "LAD",
+                "away_team": "SF",
+                "home_moneyline": -150,
+                "away_moneyline": 130,
+                "total": 8.5,
+            }]
+
+        monkeypatch.setattr("app.core.odds_api.fetch_mlb_odds", fake_fetch)
+        from app.config import settings
+        monkeypatch.setattr(settings, "odds_api_key", "fake-key", raising=False)
+
+        updated = asyncio.run(enrich_slate_game_vegas_lines(db_session, slate))
+
+        assert updated == 1
+        remaining = (
+            db_session.query(SlateGame)
+            .filter_by(slate_id=slate.id, home_team="LAD")
+            .one()
+        )
+        assert remaining.home_moneyline == -150
+        assert remaining.away_moneyline == 130
+        assert remaining.vegas_total == 8.5
+
+    def test_full_pipeline_raises_when_too_few_games_remain(
+        self, db_session, monkeypatch
+    ):
+        """run_full_pipeline must fail loudly when fewer than 2 games remain."""
+        import asyncio
+        from app.services.pipeline import run_full_pipeline
+
+        slate = Slate(date=date(2026, 4, 20))
+        db_session.add(slate)
+        db_session.flush()
+        db_session.add_all([
+            SlateGame(slate_id=slate.id, home_team="NYY", away_team="BOS",
+                      game_status="Live"),
+            SlateGame(slate_id=slate.id, home_team="LAD", away_team="SF",
+                      game_status="Final"),
+            SlateGame(slate_id=slate.id, home_team="CHC", away_team="STL",
+                      game_status="Preview"),
+        ])
+        db_session.commit()
+
+        async def noop_fetch(_db, _date):
+            return {"games": 3}
+
+        monkeypatch.setattr("app.services.pipeline.run_fetch", noop_fetch)
+
+        with pytest.raises(RuntimeError, match="Insufficient remaining games"):
+            asyncio.run(run_full_pipeline(db_session, date(2026, 4, 20)))
