@@ -184,8 +184,6 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict:
     logger = logging.getLogger(__name__)
 
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
-    # Skip games that have already started — the T-65 pipeline runs cold on
-    # remaining games only when the app redeploys mid-slate.
     games = [g for g in games if is_game_remaining(g.game_status)]
     added = 0
     skipped = 0
@@ -541,8 +539,6 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
     from app.core.mlb_api import get_team_pitching_stats
 
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
-    # Skip games that have already started — the T-65 pipeline runs cold on
-    # remaining games only when the app redeploys mid-slate.
     games = [g for g in games if is_game_remaining(g.game_status)]
     teams = {g.home_team for g in games} | {g.away_team for g in games}
 
@@ -651,8 +647,6 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
     from datetime import timedelta
 
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
-    # Skip games that have already started — the T-65 pipeline runs cold on
-    # remaining games only when the app redeploys mid-slate.
     games = [g for g in games if is_game_remaining(g.game_status)]
     if not games:
         return 0
@@ -805,8 +799,6 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
     from app.core.open_meteo import STADIUM_COORDINATES, get_game_weather
 
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
-    # Skip games that have already started — the T-65 pipeline runs cold on
-    # remaining games only when the app redeploys mid-slate.
     games = [g for g in games if is_game_remaining(g.game_status)]
     if not games:
         return 0
@@ -889,10 +881,7 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
     from app.core.odds_api import fetch_mlb_odds
 
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
-    # Skip games that have already started — the Odds API does not return lines
-    # for in-progress or completed games, so re-enriching them would crash the
-    # pipeline on a mid-slate app redeploy. The T-65 pipeline runs cold on
-    # remaining games only.
+    # Odds API does not return lines for started games.
     games = [g for g in games if is_game_remaining(g.game_status)]
     if not games:
         return 0

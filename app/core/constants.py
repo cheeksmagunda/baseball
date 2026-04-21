@@ -78,7 +78,6 @@ SUBOPTIMAL_THRESHOLD = 1.05  # 5% EV variance
 # to score=0 players.  See _graduated_score_penalty() in filter_strategy.py.
 MIN_SCORE_THRESHOLD = 15  # out of 100 — full penalty below 0, no penalty at/above 15
 MIN_SCORE_PENALTY_FLOOR = 0.40  # worst-case multiplier at score=0 (60% haircut)
-# Removed: MIN_SCORE_PENALTY = 0.50 — replaced by graduated scale
 
 # ---------------------------------------------------------------------------
 # Filter Strategy constants (§4 "Filter, Not Forecast")
@@ -96,27 +95,8 @@ HITTER_DAY_VEGAS_TOTAL_THRESHOLD = 9.0
 BLOWOUT_MONEYLINE_THRESHOLD = -200  # e.g. -210 means heavy favorite
 BLOWOUT_MIN_GAMES_FOR_STACK_DAY = 1  # 1+ blowout game → stack day eligible
 
-# SLATE_COMPOSITION removed in V2.1 — historical data (13 days) proves
-# composition is driven purely by EV, not by "day type."
-# Average winning lineup: 2.15 pitchers. Range: 0 to 5.
-# Forcing min/max pitchers by slate type was the #1 source of bad lineups.
-# The optimizer now uses pure EV ranking with no position constraints.
-
 ENV_PASS_THRESHOLD = 0.5           # env_score >= 0.5 = passes environmental filter
 
-# Game diversification (Filter 5 — Law 9)
-#
-# Current rule (V5.0): max 1 player per game per lineup.  This is tighter than
-# the earlier V3.1 cap of 3, which was intended to exploit team-stack data:
-#   - Apr 6: Rank 1 = LAD+HOU stack (Ohtani, Freeman, Tucker, Hernandez, Rushing)
-#   - Apr 5: OAK ghost stack dominated
-#   - 62% of winning days featured team stacks of 3-4 players
-# V3.2 tightened to 1 per team + 2 per game.  V3.3 dropped to 1 per game to
-# capture stack upside cross-lineup (Starting 5 + Moonshot) instead of within
-# a single lineup — see CORRELATION_* constants.
-#
-# MAX_OPPONENTS_SAME_GAME also caps 1: negative correlation (if one team's SP
-# dominates, the other team's batters suffer) keeps opponents separated too.
 MAX_PLAYERS_PER_GAME = 1         # max 1 player per game per lineup — full diversification
 MAX_OPPONENTS_SAME_GAME = 1      # max 1 player from the opposing side of the same game
 MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup
@@ -153,30 +133,6 @@ BATTER_ENV_WEAK_BULLPEN_ERA = 4.5     # opposing bullpen ERA above this = vulner
 DNP_RISK_PENALTY = 0.70               # CONFIRMED bad: 30% haircut (lineup published, player absent)
 DNP_UNKNOWN_PENALTY = 0.85            # UNKNOWN: 15% haircut (lineup not published, could go either way)
 ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data not published" (not "bad env")
-
-# ---------------------------------------------------------------------------
-# V9.0 Pre-Game Signal Architecture
-#
-# Ownership counts and card boosts are only revealed during/after the draft
-# and CANNOT be used as predictive inputs.  The EV formula is built entirely
-# on signals that are knowable before any draft begins.
-#
-# Signal hierarchy (V9.0):
-#   1. Popularity gate — FADE players (high pre-game media attention) are
-#                    EXCLUDED from the candidate pool before EV runs.
-#                    TARGET and NEUTRAL pass with no bonus or penalty.
-#                    Source: Google Trends, ESPN RSS, Reddit (NOT platform
-#                    ownership counts, which are during-draft only).
-#   2. env_factor   — PRIMARY EV signal: game conditions available before
-#                    first pitch (Vegas O/U, opposing starter ERA, park,
-#                    weather, platoon, batting order, moneyline, bullpen ERA).
-#                    Range: 0.70–1.30 (1.86x swing).
-#   3. trait_factor — SECONDARY EV signal: season-level player quality
-#                    (K/9, ISO, barrel%, SB pace, ERA, WHIP, recent form).
-#                    Range: 0.85–1.15 (1.35x swing).
-#
-# Formula: base_ev = env_factor × trait_factor × context × 100
-# ---------------------------------------------------------------------------
 
 # Env modifier bounds — PRIMARY EV signal.
 # Range: 0.70–1.30 (1.86x swing) — game conditions (Vegas O/U, ERA, bullpen,
@@ -230,10 +186,6 @@ MEGA_CHALK_DRAFT_THRESHOLD = 2000     # >= 2000 drafts = mega-chalk (display lab
 # Lineup structure validation
 # ---------------------------------------------------------------------------
 MAX_PLAYERS_PER_TEAM = 1             # 1 per team per individual lineup
-# V6.0: retains V5.0 composition — exactly 1 pitcher + 4 batters.
-# The pitcher anchors Slot 1 (2.0x multiplier).  The popularity-first EV
-# formula determines WHICH pitcher and WHICH 4 batters, but the 1P+4B
-# shape is fixed.
 REQUIRED_PITCHERS_IN_LINEUP = 1      # exactly 1 pitcher per lineup
 MAX_PITCHERS_IN_LINEUP = 1           # identical to REQUIRED
 PITCHER_ANCHOR_SLOT = 1              # pitcher always in Slot 1 (2.0x)
@@ -244,36 +196,6 @@ PITCHER_ANCHOR_SLOT = 1              # pitcher always in Slot 1 (2.0x)
 # in a blowout game (moneyline <= BLOWOUT_MONEYLINE_THRESHOLD).
 # ---------------------------------------------------------------------------
 STACK_BONUS = 1.20  # 20% EV bonus for players on blowout-game teams
-
-# ---------------------------------------------------------------------------
-# V5.0: Slot 1 Differentiator Principle RETIRED.
-# Slot 1 is permanently reserved for the anchor pitcher (see PITCHER_ANCHOR_SLOT).
-# The contrarian-swap heuristic no longer applies.
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# V4.1: Rich-pool unboosted pitcher penalty REMOVED.
-# The recalibrated condition matrix (V4.0) encodes empirical HV rates per
-# (ownership × boost) cell.  Elite unboosted aces (Sale/Alcantara/Fried class)
-# now rate 0.19–0.43 on the pitcher matrix — the matrix already accounts for
-# their unboosted-ness.  Stacking a 10–35% haircut on top double-counted and
-# buried the anchor plays those aces provide.  Historical counter-examples
-# (Nolan McLean Apr 9, Sandy Alcantara Apr 7, Max Fried recurring) all surface
-# correctly through the recalibrated matrix alone.
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# V5.0: Dynamic pitcher cap RETIRED.
-#
-# The V3.0-V3.4 dynamic pitcher cap (1/2/3 based on boosted-pool richness) is
-# replaced by a hard 1-pitcher anchor rule.  See REQUIRED_PITCHERS_IN_LINEUP
-# and PITCHER_ANCHOR_SLOT above.  Deprecated constants removed:
-#   - MAX_PITCHERS_THIN_POOL
-#   - MAX_PITCHERS_BOOSTED_RICH
-#   - BOOSTED_PITCHER_CAP_EXPAND_MIN
-#   - PITCHER_CAP_EV_THRESHOLD
-# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # League-average defaults for missing opponent / pitcher stats

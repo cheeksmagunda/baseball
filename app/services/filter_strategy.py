@@ -25,23 +25,6 @@ EV formula (V9.0):
                  sharp_bonus    — underground Reddit/FanGraphs analyst buzz (+35% max)
                  explosive_bonus — power_profile / k_rate upside (+20% max)
 
-V9.0 changes (2026-04-16):
-  - RS_CONDITION_MATRIX removed entirely.  pop_factor was the primary EV
-    term (3.0× swing) but was derived from historical RS ratios, violating
-    "Filter, Not Forecast."
-  - Popularity is now a candidate pool gate: FADE → excluded before EV runs.
-  - EV formula is now purely env × trait × context.
-  - Moonshot draws from the same candidate pool as Starting 5 (no forced
-    player exclusion).  Moonshot differentiates via sharp + explosive bonuses.
-  - Momentum gate removed (it capped pop_factor; no longer meaningful).
-  - MOONSHOT_CONTRARIAN_*_MULT / FADE_PENALTY / TARGET_BONUS removed.
-
-V8.1 additions (2026-04-15):
-  - Group D env scoring: series/momentum context (±0.8 additive).
-  - Bullpen ERA (Group A A4): now populated from MLB Stats API team pitching.
-  - Vegas lines (Group A A1/A3, pitcher Factor 5): from The Odds API.
-
-References strategy doc sections §4.1–§4.5.
 """
 
 from __future__ import annotations
@@ -143,12 +126,6 @@ from app.core.utils import BASE_MULTIPLIER, get_trait_score, graduated_scale, gr
 from app.services.popularity import PopularityClass
 
 logger = logging.getLogger(__name__)
-
-
-# V5.0: compute_dynamic_pitcher_cap() removed.  Every lineup has exactly
-# REQUIRED_PITCHERS_IN_LINEUP pitchers (see app/core/constants.py).  The
-# pitcher is selected first (highest filter_ev), anchors Slot 1, and its
-# game is blocked for all batter picks in the same lineup.
 
 
 # ---------------------------------------------------------------------------

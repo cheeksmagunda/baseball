@@ -148,8 +148,7 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
             failed, len(players),
         )
 
-    # Backfill SlateGame starter ERA/K9 from newly-fetched PlayerStats.
-    # This feeds the environmental scoring engine (Filter 2).
+    # Enrich SlateGame starter ERA/K9 from newly-fetched PlayerStats.
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
     starter_cache = _build_starter_stats_cache(db, games, game_date.year)
     for game in games:
@@ -168,8 +167,7 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
             if stats.get("k_per_9") is not None:
                 setattr(game, k9_field, stats["k_per_9"])
 
-    # Fetch team batting stats (OPS, K%) for all teams on the slate.
-    # This feeds Filter 2 pitcher env scoring: opponent OPS (Factor 1) and K% (Factor 2).
+    # Fetch team batting and pitching stats for all teams on the slate.
     if slate:
         await enrich_slate_game_team_stats(db, slate, game_date.year)
 

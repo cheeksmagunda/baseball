@@ -118,7 +118,7 @@ The pipeline either works with real data or it fails loudly. Fallbacks mask bugs
 
 **Behavior:**
 - `BO_ODDS_API_KEY` **must be set** at startup. If missing, the app logs a critical warning at initialization.
-- When the T-65 pipeline runs (`app/services/pipeline.py:500`), `enrich_slate_game_vegas_lines()` **raises `RuntimeError`** if:
+- When the T-65 pipeline runs (`app/services/pipeline.py:537`), `enrich_slate_game_vegas_lines()` **raises `RuntimeError`** if:
   - The API key is unset
   - The API request fails (network error, timeout)
   - The API response indicates an error (401 invalid key, 422 quota exhausted, etc.)
@@ -317,7 +317,7 @@ New slates are ingested **manually by appending rows** to the four files above �
 
 ### Reloading the database after ingest
 
-The CSV/JSON files are the source of truth; the SQLite DB is rebuilt from them via `app/seed.py`. `run_seed()` is **idempotency-guarded** — it only seeds if the `weight_history` table is empty (guard at `app/seed.py:257`). To pick up freshly appended rows:
+The CSV/JSON files are the source of truth; the SQLite DB is rebuilt from them via `app/seed.py`. `run_seed()` is **idempotency-guarded** — it only seeds if the `weight_history` table is empty (guard at `app/seed.py:263`). To pick up freshly appended rows:
 
 ```bash
 rm db/ben_oracle.db              # or DROP TABLE in Postgres
