@@ -127,6 +127,47 @@ async def _sleep_until(target: datetime) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Pre-T-65 Statcast refresh (fires inside Phase 2 as a background task)
+# ---------------------------------------------------------------------------
+
+async def _refresh_statcast_background() -> None:
+    """Bulk-load Baseball Savant leaderboards into PlayerStats.
+
+    Fires as a detached asyncio task at the start of Phase 2 (i.e., whenever
+    Phase 1 finishes a valid schedule load).  Never blocks the monitor's
+    sleep toward T-65: if Savant is slow, this task keeps running while the
+    T-65 pipeline fires on whatever Statcast data was last persisted.
+
+    No fallbacks — `refresh_statcast.main()` returns a non-zero exit code on
+    any schema/connectivity failure, which we log at ERROR.  The T-65
+    scoring engine's non-Statcast fallback path covers NULL columns
+    gracefully (that is the ONE graceful degradation allowed in V10.1.1:
+    Statcast is a supplementary layer over the MLB Stats API, not a primary
+    input, and the pipeline must still ship lineups on days Savant is
+    unreachable).
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        from scripts.refresh_statcast import main as refresh_main
+
+        logger.info("Pre-T-65 Statcast refresh: starting bulk load from Baseball Savant")
+        exit_code = await asyncio.to_thread(refresh_main)
+        if exit_code != 0:
+            logger.error(
+                "Pre-T-65 Statcast refresh exited with code=%d — T-65 will use the last-known data (or fallback scoring if this is a fresh deploy).",
+                exit_code,
+            )
+        else:
+            logger.info("Pre-T-65 Statcast refresh complete (exit=0)")
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception(
+            "Pre-T-65 Statcast refresh raised — T-65 will use the last-known data (or fallback scoring)."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Post-lock monitor (Phase 4)
 # ---------------------------------------------------------------------------
 
@@ -342,10 +383,21 @@ async def targeted_slate_monitor(
         )
 
         # ---------------------------------------------------------------
-        # Phase 2: Sleep until T-65
+        # Phase 2: Sleep until T-65 (with pre-lock Statcast refresh)
         # ---------------------------------------------------------------
         now = datetime.now(timezone.utc)
         if now < lock_time_utc:
+            # Kick the Statcast refresh as a detached background task BEFORE
+            # sleeping.  It bulk-loads Baseball Savant's season leaderboards
+            # (avg EV, FB velocity, IVB, whiff %, etc.) and upserts them onto
+            # PlayerStats — typical completion is ~60 s.  Because Phase 2
+            # usually has hours of runway before T-65, the refresh almost
+            # always finishes before the pipeline fires, and T-65 reads the
+            # fresh data directly from the DB.  If Savant hangs or the cycle
+            # is short, T-65 simply runs with whatever was last persisted
+            # (or NULL columns → non-Statcast fallback path in the scoring
+            # engine).  NEVER awaited — the T-65 lock time is sacred.
+            asyncio.create_task(_refresh_statcast_background())
             logger.info(
                 "Sleeping until T-%d (%s UTC)…",
                 LOCK_MINUTES_BEFORE_PITCH,

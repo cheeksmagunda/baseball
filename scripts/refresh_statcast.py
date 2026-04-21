@@ -1,26 +1,30 @@
-"""Daily Statcast refresh — bulk-load Baseball Savant leaderboards into PlayerStats.
+"""Statcast refresh — bulk-load Baseball Savant leaderboards into PlayerStats.
 
-V10.1 operational boundary: Baseball Savant must NOT be queried synchronously
-at T-65.  Savant rate-limits aggressive readers and a blocking CSV pull would
-hang the pipeline past its lock window.  This script runs overnight (3 AM
-cron), fetches the three season leaderboards ONCE, and upserts the kinematic
+V10.1.1 operational boundary: Baseball Savant must NOT be queried
+synchronously at T-65.  Savant rate-limits aggressive readers and a blocking
+CSV pull would hang the pipeline past its lock window.  This script fetches
+the three season leaderboards ONCE per invocation and upserts the kinematic
 columns onto PlayerStats.  The T-65 pipeline then reads them straight from
 the DB with zero extra network calls.
 
-The "no fallbacks, fail loudly" rule still applies: any scraper failure exits
-non-zero so the cron alert fires.  Partial-coverage rookies (no row on the
-leaderboard yet) keep NULL columns; the scoring engine routes them through
-its non-Statcast fallback paths.
+Production invocation
+---------------------
 
-Usage
------
+The slate monitor fires this script automatically at the start of each
+Phase 2 (T-65 sleep window) via `_refresh_statcast_background` in
+`app/services/slate_monitor.py`.  No Railway cron, no crontab — merge the
+code and the next slate cycle triggers the refresh before T-65 fires.
+
+Manual / ad-hoc invocation
+--------------------------
 
     python -m scripts.refresh_statcast                  # use settings.current_season
     python -m scripts.refresh_statcast --season 2026    # explicit override
 
-Cron (Railway / crontab):
-
-    0 3 * * *  python -m scripts.refresh_statcast
+The "no fallbacks, fail loudly" rule still applies: any scraper failure
+exits non-zero so the caller can log it.  Partial-coverage rookies (no row
+on the leaderboard yet) keep NULL columns; the scoring engine routes them
+through its non-Statcast fallback paths.
 
 Columns written
 ---------------
