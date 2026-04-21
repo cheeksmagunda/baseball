@@ -243,12 +243,13 @@ async def targeted_slate_monitor(
         logger.info("Startup pipeline done — T-65 monitor proceeding")
 
     # -----------------------------------------------------------------------
-    # Perpetual slate loop: one iteration per slate day.
-    # After Phase 4 (post-lock) completes, loop back to Phase 1 to target
-    # the next slate. This keeps the monitor alive across multi-day uptime
-    # without requiring app restarts.
+    # One slate cycle: Phase 1 → Phase 4.  Extracted so the perpetual loop
+    # below can wrap it in top-level error handling — any uncaught exception
+    # used to silently kill the monitor task, leaving /optimize returning
+    # HTTP 425 "generating" forever because is_frozen stayed False and
+    # pipeline_failed stayed False.
     # -----------------------------------------------------------------------
-    while True:
+    async def _run_slate_cycle() -> None:
         # -------------------------------------------------------------------
         # Phase 1: Determine the active slate date and first pitch time
         # -------------------------------------------------------------------
@@ -311,7 +312,7 @@ async def targeted_slate_monitor(
                 _phase1_error,
             )
             await asyncio.sleep(300)
-            continue
+            return
 
         logger.info("T-65 monitor targeting date: %s", monitor_date)
 
@@ -322,7 +323,7 @@ async def targeted_slate_monitor(
                 monitor_date,
             )
             await asyncio.sleep(300)
-            continue
+            return
 
         lock_time_utc = first_pitch_utc - timedelta(
             minutes=LOCK_MINUTES_BEFORE_PITCH
@@ -382,20 +383,32 @@ async def targeted_slate_monitor(
             # ---------------------------------------------------------------
             while True:
                 db_refresh = SessionLocal()
+                refreshed_first_pitch = None
                 try:
                     await fetch_schedule_for_date(db_refresh, monitor_date)
                     refreshed_first_pitch = _get_first_pitch_utc(
                         db_refresh, monitor_date
                     )
+                except Exception:
+                    logger.exception(
+                        "T-%d Phase 2b schedule refresh failed — marking "
+                        "pipeline failed; /optimize will return 503.",
+                        LOCK_MINUTES_BEFORE_PITCH,
+                    )
+                    lineup_cache.mark_failed()
+                    return
                 finally:
                     db_refresh.close()
 
                 if refreshed_first_pitch is None:
-                    raise RuntimeError(
-                        f"No scheduled_game_time values for {monitor_date} "
-                        f"at T-{LOCK_MINUTES_BEFORE_PITCH} — pipeline must "
-                        "fail loudly"
+                    logger.critical(
+                        "No scheduled_game_time values for %s at T-%d — "
+                        "marking pipeline failed; /optimize will return 503.",
+                        monitor_date,
+                        LOCK_MINUTES_BEFORE_PITCH,
                     )
+                    lineup_cache.mark_failed()
+                    return
 
                 # <2 min drift is noise (schedule-string rounding); treat
                 # as stable.
@@ -425,7 +438,6 @@ async def targeted_slate_monitor(
             )
 
             db = SessionLocal()
-            pipeline_ok = False
             try:
                 try:
                     await run_full_pipeline(db, monitor_date)
@@ -436,17 +448,11 @@ async def targeted_slate_monitor(
                     cached = await build_and_cache_lineups(
                         db, slate_date=monitor_date
                     )
-                    pipeline_ok = True
-                except Exception:
-                    logger.exception(
-                        "T-%d PIPELINE FAILED — see traceback below. "
-                        "No fallback; /optimize will return 503.",
-                        LOCK_MINUTES_BEFORE_PITCH,
-                    )
-                    lineup_cache.mark_failed()
-
-                if pipeline_ok:
                     if cached:
+                        # freeze() is inside the try so a transient Redis
+                        # hiccup at freeze time marks failed (503) instead
+                        # of killing the monitor task (which would leave
+                        # /optimize returning 425 "generating" forever).
                         lineup_cache.freeze(first_pitch_utc=first_pitch_utc)
                         logger.info(
                             "Cache FROZEN. First pitch: %s UTC. Picks are locked.",
@@ -459,6 +465,13 @@ async def targeted_slate_monitor(
                             "available. /optimize will return 503.",
                             LOCK_MINUTES_BEFORE_PITCH,
                         )
+                except Exception:
+                    logger.exception(
+                        "T-%d PIPELINE FAILED — see traceback below. "
+                        "No fallback; /optimize will return 503.",
+                        LOCK_MINUTES_BEFORE_PITCH,
+                    )
+                    lineup_cache.mark_failed()
             finally:
                 db.close()
 
@@ -472,3 +485,34 @@ async def targeted_slate_monitor(
             "Slate %s cycle complete — restarting monitor for next slate",
             monitor_date,
         )
+
+    # -----------------------------------------------------------------------
+    # Perpetual slate loop with top-level resilience.
+    #
+    # Any uncaught exception inside a cycle (Redis hiccup during
+    # set_schedule/freeze, DB outage, unexpected logic error) used to
+    # silently kill the monitor task.  The /optimize endpoint would then
+    # return HTTP 425 "generating" forever (is_frozen=False,
+    # pipeline_failed=False), and the frontend would poll indefinitely.
+    # We now catch, mark the cache failed so /optimize returns 503
+    # immediately, pause briefly, and restart the cycle.
+    # -----------------------------------------------------------------------
+    while True:
+        try:
+            await _run_slate_cycle()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.critical(
+                "T-65 monitor: unhandled exception escaped slate cycle — "
+                "marking pipeline failed so /optimize returns 503 instead "
+                "of spinning on 425. Restarting cycle in 60s.",
+                exc_info=True,
+            )
+            try:
+                lineup_cache.mark_failed()
+            except Exception:
+                logger.exception(
+                    "mark_failed() itself raised — continuing anyway"
+                )
+            await asyncio.sleep(60)
