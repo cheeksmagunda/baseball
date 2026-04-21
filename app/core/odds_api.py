@@ -10,7 +10,7 @@ Docs: https://the-odds-api.com/laps-api.html
 """
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 import httpx
 import tenacity
@@ -95,7 +95,10 @@ async def fetch_mlb_odds(api_key: str, game_date: date) -> list[dict]:
         "oddsFormat": "american",
         "dateFormat": "iso",
         "commenceTimeFrom": f"{game_date.isoformat()}T00:00:00Z",
-        "commenceTimeTo": f"{game_date.isoformat()}T23:59:59Z",
+        # Extend to 08:00 UTC next day to capture late Pacific games
+        # (e.g., 10:05 PM PDT = 01:05 AM UTC). Safe upper bound: no MLB
+        # game starts before noon ET (~16:00 UTC) the following day.
+        "commenceTimeTo": f"{(game_date + timedelta(days=1)).isoformat()}T08:00:00Z",
     }
 
     @tenacity.retry(
