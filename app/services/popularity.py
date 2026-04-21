@@ -32,6 +32,13 @@ from enum import Enum
 
 import httpx
 
+from app.core.constants import (
+    POPULARITY_HIGH_PERF_THRESHOLD,
+    POPULARITY_HIGH_THRESHOLD,
+    POPULARITY_MID_PERF_THRESHOLD,
+    POPULARITY_MID_THRESHOLD,
+)
+
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 8.0
@@ -340,10 +347,10 @@ def classify_player(
     High attention + low performance → FADE (name-recognition trap)
     Low attention + mid performance → NEUTRAL
     """
-    high_pop = composite_popularity >= 50.0
-    mid_pop = 25.0 <= composite_popularity < 50.0
-    high_perf = player_score >= 60.0
-    mid_perf = 25.0 <= player_score < 60.0
+    high_pop = composite_popularity >= POPULARITY_HIGH_THRESHOLD
+    mid_pop = POPULARITY_MID_THRESHOLD <= composite_popularity < POPULARITY_HIGH_THRESHOLD
+    high_perf = player_score >= POPULARITY_HIGH_PERF_THRESHOLD
+    mid_perf = POPULARITY_MID_PERF_THRESHOLD <= player_score < POPULARITY_HIGH_PERF_THRESHOLD
 
     if high_pop and high_perf:
         return PopularityClass.FADE, "High attention + strong performance — crowd is already on this player"

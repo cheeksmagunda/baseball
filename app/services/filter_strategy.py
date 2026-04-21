@@ -106,6 +106,8 @@ from app.core.constants import (
     BATTER_ENV_COMPOUND_BONUS,
     # Volatility amplifier
     BATTER_FORM_VOLATILITY_MAX,
+    # Slate classification — quality-SP ERA gate
+    QUALITY_SP_ERA_THRESHOLD,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score, graduated_scale, graduated_scale_moneyline
 from app.services.popularity import PopularityClass
@@ -200,7 +202,7 @@ def classify_slate(
         h_era = g.get("home_starter_era")
         h_k9 = g.get("home_starter_k_per_9")
         a_ops = g.get("away_team_ops")
-        if h_era is not None and h_era < 3.5:
+        if h_era is not None and h_era < QUALITY_SP_ERA_THRESHOLD:
             if a_ops is not None and a_ops < PITCHER_ENV_WEAK_OPP_OPS:
                 quality_sp += 1
             elif h_k9 is not None and h_k9 >= PITCHER_ENV_MIN_K_PER_9:
@@ -210,7 +212,7 @@ def classify_slate(
         a_era = g.get("away_starter_era")
         a_k9 = g.get("away_starter_k_per_9")
         h_ops = g.get("home_team_ops")
-        if a_era is not None and a_era < 3.5:
+        if a_era is not None and a_era < QUALITY_SP_ERA_THRESHOLD:
             if h_ops is not None and h_ops < PITCHER_ENV_WEAK_OPP_OPS:
                 quality_sp += 1
             elif a_k9 is not None and a_k9 >= PITCHER_ENV_MIN_K_PER_9:

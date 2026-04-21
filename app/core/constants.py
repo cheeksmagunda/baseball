@@ -334,4 +334,34 @@ SCORING_BATTER_OPS_SPLIT_RANGE = 0.300   # range for full split score (0.600 →
 PARK_HR_FACTOR_MIN = 0.89             # lowest value in PARK_HR_FACTORS (LAD)
 PARK_HR_FACTOR_MAX = 1.38             # highest value in PARK_HR_FACTORS (COL)
 
+# Slate classification — quality-SP matchup ERA threshold.
+# A starter with ERA below this is eligible to be counted as a "quality SP"
+# when paired with a weak opposing lineup (OPS or K/9 gate).
+# Used by classify_slate() in filter_strategy.py.
+QUALITY_SP_ERA_THRESHOLD = 3.5
+
+# Scoring engine — power profile component maxima and target denominator.
+# HR/PA ≥ HR_PA_MAX → 10 points; barrel% ≥ BARREL_PCT_MAX → 8 points;
+# ISO ≥ ISO_MAX → 7 points.  Sum is normalised by POWER_PROFILE_DENOM (25).
+POWER_PROFILE_HR_PA_MAX = 0.06
+POWER_PROFILE_BARREL_PCT_MAX = 15.0
+POWER_PROFILE_ISO_MAX = 0.250
+POWER_PROFILE_DENOM = 25.0
+
+# ET → UTC offset used to derive the weather-lookup hour from a game's
+# ET clock time.  Regular season is entirely on EDT (UTC-4), so this is
+# correct for every MLB regular-season game.  Does NOT handle DST edge
+# cases outside the season window — MLB scheduling guarantees regular
+# season starts after the spring-forward transition and ends before fall-back.
+ET_TO_UTC_OFFSET_HOURS = 4
+
+# Popularity classification thresholds (popularity.py::classify_player).
+# Composite popularity score 0–100 (weighted blend of Google Trends, ESPN,
+# search volume).  Player performance score is the 0–100 trait total from
+# scoring_engine.
+POPULARITY_HIGH_THRESHOLD = 50.0      # >= this = high media attention
+POPULARITY_MID_THRESHOLD = 25.0       # [mid, high) = moderate buzz
+POPULARITY_HIGH_PERF_THRESHOLD = 60.0 # >= this = strong performance signal
+POPULARITY_MID_PERF_THRESHOLD = 25.0  # [mid, high) = decent performance
+
 
