@@ -29,7 +29,6 @@ from app.services.filter_strategy import (
 from app.services.popularity import PopularityClass, classify_player
 from app.core.constants import (
     REQUIRED_PITCHERS_IN_LINEUP,
-    MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE,
     MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT,
     PITCHER_ANCHOR_SLOT,
     SLOT_MULTIPLIERS,

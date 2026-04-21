@@ -689,13 +689,14 @@ Even when the gate is cleared, the per-team cap is **2** (`MAX_PLAYERS_PER_TEAM_
 
 V10.1 preserves all V10.0 structural fixes:
 
-1. **Statcast kinematics wired.** `app/core/statcast.py` pulls season exit-velocity, barrel %, hard-hit %, fastball velocity, induced vertical break, extension, whiff %, and chase % from Baseball Savant via `pybaseball`. These replace the previously-NULL `ps.iso` / `ps.barrel_pct` columns and drive both `score_power_profile` (batters) and `score_pitcher_k_rate` (pitchers).
+1. **Statcast kinematics wired — with an overnight refresh, NOT a T-65 fetch.** `scripts/refresh_statcast.py` runs as a daily cron (3 AM). It bulk-loads three Baseball Savant leaderboards via `pybaseball` — exit-velo + barrels (batters), percentile-ranks + arsenal-velocity (pitchers) — and upserts the kinematic columns onto PlayerStats. The T-65 pipeline reads those columns from the DB with **zero** Savant network calls. This protects the lock window from Savant rate-limits and CSV hangs. When a row is missing on the leaderboard (new call-up, pre-50 BBE), columns stay NULL and the scoring engine routes through its non-Statcast fallback path.
 2. **Sacramento (ATH) park factor corrected.** Raised from 0.90 (pre-season guess) to 1.09 (observed 2026 Statcast PF of 1.091 — short RF porch).
 3. **Leadoff slot no longer penalised.** `score_lineup_position` gives spots 1-4 equal max points (all top-of-order volume tiers).
 4. **card_boost / drafts removed from `FilteredCandidate`.** The optimizer is structurally incapable of consuming them. The router layer joins them from the source `FilterCard` for display only.
 5. **`app/services/condition_classifier.py` deleted.** Was unused — only exported entropy/Gini helpers on ownership data.
 6. **`MOONSHOT_SAME_TEAM_PENALTY` deleted.** Moonshot naturally diverges from Starting 5 via `sharp_bonus × explosive_bonus`.
 7. **`run_filter_strategy_from_slate` call site fixed** (V10.1 patch) — `pipeline.py` no longer passes `card_boost=` to the `FilteredCandidate` constructor; the display join uses a `(name, team) → card_boost` lookup built from `SlatePlayer`.
+8. **Rookie Arbitrage baseline** (V10.1 patch) — `score_power_profile` and `score_pitcher_k_rate` now return `UNKNOWN_SCORE_RATIO × max_pts` (neutral baseline) when the player has zero MLB stats AND no Statcast row. Previously both returned 0, which mathematically benched MLB-debut rookies regardless of matchup. Strategy doc §"Rookie Variance Void" — the crowd fades rookies, so we let env/popularity/park decide.
 
 ### V10.0 Core Architecture (Popularity Gate + Env/Trait EV + Statcast + Stacking)
 

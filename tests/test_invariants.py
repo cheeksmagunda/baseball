@@ -27,7 +27,6 @@ import pytest
 from app.services.filter_strategy import (
     FilteredCandidate,
     _compute_base_ev,
-    _compute_moonshot_filter_ev,
     _exclude_fade_players,
 )
 from app.services.popularity import PopularityClass

@@ -529,37 +529,17 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
                 elif split_code == "vr" and ops is not None:
                     ps.ops_vs_rhp = ops
 
-    # Statcast kinematics (Baseball Savant via pybaseball).
-    _enrich_statcast(ps, mlb_id, settings.current_season, is_pitcher=player.position in {"P", "SP", "RP"})
+    # Statcast kinematic columns (avg_exit_velocity, fb_ivb, whiff_pct, etc.)
+    # are NOT populated here.  Baseball Savant rate-limits aggressive readers
+    # and a synchronous CSV pull at T-65 can hang past the lock window.  The
+    # daily refresh job (scripts/refresh_statcast.py) bulk-loads the season
+    # leaderboards overnight and upserts them onto PlayerStats; the T-65
+    # pipeline reads those columns straight from the DB.  If a column is NULL
+    # (new call-up with no Savant row yet), the scoring engine transparently
+    # routes through the non-Statcast fallback path.
 
     db.commit()
     return ps
-
-
-def _enrich_statcast(ps: PlayerStats, mlb_id: int, season: int, is_pitcher: bool) -> None:
-    """Attach Statcast kinematics to a PlayerStats row.
-
-    Keeps network failure loud (per the "no fallbacks" rule) but tolerates
-    a player simply having no Savant entry yet (rookies pre-50 BBE or new
-    call-ups).  In that case kinematic columns stay NULL and the scoring
-    engine routes through the non-Statcast code path.
-    """
-    from app.core.statcast import get_batter_kinematics, get_pitcher_kinematics
-
-    if is_pitcher:
-        k = get_pitcher_kinematics(mlb_id, season)
-        ps.fb_velocity = k.fb_velocity
-        ps.fb_ivb = k.fb_ivb
-        ps.fb_extension = k.fb_extension
-        ps.whiff_pct = k.whiff_pct
-        ps.chase_pct = k.chase_pct
-    else:
-        k = get_batter_kinematics(mlb_id, season)
-        ps.avg_exit_velocity = k.avg_exit_velocity
-        ps.max_exit_velocity = k.max_exit_velocity
-        ps.hard_hit_pct = k.hard_hit_pct
-        if k.barrel_pct is not None:
-            ps.barrel_pct = k.barrel_pct
 
 
 async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -> int:

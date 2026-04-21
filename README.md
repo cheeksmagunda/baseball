@@ -74,7 +74,7 @@ Stacking (multiple batters from the same team) is powerful but correlated. V10.1
 
 The scoring engine outputs a **0-100 ranking signal**, not an RS prediction.
 
-**Statcast kinematics** (exit velocity, barrel %, hard-hit %, FB velocity, induced vertical break, extension, whiff %, chase %) are fetched from Baseball Savant via `pybaseball` — see `app/core/statcast.py`. When no Savant row exists yet (new call-ups pre-50 BBE), the engine transparently falls back to the non-Statcast path.
+**Statcast kinematics** (exit velocity, barrel %, hard-hit %, FB velocity, induced vertical break, extension, whiff %, chase %) are populated overnight by `scripts/refresh_statcast.py` (run it as a daily cron — `0 3 * * *`). The T-65 pipeline reads them from the DB with zero Baseball Savant calls, which keeps the lock window safe from Savant rate-limits. When no Savant row exists yet (new call-ups pre-50 BBE), the engine transparently falls back to the non-Statcast path; true zero-data rookies (MLB debuts with no stats at all) receive the UNKNOWN_SCORE_RATIO baseline on power_profile / k_rate so env + popularity + park can still promote them (strategy doc §"Rookie Variance Void").
 
 **Important:** `card_boost` is revealed during/after the draft and is **structurally absent from `FilteredCandidate`** — the optimizer cannot read it even by accident. League-average defaults (ERA, WHIP, OPS, K%) and all scaling thresholds are centralized in `app/core/constants.py`. Env-score functions use shared `graduated_scale()` helpers in `app/core/utils.py`.
 
