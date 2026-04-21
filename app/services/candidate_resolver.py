@@ -302,7 +302,6 @@ async def resolve_candidates(
             player_name=card.player_name,
             team=card.team,
             position=pre["player"].position,
-            card_boost=card.card_boost,
             total_score=score_result.total_score,
             env_score=pre["env_score"],
             env_factors=pre["env_factors"],
@@ -312,7 +311,6 @@ async def resolve_candidates(
             is_pitcher=pre["is_pitcher"],
             is_two_way_pitcher=pre["is_two_way_pitcher"],
             sharp_score=sharp_score,
-            drafts=card.drafts,
             traits=score_result.traits,
             batting_order=card.batting_order,
             series_team_wins=pre.get("series_team_wins"),
@@ -320,16 +318,9 @@ async def resolve_candidates(
             team_l10_wins=pre.get("team_l10_wins"),
         ))
 
-    # Candidate pool health summary.
-    ghost_count = sum(
-        1 for c in candidates
-        if c.drafts is not None and c.drafts < 100
-    )
     logger.info(
-        "Candidate pool: %d cards in → %d candidates out "
-        "(low-draft players: %d, dropped: %d)",
-        len(cards), len(candidates), ghost_count,
-        len(cards) - len(candidates),
+        "Candidate pool: %d cards in → %d candidates out (dropped: %d)",
+        len(cards), len(candidates), len(cards) - len(candidates),
     )
 
     # Popularity distribution health check — detect wholesale scraper failure.

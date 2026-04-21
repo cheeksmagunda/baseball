@@ -58,12 +58,27 @@ class PlayerStats(Base):
     iso: Mapped[float | None] = mapped_column(Float, nullable=True)
     barrel_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Batter Statcast kinematics (from pybaseball → Baseball Savant).
+    # Strategy doc §"Offensive Engine": these drive the app's distance multiplier.
+    avg_exit_velocity: Mapped[float | None] = mapped_column(Float, nullable=True)   # mph
+    max_exit_velocity: Mapped[float | None] = mapped_column(Float, nullable=True)   # mph, single-hit peak
+    hard_hit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)        # % of BBE ≥ 95 mph
+
     # Pitcher
     ip: Mapped[float] = mapped_column(Float, default=0.0)
     era: Mapped[float | None] = mapped_column(Float, nullable=True)
     whip: Mapped[float | None] = mapped_column(Float, nullable=True)
     k_per_9: Mapped[float | None] = mapped_column(Float, nullable=True)
     bb_per_9: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Pitcher Statcast kinematics (from pybaseball → Baseball Savant).
+    # Strategy doc §"Kinematics of the Pitching Anchor": predict K/9 upside
+    # from pitch physics before the live ERA stabilizes (critical for rookies).
+    fb_velocity: Mapped[float | None] = mapped_column(Float, nullable=True)         # 4-seam avg, mph
+    fb_ivb: Mapped[float | None] = mapped_column(Float, nullable=True)              # induced vertical break, inches
+    fb_extension: Mapped[float | None] = mapped_column(Float, nullable=True)        # release extension, feet
+    whiff_pct: Mapped[float | None] = mapped_column(Float, nullable=True)           # whiffs / swings
+    chase_pct: Mapped[float | None] = mapped_column(Float, nullable=True)           # o-swing%
 
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

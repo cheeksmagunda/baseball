@@ -56,7 +56,7 @@ PARK_HR_FACTORS = {
     "SF": 0.92,   # Oracle Park
     "SEA": 0.91,  # T-Mobile
     "MIA": 0.90,  # loanDepot
-    "ATH": 0.90,  # Sacramento (Sutter Health Park) — using neutral estimate, no 2026 data yet
+    "ATH": 1.09,  # Sacramento (Sutter Health Park) — 2026 Statcast PF = 1.091; short porch RF favors LHB
     "LAD": 0.89,  # Dodger Stadium
 }
 
@@ -97,10 +97,14 @@ BLOWOUT_MIN_GAMES_FOR_STACK_DAY = 1  # 1+ blowout game → stack day eligible
 
 ENV_PASS_THRESHOLD = 0.5           # env_score >= 0.5 = passes environmental filter
 
-MAX_PLAYERS_PER_GAME = 1         # max 1 player per game per lineup — full diversification
-MAX_OPPONENTS_SAME_GAME = 1      # max 1 player from the opposing side of the same game
-MIN_GAMES_REPRESENTED = 2        # at least 2 different games in lineup
-SAME_GAME_EXCESS_PENALTY = 0.90  # 10% penalty for 4th+ player from same game
+# V10.0 stacking architecture — restored after V8/V9 over-diversification broke
+# the mathematical cascade (pitcher shuts down opposing offense → teammates
+# cash the run/RBI bonuses).  The strategy document's winning lineups are
+# consistently full 4-batter team stacks or split 3+2 stacks.  The optimizer
+# must allow this; game/team caps only exist to avoid degenerate 5-of-5 stacks
+# and pitcher/opposing-batter negative correlation.
+MAX_PLAYERS_PER_TEAM_BATTERS = 4 # 4-batter team stack permitted (whole lineup outside SP slot)
+MIN_GAMES_REPRESENTED = 2        # pipeline-level data-sufficiency guard (not a lineup rule)
 
 # Environmental filter thresholds (Filter 2)
 # Pitcher environmental pass conditions
@@ -167,27 +171,16 @@ MOONSHOT_SHARP_BONUS_MAX = 0.35
 # Moonshot favors boom-or-bust profiles over balanced steady producers.
 MOONSHOT_EXPLOSIVE_BONUS_MAX = 0.20
 
-# Game diversification: soft penalty for same-team overlap with Starting 5
-MOONSHOT_SAME_TEAM_PENALTY = 0.85
-
-# ---------------------------------------------------------------------------
-# Draft-count reference values (INFORMATIONAL ONLY — not EV inputs)
-#
-# Ownership counts and card boosts are only revealed during/after the draft
-# and are NOT used as predictive inputs in the EV formula.
-# These constants are retained solely for logging/display purposes so the
-# response payload can label players by draft tier for the user's context.
-# ---------------------------------------------------------------------------
-GHOST_DRAFT_THRESHOLD = 100           # < 100 drafts = ghost (display label only)
-CHALK_DRAFT_THRESHOLD = 1500          # >= 1500 drafts = chalk (display label only)
-MEGA_CHALK_DRAFT_THRESHOLD = 2000     # >= 2000 drafts = mega-chalk (display label only)
+# V10.0: MOONSHOT_SAME_TEAM_PENALTY removed.  Artificially punishing stacks
+# contradicts the correlation-driven strategy; Moonshot naturally diverges
+# from Starting 5 via sharp_bonus × explosive_bonus re-ranking.
 
 # ---------------------------------------------------------------------------
 # Lineup structure validation
 # ---------------------------------------------------------------------------
-MAX_PLAYERS_PER_TEAM = 1             # 1 per team per individual lineup
+# MAX_PLAYERS_PER_TEAM replaced by MAX_PLAYERS_PER_TEAM_BATTERS above.
+# Stacking up to 4 teammates (all batter slots) is explicitly allowed.
 REQUIRED_PITCHERS_IN_LINEUP = 1      # exactly 1 pitcher per lineup
-MAX_PITCHERS_IN_LINEUP = 1           # identical to REQUIRED
 PITCHER_ANCHOR_SLOT = 1              # pitcher always in Slot 1 (2.0x)
 
 # ---------------------------------------------------------------------------
@@ -341,12 +334,41 @@ PARK_HR_FACTOR_MAX = 1.38             # highest value in PARK_HR_FACTORS (COL)
 QUALITY_SP_ERA_THRESHOLD = 3.5
 
 # Scoring engine — power profile component maxima and target denominator.
-# HR/PA ≥ HR_PA_MAX → 10 points; barrel% ≥ BARREL_PCT_MAX → 8 points;
-# ISO ≥ ISO_MAX → 7 points.  Sum is normalised by POWER_PROFILE_DENOM (25).
+# V10.0: rebalanced to reflect the strategy-doc hierarchy — average exit
+# velocity and hard-hit % are the ground-truth signals; ISO/HR are outcome
+# proxies that lag.  When Statcast data is present, it dominates.
+#   avg EV     ≥ AVG_EV_MAX (≈ 92 mph)       → 8 points
+#   hard-hit % ≥ HARD_HIT_MAX (≈ 50%)        → 7 points
+#   barrel %   ≥ BARREL_PCT_MAX              → 6 points
+#   max EV     ≥ MAX_EV_CEILING (≈ 112 mph)  → 2 points
+#   HR/PA      ≥ HR_PA_MAX                   → 2 points
+# Sum is normalised by POWER_PROFILE_DENOM (25).
+# ISO was removed as a power signal — it is a downstream SLG-AVG outcome that
+# correlates with exit velocity but adds noise.  The V9.x code read ps.iso
+# regardless and the MLB API never populated it.
 POWER_PROFILE_HR_PA_MAX = 0.06
 POWER_PROFILE_BARREL_PCT_MAX = 15.0
-POWER_PROFILE_ISO_MAX = 0.250
+POWER_PROFILE_AVG_EV_MAX = 92.0
+POWER_PROFILE_HARD_HIT_MAX = 50.0
+POWER_PROFILE_MAX_EV_CEILING = 112.0
 POWER_PROFILE_DENOM = 25.0
+
+# Pitcher K/9 kinematics — Statcast-driven version of k_rate scoring.
+# Strategy doc §"Kinematics of the Pitching Anchor": K/9 is downstream;
+# the upstream physics are FB velocity, induced vertical break, extension
+# (perceived velo), whiff %, and chase %.  When Statcast is available, a
+# blended kinematic score replaces raw K/9 because the physics are predictive
+# while K/9 is retrospective.
+SCORING_FB_VELOCITY_FLOOR = 92.0     # mph — league-avg four-seam
+SCORING_FB_VELOCITY_CEILING = 99.0   # mph — elite velocity tier
+SCORING_FB_IVB_FLOOR = 13.0          # inches — below this = flat fastball
+SCORING_FB_IVB_CEILING = 19.0        # inches — elite ride (Schlittler/Abel tier)
+SCORING_FB_EXTENSION_FLOOR = 5.8     # feet — short release
+SCORING_FB_EXTENSION_CEILING = 7.0   # feet — elite perceived-velo gain
+SCORING_WHIFF_PCT_FLOOR = 20.0       # %
+SCORING_WHIFF_PCT_CEILING = 35.0     # % — elite swing-and-miss
+SCORING_CHASE_PCT_FLOOR = 24.0       # %
+SCORING_CHASE_PCT_CEILING = 38.0     # % — elite o-swing generator
 
 # ET → UTC offset used to derive the weather-lookup hour from a game's
 # ET clock time.  Regular season is entirely on EDT (UTC-4), so this is

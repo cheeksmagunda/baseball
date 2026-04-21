@@ -29,8 +29,7 @@ from app.services.filter_strategy import (
 from app.services.popularity import PopularityClass, classify_player
 from app.core.constants import (
     REQUIRED_PITCHERS_IN_LINEUP,
-    MAX_PLAYERS_PER_TEAM,
-    MAX_PLAYERS_PER_GAME,
+    MAX_PLAYERS_PER_TEAM_BATTERS,
     PITCHER_ANCHOR_SLOT,
     SLOT_MULTIPLIERS,
     STACK_BONUS,
@@ -53,8 +52,6 @@ def _make_candidate(
     env_score: float = 0.6,
     popularity: PopularityClass = PopularityClass.TARGET,
     game_id: int | str | None = 1,
-    card_boost: float = 0.0,
-    drafts: int | None = None,
     batting_order: int | None = 3,
     env_unknown_count: int = 0,
     is_in_blowout_game: bool = False,
@@ -65,7 +62,6 @@ def _make_candidate(
         player_name=name,
         team=team,
         position="SP" if is_pitcher else position,
-        card_boost=card_boost,
         total_score=total_score,
         env_score=env_score,
         env_unknown_count=env_unknown_count,
@@ -73,7 +69,6 @@ def _make_candidate(
         game_id=game_id,
         is_pitcher=is_pitcher,
         sharp_score=sharp_score,
-        drafts=drafts,
         traits=traits or [],
         batting_order=batting_order if not is_pitcher else None,
         is_in_blowout_game=is_in_blowout_game,
@@ -497,36 +492,48 @@ class TestComposition:
         pitcher_count = sum(1 for c in lineup if c.is_pitcher)
         assert pitcher_count == REQUIRED_PITCHERS_IN_LINEUP
 
-    def test_team_diversification(self):
+    def test_batter_team_cap(self):
+        """V10.0: batter stacking up to MAX_PLAYERS_PER_TEAM_BATTERS is allowed."""
         pool = _make_pool()
         for c in pool:
             c.filter_ev = _compute_filter_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
-        teams = [c.team for c in lineup]
-        for team in set(teams):
-            assert teams.count(team) <= MAX_PLAYERS_PER_TEAM
+        from collections import Counter
+        batter_team_counts = Counter(c.team for c in lineup if not c.is_pitcher)
+        for team, count in batter_team_counts.items():
+            assert count <= MAX_PLAYERS_PER_TEAM_BATTERS
 
-    def test_game_diversification(self):
-        pool = _make_pool()
-        for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
-        lineup = _enforce_composition(pool, _default_slate())
-        game_ids = [c.game_id for c in lineup if c.game_id is not None]
-        for gid in set(game_ids):
-            assert game_ids.count(gid) <= MAX_PLAYERS_PER_GAME
-
-    def test_pitcher_game_blocked_for_batters(self):
-        """No batter should share the anchor pitcher's game."""
+    def test_no_opposing_batter_in_anchor_game(self):
+        """V10.0: the only game-level rule — never draft an opposing batter against our anchor."""
         pool = _make_pool()
         for c in pool:
             c.filter_ev = _compute_filter_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         pitcher = next(c for c in lineup if c.is_pitcher)
-        batters = [c for c in lineup if not c.is_pitcher]
-        for b in batters:
-            assert b.game_id != pitcher.game_id, (
-                f"Batter {b.player_name} shares game {b.game_id} with pitcher"
-            )
+        anchor_team = pitcher.team.upper()
+        for b in lineup:
+            if b.is_pitcher:
+                continue
+            if b.game_id == pitcher.game_id:
+                assert b.team.upper() == anchor_team, (
+                    f"Opposing batter {b.player_name} ({b.team}) in anchor's game"
+                )
+
+    def test_anchor_teammate_allowed(self):
+        """V10.0: stacking batters alongside the anchor (same team, same game) is explicitly permitted."""
+        # Build a pool where the top-EV batter shares the anchor's team.
+        pool = [
+            _make_candidate(name="SP_0", team="NYY", is_pitcher=True, game_id=1, total_score=80, env_score=0.8),
+            _make_candidate(name="Teammate_1", team="NYY", is_pitcher=False, game_id=1, total_score=70, env_score=0.9),
+            _make_candidate(name="Bat_Bos", team="BOS", is_pitcher=False, game_id=2, total_score=60, env_score=0.8),
+            _make_candidate(name="Bat_Lad", team="LAD", is_pitcher=False, game_id=3, total_score=55, env_score=0.75),
+            _make_candidate(name="Bat_Hou", team="HOU", is_pitcher=False, game_id=4, total_score=50, env_score=0.7),
+        ]
+        for c in pool:
+            c.filter_ev = _compute_filter_ev(c)
+        lineup = _enforce_composition(pool, _default_slate())
+        names = [c.player_name for c in lineup]
+        assert "Teammate_1" in names, "V10.0 should allow anchor teammates in the stack"
 
     def test_no_pitcher_raises(self):
         batters_only = [
@@ -618,14 +625,18 @@ class TestDualOptimizer:
             ))
         return pool
 
-    def test_no_player_overlap(self):
+    def test_player_overlap_allowed(self):
+        """V10.0: Moonshot draws from the same FADE-excluded pool as Starting 5.
+        Overlap is expected — the two lineups diverge via sharp/explosive bonuses,
+        not by forced exclusion.
+        """
         pool = self._big_pool()
         result = run_dual_filter_strategy(pool, _default_slate())
         s5_names = {s.candidate.player_name for s in result.starting_5.slots}
         moon_names = {s.candidate.player_name for s in result.moonshot.slots}
-        assert s5_names.isdisjoint(moon_names), (
-            f"Overlap: {s5_names & moon_names}"
-        )
+        # No assertion on overlap — it's allowed.  Just sanity-check both populated.
+        assert len(s5_names) == 5
+        assert len(moon_names) == 5
 
     def test_both_lineups_have_5(self):
         pool = self._big_pool()

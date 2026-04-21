@@ -43,9 +43,13 @@ BANNED_OUTCOME_FIELDS = {
     "is_highest_value",
     "is_most_popular",
     "is_most_drafted_3x",
+    # V10.0: card_boost and drafts are also banned from FilteredCandidate.
+    # They are in-draft dynamic signals and must not appear on the dataclass
+    # the optimizer consumes.  Display-only fields live on the request-side
+    # FilterCard and are joined into the response by the router.
+    "card_boost",
+    "drafts",
 }
-
-DISPLAY_ONLY_FIELDS = {"card_boost", "drafts"}
 
 
 def _make_candidate(
@@ -55,8 +59,6 @@ def _make_candidate(
     is_pitcher: bool = False,
     total_score: float = 50.0,
     env_score: float = 0.6,
-    card_boost: float = 0.0,
-    drafts: int | None = None,
     batting_order: int | None = 3,
     env_unknown_count: int = 0,
     sharp_score: float = 0.0,
@@ -67,7 +69,6 @@ def _make_candidate(
         player_name=name,
         team=team,
         position="SP" if is_pitcher else "OF",
-        card_boost=card_boost,
         total_score=total_score,
         env_score=env_score,
         env_unknown_count=env_unknown_count,
@@ -75,7 +76,6 @@ def _make_candidate(
         game_id=game_id,
         is_pitcher=is_pitcher,
         sharp_score=sharp_score,
-        drafts=drafts,
         batting_order=batting_order if not is_pitcher else None,
     )
 
@@ -109,43 +109,28 @@ def _kendall_tau(a: list[str], b: list[str]) -> float:
 # ---------------------------------------------------------------------------
 
 class TestSignalIsolation:
-    """CLAUDE.md § Signal Isolation: card_boost and drafts are display-only.
+    """V10.0: card_boost and drafts no longer exist on FilteredCandidate at all.
 
-    These properties are what make the prediction model honest. If a regression
-    ever routes either field through the EV formula, these tests fail.
+    This is a STRONGER guarantee than the V9.0 runtime-invariance test —
+    passing `card_boost=X` to the dataclass constructor raises TypeError,
+    making it structurally impossible for EV logic to read them.  The schema
+    contract test in TestSchemaContract asserts the field absence; these
+    constructor checks guard the dataclass signature.
     """
 
-    @pytest.mark.parametrize("card_boost", [0.0, 1.5, 3.0])
-    @pytest.mark.parametrize("drafts", [None, 0, 500, 5000])
-    def test_base_ev_is_invariant_to_card_boost_and_drafts(self, card_boost, drafts):
-        baseline = _compute_base_ev(_make_candidate(card_boost=0.0, drafts=None))
-        mutated = _compute_base_ev(
-            _make_candidate(card_boost=card_boost, drafts=drafts)
-        )
-        assert mutated == baseline, (
-            f"base_ev changed when card_boost={card_boost}, drafts={drafts}. "
-            "card_boost and drafts MUST be display-only — never inputs to EV."
-        )
+    def test_constructor_rejects_card_boost(self):
+        with pytest.raises(TypeError):
+            FilteredCandidate(
+                player_name="x", team="NYY", position="OF",
+                total_score=50.0, env_score=0.5, card_boost=1.5,  # type: ignore[call-arg]
+            )
 
-    @pytest.mark.parametrize("card_boost", [0.0, 1.5, 3.0])
-    @pytest.mark.parametrize("drafts", [None, 0, 500, 5000])
-    def test_moonshot_ev_is_invariant_to_card_boost_and_drafts(self, card_boost, drafts):
-        baseline = _compute_moonshot_filter_ev(
-            _make_candidate(card_boost=0.0, drafts=None)
-        )
-        mutated = _compute_moonshot_filter_ev(
-            _make_candidate(card_boost=card_boost, drafts=drafts)
-        )
-        assert mutated == baseline, (
-            f"moonshot_ev changed when card_boost={card_boost}, drafts={drafts}."
-        )
-
-    def test_ev_is_invariant_for_pitchers_too(self):
-        baseline = _compute_base_ev(_make_candidate(is_pitcher=True, card_boost=0.0))
-        for boost in (1.0, 2.0, 3.0):
-            assert _compute_base_ev(
-                _make_candidate(is_pitcher=True, card_boost=boost)
-            ) == baseline
+    def test_constructor_rejects_drafts(self):
+        with pytest.raises(TypeError):
+            FilteredCandidate(
+                player_name="x", team="NYY", position="OF",
+                total_score=50.0, env_score=0.5, drafts=500,  # type: ignore[call-arg]
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -163,14 +148,9 @@ class TestSchemaContract:
         leaked = fields & BANNED_OUTCOME_FIELDS
         assert not leaked, (
             f"FilteredCandidate declares banned outcome fields: {leaked}. "
-            "Historical outcome data is never allowed in the live EV path."
+            "Historical outcome data and in-draft dynamic signals "
+            "(card_boost, drafts) are never allowed in the live EV path."
         )
-
-    def test_filtered_candidate_display_only_fields_exist(self):
-        """Sanity check: card_boost and drafts ARE present (so this file
-        continues to guard them), just not used in EV."""
-        fields = {f.name for f in dataclasses.fields(FilteredCandidate)}
-        assert DISPLAY_ONLY_FIELDS.issubset(fields)
 
 
 # ---------------------------------------------------------------------------

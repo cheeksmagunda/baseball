@@ -21,24 +21,35 @@ from app.core.constants import (
     PARK_HR_FACTOR_MIN,
     PARK_HR_FACTORS,
     PITCHER_POSITIONS,
+    POWER_PROFILE_AVG_EV_MAX,
     POWER_PROFILE_BARREL_PCT_MAX,
-    POWER_PROFILE_DENOM,
+    POWER_PROFILE_HARD_HIT_MAX,
     POWER_PROFILE_HR_PA_MAX,
-    POWER_PROFILE_ISO_MAX,
+    POWER_PROFILE_MAX_EV_CEILING,
     SCORING_BATTER_ERA_FLOOR,
     SCORING_BATTER_ERA_RANGE,
     SCORING_BATTER_OPS_SPLIT_FLOOR,
     SCORING_BATTER_OPS_SPLIT_RANGE,
     SCORING_BATTER_WHIP_FLOOR,
     SCORING_BATTER_WHIP_RANGE,
+    SCORING_CHASE_PCT_CEILING,
+    SCORING_CHASE_PCT_FLOOR,
     SCORING_ERA_CEILING,
     SCORING_ERA_RANGE,
+    SCORING_FB_EXTENSION_CEILING,
+    SCORING_FB_EXTENSION_FLOOR,
+    SCORING_FB_IVB_CEILING,
+    SCORING_FB_IVB_FLOOR,
+    SCORING_FB_VELOCITY_CEILING,
+    SCORING_FB_VELOCITY_FLOOR,
     SCORING_K9_CEILING,
     SCORING_K9_FLOOR,
     SCORING_PITCHER_K_PCT_FLOOR,
     SCORING_PITCHER_K_PCT_RANGE,
     SCORING_PITCHER_OPS_CEILING,
     SCORING_PITCHER_OPS_RANGE,
+    SCORING_WHIFF_PCT_CEILING,
+    SCORING_WHIFF_PCT_FLOOR,
     SCORING_WHIP_CEILING,
     SCORING_WHIP_RANGE,
     UNKNOWN_SCORE_RATIO,
@@ -94,13 +105,51 @@ def score_ace_status(stats: PlayerStats | None, max_pts: float) -> TraitResult:
 
 
 def score_pitcher_k_rate(stats: PlayerStats | None, max_pts: float) -> TraitResult:
-    """Score K/9 rate. Higher = better. Scale: 6 K/9 = 0, 12+ K/9 = max."""
-    if not stats or stats.k_per_9 is None:
-        return TraitResult("k_rate", 0, max_pts, "no K/9 data")
+    """Score strikeout upside.
 
-    k9 = stats.k_per_9
-    score = scale_score(k9, SCORING_K9_FLOOR, SCORING_K9_CEILING, max_pts)
-    return TraitResult("k_rate", round(score, 1), max_pts, f"K/9={k9:.1f}")
+    V10.0: Statcast kinematics replace raw K/9 as the dominant signal when
+    available.  Strategy doc §"Induced Vertical Break": FB velocity, IVB,
+    extension, whiff %, and chase % are leading indicators; K/9 is the lagging
+    outcome.  Schlittler/Abel-type rookie profiles (elite physics, shallow MLB
+    sample) score high immediately instead of waiting for K/9 to stabilize.
+
+    Blending rule:
+      * 5 kinematic sub-signals each contribute 1 point (0.0–1.0 scaled).
+      * If ≥3 are present, kinematic score is 70% of trait (dominant).
+      * If 0–2 are present, fall back to K/9 scaling at full weight.
+    """
+    if not stats:
+        return TraitResult("k_rate", 0, max_pts, "no stats")
+
+    subs: list[tuple[str, float]] = []
+    if stats.fb_velocity is not None:
+        subs.append(("FB_velo", scale_score(stats.fb_velocity, SCORING_FB_VELOCITY_FLOOR, SCORING_FB_VELOCITY_CEILING, 1.0)))
+    if stats.fb_ivb is not None:
+        subs.append(("IVB", scale_score(stats.fb_ivb, SCORING_FB_IVB_FLOOR, SCORING_FB_IVB_CEILING, 1.0)))
+    if stats.fb_extension is not None:
+        subs.append(("ext", scale_score(stats.fb_extension, SCORING_FB_EXTENSION_FLOOR, SCORING_FB_EXTENSION_CEILING, 1.0)))
+    if stats.whiff_pct is not None:
+        subs.append(("whiff%", scale_score(stats.whiff_pct, SCORING_WHIFF_PCT_FLOOR, SCORING_WHIFF_PCT_CEILING, 1.0)))
+    if stats.chase_pct is not None:
+        subs.append(("chase%", scale_score(stats.chase_pct, SCORING_CHASE_PCT_FLOOR, SCORING_CHASE_PCT_CEILING, 1.0)))
+
+    if len(subs) >= 3:
+        kinematic = sum(v for _, v in subs) / len(subs)  # 0.0-1.0
+        if stats.k_per_9 is not None:
+            k9_norm = scale_score(stats.k_per_9, SCORING_K9_FLOOR, SCORING_K9_CEILING, 1.0)
+            combined = 0.70 * kinematic + 0.30 * k9_norm
+        else:
+            combined = kinematic
+        score = combined * max_pts
+        detail = " ".join(f"{n}={v:.2f}" for n, v in subs)
+        return TraitResult("k_rate", round(score, 1), max_pts, detail)
+
+    # No Statcast — fall back to K/9 scaling (covers new call-ups without Savant rows).
+    if stats.k_per_9 is None:
+        return TraitResult("k_rate", 0, max_pts, "no K/9 data, no statcast")
+
+    score = scale_score(stats.k_per_9, SCORING_K9_FLOOR, SCORING_K9_CEILING, max_pts)
+    return TraitResult("k_rate", round(score, 1), max_pts, f"K/9={stats.k_per_9:.1f} (no statcast)")
 
 
 def score_pitcher_matchup(
@@ -205,38 +254,88 @@ def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitRe
 # ---------------------------------------------------------------------------
 
 def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResult:
-    """Score power based on HR rate, barrel%, ISO."""
+    """Score power based on Statcast kinematics + HR rate.
+
+    V10.0: rebuilt around what the target app actually rewards — distance of
+    the play.  Strategy doc §"Offensive Engine": avg exit velocity, hard-hit
+    %, and barrel % are the upstream signals that produce 400+ ft home runs
+    and 105 mph hits.  HR/PA and max EV are kept as thin confirmation
+    signals (2 pts each) — they lag the physical profile.
+
+    Components (25-pt denominator):
+      avg_exit_velocity  → 8 pts  (92 mph floor, league-avg power)
+      hard_hit_pct       → 7 pts  (50% → elite sluggers)
+      barrel_pct         → 6 pts  (15% → Stewart/DeLauter tier)
+      max_exit_velocity  → 2 pts  (112 mph peak)
+      HR/PA              → 2 pts  (retrospective confirmation)
+    """
     if not stats or stats.pa == 0:
         return TraitResult("power_profile", 0, max_pts, "no stats")
 
     hr_per_pa = stats.hr / max(stats.pa, 1)
-    iso = stats.iso or 0.0
-    barrel_pct = stats.barrel_pct or 0.0
+    avg_ev = stats.avg_exit_velocity
+    hard_hit = stats.hard_hit_pct
+    barrel_pct = stats.barrel_pct
+    max_ev = stats.max_exit_velocity
 
-    # HR/PA: at HR_PA_MAX+ = full 10pts, scale linearly from 0
-    hr_score = min(10, hr_per_pa / POWER_PROFILE_HR_PA_MAX * 10)
-    # Barrel%: at BARREL_PCT_MAX+ = full 8pts
-    barrel_score = min(8, barrel_pct / POWER_PROFILE_BARREL_PCT_MAX * 8)
-    # ISO: at ISO_MAX+ = full 7pts
-    iso_score = min(7, iso / POWER_PROFILE_ISO_MAX * 7)
+    # Each sub-score is 0.0–1.0, then weighted by its point allotment.
+    avg_ev_score = scale_score(avg_ev, 85.0, POWER_PROFILE_AVG_EV_MAX, 1.0) if avg_ev is not None else None
+    hard_hit_score = scale_score(hard_hit, 30.0, POWER_PROFILE_HARD_HIT_MAX, 1.0) if hard_hit is not None else None
+    barrel_score = scale_score(barrel_pct, 4.0, POWER_PROFILE_BARREL_PCT_MAX, 1.0) if barrel_pct is not None else None
+    max_ev_score = scale_score(max_ev, 105.0, POWER_PROFILE_MAX_EV_CEILING, 1.0) if max_ev is not None else None
+    hr_score = min(1.0, hr_per_pa / POWER_PROFILE_HR_PA_MAX)
 
-    total = (hr_score + barrel_score + iso_score) / POWER_PROFILE_DENOM * max_pts
+    # Weighted sum. Missing sub-scores drop out of the numerator AND denominator
+    # so rookies with partial Statcast coverage aren't penalised for sparse data.
+    components = [
+        (avg_ev_score, 8.0, "EV"),
+        (hard_hit_score, 7.0, "HH%"),
+        (barrel_score, 6.0, "brl%"),
+        (max_ev_score, 2.0, "maxEV"),
+        (hr_score, 2.0, "HR/PA"),
+    ]
+    weighted_sum = sum(s * w for s, w, _ in components if s is not None)
+    denom = sum(w for s, w, _ in components if s is not None)
+    if denom == 0:
+        return TraitResult("power_profile", 0, max_pts, "no power signals")
+
+    # Scale the realised fraction up to the full POWER_PROFILE_DENOM (25) so a
+    # partial-data batter can still saturate max_pts if their present signals
+    # all max out — but not arbitrarily: the denominator reflects evidence.
+    total = (weighted_sum / denom) * max_pts
+
+    detail_parts = [f"HR/PA={hr_per_pa:.3f}"]
+    if avg_ev is not None:
+        detail_parts.append(f"EV={avg_ev:.1f}mph")
+    if hard_hit is not None:
+        detail_parts.append(f"HH={hard_hit:.1f}%")
+    if barrel_pct is not None:
+        detail_parts.append(f"brl={barrel_pct:.1f}%")
+    if max_ev is not None:
+        detail_parts.append(f"maxEV={max_ev:.1f}mph")
+
     return TraitResult(
         "power_profile",
         round(total, 1),
         max_pts,
-        f"HR/PA={hr_per_pa:.3f} barrel={barrel_pct:.1f}% ISO={iso:.3f}",
+        " ".join(detail_parts),
     )
 
 
 def score_lineup_position(batting_order: int | None, max_pts: float) -> TraitResult:
-    """Score based on where they bat. 2-4 = best RBI spots."""
+    """Score based on where they bat.
+
+    V10.0: slots 1-4 are all maximum-volume spots (strategy doc §"Predicting
+    the Unpredictable": top-half batters get the most PAs and the highest
+    probability of stepping to the plate in late-inning lead-change leverage).
+    Slot 1 is NOT penalised — leadoff volume is the equal of the 2-4 RBI spots.
+    """
     if batting_order is None:
         return TraitResult("lineup_position", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "lineup unknown")
 
-    if batting_order in (2, 3, 4):
+    if batting_order in (1, 2, 3, 4):
         score = max_pts
-    elif batting_order in (1, 5):
+    elif batting_order == 5:
         score = max_pts * 0.8
     elif batting_order in (6, 7):
         score = max_pts * 0.5

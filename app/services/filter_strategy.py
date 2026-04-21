@@ -48,12 +48,9 @@ from app.core.constants import (
     PITCHER_ENV_MIN_K_PER_9,
     MOONSHOT_SHARP_BONUS_MAX,
     MOONSHOT_EXPLOSIVE_BONUS_MAX,
-    MOONSHOT_SAME_TEAM_PENALTY,
     REQUIRED_PITCHERS_IN_LINEUP,
     PITCHER_ANCHOR_SLOT,
-    MAX_PLAYERS_PER_TEAM,
-    MAX_PLAYERS_PER_GAME,
-    MAX_OPPONENTS_SAME_GAME,
+    MAX_PLAYERS_PER_TEAM_BATTERS,
     STACK_BONUS,
     DNP_RISK_PENALTY,
     DNP_UNKNOWN_PENALTY,
@@ -596,9 +593,12 @@ class FilteredCandidate:
     """A player card that has passed through Filters 1-3.
 
     ========================================================================
-    CRITICAL RULE: card_boost and drafts are DISPLAY-ONLY FIELDS.
-    They must NEVER be used in EV computations, optimization, or scoring.
-    Both are only revealed during/after the draft and cannot be pre-game inputs.
+    V10.0 STRUCTURAL ISOLATION: card_boost and drafts do NOT exist on this
+    dataclass.  Removing them entirely (instead of marking them "display only")
+    eliminates the temptation to reference them in EV logic and makes the
+    "no ownership/boost signals in pre-game prediction" rule enforceable by
+    static grep.  The router layer reads card_boost and drafts straight from
+    the source FilterCard for display purposes.
     ========================================================================
 
     EV is computed from pre-game signals only:
@@ -606,19 +606,11 @@ class FilteredCandidate:
       total_score — season-level trait quality (K/9, ISO, barrel%, speed, recent form)
       popularity  — media attention (Google Trends, ESPN, Reddit) — NOT platform ownership
 
-    Fields marked "display only":
-      card_boost  — user-facing boost multiplier (0 to +3.0x), revealed during draft
-      drafts      — user-facing platform ownership count, revealed during draft
-
-    These fields exist solely for user communication. They MUST NOT leak into
-    EV computations. Leaking in-draft dynamic signals corrupts the entire model.
-
     See CLAUDE.md § "Signal Isolation: ABSOLUTE RULE" for full rationale.
     """
     player_name: str
     team: str
     position: str
-    card_boost: float     # display only — revealed during draft, not a predictive input
     total_score: float    # 0-100 from scoring engine (pre-game season stats)
     env_score: float      # 0-1.0 from environmental filter (pre-game conditions)
     env_factors: list[str] = field(default_factory=list)
@@ -627,7 +619,6 @@ class FilteredCandidate:
     game_id: int | str | None = None  # for diversification tracking
     is_pitcher: bool = False
     sharp_score: float = 0.0
-    drafts: int | None = None  # display only — revealed during draft
     traits: list = field(default_factory=list)  # TraitScore list from scoring engine
     batting_order: int | None = None  # 1-9 if confirmed in lineup, None = DNP risk
     is_in_blowout_game: bool = False  # set by run_filter_strategy before EV computation
@@ -752,17 +743,22 @@ def _enforce_composition(
     slate_class: SlateClassification,
 ) -> list[FilteredCandidate]:
     """
-    V6.0 pitcher-anchored composition: 1 pitcher + 4 batters.
+    V10.0 pitcher-anchored composition: 1 pitcher + 4 batters, STACKING ENABLED.
 
-    Retains V5.0's 1P+4B shape.  The popularity-first EV formula determines
-    WHICH pitcher and WHICH batters fill those slots — but the composition
-    is fixed at 1 SP (Slot 1) + 4 batters (Slots 2-5).
+    Composition is fixed at 1 SP (Slot 1) + 4 batters (Slots 2-5).  Unlike
+    V8/V9, batters may now stack — up to 4 teammates in the batter slots —
+    because the strategy document's winning lineups consistently deploy full
+    4-man team stacks or 3+2 split stacks to capture correlated scoring events
+    (R → RBI → HR cascades).
 
     Construction:
-    1. Sort all candidates by filter_ev descending.
-    2. Pick the highest-EV pitcher as anchor.  Its game_id is blocked.
-    3. Fill 4 batter slots by filter_ev, respecting MAX_PLAYERS_PER_TEAM
-       and MAX_PLAYERS_PER_GAME.
+    1. Select highest-EV pitcher as anchor. Pin to Slot 1.
+    2. NEVER draft a batter from the opposing side of the anchor's game
+       (pitcher ↔ hitter negative correlation).  Teammates of the anchor
+       are allowed because SP success implies low opposing offense but says
+       nothing adverse about his own team's hitting.
+    3. Fill 4 batter slots by filter_ev descending, allowing stacks up to
+       MAX_PLAYERS_PER_TEAM_BATTERS.
     """
     all_sorted = sorted(candidates, key=lambda c: c.filter_ev, reverse=True)
 
@@ -774,63 +770,43 @@ def _enforce_composition(
             "Cannot build a lineup without an SP anchor."
         )
 
-    blocked_game_id = anchor_pitcher.game_id
+    anchor_game_id = anchor_pitcher.game_id
+    anchor_team = anchor_pitcher.team.upper()
 
-    # Phase 2: Batters ordered by filter_ev (popularity-first ranking).
+    # Phase 2: Batters ordered by filter_ev (env×trait ranking).
     ordered_batters = [c for c in all_sorted if not c.is_pitcher]
 
-    # Phase 3: Fill 4 batter slots.
+    # Phase 3: Fill 4 batter slots. Stacking allowed; only hard rule is
+    # "never a batter from the opposing side of the anchor's game".
     lineup: list[FilteredCandidate] = [anchor_pitcher]
-    anchor_team = anchor_pitcher.team.upper()
-    team_used: dict[str, int] = {anchor_team: 1}
-    game_team_used: dict[tuple, int] = {}
-    game_teams: dict[int | str | None, set[str]] = {}
-    if blocked_game_id is not None:
-        game_team_used[(blocked_game_id, anchor_team)] = 1
-        game_teams[blocked_game_id] = {anchor_team}
+    team_batter_count: dict[str, int] = {}
 
     for c in ordered_batters:
         if len(lineup) == 5:
             break
 
-        # Block the anchor pitcher's game (no negative correlation).
-        if blocked_game_id is not None and c.game_id == blocked_game_id:
-            continue
-
         team_key = c.team.upper()
-        if team_used.get(team_key, 0) >= MAX_PLAYERS_PER_TEAM:
+
+        # Block the opposing side of the anchor's game (negative correlation).
+        # Teammates of the anchor are still allowed.
+        if anchor_game_id is not None and c.game_id == anchor_game_id and team_key != anchor_team:
             continue
 
-        if c.game_id is not None:
-            gt_key = (c.game_id, team_key)
-            if game_team_used.get(gt_key, 0) >= MAX_PLAYERS_PER_GAME:
-                continue
-            existing_teams = game_teams.get(c.game_id, set())
-            opponent_teams = existing_teams - {team_key}
-            if opponent_teams:
-                opp_count = sum(
-                    game_team_used.get((c.game_id, t), 0)
-                    for t in opponent_teams
-                )
-                if opp_count >= MAX_OPPONENTS_SAME_GAME:
-                    if team_key not in existing_teams:
-                        continue
-            game_team_used[gt_key] = game_team_used.get(gt_key, 0) + 1
-            game_teams.setdefault(c.game_id, set()).add(team_key)
+        if team_batter_count.get(team_key, 0) >= MAX_PLAYERS_PER_TEAM_BATTERS:
+            continue
 
-        team_used[team_key] = team_used.get(team_key, 0) + 1
+        team_batter_count[team_key] = team_batter_count.get(team_key, 0) + 1
         lineup.append(c)
 
-    # Validate team/game caps.
     lineup = _validate_lineup_structure(
         lineup, ordered_batters, anchor_pitcher=anchor_pitcher
     )
-    pitcher_count = sum(1 for c in lineup if c.is_pitcher)
+    batter_count = len(lineup) - 1
+    stack_teams = [t for t, n in team_batter_count.items() if n >= 3]
     logger.info(
-        "V6.0 composition: %dP/%dH — anchor=%s (EV=%.2f) (candidates: %d)",
-        pitcher_count, len(lineup) - pitcher_count,
-        anchor_pitcher.player_name, anchor_pitcher.filter_ev,
-        len(candidates),
+        "V10.0 composition: 1P/%dH — anchor=%s (EV=%.2f) stacks=%s (candidates: %d)",
+        batter_count, anchor_pitcher.player_name, anchor_pitcher.filter_ev,
+        stack_teams or "none", len(candidates),
     )
     return lineup
 
@@ -840,14 +816,20 @@ def _validate_lineup_structure(
     all_candidates_sorted: list[FilteredCandidate],
     anchor_pitcher: FilteredCandidate | None = None,
 ) -> list[FilteredCandidate]:
-    """
-    V6.0 validation — enforce team/game caps and 1-pitcher invariant.
+    """V10.0 validation — enforces:
 
-    The anchor pitcher is protected from all swaps.  Replacement candidates
-    are batters only (to preserve 1P+4B).
+      1. Exactly 1 pitcher (anchor).
+      2. No batter from the opposing side of the anchor's game.
+      3. No more than MAX_PLAYERS_PER_TEAM_BATTERS batters from any single team.
+
+    Batter stacking up to the team-batter cap is permitted and encouraged;
+    anchor-teammate batters are explicitly allowed.
     """
     if len(lineup) < 5:
         return lineup
+
+    anchor_team = anchor_pitcher.team.upper() if anchor_pitcher else None
+    anchor_game = anchor_pitcher.game_id if anchor_pitcher else None
 
     anchor_idx: int | None = None
     if anchor_pitcher is not None:
@@ -859,27 +841,57 @@ def _validate_lineup_structure(
     def _protected(idx: int) -> bool:
         return anchor_idx is not None and idx == anchor_idx
 
-    # Rule 1: Max N players per team — anchor exempt.
     from collections import Counter
-    team_counts = Counter(c.team for c in lineup)
-    for team, count in team_counts.items():
-        if count > MAX_PLAYERS_PER_TEAM:
+
+    # Rule 1: Never an opposing batter in the anchor's game.
+    if anchor_game is not None and anchor_team is not None:
+        violator_indices = [
+            i for i, c in enumerate(lineup)
+            if not _protected(i)
+            and c.game_id == anchor_game
+            and c.team.upper() != anchor_team
+        ]
+        lineup_names = {c.player_name for c in lineup}
+        for idx in violator_indices:
+            replacement = next(
+                (c for c in all_candidates_sorted
+                 if c.player_name not in lineup_names
+                 and not c.is_pitcher
+                 and not (c.game_id == anchor_game and c.team.upper() != anchor_team)),
+                None,
+            )
+            if replacement:
+                removed_name = lineup[idx].player_name
+                lineup_names.discard(removed_name)
+                lineup[idx] = replacement
+                lineup_names.add(replacement.player_name)
+                logger.info(
+                    "Anchor-opposition cap: replaced %s (opponent of %s) with %s",
+                    removed_name, anchor_pitcher.player_name, replacement.player_name,
+                )
+
+    # Rule 2: Max batters-per-team.
+    def _batter_team_counts(current):
+        return Counter(c.team for c in current if not c.is_pitcher)
+
+    batter_counts = _batter_team_counts(lineup)
+    for team, count in batter_counts.items():
+        if count > MAX_PLAYERS_PER_TEAM_BATTERS:
             team_indices = sorted(
                 [i for i, c in enumerate(lineup)
-                 if c.team == team and not _protected(i)],
+                 if not _protected(i) and c.team == team],
                 key=lambda i: lineup[i].filter_ev,
                 reverse=True,
             )
             lineup_names = {c.player_name for c in lineup}
-            anchor_game = anchor_pitcher.game_id if anchor_pitcher is not None else None
-            for idx in team_indices[MAX_PLAYERS_PER_TEAM:]:
-                current_team_counts = Counter(c.team for c in lineup)
+            for idx in team_indices[MAX_PLAYERS_PER_TEAM_BATTERS:]:
+                current_counts = _batter_team_counts(lineup)
                 replacement = next(
                     (c for c in all_candidates_sorted
                      if c.player_name not in lineup_names
                      and not c.is_pitcher
-                     and c.game_id != anchor_game
-                     and current_team_counts.get(c.team, 0) < MAX_PLAYERS_PER_TEAM),
+                     and not (c.game_id == anchor_game and c.team.upper() != anchor_team)
+                     and current_counts.get(c.team, 0) < MAX_PLAYERS_PER_TEAM_BATTERS),
                     None,
                 )
                 if replacement:
@@ -888,48 +900,12 @@ def _validate_lineup_structure(
                     lineup[idx] = replacement
                     lineup_names.add(replacement.player_name)
                     logger.info(
-                        "Team cap: replaced %s (%s) with %s (%s)",
+                        "Batter-team cap: replaced %s (%s) with %s (%s)",
                         removed_name, team,
                         replacement.player_name, replacement.team,
                     )
 
-    # Rule 2: Max N players per game — anchor exempt.
-    game_counts = Counter(c.game_id for c in lineup if c.game_id is not None)
-    for game_id, count in game_counts.items():
-        if count > MAX_PLAYERS_PER_GAME:
-            game_indices = sorted(
-                [i for i, c in enumerate(lineup)
-                 if c.game_id == game_id and not _protected(i)],
-                key=lambda i: lineup[i].filter_ev,
-                reverse=True,
-            )
-            lineup_names = {c.player_name for c in lineup}
-            anchor_game = anchor_pitcher.game_id if anchor_pitcher is not None else None
-            for idx in game_indices[MAX_PLAYERS_PER_GAME:]:
-                current_game_counts = Counter(
-                    c.game_id for c in lineup if c.game_id is not None
-                )
-                replacement = next(
-                    (c for c in all_candidates_sorted
-                     if c.player_name not in lineup_names
-                     and not c.is_pitcher
-                     and c.game_id != anchor_game
-                     and (c.game_id is None
-                          or current_game_counts.get(c.game_id, 0) < MAX_PLAYERS_PER_GAME)),
-                    None,
-                )
-                if replacement:
-                    removed_name = lineup[idx].player_name
-                    lineup_names.discard(removed_name)
-                    lineup[idx] = replacement
-                    lineup_names.add(replacement.player_name)
-                    logger.info(
-                        "Game cap: replaced %s (game=%s) with %s (game=%s)",
-                        removed_name, game_id,
-                        replacement.player_name, replacement.game_id,
-                    )
-
-    # Rule 3: Exactly 1 pitcher (sanity check).
+    # Rule 3: Exactly 1 pitcher.
     pitcher_count_final = sum(1 for c in lineup if c.is_pitcher)
     if pitcher_count_final != REQUIRED_PITCHERS_IN_LINEUP:
         logger.warning(
@@ -944,14 +920,13 @@ def _validate_lineup_structure(
 def _apply_game_diversification(
     lineup: list[FilteredCandidate],
 ) -> list[str]:
-    """
-    Check game diversification.
+    """Report lineup game/team spread for diagnostics.
 
-    Max 1 player per game is enforced during composition and validation.
-    This function now serves as a safety-net warning if any violations leaked
-    through, plus reports game spread for diagnostics.
+    V10.0: stacking is the strategy, so there is no per-game cap on teammates;
+    the only structural guard is "no opposing batter in the anchor's game",
+    enforced in _enforce_composition and _validate_lineup_structure.
     """
-    warnings = []
+    warnings: list[str] = []
     if not lineup:
         return warnings
 
@@ -963,21 +938,14 @@ def _apply_game_diversification(
 
     games_represented = len(game_counts) if game_counts else 0
 
-    # Invariant check: _enforce_composition + _validate_lineup_structure guarantee
-    # max 1 player per game.  If that guarantee is ever broken, raise loudly
-    # rather than papering over the violation with a silent EV penalty.
-    for gid, count in game_counts.items():
-        if count > MAX_PLAYERS_PER_GAME:
-            violators = [c.player_name for c in lineup if c.game_id == gid]
-            raise ValueError(
-                f"Game-cap invariant violated: game {gid} has {count} players "
-                f"(cap={MAX_PLAYERS_PER_GAME}): {violators}. "
-                "This is a bug in _enforce_composition or _validate_lineup_structure."
-            )
-
+    from collections import Counter
+    batter_team_counts = Counter(c.team for c in lineup if not c.is_pitcher)
+    stack_teams = [
+        f"{t}x{n}" for t, n in batter_team_counts.items() if n >= 2
+    ]
     logger.info(
-        "Game diversification: %d games represented across %d players",
-        games_represented, len(lineup),
+        "Lineup spread: %d games, batter stacks: %s",
+        games_represented, ", ".join(stack_teams) if stack_teams else "none",
     )
 
     return warnings
@@ -1182,7 +1150,6 @@ def run_dual_filter_strategy(
                 Picks from the same FADE-excluded pool as Starting 5.
                 Player overlap with Starting 5 is allowed — the two lineups
                 diverge naturally via different EV formulas, not forced exclusion.
-                Same-team penalty (0.85×) provides soft portfolio diversification.
 
     The FADE exclusion gate runs once here, before either lineup is built.
     """
@@ -1192,15 +1159,14 @@ def run_dual_filter_strategy(
     # Phase 1: Starting 5 — pass skip_fade_gate=True since we already filtered.
     starting_5 = run_filter_strategy(candidates, slate_classification, skip_fade_gate=True)
 
-    s5_teams = {s.candidate.team.upper() for s in starting_5.slots}
-
     # Phase 2: Moonshot — same pool, different EV formula
     moonshot_pool = candidates  # no player exclusion
 
     for c in moonshot_pool:
         c.filter_ev = _compute_moonshot_filter_ev(c)
-        if c.team.upper() in s5_teams:
-            c.filter_ev *= MOONSHOT_SAME_TEAM_PENALTY
+    # V10.0: same-team penalty removed.  Moonshot naturally diverges from S5
+    # via sharp_bonus × explosive_bonus re-ranking; artificially punishing
+    # stacks contradicts the correlation-driven strategy.
 
     moonshot_lineup = _enforce_composition(moonshot_pool, slate_classification)
     moonshot_warnings = _apply_game_diversification(moonshot_lineup)

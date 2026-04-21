@@ -17,11 +17,11 @@ dependencies = [
     "joblib>=1.4",
     "tenacity>=8.2",
     "alembic>=1.13",
+    "pybaseball>=2.2",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "pre-commit>=3.7"]
-statcast = ["pybaseball>=2.3"]
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -162,15 +162,32 @@ def _traits_to_breakdowns(traits: list) -> list[TraitBreakdown]:
     ]
 
 
-def _build_lineup_out(result) -> FilterLineupOut:
-    slots_out = [
-        FilterSlotOut(
+def _build_display_map(cards: list[FilterCard]) -> dict[tuple[str, str], tuple[float, int | None]]:
+    """Build a (player_name, team) → (card_boost, drafts) lookup for display only.
+
+    These fields are kept strictly in the router layer — the optimizer never
+    sees them.  Frontend needs them to render the draft UI, but they must not
+    flow through EV.
+    """
+    return {
+        (c.player_name, c.team.upper()): (c.card_boost, c.drafts)
+        for c in cards
+    }
+
+
+def _build_lineup_out(result, display_map: dict) -> FilterLineupOut:
+    slots_out = []
+    for s in result.slots:
+        boost, drafts = display_map.get(
+            (s.candidate.player_name, s.candidate.team.upper()), (0.0, None)
+        )
+        slots_out.append(FilterSlotOut(
             slot_index=s.slot_index,
             slot_mult=s.slot_mult,
             player_name=s.candidate.player_name,
             team=s.candidate.team,
             position=s.candidate.position,
-            card_boost=s.candidate.card_boost,
+            card_boost=boost,
             total_score=s.candidate.total_score,
             env_score=round(s.candidate.env_score, 3),
             env_factors=s.candidate.env_factors,
@@ -179,11 +196,9 @@ def _build_lineup_out(result) -> FilterLineupOut:
             filter_ev=round(s.candidate.filter_ev, 2),
             expected_slot_value=s.expected_slot_value,
             game_id=s.candidate.game_id,
-            drafts=s.candidate.drafts,
+            drafts=drafts,
             breakdowns=_traits_to_breakdowns(s.candidate.traits),
-        )
-        for s in result.slots
-    ]
+        ))
     return FilterLineupOut(
         lineup=slots_out,
         total_expected_value=result.total_expected_value,
@@ -193,14 +208,18 @@ def _build_lineup_out(result) -> FilterLineupOut:
     )
 
 
-def _build_response(dual, candidates) -> FilterOptimizeResponse:
+def _build_response(dual, candidates, display_map: dict) -> FilterOptimizeResponse:
     """Assemble the FilterOptimizeResponse from a dual-lineup result + candidate list."""
-    all_candidates_out = [
-        FilterCandidateOut(
+    all_candidates_out = []
+    for c in candidates:
+        boost, drafts = display_map.get(
+            (c.player_name, c.team.upper()), (0.0, None)
+        )
+        all_candidates_out.append(FilterCandidateOut(
             player_name=c.player_name,
             team=c.team,
             position=c.position,
-            card_boost=c.card_boost,
+            card_boost=boost,
             total_score=c.total_score,
             env_score=round(c.env_score, 3),
             env_factors=c.env_factors,
@@ -208,11 +227,9 @@ def _build_response(dual, candidates) -> FilterOptimizeResponse:
             is_two_way_pitcher=c.is_two_way_pitcher,
             filter_ev=round(c.filter_ev, 2),
             game_id=c.game_id,
-            drafts=c.drafts,
+            drafts=drafts,
             breakdowns=_traits_to_breakdowns(c.traits),
-        )
-        for c in candidates
-    ]
+        ))
     sc = dual.starting_5.slate_classification
     stackable_out = [
         StackableGameOut(
@@ -234,8 +251,8 @@ def _build_response(dual, candidates) -> FilterOptimizeResponse:
             stackable_games=stackable_out,
             reason=sc.reason,
         ),
-        starting_5=_build_lineup_out(dual.starting_5),
-        moonshot=_build_lineup_out(dual.moonshot),
+        starting_5=_build_lineup_out(dual.starting_5, display_map),
+        moonshot=_build_lineup_out(dual.moonshot, display_map),
         all_candidates=sorted(all_candidates_out, key=lambda c: c.filter_ev, reverse=True),
     )
 
@@ -275,7 +292,8 @@ async def build_and_cache_lineups(db: Session, slate_date: date | None = None) -
     for c in candidates:
         c.filter_ev = _compute_filter_ev(c)
 
-    response = _build_response(dual, candidates)
+    display_map = _build_display_map(cards)
+    response = _build_response(dual, candidates, display_map)
     lineup_cache.store(response, slate_date=active_date)
     logger.info(
         "Lineup cache warmed: %d candidates, slate=%s",

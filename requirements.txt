@@ -31,6 +31,9 @@ numpy>=1.26
 scikit-learn>=1.5
 joblib>=1.4
 
+# Statcast kinematics (Baseball Savant → pitch physics + exit velocity)
+pybaseball>=2.2
+
 # Retry logic
 tenacity>=8.2
 
