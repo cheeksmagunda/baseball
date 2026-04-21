@@ -28,7 +28,6 @@ Sharp signal (Moonshot only):
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import date
 from enum import Enum
 
 import httpx

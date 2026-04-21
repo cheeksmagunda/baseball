@@ -5,7 +5,6 @@ This is the primary draft optimization endpoint. It implements
 the full 5-filter pipeline from the Master Strategy Document.
 """
 
-import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 
@@ -26,9 +25,6 @@ from app.schemas.filter_strategy import (
     StackableGameOut,
 )
 from app.services.filter_strategy import (
-    FilteredCandidate,
-    SlateClassification,
-    StackableGame,
     classify_slate,
     run_dual_filter_strategy,
 )

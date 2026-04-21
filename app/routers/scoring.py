@@ -1,13 +1,12 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, selectinload, joinedload
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.core.utils import find_player_by_name, compute_total_value, get_latest_player_score
-from app.models.player import Player
+from app.core.utils import find_player_by_name, compute_total_value
 from app.models.slate import Slate, SlatePlayer
-from app.models.scoring import ScoreBreakdown, PlayerScore
+from app.models.scoring import PlayerScore
 from app.schemas.scoring import PlayerScoreOut, SlateRankingsOut, TraitBreakdown
 from app.services.scoring_engine import score_player
 from app.services.pipeline import run_score_slate

@@ -8,8 +8,6 @@ import logging
 from datetime import date, datetime as _datetime
 from zoneinfo import ZoneInfo
 
-logger = logging.getLogger(__name__)
-
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -25,6 +23,8 @@ from app.core.mlb_api import (
 )
 from app.models.player import Player, PlayerStats, PlayerGameLog, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
+
+logger = logging.getLogger(__name__)
 
 _ET = ZoneInfo("America/New_York")
 
@@ -794,7 +794,7 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
     Uses Open-Meteo archive endpoint for past dates (≥ 5 days ago) and the
     forecast endpoint for today or near-future games.
     """
-    from datetime import date as _date, timedelta
+    from datetime import date as _date
 
     from app.core.open_meteo import STADIUM_COORDINATES, get_game_weather
 

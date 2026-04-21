@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "pre-commit>=3.7"]
 statcast = ["pybaseball>=2.3"]
 
 [build-system]
@@ -33,3 +33,8 @@ include = ["app*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint.per-file-ignores]
+# SQLAlchemy relationship() annotations use string forward references that ruff
+# cannot resolve. These are legitimate forward refs, not undefined names.
+"app/models/*.py" = ["F821"]

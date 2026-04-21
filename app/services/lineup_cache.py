@@ -22,7 +22,7 @@ Turnover logic:
 """
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)

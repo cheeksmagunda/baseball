@@ -1,0 +1,25 @@
+# Pre-commit hooks for Ben Oracle.
+#
+# Install once:   pre-commit install
+# Run manually:   pre-commit run --all-files
+#
+# Gates enforced:
+#   1. ruff (style + lint)
+#   2. audit_live_isolation.py (the T-65 live pipeline must never read historical
+#      outcome fields — enforces CLAUDE.md's absolute rule on data leakage).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.7
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: audit-live-isolation
+        name: Live-isolation audit (no historical outcomes in T-65 path)
+        entry: python scripts/audit_live_isolation.py
+        language: system
+        pass_filenames: false
+        files: ^app/(services|routers|core)/.*\.py$
