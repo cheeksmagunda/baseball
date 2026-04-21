@@ -211,8 +211,8 @@ The app uses an event-driven timing model that triggers the ONLY full pipeline r
    - **No fallbacks.** If any stage fails, the monitor crashes so `/optimize` returns HTTP 503.
    - Freeze cache with `lineup_cache.freeze()` — picks are now immutable
 
-4. **T-60 Unlock & Post-Lock Monitoring** (After T-65):
-   - At T-60 (60 minutes before first pitch), picks unlock for viewing
+4. **Post-Lock Monitoring** (After T-65):
+   - Picks are available immediately once the T-65 pipeline completes and Redis is written
    - `/api/filter-strategy/optimize` serves frozen picks (zero computation per request)
    - Lightweight 60-second loop monitors game completion
    - On all-final, clear cache and pre-warm tomorrow's pipeline
@@ -226,7 +226,7 @@ The app uses an event-driven timing model that triggers the ONLY full pipeline r
 **Why This Architecture Matters:**
 
 1. **Pick Quality**: All candidate fetches, scoring, and optimization happen in one synchronized run with live data. No stale data. No partial updates.
-2. **User Predictability**: Picks are locked 60 minutes before first pitch. Users know exactly when to draft.
+2. **User Predictability**: Picks are generated at T-65 and available immediately after. Users know exactly when to draft.
 3. **No Generational Drift**: No risk of serving lineups built from different versions of the schedule (e.g., lineup A built at 6:00 PM from 8 games, lineup B built at 6:15 PM from 7 games after a cancellation).
 4. **Testability**: Manual endpoints (`/api/pipeline/*`) exist for post-slate analysis and testing, but are gated and only work after all games finish.
 

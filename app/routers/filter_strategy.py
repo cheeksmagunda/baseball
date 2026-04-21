@@ -306,23 +306,23 @@ def optimize_status():
 
     if lineup_cache.is_frozen:
         phase = "ready"
-        minutes_until_unlock = None
+        minutes_until_lock = None
     elif first_pitch is not None and lock_time is not None and now < lock_time:
         phase = "before_lock"
-        minutes_until_unlock = max(0, int((lock_time - now).total_seconds() / 60))
+        minutes_until_lock = max(0, int((lock_time - now).total_seconds() / 60))
     elif first_pitch is not None:
         phase = "generating"
-        minutes_until_unlock = 0
+        minutes_until_lock = 0
     else:
         phase = "no_slate"
-        minutes_until_unlock = None
+        minutes_until_lock = None
 
     return {
         "ready": lineup_cache.is_frozen and lineup_cache.is_warm,
         "phase": phase,
         "first_pitch_utc": first_pitch.isoformat() if first_pitch else None,
         "lock_time_utc": lock_time.isoformat() if lock_time else None,
-        "minutes_until_unlock": minutes_until_unlock,
+        "minutes_until_lock": minutes_until_lock,
     }
 
 
@@ -338,7 +338,7 @@ async def filter_optimize(db: Session = Depends(get_db)):
     T-65 Sniper Architecture:
       - Before T-65: HTTP 425 "Pipeline not yet run" (initialization phase)
       - T-65 onwards (pipeline running): HTTP 425 "Generating lineups"
-      - Picks cached (is_frozen): HTTP 200 immediately — no T-60 wait
+      - Picks cached (is_frozen): HTTP 200 — serves frozen Redis payload
       - After all games final: HTTP 200 for the final time, then resets for next slate
 
     Under the "zero work outside T-65" rule, this endpoint cannot trigger any
@@ -375,7 +375,7 @@ async def filter_optimize(db: Session = Depends(get_db)):
                     "phase": "initializing",
                     "first_pitch_utc": None,
                     "lock_time_utc": None,
-                    "minutes_until_unlock": None,
+                    "minutes_until_lock": None,
                 },
             )
 
@@ -393,7 +393,7 @@ async def filter_optimize(db: Session = Depends(get_db)):
                     "phase": "before_lock",
                     "first_pitch_utc": lineup_cache.first_pitch_utc.isoformat(),
                     "lock_time_utc": lock_time.isoformat(),
-                    "minutes_until_unlock": minutes_until + 5,
+                    "minutes_until_lock": minutes_until,
                 },
             )
 
@@ -412,7 +412,7 @@ async def filter_optimize(db: Session = Depends(get_db)):
                 "phase": "generating",
                 "first_pitch_utc": lineup_cache.first_pitch_utc.isoformat(),
                 "lock_time_utc": lock_time.isoformat(),
-                "minutes_until_unlock": 0,
+                "minutes_until_lock": 0,
             },
         )
 
@@ -424,7 +424,7 @@ async def filter_optimize(db: Session = Depends(get_db)):
             "phase": "initializing",
             "first_pitch_utc": None,
             "lock_time_utc": None,
-            "minutes_until_unlock": None,
+            "minutes_until_lock": None,
         },
     )
 

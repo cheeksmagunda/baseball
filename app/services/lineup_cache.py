@@ -187,17 +187,10 @@ class _LineupCache:
 
     @property
     def lock_time_utc(self) -> Optional[datetime]:
-        """T-65 lock target: 65 minutes (60-min window + 5-min generation buffer) before first pitch."""
+        """65 minutes before first pitch — when the pipeline runs and picks are frozen."""
         if self._first_pitch_utc is None:
             return None
         return self._first_pitch_utc - timedelta(minutes=65)
-
-    @property
-    def unlock_time_utc(self) -> Optional[datetime]:
-        """T-60 unlock time: 60 minutes before first pitch. Picks become available after this."""
-        if self._first_pitch_utc is None:
-            return None
-        return self._first_pitch_utc - timedelta(minutes=60)
 
     # ---------- public API ----------
 

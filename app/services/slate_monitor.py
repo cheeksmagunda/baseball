@@ -258,16 +258,14 @@ async def targeted_slate_monitor(
         #
         # Bootstrap: the monitor cannot sleep until T-65 without knowing when
         # first pitch is, and that requires SlateGame.scheduled_game_time rows
-        # in the DB. On a fresh deploy (or after a restart that purged the
-        # cache during the T-60 window), no Slate row exists for today. Fetch
+        # in the DB. On a fresh deploy, no Slate row exists for today. Fetch
         # the schedule here — this is the ONE MLB API call allowed outside
         # T-65, because without it the monitor has no idea when T-65 is.
-        # When the restart happens AFTER T-65 (inside the T-60 window),
-        # main.py has already purged lineup_cache so is_frozen=False. Phase 2
-        # below will see now >= lock_time_utc and skip the sleep; Phase 3's
-        # "if is_frozen" guard will NOT fire, so run_full_pipeline executes
-        # immediately with fresh live data and build_and_cache_lineups
-        # re-freezes the cache.
+        # When the restart happens AFTER T-65, main.py has already purged
+        # lineup_cache so is_frozen=False. Phase 2 below will see
+        # now >= lock_time_utc and skip the sleep; Phase 3's "if is_frozen"
+        # guard will NOT fire, so run_full_pipeline executes immediately with
+        # fresh live data and build_and_cache_lineups re-freezes the cache.
 
         today = date.today()
         db = SessionLocal()
