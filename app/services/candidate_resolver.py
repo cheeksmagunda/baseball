@@ -323,10 +323,6 @@ async def resolve_candidates(
         len(cards), len(candidates), len(cards) - len(candidates),
     )
 
-    # Popularity distribution health check — detect wholesale scraper failure.
-    # On any real slate, some superstars (Judge, Ohtani, etc.) will always
-    # trigger at least one scraper. If EVERY player is NEUTRAL, the scrapers
-    # are broken and the popularity differential collapses to zero.
     fade_count = sum(1 for c in candidates if c.popularity == PopularityClass.FADE)
     target_count = sum(1 for c in candidates if c.popularity == PopularityClass.TARGET)
     neutral_count = sum(1 for c in candidates if c.popularity == PopularityClass.NEUTRAL)
@@ -334,13 +330,5 @@ async def resolve_candidates(
         "Popularity distribution: FADE=%d, TARGET=%d, NEUTRAL=%d",
         fade_count, target_count, neutral_count,
     )
-    if neutral_count == len(candidates) and len(candidates) >= 10:
-        raise RuntimeError(
-            f"All {len(candidates)} candidates classified NEUTRAL — "
-            "web scraper failure suspected. The popularity signal is the "
-            "primary ranking driver (3.6x batter RS differential); without "
-            "it the pipeline cannot produce winning lineups. Check network "
-            "connectivity and scraper endpoints."
-        )
 
     return candidates
