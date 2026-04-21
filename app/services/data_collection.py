@@ -206,9 +206,13 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict:
             raise ValueError(f"No MLB team ID for {team} — cannot fetch roster")
         return team, await get_team_roster(team_id)
 
-    roster_results = await asyncio.gather(*[_fetch_roster(t) for t in team_games])
+    roster_results = await asyncio.gather(*[_fetch_roster(t) for t in team_games], return_exceptions=True)
 
-    for team, roster_data in roster_results:
+    for result in roster_results:
+        if isinstance(result, Exception):
+            logger.warning("Roster fetch failed for a team — skipping: %s", result)
+            continue
+        team, roster_data = result
         if roster_data is None:
             continue
 
@@ -572,13 +576,17 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
     async def _fetch_pitching(team: str) -> tuple[str, dict]:
         return team, await get_team_pitching_stats(TEAM_MLB_IDS[team], season)
 
-    batting_results, pitching_results = await asyncio.gather(
-        asyncio.gather(*[_fetch_batting(t) for t in teams]),
-        asyncio.gather(*[_fetch_pitching(t) for t in teams]),
+    batting_raw, pitching_raw = await asyncio.gather(
+        asyncio.gather(*[_fetch_batting(t) for t in teams], return_exceptions=True),
+        asyncio.gather(*[_fetch_pitching(t) for t in teams], return_exceptions=True),
     )
 
     team_batting: dict[str, dict] = {}
-    for team, data in batting_results:
+    for result in batting_raw:
+        if isinstance(result, Exception):
+            logger.warning("Team batting stats fetch failed — skipping: %s", result)
+            continue
+        team, data = result
         splits = (data.get("stats") or [{}])[0].get("splits", [])
         if not splits:
             continue
@@ -590,7 +598,11 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
         team_batting[team] = {"ops": ops, "k_pct": k_pct}
 
     team_pitching: dict[str, dict] = {}
-    for team, data in pitching_results:
+    for result in pitching_raw:
+        if isinstance(result, Exception):
+            logger.warning("Team pitching stats fetch failed — skipping: %s", result)
+            continue
+        team, data = result
         splits = (data.get("stats") or [{}])[0].get("splits", [])
         if not splits:
             continue
@@ -701,8 +713,14 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
                     game_list.append(g)
         return team, game_list
 
-    results = await asyncio.gather(*[_fetch_team_schedule(t) for t in teams])
-    team_games: dict[str, list[dict]] = dict(results)
+    raw_results = await asyncio.gather(*[_fetch_team_schedule(t) for t in teams], return_exceptions=True)
+    team_games: dict[str, list[dict]] = {}
+    for result in raw_results:
+        if isinstance(result, Exception):
+            logger.warning("Series context: schedule fetch failed — skipping: %s", result)
+            continue
+        team, game_list = result
+        team_games[team] = game_list
 
     def _normalize(abbr: str) -> str:
         return canonicalize_team(abbr).upper()
@@ -720,10 +738,12 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
         """
         raw = team_games.get(team, [])
         if not raw:
-            raise RuntimeError(
-                f"No completed games found for team {team!r} in the last 14 days — "
-                "check MLB API response or extend the lookback window."
+            logger.warning(
+                "No completed games found for team %r in last 14 days — "
+                "series context will be NULL for this team",
+                team,
             )
+            return None, None, None
 
         def _game_date(g: dict) -> str:
             return g.get("officialDate", g.get("gameDate", "")[:10])
