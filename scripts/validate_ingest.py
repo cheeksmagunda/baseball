@@ -185,7 +185,11 @@ def check_slate_results(target_date: str) -> bool:
     ok(f"historical_slate_results.json: entry found for {target_date}")
 
     games = entry.get("games", [])
-    game_count = entry.get("game_count", 0)
+    game_count = entry.get("game_count")
+    if game_count is None:
+        err(f"historical_slate_results.json: game_count is null for {target_date} — run backfill_slate_results_and_hv_stats.py")
+        return True
+
     if len(games) != game_count:
         warn(
             f"historical_slate_results.json: game_count={game_count} "
