@@ -256,7 +256,7 @@ One source of truth: `STARTED_GAME_STATUSES = frozenset({"Live", "Final"})` and 
 
 ## Data Files (`/data/`)
 
-Current coverage (as of 2026-04-20): **27 slates, 2026-03-25 → 2026-04-20**. All four files stay in lockstep — every date present in one is present in all four.
+Current coverage (as of 2026-04-21): **28 slates, 2026-03-25 → 2026-04-21**. All four files stay in lockstep — every date present in one is present in all four.
 
 **Two roles — do not confuse them:**
 - **Outcome labels** (`historical_players.csv`, `historical_winning_drafts.csv`) — retrospective results. What players scored, who won, what lineups paid off. Never used as live pipeline inputs.
@@ -264,10 +264,10 @@ Current coverage (as of 2026-04-20): **27 slates, 2026-03-25 → 2026-04-20**. A
 
 | File | Role | Current size | Contents |
 |---|---|---|---|
-| `historical_players.csv` | Outcome labels | 975 rows / 27 dates | Master player ledger: real_score, card_boost, drafts, leaderboard flags (HV/MP/3X). **Null `real_score` / `total_value` = DNP/scratch.** Avg ~36 rows/date (range 22–56). |
-| `historical_winning_drafts.csv` | Outcome labels | 955 rows / 27 dates | Top-ranked lineups per date (5 rows per lineup). 3–12 ranks captured per date; target is 20. |
-| `historical_slate_results.json` | Calibration ground truth | 27 entries | Per-date game context: game results and scores. Game objects can be extended with env condition fields (Vegas lines, ERA/K9/WHIP/hand, team OPS/K%, bullpen ERA, series context, weather) when needed for manual calibration analysis. Cross-reference with historical_players.csv by (date, team). |
-| `hv_player_game_stats.csv` | Calibration ground truth | 428 rows / 27 dates | Actual box scores for every Highest-Value player appearance. Batting (ab, r, h, hr, rbi, bb, so) and pitching (ip, er, k_pitching, decision) coexist — blanks = not applicable. |
+| `historical_players.csv` | Outcome labels | 1013 rows / 28 dates | Master player ledger: real_score, card_boost, drafts, leaderboard flags (HV/MP/3X). **Null `real_score` / `total_value` = DNP/scratch.** Avg ~36 rows/date (range 22–56). |
+| `historical_winning_drafts.csv` | Outcome labels | 985 rows / 28 dates | Top-ranked lineups per date (5 rows per lineup). 3–12 ranks captured per date; target is 20. |
+| `historical_slate_results.json` | Calibration ground truth | 28 entries | Per-date game context: game results and scores. Game objects can be extended with env condition fields (Vegas lines, ERA/K9/WHIP/hand, team OPS/K%, bullpen ERA, series context, weather) when needed for manual calibration analysis. Cross-reference with historical_players.csv by (date, team). |
+| `hv_player_game_stats.csv` | Calibration ground truth | 446 rows / 28 dates | Actual box scores for every Highest-Value player appearance. Batting (ab, r, h, hr, rbi, bb, so) and pitching (ip, er, k_pitching, decision) coexist — blanks = not applicable. |
 
 ## Env Scoring Calibration
 
