@@ -11,6 +11,7 @@ import { PopularityBadge } from "./PopularityBadge";
 import { EnvFactorChip } from "./EnvFactorChip";
 import { NumberTicker } from "./NumberTicker";
 import { TraitBreakdown } from "./TraitBreakdown";
+import { BoostIndicator } from "./BoostIndicator";
 import { formatScore, formatEV } from "@/lib/formatters";
 
 function StatBlock({ label, children }: { label: string; children: React.ReactNode }) {
@@ -29,7 +30,7 @@ interface PlayerCardProps {
 }
 
 export function PlayerCard({ slot, index, isMoonshot = false }: PlayerCardProps) {
-  const { primary, textColor, glowShadow, gradientBg, borderColor } = useTeamColors(slot.team);
+  const { primary, glowShadow, gradientBg, borderColor } = useTeamColors(slot.team);
   const reduced = useReducedMotion();
 
   return (
@@ -54,13 +55,18 @@ export function PlayerCard({ slot, index, isMoonshot = false }: PlayerCardProps)
       />
 
       <div className="relative p-4 pl-5">
-        {/* Top row: slot badge */}
-        <div className="flex items-center">
+        {/* Top row: slot badge + moonshot indicator */}
+        <div className="flex items-center gap-2">
           <SlotBadge slotIndex={slot.slot_index} slotMult={slot.slot_mult} />
+          {isMoonshot && (
+            <span className="rounded-md bg-brand-moonshot/15 px-1.5 py-0.5 text-fluid-xs font-bold text-brand-moonshot">
+              MOONSHOT
+            </span>
+          )}
         </div>
 
         {/* Player info */}
-        <div className="mt-2 flex items-baseline gap-2">
+        <div className="mt-2 flex flex-wrap items-baseline gap-2">
           <h3 className="text-fluid-lg font-bold text-text-primary">{slot.player_name}</h3>
           <span
             className="rounded-md px-1.5 py-0.5 text-fluid-xs font-bold"
@@ -69,16 +75,17 @@ export function PlayerCard({ slot, index, isMoonshot = false }: PlayerCardProps)
             {slot.team}
           </span>
           <span className="text-fluid-xs text-text-muted">{slot.position}</span>
+          {slot.card_boost > 0 && <BoostIndicator boost={slot.card_boost} />}
         </div>
 
         {/* Score row */}
         <div className="mt-3 grid grid-cols-3 gap-3">
-          <StatBlock label="Score">
+          <StatBlock label="Rating">
             <p className="font-stats text-fluid-base font-bold text-text-primary">
               {formatScore(slot.total_score)}
             </p>
           </StatBlock>
-          <StatBlock label="Filter EV">
+          <StatBlock label="EV">
             <p className="font-stats text-fluid-base font-bold text-text-accent">
               {formatEV(slot.filter_ev)}
             </p>
@@ -98,6 +105,11 @@ export function PlayerCard({ slot, index, isMoonshot = false }: PlayerCardProps)
           {slot.env_factors.slice(0, 3).map((factor, i) => (
             <EnvFactorChip key={i} factor={factor} />
           ))}
+          {slot.env_factors.length > 3 && (
+            <span className="rounded-md bg-surface-elevated px-2 py-0.5 text-fluid-xs text-text-muted">
+              +{slot.env_factors.length - 3} more
+            </span>
+          )}
         </div>
 
         {/* Trait breakdown accordion */}

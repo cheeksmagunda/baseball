@@ -95,8 +95,6 @@ HITTER_DAY_VEGAS_TOTAL_THRESHOLD = 9.0
 BLOWOUT_MONEYLINE_THRESHOLD = -200  # e.g. -210 means heavy favorite
 BLOWOUT_MIN_GAMES_FOR_STACK_DAY = 1  # 1+ blowout game → stack day eligible
 
-ENV_PASS_THRESHOLD = 0.5           # env_score >= 0.5 = passes environmental filter
-
 # V10.1 conservative stacking architecture.
 #
 # Stacking is powerful (pitcher shuts down opposing offense → teammates cash
@@ -152,15 +150,7 @@ def is_stack_eligible_game(
 # Environmental filter thresholds (Filter 2)
 # Pitcher environmental pass conditions
 PITCHER_ENV_WEAK_OPP_OPS = 0.700      # bottom-10 offense OPS threshold
-PITCHER_ENV_WEAK_OPP_K_PCT = 0.24     # high-K% offense threshold
 PITCHER_ENV_MIN_K_PER_9 = 8.0         # min K/9 for "K upside"
-PITCHER_ENV_FRIENDLY_PARK = 1.00      # park factor below this = pitcher-friendly
-
-# Batter environmental pass conditions
-BATTER_ENV_HIGH_VEGAS_TOTAL = 8.5     # O/U >= this = high-run environment
-BATTER_ENV_WEAK_PITCHER_ERA = 4.5     # opposing starter ERA above this = weak
-BATTER_ENV_TOP_LINEUP = 5             # batting 1-5 = top of lineup (§4)
-BATTER_ENV_WEAK_BULLPEN_ERA = 4.5     # opposing bullpen ERA above this = vulnerable
 
 # ---------------------------------------------------------------------------
 # Bifurcated missing-data handling
