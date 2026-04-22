@@ -109,9 +109,9 @@ async def lifespan(app: FastAPI):
 
     def _sync_startup_init() -> None:
         """Blocking startup work. Runs in a worker thread via asyncio.to_thread."""
-        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        from datetime import datetime as _dt, timezone as _tz
         from app.services.lineup_cache import lineup_cache
-        from app.services.slate_monitor import _get_first_pitch_utc, LOCK_MINUTES_BEFORE_PITCH
+        from app.services.slate_monitor import _get_first_pitch_utc
         from app.models.slate import Slate as _Slate
         import redis as redis_lib
         import time as _time
@@ -158,19 +158,23 @@ async def lifespan(app: FastAPI):
             if _today_slate:
                 _first_pitch = _get_first_pitch_utc(_check_db, date.today())
                 if _first_pitch:
-                    _lock_time = _first_pitch - _td(minutes=LOCK_MINUTES_BEFORE_PITCH)
-                    if _dt.now(_tz.utc) >= _lock_time:
+                    if _dt.now(_tz.utc) >= _first_pitch:
+                        # Slate has started — restore frozen picks so the monitor
+                        # skips pipeline regeneration and picks remain unchanged.
                         _restored = lineup_cache.restore_and_refreeze(_first_pitch)
                         if _restored:
                             logger.info(
-                                "Post-T-65 restart: restored frozen picks. "
+                                "Post-first-pitch restart: restored frozen picks. "
                                 "Monitor will skip pipeline and proceed to post-lock monitoring."
                             )
                         else:
                             logger.warning(
-                                "Post-T-65 restart: no cached picks to restore. "
-                                "Monitor will attempt pipeline regeneration (may fail if games are Live)."
+                                "Post-first-pitch restart: no cached picks to restore. "
+                                "Monitor will run mid-slate pipeline (remaining games only)."
                             )
+                    # T-65 window (lock_time <= now < first_pitch): do NOT restore.
+                    # purge() below wipes the cache so the monitor sees is_frozen=False
+                    # and runs a fresh cold pipeline immediately (lock_time is already past).
         if not _restored:
             lineup_cache.purge()
 
