@@ -101,7 +101,7 @@ def score_ace_status(stats: PlayerStats | None, max_pts: float) -> TraitResult:
     else:
         score = max_pts * 0.1
 
-    return TraitResult("ace_status", round(score, 1), max_pts, f"ERA={era:.2f}")
+    return TraitResult("ace_status", round(score, 1), max_pts, f"ERA {era:.2f} | {stats.ip:.1f} IP")
 
 
 def score_pitcher_k_rate(stats: PlayerStats | None, max_pts: float) -> TraitResult:
@@ -146,8 +146,20 @@ def score_pitcher_k_rate(stats: PlayerStats | None, max_pts: float) -> TraitResu
         else:
             combined = kinematic
         score = combined * max_pts
-        detail = " ".join(f"{n}={v:.2f}" for n, v in subs)
-        return TraitResult("k_rate", round(score, 1), max_pts, detail)
+        stat_parts = []
+        if stats.fb_velocity is not None:
+            stat_parts.append(f"{stats.fb_velocity:.1f} mph")
+        if stats.fb_ivb is not None:
+            stat_parts.append(f"{stats.fb_ivb:.1f}in IVB")
+        if stats.fb_extension is not None:
+            stat_parts.append(f"{stats.fb_extension:.1f}ft ext")
+        if stats.whiff_pct is not None:
+            stat_parts.append(f"{stats.whiff_pct:.0f}% whiff")
+        if stats.chase_pct is not None:
+            stat_parts.append(f"{stats.chase_pct:.0f}% chase")
+        if stats.k_per_9 is not None:
+            stat_parts.append(f"K/9 {stats.k_per_9:.1f}")
+        return TraitResult("k_rate", round(score, 1), max_pts, " | ".join(stat_parts))
 
     # No Statcast — fall back to K/9 scaling (covers new call-ups without Savant rows).
     if stats.k_per_9 is None:
@@ -161,7 +173,7 @@ def score_pitcher_k_rate(stats: PlayerStats | None, max_pts: float) -> TraitResu
         )
 
     score = scale_score(stats.k_per_9, SCORING_K9_FLOOR, SCORING_K9_CEILING, max_pts)
-    return TraitResult("k_rate", round(score, 1), max_pts, f"K/9={stats.k_per_9:.1f} (no statcast)")
+    return TraitResult("k_rate", round(score, 1), max_pts, f"K/9 {stats.k_per_9:.1f} (no Statcast)")
 
 
 def score_pitcher_matchup(
@@ -184,7 +196,7 @@ def score_pitcher_matchup(
         "matchup_quality",
         round(combined, 1),
         max_pts,
-        f"opp_OPS={opp_ops:.3f} opp_K%={opp_k_pct:.3f}",
+        f"vs {opp_ops:.3f} OPS | {opp_k_pct:.1%} K-rate",
     )
 
 
@@ -231,11 +243,13 @@ def score_pitcher_recent_form(
         traj_mult = 1.0
 
     result = min(max_pts, avg_score * max_pts * traj_mult)
+    traj_str = "↑" if traj_mult > 1.0 else ("↓" if traj_mult < 1.0 else "→")
+    start_lines = [f"{g.ip:.1f}IP/{g.er}ER/{g.k_pitching}K" for g in recent]
     return TraitResult(
         "recent_form",
         round(result, 1),
         max_pts,
-        f"{len(recent)} starts, avg_quality={avg_score:.2f} traj={traj_mult:.2f}x",
+        f"L{len(recent)}: {', '.join(start_lines)} {traj_str}",
     )
 
 
@@ -257,7 +271,7 @@ def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitRe
         "era_whip",
         round(combined, 1),
         max_pts,
-        f"ERA={era:.2f} WHIP={whip:.2f}",
+        f"ERA {era:.2f} | WHIP {whip:.2f}",
     )
 
 
@@ -327,15 +341,16 @@ def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResul
     # all max out — but not arbitrarily: the denominator reflects evidence.
     total = (weighted_sum / denom) * max_pts
 
-    detail_parts = [f"HR/PA={hr_per_pa:.3f}"]
+    detail_parts = []
     if avg_ev is not None:
-        detail_parts.append(f"EV={avg_ev:.1f}mph")
+        detail_parts.append(f"{avg_ev:.1f} avg EV")
     if hard_hit is not None:
-        detail_parts.append(f"HH={hard_hit:.1f}%")
+        detail_parts.append(f"{hard_hit:.0f}% hard-hit")
     if barrel_pct is not None:
-        detail_parts.append(f"brl={barrel_pct:.1f}%")
+        detail_parts.append(f"{barrel_pct:.0f}% barrel")
+    detail_parts.append(f"{hr_per_pa:.1%} HR/PA")
     if max_ev is not None:
-        detail_parts.append(f"maxEV={max_ev:.1f}mph")
+        detail_parts.append(f"{max_ev:.1f} max EV")
 
     return TraitResult(
         "power_profile",
@@ -395,7 +410,7 @@ def score_batter_matchup(
     # Opponent WHIP: higher is better for batter
     whip_score = scale_score(opp_whip - SCORING_BATTER_WHIP_FLOOR, 0, SCORING_BATTER_WHIP_RANGE, 1.0)
 
-    detail = f"vs_ERA={opp_era:.2f} vs_WHIP={opp_whip:.2f}"
+    detail = f"vs ERA {opp_era:.2f} / WHIP {opp_whip:.2f}"
 
     # Handedness-specific OPS split: direct conditional sensitivity signal.
     # Uses the batter's actual season OPS vs this pitcher handedness; falls back
@@ -410,7 +425,7 @@ def score_batter_matchup(
                 else DEFAULT_BATTER_OPS_VS_LHP
             )
             ops_split_score = scale_score(batter_ops - SCORING_BATTER_OPS_SPLIT_FLOOR, 0, SCORING_BATTER_OPS_SPLIT_RANGE, 1.0)
-            detail += f" [vs-LHP ops={batter_ops:.3f}]"
+            detail += f" | {batter_ops:.3f} OPS vs LHP"
         elif starter_hand == "R":
             batter_ops = (
                 batter_stats.ops_vs_rhp
@@ -418,7 +433,7 @@ def score_batter_matchup(
                 else DEFAULT_BATTER_OPS_VS_RHP
             )
             ops_split_score = scale_score(batter_ops - SCORING_BATTER_OPS_SPLIT_FLOOR, 0, SCORING_BATTER_OPS_SPLIT_RANGE, 1.0)
-            detail += f" [vs-RHP ops={batter_ops:.3f}]"
+            detail += f" | {batter_ops:.3f} OPS vs RHP"
 
     if ops_split_score is not None:
         # Three-signal blend: pitcher ERA (40%), pitcher WHIP (25%), batter split (35%)
@@ -504,12 +519,12 @@ def score_batter_recent_form(
     all_ab = sum(g.ab for g in recent7) or 1
     all_hr = sum(g.hr for g in recent7)
     all_rbi = sum(g.rbi for g in recent7)
+    traj_str = "↑" if traj_mult > 1.0 else ("↓" if traj_mult < 1.0 else "→")
     return TraitResult(
         "recent_form",
         score,
         max_pts,
-        f"L3_prod={prod_new:.3f} prev4_prod={prod_old:.3f} traj={traj_mult:.2f}x"
-        f" | 7G: {all_h}/{all_ab} {all_hr}HR {all_rbi}RBI",
+        f"7G: {all_h}/{all_ab} {all_hr}HR {all_rbi}RBI {traj_str}",
         {"recent_form_cv": cv},
     )
 
@@ -608,7 +623,7 @@ def score_speed_component(stats: PlayerStats | None, max_pts: float) -> TraitRes
     else:
         score = max_pts * 0.1
 
-    return TraitResult("speed_component", round(score, 1), max_pts, f"SB_pace={sb_pace:.0f}")
+    return TraitResult("speed_component", round(score, 1), max_pts, f"{sb_pace:.0f} SB pace / 162G")
 
 
 # ---------------------------------------------------------------------------
