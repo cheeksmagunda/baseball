@@ -63,6 +63,9 @@ export function TraitBreakdown({ breakdowns, teamColor }: TraitBreakdownProps) {
                         style={{ backgroundColor: `${teamColor}cc` }}
                       />
                     </div>
+                    {trait.raw_value && (
+                      <p className="text-fluid-xs text-text-muted">{trait.raw_value}</p>
+                    )}
                   </div>
                 );
               })}
