@@ -724,18 +724,18 @@ class TestDualOptimizer:
             ))
         return pool
 
-    def test_player_overlap_allowed(self):
-        """V10.0: Moonshot draws from the same FADE-excluded pool as Starting 5.
-        Overlap is expected — the two lineups diverge via sharp/explosive bonuses,
-        not by forced exclusion.
-        """
+    def test_batters_never_overlap(self):
+        """Both lineups share the pitcher but have 4 distinct batters each."""
         pool = self._big_pool()
         result = run_dual_filter_strategy(pool, _default_slate())
-        s5_names = {s.candidate.player_name for s in result.starting_5.slots}
-        moon_names = {s.candidate.player_name for s in result.moonshot.slots}
-        # No assertion on overlap — it's allowed.  Just sanity-check both populated.
-        assert len(s5_names) == 5
-        assert len(moon_names) == 5
+        s5_pitcher = next(s.candidate for s in result.starting_5.slots if s.candidate.is_pitcher)
+        moon_pitcher = next(s.candidate for s in result.moonshot.slots if s.candidate.is_pitcher)
+        # Shared pitcher anchor
+        assert s5_pitcher.player_name == moon_pitcher.player_name
+        # Zero batter overlap
+        s5_batters = {s.candidate.player_name for s in result.starting_5.slots if not s.candidate.is_pitcher}
+        moon_batters = {s.candidate.player_name for s in result.moonshot.slots if not s.candidate.is_pitcher}
+        assert s5_batters.isdisjoint(moon_batters), f"Batter overlap: {s5_batters & moon_batters}"
 
     def test_both_lineups_have_5(self):
         pool = self._big_pool()
@@ -755,14 +755,26 @@ class TestDualOptimizer:
         assert result.moonshot.strategy == "moonshot"
         assert result.starting_5.strategy == "filter_not_forecast"
 
-    def test_minimal_pool_both_lineups_filled(self):
-        """V9.0: moonshot uses same pool as S5 — both lineups fill from 5 players."""
+    def test_minimal_pool_raises_on_insufficient_batters(self):
+        """A pool with only 4 batters can't fill two non-overlapping lineups."""
         teams = ["NYY", "BOS", "LAD", "HOU", "ATL"]
         pool = [
             _make_candidate(name="SP_0", team=teams[0], is_pitcher=True, game_id=1),
         ] + [
             _make_candidate(name=f"B_{i}", team=teams[i + 1], game_id=10 + i)
             for i in range(4)
+        ]
+        with pytest.raises(ValueError, match="Insufficient non-overlapping batters"):
+            run_dual_filter_strategy(pool, _default_slate())
+
+    def test_minimal_pool_with_8_batters_succeeds(self):
+        """A pool with 8+ batters across unique teams fills both lineups."""
+        teams = ["NYY", "BOS", "LAD", "HOU", "ATL", "CHC", "SF", "SEA", "MIN"]
+        pool = [
+            _make_candidate(name="SP_0", team=teams[0], is_pitcher=True, game_id=1),
+        ] + [
+            _make_candidate(name=f"B_{i}", team=teams[i + 1], game_id=10 + i)
+            for i in range(8)
         ]
         result = run_dual_filter_strategy(pool, _default_slate())
         assert len(result.starting_5.slots) == 5

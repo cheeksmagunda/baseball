@@ -327,12 +327,25 @@ async def fetch_sharp_signal(player_name: str, team: str) -> SignalResult:
 # ---------------------------------------------------------------------------
 
 def compute_composite_score(signals: list[SignalResult]) -> float:
-    """Weighted average of mainstream signal scores (excludes sharp signal)."""
+    """Weighted average of mainstream signal scores (excludes sharp/failed signals).
+
+    Failed signals (HTTP errors, timeouts) are excluded and their weight is
+    redistributed across the remaining signals.  This prevents a rate-limited
+    social call from silently zeroing the composite and letting high-profile
+    players slip through as NEUTRAL when news + search both fire strongly.
+    """
     total = 0.0
+    active_weight = 0.0
     for sig in signals:
         weight = SIGNAL_WEIGHTS.get(sig.source, 0.0)
+        if weight == 0.0 or sig.failed:
+            continue
         total += sig.score * weight
-    return round(total, 1)
+        active_weight += weight
+    if active_weight == 0.0:
+        return 0.0
+    # Normalize: redistribute failed-signal weight to active signals.
+    return round(total / active_weight, 1)
 
 
 def classify_player(
