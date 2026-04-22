@@ -6,7 +6,8 @@ Apply corrections to hv_player_game_stats.csv:
 - Fill in missing stats from web research
 """
 
-import csv, copy, io
+import csv
+import io
 
 CSV_PATH = "/home/user/baseball/data/hv_player_game_stats.csv"
 
