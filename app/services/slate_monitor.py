@@ -394,10 +394,8 @@ async def targeted_slate_monitor(
         # background task races the T-65 pipeline and the pipeline reads
         # whatever has been persisted when it fires (NULL → non-Statcast
         # fallback path if the ~60 s bulk-load isn't done yet).
-        # Guard: skip when cache is already frozen — a post-T-65 restart that
-        # restored existing picks won't run a new pipeline, so no refresh needed.
-        if not lineup_cache.is_frozen:
-            asyncio.create_task(_refresh_statcast_background())
+        # Always unconditional — Savant is fully public and always live.
+        asyncio.create_task(_refresh_statcast_background())
 
         now = datetime.now(timezone.utc)
         if now < lock_time_utc:
