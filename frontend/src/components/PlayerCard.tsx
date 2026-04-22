@@ -30,7 +30,7 @@ interface PlayerCardProps {
 }
 
 export function PlayerCard({ slot, index, isMoonshot = false }: PlayerCardProps) {
-  const { primary, textColor, glowShadow, gradientBg, borderColor } = useTeamColors(slot.team);
+  const { primary, glowShadow, gradientBg, borderColor } = useTeamColors(slot.team);
   const reduced = useReducedMotion();
 
   return (

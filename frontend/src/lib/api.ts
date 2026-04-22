@@ -37,13 +37,5 @@ export async function fetchSlates(signal?: AbortSignal) {
   return res.json();
 }
 
-export async function checkHealth(signal?: AbortSignal): Promise<boolean> {
-  try {
-    const res = await fetch(`/api/health`, { signal, cache: "no-store" });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
 
 export { ApiError };

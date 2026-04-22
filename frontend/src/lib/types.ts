@@ -16,7 +16,6 @@ export interface FilterSlotOut {
   env_score: number;
   env_factors: string[];
   popularity: "FADE" | "TARGET" | "NEUTRAL";
-  is_debut_or_return: boolean;
   filter_ev: number;
   expected_slot_value: number;
   game_id?: number | string | null;
