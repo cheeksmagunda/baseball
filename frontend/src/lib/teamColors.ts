@@ -28,5 +28,6 @@ export const TEAM_COLORS: Record<string, { primary: string; secondary: string }>
   TB:  { primary: "#092C5C", secondary: "#8FBCE6" },
   TEX: { primary: "#003278", secondary: "#C0111F" },
   TOR: { primary: "#134A8E", secondary: "#1D2D5C" },
-  WSN: { primary: "#AB0003", secondary: "#14225A" },
+  ATH: { primary: "#003831", secondary: "#EFB21E" },
+  WSH: { primary: "#AB0003", secondary: "#14225A" },
 };
