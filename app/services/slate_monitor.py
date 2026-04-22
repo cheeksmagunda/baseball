@@ -300,11 +300,13 @@ async def targeted_slate_monitor(
         # in the DB. On a fresh deploy, no Slate row exists for today. Fetch
         # the schedule here — this is the ONE MLB API call allowed outside
         # T-65, because without it the monitor has no idea when T-65 is.
-        # When the restart happens AFTER T-65, main.py has already purged
-        # lineup_cache so is_frozen=False. Phase 2 below will see
-        # now >= lock_time_utc and skip the sleep; Phase 3's "if is_frozen"
-        # guard will NOT fire, so run_full_pipeline executes immediately with
-        # fresh live data and build_and_cache_lineups re-freezes the cache.
+        #
+        # Deploy timing determines what happens next:
+        #   pre-T-65:       main.py purged cache; Phase 2 sleeps until T-65
+        #   T-65 window:    main.py purged cache; Phase 2 skips sleep (lock
+        #                   already past); Phase 3 runs fresh cold pipeline
+        #   post-first-pitch: main.py restored+refroze cache; Phase 3's
+        #                   is_frozen guard fires and skips pipeline entirely
 
         today = date.today()
         db = SessionLocal()

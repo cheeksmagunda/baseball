@@ -151,11 +151,8 @@ def is_pipeline_callable_now(db: Session) -> tuple[bool, str]:
     Check if the pipeline can be called right now.
 
     The pipeline must NOT be called during an active slate (games in progress
-    or upcoming). It ONLY runs at T-65 via the slate_monitor.
-
-    Exception: if the T-65 pipeline already failed (pipeline_failed=True),
-    the lock is bypassed so a manual recovery run can generate picks for the
-    remaining games on the slate.
+    or upcoming). It ONLY runs at T-65 via the slate_monitor, or on a fresh
+    cold start triggered by a deploy during the T-65 window.
 
     Returns (True, "") if OK to call, (False, reason) if NOT.
     """
@@ -176,13 +173,10 @@ def is_pipeline_callable_now(db: Session) -> tuple[bool, str]:
                 for g in games
             )
             if not all_final:
-                # T-65 pipeline failed and no picks were ever frozen — allow a
-                # manual recovery run so picks can be generated for remaining games.
-                from app.services.lineup_cache import lineup_cache
-                if lineup_cache.pipeline_failed:
-                    return (True, "")
-
-                # Games still playing — pipeline must NOT be called
+                # Games still playing — pipeline is locked unconditionally.
+                # The only way to regenerate picks is a dev deploy to main
+                # during the T-65 window (before first pitch), which triggers
+                # a fresh cold run via the startup purge path in main.py.
                 return (
                     False,
                     "Pipeline is locked during active slate. "
