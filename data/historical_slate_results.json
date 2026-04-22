@@ -3653,10 +3653,161 @@
   {
     "date": "2026-04-21",
     "game_count": 15,
-    "games": [],
+    "games": [
+      {
+        "home": "NYM",
+        "away": "MIN",
+        "home_score": 3,
+        "away_score": 5,
+        "winner": "MIN",
+        "loser": "NYM",
+        "winner_score": 5,
+        "loser_score": 3
+      },
+      {
+        "home": "WSH",
+        "away": "ATL",
+        "home_score": 11,
+        "away_score": 4,
+        "winner": "WSH",
+        "loser": "ATL",
+        "winner_score": 11,
+        "loser_score": 4
+      },
+      {
+        "home": "BOS",
+        "away": "NYY",
+        "home_score": 0,
+        "away_score": 4,
+        "winner": "NYY",
+        "loser": "BOS",
+        "winner_score": 4,
+        "loser_score": 0
+      },
+      {
+        "home": "TB",
+        "away": "CIN",
+        "home_score": 6,
+        "away_score": 12,
+        "winner": "CIN",
+        "loser": "TB",
+        "winner_score": 12,
+        "loser_score": 6
+      },
+      {
+        "home": "MIA",
+        "away": "STL",
+        "home_score": 3,
+        "away_score": 5,
+        "winner": "STL",
+        "loser": "MIA",
+        "winner_score": 5,
+        "loser_score": 3
+      },
+      {
+        "home": "DET",
+        "away": "MIL",
+        "home_score": 4,
+        "away_score": 12,
+        "winner": "MIL",
+        "loser": "DET",
+        "winner_score": 12,
+        "loser_score": 4
+      },
+      {
+        "home": "CLE",
+        "away": "HOU",
+        "home_score": 8,
+        "away_score": 5,
+        "winner": "CLE",
+        "loser": "HOU",
+        "winner_score": 8,
+        "loser_score": 5
+      },
+      {
+        "home": "SF",
+        "away": "LAD",
+        "home_score": 3,
+        "away_score": 1,
+        "winner": "SF",
+        "loser": "LAD",
+        "winner_score": 3,
+        "loser_score": 1
+      },
+      {
+        "home": "SEA",
+        "away": "ATH",
+        "home_score": 2,
+        "away_score": 5,
+        "winner": "ATH",
+        "loser": "SEA",
+        "winner_score": 5,
+        "loser_score": 2
+      },
+      {
+        "home": "ARI",
+        "away": "CWS",
+        "home_score": 5,
+        "away_score": 11,
+        "winner": "CWS",
+        "loser": "ARI",
+        "winner_score": 11,
+        "loser_score": 5
+      },
+      {
+        "home": "LAA",
+        "away": "TOR",
+        "home_score": 2,
+        "away_score": 4,
+        "winner": "TOR",
+        "loser": "LAA",
+        "winner_score": 4,
+        "loser_score": 2
+      },
+      {
+        "home": "COL",
+        "away": "SD",
+        "home_score": 0,
+        "away_score": 1,
+        "winner": "SD",
+        "loser": "COL",
+        "winner_score": 1,
+        "loser_score": 0
+      },
+      {
+        "home": "TEX",
+        "away": "PIT",
+        "home_score": 5,
+        "away_score": 1,
+        "winner": "TEX",
+        "loser": "PIT",
+        "winner_score": 5,
+        "loser_score": 1
+      },
+      {
+        "home": "KC",
+        "away": "BAL",
+        "home_score": 6,
+        "away_score": 5,
+        "winner": "KC",
+        "loser": "BAL",
+        "winner_score": 6,
+        "loser_score": 5
+      },
+      {
+        "home": "CHC",
+        "away": "PHI",
+        "home_score": 7,
+        "away_score": 4,
+        "winner": "CHC",
+        "loser": "PHI",
+        "winner_score": 7,
+        "loser_score": 4
+      }
+    ],
     "season_stage": "regular-season",
     "source": "screenshot_ingest",
     "saved_at": "2026-04-22T00:00:00Z",
-    "notes": "Major FADE bust: Ohtani 0.1 RS (4.8k drafts), Judge 0.8 (3.3k), Trout 0.4 (2.9k). Top HV: De La Cruz 6.8 RS +2.7x boost, Luis Garcia Jr. 5.8 RS only 1 draft (extreme underdog HV). Luis Gil (NYY P) bridged all 3 leaderboards: HV #3, MP #7, top 3x player. Rank 1 (landyy, 78.99): Gil+Stanton NYY stack anchored by De La Cruz (CIN). 5 users tied rank 2 (78.08) with identical lineup: Yamamoto anchor + Gil 1.8x + De La Cruz + Raleigh + Tatis Jr. \u2014 no alpha differentiation on this template. Crowd heavily loaded NYY (Gil 1.9k, Stanton 4, Judge 3.3k, Rice 1.8k). game_count estimated; box scores to be backfilled via backfill_slate_results_and_hv_stats.py."
+    "notes": "Major FADE bust: Ohtani 0.1 RS (4.8k drafts), Judge 0.8 (3.3k), Trout 0.4 (2.9k). Top HV: De La Cruz 6.8 RS +2.7x boost, Luis Garcia Jr. 5.8 RS only 1 draft (extreme underdog HV). Luis Gil (NYY P) bridged all 3 leaderboards: HV #3, MP #7, top 3x player. Rank 1 (landyy, 78.99): Gil+Stanton NYY stack anchored by De La Cruz (CIN). 5 users tied rank 2 (78.08) with identical lineup: Yamamoto anchor + Gil 1.8x + De La Cruz + Raleigh + Tatis Jr. \u2014 no alpha differentiation on this template. Crowd heavily loaded NYY (Gil 1.9k, Stanton 4, Judge 3.3k, Rice 1.8k). Oh God = MIN (only team absent from other 14 games). Home/away inferred from display order."
   }
 ]
