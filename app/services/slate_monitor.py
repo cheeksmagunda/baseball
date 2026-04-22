@@ -383,21 +383,24 @@ async def targeted_slate_monitor(
         )
 
         # ---------------------------------------------------------------
-        # Phase 2: Sleep until T-65 (with pre-lock Statcast refresh)
+        # Phase 2: Pre-lock Statcast refresh + sleep until T-65
         # ---------------------------------------------------------------
+        # Kick the Statcast refresh BEFORE the sleep guard so a cold start
+        # that completes at or past T-65 still loads fresh Savant data.
+        # If startup was slow (Redis retries, migrations) and T-65 already
+        # passed by the time the monitor reaches here, `now < lock_time_utc`
+        # would be False — skipping the entire block — and the refresh would
+        # never fire.  Hoisting it out of the conditional fixes that: the
+        # background task races the T-65 pipeline and the pipeline reads
+        # whatever has been persisted when it fires (NULL → non-Statcast
+        # fallback path if the ~60 s bulk-load isn't done yet).
+        # Guard: skip when cache is already frozen — a post-T-65 restart that
+        # restored existing picks won't run a new pipeline, so no refresh needed.
+        if not lineup_cache.is_frozen:
+            asyncio.create_task(_refresh_statcast_background())
+
         now = datetime.now(timezone.utc)
         if now < lock_time_utc:
-            # Kick the Statcast refresh as a detached background task BEFORE
-            # sleeping.  It bulk-loads Baseball Savant's season leaderboards
-            # (avg EV, FB velocity, IVB, whiff %, etc.) and upserts them onto
-            # PlayerStats — typical completion is ~60 s.  Because Phase 2
-            # usually has hours of runway before T-65, the refresh almost
-            # always finishes before the pipeline fires, and T-65 reads the
-            # fresh data directly from the DB.  If Savant hangs or the cycle
-            # is short, T-65 simply runs with whatever was last persisted
-            # (or NULL columns → non-Statcast fallback path in the scoring
-            # engine).  NEVER awaited — the T-65 lock time is sacred.
-            asyncio.create_task(_refresh_statcast_background())
             logger.info(
                 "Sleeping until T-%d (%s UTC)…",
                 LOCK_MINUTES_BEFORE_PITCH,
