@@ -777,6 +777,40 @@ def _team_batter_cap(team: str, stack_eligible_teams: set[str]) -> int:
     return MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT
 
 
+def _fill_batter_slots(
+    ordered_batters: list[FilteredCandidate],
+    anchor_game_id: int | str | None,
+    anchor_team: str,
+    stack_eligible_teams: set[str],
+) -> list[FilteredCandidate]:
+    """Fill 4 batter slots from an EV-ordered batter pool.
+
+    Applies the anti-correlation guard, per-team cap, and per-game cap.
+    Pool must already be sorted by filter_ev descending and must exclude pitchers.
+    """
+    batters: list[FilteredCandidate] = []
+    team_count: dict[str, int] = {}
+    game_count: dict[int | str, int] = {}
+
+    for c in ordered_batters:
+        if len(batters) == 4:
+            break
+        team_key = c.team.upper()
+        if anchor_game_id is not None and c.game_id == anchor_game_id and team_key != anchor_team:
+            continue
+        cap = _team_batter_cap(team_key, stack_eligible_teams)
+        if team_count.get(team_key, 0) >= cap:
+            continue
+        if c.game_id is not None and game_count.get(c.game_id, 0) >= MAX_PLAYERS_PER_GAME_BATTERS:
+            continue
+        team_count[team_key] = team_count.get(team_key, 0) + 1
+        if c.game_id is not None:
+            game_count[c.game_id] = game_count.get(c.game_id, 0) + 1
+        batters.append(c)
+
+    return batters
+
+
 def _enforce_composition(
     candidates: list[FilteredCandidate],
     slate_class: SlateClassification,
@@ -819,43 +853,17 @@ def _enforce_composition(
     # Phase 2: Batters ordered by filter_ev (env×trait ranking).
     ordered_batters = [c for c in all_sorted if not c.is_pitcher]
 
-    # Phase 3: Fill 4 batter slots.  Stacking permitted only for teams the
-    # game-script gate qualified (cap 2); every other team caps at 1.
-    # Independent per-game cap (2) prevents mixing two-per-team picks into
-    # a four-batter same-game clump.
+    # Phase 3: Fill 4 batter slots via shared helper.
     lineup: list[FilteredCandidate] = [anchor_pitcher]
-    team_batter_count: dict[str, int] = {}
-    game_batter_count: dict[int | str, int] = {}
-
-    for c in ordered_batters:
-        if len(lineup) == 5:
-            break
-
-        team_key = c.team.upper()
-
-        # Block the opposing side of the anchor's game (negative correlation).
-        # Teammates of the anchor are still allowed.
-        if anchor_game_id is not None and c.game_id == anchor_game_id and team_key != anchor_team:
-            continue
-
-        cap = _team_batter_cap(team_key, stack_eligible_teams)
-        if team_batter_count.get(team_key, 0) >= cap:
-            continue
-
-        if c.game_id is not None and game_batter_count.get(c.game_id, 0) >= MAX_PLAYERS_PER_GAME_BATTERS:
-            continue
-
-        team_batter_count[team_key] = team_batter_count.get(team_key, 0) + 1
-        if c.game_id is not None:
-            game_batter_count[c.game_id] = game_batter_count.get(c.game_id, 0) + 1
-        lineup.append(c)
+    lineup.extend(_fill_batter_slots(ordered_batters, anchor_game_id, anchor_team, stack_eligible_teams))
 
     lineup = _validate_lineup_structure(
         lineup, ordered_batters, anchor_pitcher=anchor_pitcher,
         stack_eligible_teams=stack_eligible_teams,
     )
     batter_count = len(lineup) - 1
-    stack_teams = [t for t, n in team_batter_count.items() if n >= 2]
+    from collections import Counter
+    stack_teams = [t for t, n in Counter(c.team for c in lineup if not c.is_pitcher).items() if n >= 2]
     logger.info(
         "V10.1 composition: 1P/%dH — anchor=%s (EV=%.2f) stack_eligible=%s mini_stacks_used=%s (candidates: %d)",
         batter_count, anchor_pitcher.player_name, anchor_pitcher.filter_ev,
@@ -1249,45 +1257,105 @@ def run_dual_filter_strategy(
     candidates: list[FilteredCandidate],
     slate_classification: SlateClassification,
 ) -> DualFilterOptimizedResult:
-    """Produce both Starting 5 and Moonshot from the same candidate pool.
+    """Produce Starting 5 and Moonshot from the same FADE-excluded pool.
 
-    Starting 5: rank by env + trait EV; pitcher anchors Slot 1.
-    Moonshot:   same base EV + sharp signal bonus + explosive trait bonus.
-                Picks from the same FADE-excluded pool as Starting 5.
-                Player overlap with Starting 5 is allowed — the two lineups
-                diverge naturally via different EV formulas, not forced exclusion.
-
-    The FADE exclusion gate runs once here, before either lineup is built.
+    Both lineups share the same pitcher anchor (highest base EV SP).  Batters
+    split at the end of the pipeline: Starting 5 takes the top-4 by env×trait
+    EV; Moonshot takes the next-4 by sharp×explosive EV from the remaining
+    pool.  Zero batter overlap is guaranteed by construction.
     """
-    # Apply popularity gate once — both lineups draw from this filtered pool.
+    # 1. Popularity gate — shared for both lineups.
     candidates = _exclude_fade_players(candidates)
 
-    # Phase 1: Starting 5 — pass skip_fade_gate=True since we already filtered.
-    starting_5 = run_filter_strategy(candidates, slate_classification, skip_fade_gate=True)
+    # 2. Mark blowout-game players and compute base EV for all candidates.
+    blowout_teams = {
+        g.favored_team.upper()
+        for g in slate_classification.stackable_games
+        if g.favored_team
+    }
+    for c in candidates:
+        c.is_in_blowout_game = c.team.upper() in blowout_teams
+        c.filter_ev = _compute_filter_ev(c)
 
-    # Phase 2: Moonshot — same pool, different EV formula
-    moonshot_pool = candidates  # no player exclusion
+    # 3. Select shared pitcher anchor (highest base EV).
+    sorted_by_base = sorted(candidates, key=lambda c: c.filter_ev, reverse=True)
+    shared_pitcher = next((c for c in sorted_by_base if c.is_pitcher), None)
+    if shared_pitcher is None:
+        raise ValueError("Candidate pool contains no pitcher after FADE exclusion.")
 
+    anchor_game_id = shared_pitcher.game_id
+    anchor_team = shared_pitcher.team.upper()
+    stack_eligible_teams = _compute_stack_eligible_teams(slate_classification)
+
+    logger.info(
+        "Dual strategy: shared anchor=%s (EV=%.2f) stack_eligible=%s",
+        shared_pitcher.player_name, shared_pitcher.filter_ev,
+        sorted(stack_eligible_teams) or "none",
+    )
+
+    # 4. Base batter pool: no pitchers, no opposing batters in anchor's game.
+    base_batter_pool = [
+        c for c in sorted_by_base
+        if not c.is_pitcher
+        and not (
+            anchor_game_id is not None
+            and c.game_id == anchor_game_id
+            and c.team.upper() != anchor_team
+        )
+    ]
+
+    # 5. Starting 5: top-4 batters by base EV.
+    s5_batters = _fill_batter_slots(base_batter_pool, anchor_game_id, anchor_team, stack_eligible_teams)
+    s5_lineup = _validate_lineup_structure(
+        [shared_pitcher] + s5_batters,
+        base_batter_pool,
+        anchor_pitcher=shared_pitcher,
+        stack_eligible_teams=stack_eligible_teams,
+    )
+    s5_warnings = _apply_game_diversification(s5_lineup)
+    s5_slots = _smart_slot_assignment(s5_lineup)
+    s5_total_ev = sum(sl.expected_slot_value for sl in s5_slots)
+
+    starting_5 = FilterOptimizedLineup(
+        slots=s5_slots,
+        total_expected_value=round(s5_total_ev, 2),
+        strategy="filter_not_forecast",
+        slate_classification=slate_classification,
+        composition={"pitchers": 1, "hitters": len(s5_lineup) - 1},
+        warnings=s5_warnings,
+    )
+
+    # 6. Moonshot: re-rank remaining batters by sharp×explosive EV, pick next-4.
+    s5_batter_keys = {(c.player_name, c.team) for c in s5_batters}
+    moonshot_pool = [
+        c for c in base_batter_pool
+        if (c.player_name, c.team) not in s5_batter_keys
+    ]
+    if len(moonshot_pool) < 4:
+        raise ValueError(
+            f"Insufficient non-overlapping batters for Moonshot: "
+            f"{len(moonshot_pool)} available after Starting 5 selection."
+        )
     for c in moonshot_pool:
         c.filter_ev = _compute_moonshot_filter_ev(c)
-    # V10.0: same-team penalty removed.  Moonshot naturally diverges from S5
-    # via sharp_bonus × explosive_bonus re-ranking; artificially punishing
-    # stacks contradicts the correlation-driven strategy.
-
-    moonshot_lineup = _enforce_composition(moonshot_pool, slate_classification)
+    moonshot_pool.sort(key=lambda c: c.filter_ev, reverse=True)
+    moonshot_batters = _fill_batter_slots(moonshot_pool, anchor_game_id, anchor_team, stack_eligible_teams)
+    moonshot_lineup = _validate_lineup_structure(
+        [shared_pitcher] + moonshot_batters,
+        moonshot_pool,
+        anchor_pitcher=shared_pitcher,
+        stack_eligible_teams=stack_eligible_teams,
+    )
     moonshot_warnings = _apply_game_diversification(moonshot_lineup)
     moonshot_slots = _smart_slot_assignment(moonshot_lineup)
-
-    moonshot_total_ev = sum(s.expected_slot_value for s in moonshot_slots)
-    moonshot_pitcher_count = sum(1 for s in moonshot_slots if s.candidate.is_pitcher)
-    moonshot_hitter_count = len(moonshot_slots) - moonshot_pitcher_count
+    moonshot_total_ev = sum(sl.expected_slot_value for sl in moonshot_slots)
 
     moonshot = FilterOptimizedLineup(
         slots=moonshot_slots,
         total_expected_value=round(moonshot_total_ev, 2),
         strategy="moonshot",
         slate_classification=slate_classification,
-        composition={"pitchers": moonshot_pitcher_count, "hitters": moonshot_hitter_count},
+        composition={"pitchers": 1, "hitters": len(moonshot_lineup) - 1},
         warnings=moonshot_warnings,
     )
 
