@@ -158,7 +158,15 @@ def load_hv_stats() -> list[dict]:
 def _hv_row_is_placeholder(row: dict) -> bool:
     bat_empty = all(row.get(k, "") == "" for k in ("ab", "r", "h", "hr", "rbi", "bb", "so"))
     pit_empty = all(row.get(k, "") == "" for k in ("ip", "er", "k_pitching", "decision"))
-    return bat_empty and pit_empty
+    if bat_empty and pit_empty:
+        return True
+    # Partial batter row: has some hitting stats but ab is missing — needs full boxscore.
+    if row.get("ab", "") == "" and any(row.get(k, "") != "" for k in ("h", "hr", "rbi", "r")):
+        return True
+    # Partial pitcher row: has some pitching stats but ip is missing.
+    if row.get("ip", "") == "" and any(row.get(k, "") != "" for k in ("er", "k_pitching", "decision")):
+        return True
+    return False
 
 
 def _find_player_in_boxscore(box: dict, player_name: str, team_abbr: str) -> dict | None:
@@ -282,6 +290,12 @@ async def backfill_hv_stats(all_games: dict[str, list[dict]]) -> None:
     box_cache: dict[int, dict] = {}
     resolved: list[tuple[tuple[str, str], dict, str]] = []
     for p, action in targets:
+        # Prefer the corrected team_actual from the existing HV stats row over
+        # the (possibly stale) team captured in historical_players.csv.
+        if action == "replace":
+            existing = existing_by_key.get((p["date"], _normalize_name(p["player_name"])))
+            if existing and existing.get("team_actual"):
+                p = {**p, "team": existing["team_actual"]}
         team_canon = canonicalize_team(p["team"])
         gk = (p["date"], team_canon)
         game = games_by_team.get(gk)
