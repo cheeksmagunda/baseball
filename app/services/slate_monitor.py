@@ -133,38 +133,36 @@ async def _sleep_until(target: datetime) -> None:
 async def _refresh_statcast_background() -> None:
     """Bulk-load Baseball Savant leaderboards into PlayerStats.
 
-    Fires as a detached asyncio task at the start of Phase 2 (i.e., whenever
-    Phase 1 finishes a valid schedule load).  Never blocks the monitor's
-    sleep toward T-65: if Savant is slow, this task keeps running while the
-    T-65 pipeline fires on whatever Statcast data was last persisted.
-
-    No fallbacks — `refresh_statcast.main()` returns a non-zero exit code on
-    any schema/connectivity failure, which we log at ERROR.  The T-65
-    scoring engine's non-Statcast fallback path covers NULL columns
-    gracefully (that is the ONE graceful degradation allowed in V10.1.1:
-    Statcast is a supplementary layer over the MLB Stats API, not a primary
-    input, and the pipeline must still ship lineups on days Savant is
-    unreachable).
+    Fires as a detached asyncio task unconditionally on every slate cycle.
+    Savant is fully public and always live — failure is a hard stop, not a
+    graceful degradation.  On any failure the cache is marked failed so
+    /optimize returns 503 instead of serving lineups built on stale kinematics.
     """
-    logger = logging.getLogger(__name__)
+    from app.services.lineup_cache import lineup_cache
+
     try:
         from scripts.refresh_statcast import main as refresh_main
 
-        logger.info("Pre-T-65 Statcast refresh: starting bulk load from Baseball Savant")
+        logger.info("Statcast refresh: starting bulk load from Baseball Savant")
         exit_code = await asyncio.to_thread(refresh_main)
         if exit_code != 0:
-            logger.error(
-                "Pre-T-65 Statcast refresh exited with code=%d — T-65 will use the last-known data (or fallback scoring if this is a fresh deploy).",
+            logger.critical(
+                "Statcast refresh exited with code=%d — marking pipeline failed. "
+                "Savant is public and always live; a non-zero exit means a real "
+                "connectivity or schema problem that must be fixed.",
                 exit_code,
             )
+            lineup_cache.mark_failed()
         else:
-            logger.info("Pre-T-65 Statcast refresh complete (exit=0)")
+            logger.info("Statcast refresh complete (exit=0)")
     except asyncio.CancelledError:
         raise
     except Exception:
-        logger.exception(
-            "Pre-T-65 Statcast refresh raised — T-65 will use the last-known data (or fallback scoring)."
+        logger.critical(
+            "Statcast refresh raised — marking pipeline failed.",
+            exc_info=True,
         )
+        lineup_cache.mark_failed()
 
 
 # ---------------------------------------------------------------------------
