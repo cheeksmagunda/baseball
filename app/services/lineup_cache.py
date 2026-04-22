@@ -351,6 +351,13 @@ class _LineupCache:
             if row is None:
                 return False
 
+            if row.cache_date != date.today():
+                logger.warning(
+                    "DB cache row is from %s, not today (%s) — skipping stale backfill",
+                    row.cache_date, date.today(),
+                )
+                return False
+
             self._data = FilterOptimizeResponse.model_validate_json(row.response_json)
             self._slate_date = row.cache_date
             self._read_meta(row.cache_date)

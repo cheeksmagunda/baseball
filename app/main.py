@@ -98,12 +98,12 @@ async def lifespan(app: FastAPI):
 
     logger.info("MLB season: BO_CURRENT_SEASON=%d", settings.current_season)
     if not settings.odds_api_key:
-        logger.critical(
-            "BO_ODDS_API_KEY not configured. Vegas lines are REQUIRED for optimal lineup generation. "
-            "T-65 pipeline will crash if Vegas API cannot be called. Set BO_ODDS_API_KEY environment variable."
+        raise RuntimeError(
+            "CRITICAL: BO_ODDS_API_KEY is not set. Vegas lines (moneyline + O/U totals) are "
+            "required inputs to pitcher and batter env scoring — the T-65 pipeline cannot run "
+            "without them. Set BO_ODDS_API_KEY to your The Odds API key before starting the app."
         )
-    else:
-        logger.info("BO_ODDS_API_KEY configured — Vegas API enrichment enabled")
+    logger.info("BO_ODDS_API_KEY configured — Vegas API enrichment enabled")
 
     startup_done_event = asyncio.Event()
 
