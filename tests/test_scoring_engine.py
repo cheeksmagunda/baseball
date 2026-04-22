@@ -3,6 +3,7 @@
 from app.models.player import Player, PlayerStats, PlayerGameLog
 from app.services.scoring_engine import (
     score_pitcher,
+    score_pitcher_matchup,
     score_batter,
     score_ace_status,
     score_pitcher_k_rate,
@@ -114,6 +115,57 @@ def test_pitcher_full_score():
     result = score_pitcher(player, stats, logs)
     # A dominant ace should score 75+
     assert result.total_score >= 75
+
+
+def test_pitcher_matchup_populated_returns_vs_label():
+    """Regression: when opp_team and opp_team_stats are both provided, the
+    matchup scorer must compute a real score with a 'vs ...' raw_value and
+    NOT the 'matchup unknown' neutral fallback.
+
+    This is the contract the candidate_resolver and run_score_slate call
+    sites rely on.
+    """
+    max_pts = 20.0
+    result = score_pitcher_matchup(
+        opp_team="BAL",
+        opp_stats={"ops": 0.700, "k_pct": 0.24},
+        max_pts=max_pts,
+    )
+    assert result.raw_value is not None
+    assert result.raw_value.startswith("vs ")
+    assert "matchup unknown" not in result.raw_value
+    assert result.score != max_pts * 0.5
+
+
+def test_pitcher_matchup_missing_opp_team_returns_unknown():
+    """The guard in score_pitcher_matchup requires BOTH opp_team and
+    opp_stats. Document and lock in the contract: omitting opp_team still
+    returns the neutral fallback, even when stats are present."""
+    max_pts = 20.0
+    result = score_pitcher_matchup(
+        opp_team=None,
+        opp_stats={"ops": 0.700, "k_pct": 0.24},
+        max_pts=max_pts,
+    )
+    assert result.raw_value == "matchup unknown"
+    assert result.score == max_pts * 0.5
+
+
+def test_score_pitcher_forwards_opp_team_to_matchup():
+    """Integration: score_pitcher must forward opp_team + opp_team_stats to
+    the matchup trait. If it drops either, matchup falls back to neutral."""
+    player = Player(id=1, name="Test SP", name_normalized="test sp", team="SEA", position="P")
+    stats = PlayerStats(id=1, player_id=1, season=2026, era=3.5, whip=1.15, k_per_9=9.0, ip=50)
+    logs: list[PlayerGameLog] = []
+
+    result = score_pitcher(
+        player, stats, logs,
+        opp_team="OAK",
+        opp_team_stats={"ops": 0.680, "k_pct": 0.25},
+    )
+    matchup = next(t for t in result.traits if t.name == "matchup_quality")
+    assert matchup.raw_value is not None
+    assert matchup.raw_value.startswith("vs ")
 
 
 def test_batter_full_score():

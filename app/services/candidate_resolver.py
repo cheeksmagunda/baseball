@@ -86,9 +86,10 @@ def _detect_two_way_pitcher(player, card: FilterCard, game: GameEnvironment) -> 
 def _prepare_pitcher_env_kwargs(game: GameEnvironment, card: FilterCard) -> dict:
     """Extract pitcher environment scoring kwargs from game context."""
     is_home = game.home_team.upper() == card.team.upper()
+    opp_team = game.away_team if is_home else game.home_team
     opp_ops = game.away_team_ops if is_home else game.home_team_ops
     opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
-    score_kwargs: dict = {}
+    score_kwargs: dict = {"opp_team": opp_team}
     if opp_ops is not None or opp_k_pct is not None:
         score_kwargs["opp_team_stats"] = {
             "ops": opp_ops if opp_ops is not None else DEFAULT_OPP_OPS,
