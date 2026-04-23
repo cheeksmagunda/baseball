@@ -542,6 +542,18 @@ async def run_full_pipeline(db: Session, game_date: date) -> dict:
                 "games have yet to start."
             )
 
+    # Clear stale roster so every T-65 run starts with a fresh snapshot.
+    # Explicit cascade order because SQLite doesn't enforce FK constraints by default.
+    if slate:
+        sp_ids = [r for (r,) in db.query(SlatePlayer.id).filter(SlatePlayer.slate_id == slate.id)]
+        if sp_ids:
+            ps_ids = [r for (r,) in db.query(PlayerScore.id).filter(PlayerScore.slate_player_id.in_(sp_ids))]
+            if ps_ids:
+                db.query(ScoreBreakdown).filter(ScoreBreakdown.player_score_id.in_(ps_ids)).delete(synchronize_session=False)
+            db.query(PlayerScore).filter(PlayerScore.slate_player_id.in_(sp_ids)).delete(synchronize_session=False)
+        db.query(SlatePlayer).filter(SlatePlayer.slate_id == slate.id).delete(synchronize_session=False)
+        db.commit()
+
     # Auto-populate SlatePlayer records from MLB API boxscores
     roster_result = {"added": 0, "skipped": 0}
     if slate:
