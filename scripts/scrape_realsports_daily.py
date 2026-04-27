@@ -37,6 +37,7 @@ import sys
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_EVEN
 from pathlib import Path
 from typing import Any
 
@@ -125,12 +126,34 @@ def fetch_slate_payloads(target_date: str) -> dict[str, Any]:
     def on_response(resp):
         # Only catch the daily payload here -- stats and entries use expect_response
         # which is race-free.
+        # The platform uses TWO endpoint shapes for the daily slate:
+        #   /home/mlb/day/next?day=YYYY-MM-DD  → top-level 'content' with games
+        #     (used when navigating to dates other than today/yesterday)
+        #   /home/mlb/next                      → top-level 'latestDay' (date) +
+        #                                         'latestDayContent' (games etc.)
+        #     (used when the date strip's "today" or "yesterday" slot is clicked)
+        # Normalize both into the {'content': {...games...}} shape so downstream
+        # code (parse_games, _build_team_lookup) is identical.
         url = resp.url
         if "realapp.com" not in url:
             return
-        if "/home/mlb/day/next" in url and target_date in url:
-            captured["daily"] = json.loads(resp.text())
-            log.info(f"  captured daily payload ({len(resp.text())}b)")
+        if "/home/mlb/" not in url or "next" not in url:
+            return
+        try:
+            data = json.loads(resp.text())
+        except Exception:
+            return
+        normalized = None
+        if target_date in url:
+            # /home/mlb/day/next?day=YYYY-MM-DD shape
+            normalized = data
+        elif data.get("latestDay") == target_date and isinstance(data.get("latestDayContent"), dict):
+            # /home/mlb/next shape — wrap latestDayContent as 'content'
+            normalized = {"content": data["latestDayContent"]}
+        if normalized is None:
+            return
+        captured["daily"] = normalized
+        log.info(f"  captured daily payload ({len(resp.text())}b) [{_humanize_url(url)}]")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -261,19 +284,82 @@ def _name_normalize(s: str) -> str:
     return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
 
 
-def _fetch_mlb_positions(player_ids: list[int]) -> dict[int, str]:
+def _round_dp(value: float, dp: int) -> float:
     """
-    Batch-query the MLB Stats API for primary positions of the given player IDs.
+    Round to `dp` decimal places using banker's rounding (half-to-even),
+    via Decimal to avoid IEEE-754 float-repr quirks. The platform displays
+    exact-half values consistently with this rule (e.g. raw -0.45 displays
+    as '-0.4' because 4 is even — Python's round(-0.45, 1) returns -0.5
+    because -0.45 isn't exactly representable in float64).
+    """
+    if value is None:
+        return value
+    quant = Decimal("1") if dp <= 0 else Decimal("1e-{}".format(dp))
+    return float(Decimal(str(value)).quantize(quant, rounding=ROUND_HALF_EVEN))
+
+
+def _team_key_normalize(key: str) -> str:
+    """Map platform's legacy team keys to the CLAUDE.md V9.1 standard codes."""
+    if key == "OAK":
+        return "ATH"
+    return key
+
+
+def _extract_display_drafts(p: dict, fallback: int = 0) -> int:
+    """
+    Parse the 'Drafts' value from p['displayStats'] (the platform-displayed count).
+    Handles the 'k' suffix on big counts (e.g. '2.9k' -> 2900).
+
+    For HV section players this is the leaderboard count (drafts where this
+    player WAS the HV); for MP/3X it's total drafts. Manual ingest captures
+    these displayed values, not the raw `count` field (which for HV is the
+    player's total draft appearances — a different metric).
+    """
+    for ds in p.get("displayStats", []):
+        if ds.get("label") == "Drafts":
+            v = ds.get("value")
+            if isinstance(v, str):
+                s = v.lower().strip()
+                if s.endswith("k"):
+                    try:
+                        return int(round(float(s[:-1]) * 1000))
+                    except ValueError:
+                        return fallback
+                try:
+                    return int(s)
+                except ValueError:
+                    return fallback
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return fallback
+    return fallback
+
+
+def _away_home_result(g: dict) -> str:
+    """Format game_result as '{away} {away_score} {home} {home_score}',
+    matching the manual ingest convention (e.g. 'KC 0 NYY 7' — away team
+    listed first regardless of which team the player is on)."""
+    if not g:
+        return ""
+    return f"{g['away']} {g['away_score']} {g['home']} {g['home_score']}"
+
+
+def _fetch_mlb_player_info(player_ids: list[int]) -> dict[int, dict]:
+    """
+    Batch-query the MLB Stats API for primary positions and full names.
     Real Sports player IDs ARE MLB player IDs.
 
-    Returns {mlb_id: 'P'} for pitchers, {mlb_id: 'OF'} for everyone else
-    (including Two-Way Players like Ohtani — they hit more often in DFS).
+    Returns {mlb_id: {'position': 'P'|'OF', 'fullName': str}}.
+    Pitchers (primaryPosition.type == 'Pitcher') get 'P'; everyone else
+    (including Two-Way Players like Ohtani — they hit more often in DFS) gets 'OF',
+    per the CLAUDE.md V9.1 generic-OF convention.
 
     Uses /people?personIds=... batch endpoint. Splits into chunks of 50 to
     keep URLs short.
     """
     import requests
-    lookup: dict[int, str] = {}
+    lookup: dict[int, dict] = {}
     unique_ids = sorted(set(player_ids))
     if not unique_ids:
         return lookup
@@ -291,13 +377,18 @@ def _fetch_mlb_positions(player_ids: list[int]) -> dict[int, str]:
             for p in r.json().get("people", []):
                 pid = p.get("id")
                 pp_type = p.get("primaryPosition", {}).get("type", "")
+                full_name = p.get("fullName") or ""
                 if pid is not None:
-                    lookup[pid] = "P" if pp_type == "Pitcher" else "OF"
+                    lookup[pid] = {
+                        "position": "P" if pp_type == "Pitcher" else "OF",
+                        "fullName": full_name,
+                    }
         except Exception as e:
-            log.warning(f"  MLB API position lookup failed for chunk {i}-{i+CHUNK}: {e}")
-    log.info(f"  fetched MLB positions for {len(lookup)}/{len(unique_ids)} players "
-             f"(P={sum(1 for v in lookup.values() if v=='P')}, "
-             f"OF={sum(1 for v in lookup.values() if v=='OF')})")
+            log.warning(f"  MLB API lookup failed for chunk {i}-{i+CHUNK}: {e}")
+    n_p = sum(1 for v in lookup.values() if v["position"] == "P")
+    n_of = sum(1 for v in lookup.values() if v["position"] == "OF")
+    log.info(f"  fetched MLB player info for {len(lookup)}/{len(unique_ids)} players "
+             f"(P={n_p}, OF={n_of})")
     return lookup
 
 
@@ -305,19 +396,20 @@ def _build_team_lookup(daily_payload: dict, stats_payload: dict) -> dict[int, st
     """
     Build teamId → 3-letter key (e.g. 113 → 'CIN') from the games array (which
     has full home/awayTeam objects) plus the stats payload's player.team objects
-    (which cover any teams not in today's games).
+    (which cover any teams not in today's games). Keys are normalized to the
+    CLAUDE.md V9.1 standard (e.g. platform 'OAK' → 'ATH').
     """
     lookup: dict[int, str] = {}
     for g in daily_payload.get("content", {}).get("games", []):
         for side in ("homeTeam", "awayTeam"):
             t = g.get(side) or {}
             if t.get("id") and t.get("key"):
-                lookup[t["id"]] = t["key"]
+                lookup[t["id"]] = _team_key_normalize(t["key"])
     for sec in stats_payload.get("draftStats", []):
         for p in sec.get("players", []):
             t = p.get("team") or {}
             if t.get("id") and t.get("key"):
-                lookup[t["id"]] = t["key"]
+                lookup[t["id"]] = _team_key_normalize(t["key"])
     return lookup
 
 
@@ -337,12 +429,21 @@ def _collect_all_player_ids(stats_payload: dict, entries: list[dict]) -> list[in
     return list(ids)
 
 
-def _position_for(player_id: int, position_lookup: dict[int, str]) -> str:
+def _position_for(player_id: int, player_info: dict[int, dict]) -> str:
     """Default to 'OF' if MLB API didn't have data (e.g. very recent call-up)."""
-    return position_lookup.get(player_id, "OF")
+    info = player_info.get(player_id) or {}
+    return info.get("position") or "OF"
 
 
-def parse_players(stats_payload: dict, position_lookup: dict[int, str],
+def _name_for(player_id: int, player_info: dict[int, dict],
+              fallback_display_name: str) -> str:
+    """Prefer MLB Stats API fullName ('Aaron Judge'); fall back to platform
+    displayName ('A. Judge') if MLB API didn't return data for this id."""
+    info = player_info.get(player_id) or {}
+    return _name_normalize(info.get("fullName") or fallback_display_name)
+
+
+def parse_players(stats_payload: dict, player_info: dict[int, dict],
                   target_date: str) -> list[dict]:
     """
     historical_players.csv columns:
@@ -350,6 +451,8 @@ def parse_players(stats_payload: dict, position_lookup: dict[int, str],
       total_value, is_highest_value, is_most_popular, is_most_drafted_3x
 
     Dedup by (player_name, team), merging flags from HV/MP/3X sections.
+    real_score is rounded to 1 dp to match the platform display + manual ingest;
+    total_value is recomputed from the rounded RS so the formula reproduces.
     """
     by_key: dict[tuple[str, str], dict] = {}
 
@@ -366,15 +469,15 @@ def parse_players(stats_payload: dict, position_lookup: dict[int, str],
         for p in sec["players"]:
             pl = p["player"]
             tm = p["team"]
-            name = _name_normalize(pl["displayName"])
-            team = tm["key"]
+            name = _name_for(pl["id"], player_info, pl["displayName"])
+            team = _team_key_normalize(tm["key"])
             key = (name, team)
 
-            real_score = float(p["value"])
+            real_score = _round_dp(float(p["value"]), 1)
             boost = float(p["multiplierBonus"])
-            drafts = int(p["count"])
-            total_value = round(real_score * (BASE_SLOT_MULT + boost), 4)
-            position = _position_for(pl["id"], position_lookup)
+            drafts = _extract_display_drafts(p)
+            total_value = _round_dp(real_score * (BASE_SLOT_MULT + boost), 2)
+            position = _position_for(pl["id"], player_info)
 
             if key not in by_key:
                 by_key[key] = {
@@ -391,12 +494,12 @@ def parse_players(stats_payload: dict, position_lookup: dict[int, str],
                     "is_most_drafted_3x": 0,
                 }
             else:
-                # Same player, take max drafts and most-trustworthy values
+                # Same player in multiple sections — keep the largest drafts
+                # number (MP/3X generally show the bigger total-drafts count;
+                # HV-only shows the smaller leaderboard count).
                 row = by_key[key]
                 row["drafts"] = max(row["drafts"], drafts)
-                # Real score should be identical across sections for same player
-                # (sanity: warn if drift)
-                if abs(row["real_score"] - real_score) > 0.001:
+                if abs(row["real_score"] - real_score) > 0.05:
                     log.warning(f"    {name} ({team}): real_score drift "
                                 f"{row['real_score']} vs {real_score}")
 
@@ -405,7 +508,7 @@ def parse_players(stats_payload: dict, position_lookup: dict[int, str],
     return list(by_key.values())
 
 
-def parse_winning_drafts(entries: list[dict], position_lookup: dict[int, str],
+def parse_winning_drafts(entries: list[dict], player_info: dict[int, dict],
                          team_lookup: dict[int, str], target_date: str) -> list[dict]:
     """
     historical_winning_drafts.csv columns:
@@ -426,19 +529,19 @@ def parse_winning_drafts(entries: list[dict], position_lookup: dict[int, str],
             slot_mult = SLOT_MULTIPLIERS[order]
             pid = player.get("playerId")
             tid = player.get("teamId")
-            team_key = team_lookup.get(tid, "")
+            team_key = team_lookup.get(tid, "")  # already normalized in _build_team_lookup
             if not team_key and tid is not None:
                 missing_teams.add(tid)
             rows.append({
                 "date": target_date,
                 "winner_rank": rank,
                 "slot_index": slot_index,
-                "player_name": _name_normalize(player["displayName"]),
+                "player_name": _name_for(pid, player_info, player["displayName"]),
                 "team": team_key,
-                "position": _position_for(pid, position_lookup),
-                "real_score": float(player["value"]),
+                "position": _position_for(pid, player_info),
+                "real_score": _round_dp(float(player["value"]), 1),
                 "slot_mult": slot_mult,
-                "card_boost": float(player.get("multiplierBonus", 0)),
+                "card_boost": _round_dp(float(player.get("multiplierBonus", 0)), 1),
             })
     if missing_teams:
         log.warning(f"  no team_key for teamIds: {sorted(missing_teams)}")
@@ -455,7 +558,8 @@ def parse_games(daily_payload: dict, target_date: str) -> dict:
     games_out = []
     for g in games_in:
         ht, at = g.get("homeTeam") or {}, g.get("awayTeam") or {}
-        hk, ak = ht.get("key", ""), at.get("key", "")
+        hk = _team_key_normalize(ht.get("key", ""))
+        ak = _team_key_normalize(at.get("key", ""))
         hs = g.get("homeTeamScore")
         a_s = g.get("awayTeamScore")
         if hs is None or a_s is None:
@@ -483,24 +587,24 @@ def parse_games(daily_payload: dict, target_date: str) -> dict:
     }
 
 
-def parse_hv_stats_blank(stats_payload: dict, position_lookup: dict[int, str],
+def parse_hv_stats_blank(stats_payload: dict, player_info: dict[int, dict],
                          target_date: str, games_envelope: dict) -> list[dict]:
     """
     hv_player_game_stats.csv columns:
       date, player_name, team_actual, position, real_score, card_boost,
       game_result, ab, r, h, hr, rbi, bb, so, ip, er, k_pitching, decision, notes
 
-    We populate identifying fields + game_result (from the games envelope)
-    and leave per-player batting/pitching stats blank — those are backfilled
-    later from MLB Stats API by scripts/backfill_slate_results_and_hv_stats.py.
+    Populates identifying fields + game_result (player-team-first format,
+    matching manual ingest convention) and leaves per-player batting/pitching
+    stats blank — those are backfilled later from MLB Stats API by
+    scripts/backfill_slate_results_and_hv_stats.py.
     """
     rows = []
-    # Build team -> game_result mapping
-    team_to_game = {}
+    # Build team -> full game object so we can format player-centric results
+    team_to_game: dict[str, dict] = {}
     for g in games_envelope["games"]:
-        result = f"{g['home']} {g['home_score']} {g['away']} {g['away_score']}"
-        team_to_game[g["home"]] = result
-        team_to_game[g["away"]] = result
+        team_to_game[g["home"]] = g
+        team_to_game[g["away"]] = g
 
     for sec in stats_payload.get("draftStats", []):
         if sec["sectionName"] != "highestBoostedValuePlayers":
@@ -508,16 +612,16 @@ def parse_hv_stats_blank(stats_payload: dict, position_lookup: dict[int, str],
         for p in sec["players"]:
             pl = p["player"]
             tm = p["team"]
-            team = tm["key"]
-            name = _name_normalize(pl["displayName"])
+            team = _team_key_normalize(tm["key"])
+            name = _name_for(pl["id"], player_info, pl["displayName"])
             rows.append({
                 "date": target_date,
                 "player_name": name,
                 "team_actual": team,
-                "position": _position_for(pl["id"], position_lookup),
-                "real_score": float(p["value"]),
+                "position": _position_for(pl["id"], player_info),
+                "real_score": _round_dp(float(p["value"]), 1),
                 "card_boost": float(p["multiplierBonus"]),
-                "game_result": team_to_game.get(team, ""),
+                "game_result": _away_home_result(team_to_game.get(team)),
                 "ab": "", "r": "", "h": "", "hr": "", "rbi": "", "bb": "", "so": "",
                 "ip": "", "er": "", "k_pitching": "", "decision": "",
                 "notes": "auto-scraped (box score backfill pending)",
@@ -619,21 +723,21 @@ def main():
 
     payloads = fetch_slate_payloads(target_date)
 
-    log.info("Building position + team lookups ...")
+    log.info("Building player + team lookups ...")
     all_player_ids = _collect_all_player_ids(payloads["stats"], payloads["entries"]["entries"])
-    log.info(f"  fetching positions for {len(all_player_ids)} unique playerIds via MLB Stats API ...")
-    position_lookup = _fetch_mlb_positions(all_player_ids)
+    log.info(f"  fetching player info for {len(all_player_ids)} unique playerIds via MLB Stats API ...")
+    player_info = _fetch_mlb_player_info(all_player_ids)
     team_lookup = _build_team_lookup(payloads["daily"], payloads["stats"])
     log.info(f"  built team lookup: {len(team_lookup)} teamIds")
 
     log.info("Parsing payloads ...")
     games_env = parse_games(payloads["daily"], target_date)
     log.info(f"  games: {games_env['game_count']} ({len(games_env['games'])} finalized)")
-    players_rows = parse_players(payloads["stats"], position_lookup, target_date)
+    players_rows = parse_players(payloads["stats"], player_info, target_date)
     log.info(f"  players: {len(players_rows)} unique")
-    drafts_rows = parse_winning_drafts(payloads["entries"]["entries"], position_lookup, team_lookup, target_date)
+    drafts_rows = parse_winning_drafts(payloads["entries"]["entries"], player_info, team_lookup, target_date)
     log.info(f"  winning drafts: {len(drafts_rows)} rows ({len(payloads['entries']['entries'])} lineups × ~5 slots)")
-    hv_stats_rows = parse_hv_stats_blank(payloads["stats"], position_lookup, target_date, games_env)
+    hv_stats_rows = parse_hv_stats_blank(payloads["stats"], player_info, target_date, games_env)
     log.info(f"  hv stats stubs: {len(hv_stats_rows)} rows")
 
     log.info("Writing files ...")
