@@ -3379,117 +3379,6 @@
     "previous_source": "screenshot_ingest"
   },
   {
-    "date": "2026-04-20",
-    "game_count": 10,
-    "games": [
-      {
-        "home": "BOS",
-        "away": "DET",
-        "home_score": 8,
-        "away_score": 6,
-        "winner": "BOS",
-        "loser": "DET",
-        "winner_score": 8,
-        "loser_score": 6
-      },
-      {
-        "home": "CLE",
-        "away": "HOU",
-        "home_score": 2,
-        "away_score": 9,
-        "winner": "HOU",
-        "loser": "CLE",
-        "winner_score": 9,
-        "loser_score": 2
-      },
-      {
-        "home": "TB",
-        "away": "CIN",
-        "home_score": 1,
-        "away_score": 6,
-        "winner": "CIN",
-        "loser": "TB",
-        "winner_score": 6,
-        "loser_score": 1
-      },
-      {
-        "home": "MIA",
-        "away": "STL",
-        "home_score": 5,
-        "away_score": 3,
-        "winner": "MIA",
-        "loser": "STL",
-        "winner_score": 5,
-        "loser_score": 3
-      },
-      {
-        "home": "WSH",
-        "away": "ATL",
-        "home_score": 4,
-        "away_score": 9,
-        "winner": "ATL",
-        "loser": "WSH",
-        "winner_score": 9,
-        "loser_score": 4
-      },
-      {
-        "home": "KC",
-        "away": "BAL",
-        "home_score": 5,
-        "away_score": 7,
-        "winner": "BAL",
-        "loser": "KC",
-        "winner_score": 7,
-        "loser_score": 5
-      },
-      {
-        "home": "CHC",
-        "away": "PHI",
-        "home_score": 5,
-        "away_score": 1,
-        "winner": "CHC",
-        "loser": "PHI",
-        "winner_score": 5,
-        "loser_score": 1
-      },
-      {
-        "home": "COL",
-        "away": "LAD",
-        "home_score": 3,
-        "away_score": 12,
-        "winner": "LAD",
-        "loser": "COL",
-        "winner_score": 12,
-        "loser_score": 3
-      },
-      {
-        "home": "LAA",
-        "away": "TOR",
-        "home_score": 2,
-        "away_score": 5,
-        "winner": "TOR",
-        "loser": "LAA",
-        "winner_score": 5,
-        "loser_score": 2
-      },
-      {
-        "home": "SEA",
-        "away": "ATH",
-        "home_score": 4,
-        "away_score": 6,
-        "winner": "ATH",
-        "loser": "SEA",
-        "winner_score": 6,
-        "loser_score": 4
-      }
-    ],
-    "season_stage": "regular-season",
-    "source": "mlb_stats_api_backfill",
-    "saved_at": "2026-04-21T14:14:38Z",
-    "notes": "Monday slate. 6 winning lineups captured (top-6, leaderboard truncated). HV dominated by Max Muncy (LAD, RS 5.6, +2.8x, tv 26.9) and Vladimir Guerrero Jr. (TOR, RS 4.9, +2.8x, tv 24.3) \u2014 V. Guerrero in 5/6 lineups, Muncy in 5/6 lineups, Ohtani in 3/6. Seth Lugo (KC, P, RS 6.8 unboosted) top pitcher HV. Dylan Cease (SD, P, RS 3.9) and Bryce Elder (ATL, P, RS 4.2) strong unboosted pitchers. FADE busts: Schwarber -0.7, Alvarez -0.2, Henderson -0.2, Austin Riley -0.2, Wood -0.5, Will Smith -1.0. Most Drafted 3x concentrated on: Will Smith, Quintana, Acu\u00f1a, Call, Riley. No game scores captured from screenshots. Slot assignments decoded from effective multipliers (slot_mult + card_boost) per lineup.",
-    "previous_source": "screenshot_ingest"
-  },
-  {
     "date": "2026-04-19",
     "game_count": 15,
     "games": [
@@ -3651,6 +3540,117 @@
     "previous_source": "screenshot_ingest"
   },
   {
+    "date": "2026-04-20",
+    "game_count": 10,
+    "games": [
+      {
+        "home": "BOS",
+        "away": "DET",
+        "home_score": 8,
+        "away_score": 6,
+        "winner": "BOS",
+        "loser": "DET",
+        "winner_score": 8,
+        "loser_score": 6
+      },
+      {
+        "home": "CLE",
+        "away": "HOU",
+        "home_score": 2,
+        "away_score": 9,
+        "winner": "HOU",
+        "loser": "CLE",
+        "winner_score": 9,
+        "loser_score": 2
+      },
+      {
+        "home": "TB",
+        "away": "CIN",
+        "home_score": 1,
+        "away_score": 6,
+        "winner": "CIN",
+        "loser": "TB",
+        "winner_score": 6,
+        "loser_score": 1
+      },
+      {
+        "home": "MIA",
+        "away": "STL",
+        "home_score": 5,
+        "away_score": 3,
+        "winner": "MIA",
+        "loser": "STL",
+        "winner_score": 5,
+        "loser_score": 3
+      },
+      {
+        "home": "WSH",
+        "away": "ATL",
+        "home_score": 4,
+        "away_score": 9,
+        "winner": "ATL",
+        "loser": "WSH",
+        "winner_score": 9,
+        "loser_score": 4
+      },
+      {
+        "home": "KC",
+        "away": "BAL",
+        "home_score": 5,
+        "away_score": 7,
+        "winner": "BAL",
+        "loser": "KC",
+        "winner_score": 7,
+        "loser_score": 5
+      },
+      {
+        "home": "CHC",
+        "away": "PHI",
+        "home_score": 5,
+        "away_score": 1,
+        "winner": "CHC",
+        "loser": "PHI",
+        "winner_score": 5,
+        "loser_score": 1
+      },
+      {
+        "home": "COL",
+        "away": "LAD",
+        "home_score": 3,
+        "away_score": 12,
+        "winner": "LAD",
+        "loser": "COL",
+        "winner_score": 12,
+        "loser_score": 3
+      },
+      {
+        "home": "LAA",
+        "away": "TOR",
+        "home_score": 2,
+        "away_score": 5,
+        "winner": "TOR",
+        "loser": "LAA",
+        "winner_score": 5,
+        "loser_score": 2
+      },
+      {
+        "home": "SEA",
+        "away": "ATH",
+        "home_score": 4,
+        "away_score": 6,
+        "winner": "ATH",
+        "loser": "SEA",
+        "winner_score": 6,
+        "loser_score": 4
+      }
+    ],
+    "season_stage": "regular-season",
+    "source": "mlb_stats_api_backfill",
+    "saved_at": "2026-04-21T14:14:38Z",
+    "notes": "Monday slate. 6 winning lineups captured (top-6, leaderboard truncated). HV dominated by Max Muncy (LAD, RS 5.6, +2.8x, tv 26.9) and Vladimir Guerrero Jr. (TOR, RS 4.9, +2.8x, tv 24.3) \u2014 V. Guerrero in 5/6 lineups, Muncy in 5/6 lineups, Ohtani in 3/6. Seth Lugo (KC, P, RS 6.8 unboosted) top pitcher HV. Dylan Cease (SD, P, RS 3.9) and Bryce Elder (ATL, P, RS 4.2) strong unboosted pitchers. FADE busts: Schwarber -0.7, Alvarez -0.2, Henderson -0.2, Austin Riley -0.2, Wood -0.5, Will Smith -1.0. Most Drafted 3x concentrated on: Will Smith, Quintana, Acu\u00f1a, Call, Riley. No game scores captured from screenshots. Slot assignments decoded from effective multipliers (slot_mult + card_boost) per lineup.",
+    "previous_source": "screenshot_ingest"
+  },
+  {
     "date": "2026-04-21",
     "game_count": 15,
     "games": [
@@ -3809,5 +3809,155 @@
     "source": "screenshot_ingest",
     "saved_at": "2026-04-22T00:00:00Z",
     "notes": "Major FADE bust: Ohtani 0.1 RS (4.8k drafts), Judge 0.8 (3.3k), Trout 0.4 (2.9k). Top HV: De La Cruz 6.8 RS +2.7x boost, Luis Garcia Jr. 5.8 RS only 1 draft (extreme underdog HV). Luis Gil (NYY P) bridged all 3 leaderboards: HV #3, MP #7, top 3x player. Rank 1 (landyy, 78.99): Gil+Stanton NYY stack anchored by De La Cruz (CIN). 5 users tied rank 2 (78.08) with identical lineup: Yamamoto anchor + Gil 1.8x + De La Cruz + Raleigh + Tatis Jr. \u2014 no alpha differentiation on this template. Crowd heavily loaded NYY (Gil 1.9k, Stanton 4, Judge 3.3k, Rice 1.8k). Oh God = MIN (only team absent from other 14 games). Home/away inferred from display order."
+  },
+  {
+    "date": "2026-04-25",
+    "game_count": 14,
+    "games": [
+      {
+        "home": "BAL",
+        "away": "BOS",
+        "home_score": 1,
+        "away_score": 17,
+        "winner": "BOS",
+        "loser": "BAL",
+        "winner_score": 17,
+        "loser_score": 1
+      },
+      {
+        "home": "STL",
+        "away": "SEA",
+        "home_score": 9,
+        "away_score": 11,
+        "winner": "SEA",
+        "loser": "STL",
+        "winner_score": 11,
+        "loser_score": 9
+      },
+      {
+        "home": "TOR",
+        "away": "CLE",
+        "home_score": 5,
+        "away_score": 3,
+        "winner": "TOR",
+        "loser": "CLE",
+        "winner_score": 5,
+        "loser_score": 3
+      },
+      {
+        "home": "SF",
+        "away": "MIA",
+        "home_score": 6,
+        "away_score": 2,
+        "winner": "SF",
+        "loser": "MIA",
+        "winner_score": 6,
+        "loser_score": 2
+      },
+      {
+        "home": "CWS",
+        "away": "WSH",
+        "home_score": 3,
+        "away_score": 6,
+        "winner": "WSH",
+        "loser": "CWS",
+        "winner_score": 6,
+        "loser_score": 3
+      },
+      {
+        "home": "TB",
+        "away": "MIN",
+        "home_score": 6,
+        "away_score": 1,
+        "winner": "TB",
+        "loser": "MIN",
+        "winner_score": 6,
+        "loser_score": 1
+      },
+      {
+        "home": "ARI",
+        "away": "SD",
+        "home_score": 4,
+        "away_score": 6,
+        "winner": "SD",
+        "loser": "ARI",
+        "winner_score": 6,
+        "loser_score": 4
+      },
+      {
+        "home": "TEX",
+        "away": "OAK",
+        "home_score": 4,
+        "away_score": 3,
+        "winner": "TEX",
+        "loser": "OAK",
+        "winner_score": 4,
+        "loser_score": 3
+      },
+      {
+        "home": "KC",
+        "away": "LAA",
+        "home_score": 12,
+        "away_score": 1,
+        "winner": "KC",
+        "loser": "LAA",
+        "winner_score": 12,
+        "loser_score": 1
+      },
+      {
+        "home": "HOU",
+        "away": "NYY",
+        "home_score": 3,
+        "away_score": 8,
+        "winner": "NYY",
+        "loser": "HOU",
+        "winner_score": 8,
+        "loser_score": 3
+      },
+      {
+        "home": "MIL",
+        "away": "PIT",
+        "home_score": 3,
+        "away_score": 6,
+        "winner": "PIT",
+        "loser": "MIL",
+        "winner_score": 6,
+        "loser_score": 3
+      },
+      {
+        "home": "LAD",
+        "away": "CHC",
+        "home_score": 12,
+        "away_score": 4,
+        "winner": "LAD",
+        "loser": "CHC",
+        "winner_score": 12,
+        "loser_score": 4
+      },
+      {
+        "home": "CIN",
+        "away": "DET",
+        "home_score": 9,
+        "away_score": 2,
+        "winner": "CIN",
+        "loser": "DET",
+        "winner_score": 9,
+        "loser_score": 2
+      },
+      {
+        "home": "ATL",
+        "away": "PHI",
+        "home_score": 5,
+        "away_score": 8,
+        "winner": "PHI",
+        "loser": "ATL",
+        "winner_score": 8,
+        "loser_score": 5
+      }
+    ],
+    "season_stage": "regular-season",
+    "source": "realsports_scraper",
+    "saved_at": "2026-04-27T04:37:30.815341+00:00",
+    "notes": "Scraped via realsports.io on 2026-04-27 04:37:30Z"
   }
 ]

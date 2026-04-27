@@ -10,3 +10,6 @@ build/
 .ruff_cache/
 .pytest_cache/
 output/*.json
+.venv-scraper/
+scratch/
+scraper/storage_state.json
