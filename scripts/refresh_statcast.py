@@ -50,6 +50,7 @@ from app.config import settings
 from app.core.statcast import (
     _batter_kinematics_table,
     _pitcher_arsenal_velocity_table,
+    _pitcher_movement_table,
     _pitcher_percentile_table,
     _col,
 )
@@ -122,9 +123,20 @@ def refresh_batter_kinematics(db: Session, season: int) -> int:
 
 
 def refresh_pitcher_kinematics(db: Session, season: int) -> int:
-    """Pull the pitcher percentile-ranks + arsenal-velocity tables and upsert."""
+    """Pull the pitcher percentile-ranks + arsenal-velocity + pitch-movement tables and upsert.
+
+    Apr 27 2026 audit: Savant's percentile-ranks endpoint no longer exposes
+    `ff_avg_break_z_induced` (IVB) or `avg_extension`.  IVB is recoverable from
+    the public `pitch-movement` leaderboard (column `pitcher_break_z_induced`,
+    pitch_type=FF), which `_pitcher_movement_table()` fetches via direct CSV.
+    Extension is no longer in any standard leaderboard endpoint — staying NULL
+    until either Savant restores it or we add a raw `statcast_pitcher`
+    aggregator.  The scoring engine routes through 4-of-5 kinematic signals
+    in the meantime (still hits the ≥3 kinematic-path threshold).
+    """
     perc = _pitcher_percentile_table(season)
     vel = _pitcher_arsenal_velocity_table(season)
+    mov = _pitcher_movement_table(season)
 
     perc_id = _col(perc, "player_id", "pitcher", "mlb_id")
     if perc_id is None:
@@ -148,6 +160,23 @@ def refresh_pitcher_kinematics(db: Session, season: int) -> int:
                         vel_lookup[int(pid)] = v
                         break
 
+    # IVB lookup (4-seam fastball, induced vertical break in inches) — pulled
+    # straight from the pitch-movement leaderboard since pybaseball's
+    # percentile_ranks endpoint stopped exposing it.
+    mov_id = _col(mov, "pitcher_id", "player_id", "pitcher")
+    ivb_lookup: dict[int, float] = {}
+    if mov_id is not None:
+        for _, row in mov.iterrows():
+            pid = row.get(mov_id)
+            if pid in (None, "") or pd.isna(pid):
+                continue
+            ivb = _safe_float(row.get("pitcher_break_z_induced"))
+            if ivb is not None:
+                try:
+                    ivb_lookup[int(pid)] = ivb
+                except (TypeError, ValueError):
+                    continue
+
     updated = 0
     for _, row in perc.iterrows():
         mlb_id = row[perc_id]
@@ -158,7 +187,15 @@ def refresh_pitcher_kinematics(db: Session, season: int) -> int:
             continue
 
         ps.fb_velocity = vel_lookup.get(int(mlb_id))
-        ps.fb_ivb = _safe_float(row.get("ff_avg_break_z_induced")) or _safe_float(row.get("fb_ivb"))
+        # IVB now sourced from the pitch-movement leaderboard; fall back to the
+        # legacy column names in case Savant restores them in percentile_ranks.
+        ps.fb_ivb = (
+            ivb_lookup.get(int(mlb_id))
+            or _safe_float(row.get("ff_avg_break_z_induced"))
+            or _safe_float(row.get("fb_ivb"))
+        )
+        # Extension: no current leaderboard exposes this season-aggregated.
+        # Left for a future raw-statcast aggregator.  Will be NULL until then.
         ps.fb_extension = _safe_float(row.get("avg_extension")) or _safe_float(row.get("release_extension"))
         ps.whiff_pct = _safe_float(row.get("whiff_percent"))
         ps.chase_pct = _safe_float(row.get("oz_swing_percent")) or _safe_float(row.get("chase_percent"))

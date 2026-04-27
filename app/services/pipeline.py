@@ -437,6 +437,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
         else:
             is_home = game.home_team == player.team
             opp_era = game.away_starter_era if is_home else game.home_starter_era
+            opp_whip = game.away_starter_whip if is_home else game.home_starter_whip
             team_ml = game.home_moneyline if is_home else game.away_moneyline
             opp_bp_era = game.away_bullpen_era if is_home else game.home_bullpen_era
             series_team_w: int | None = game.series_home_wins if is_home else game.series_away_wins
@@ -456,6 +457,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 series_team_wins=series_team_w,
                 series_opp_wins=series_opp_w,
                 team_l10_wins=team_l10,
+                opp_starter_whip=opp_whip,
             )
 
         # Store env_score on slate player for reference

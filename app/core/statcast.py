@@ -67,8 +67,49 @@ def _pitcher_arsenal_velocity_table(season: int) -> pd.DataFrame:
     return df
 
 
+@lru_cache(maxsize=4)
+def _pitcher_movement_table(season: int) -> pd.DataFrame:
+    """Fetch the season pitch-movement leaderboard (4-seam IVB, in inches).
+
+    Apr 27 2026 audit: pybaseball's `statcast_pitcher_percentile_ranks` no
+    longer exposes `ff_avg_break_z_induced` (induced vertical break) — Savant
+    moved the metric out of the percentile feed.  IVB still lives on the
+    public pitch-movement leaderboard, so we fetch its CSV directly via HTTP.
+
+    Filters to pitch_type=FF and returns columns:
+      - pitcher_id (int)
+      - pitcher_break_z_induced (float, inches of induced vertical break)
+
+    Caller is responsible for joining onto the percentile table by player_id.
+    Raises on non-200 / parse error so the caller fails loudly.
+    """
+    import csv
+    import io
+
+    import requests
+
+    url = (
+        "https://baseballsavant.mlb.com/leaderboard/pitch-movement"
+        f"?year={season}&team=&min_pitches=q&pitch_type=FF&hand=&csv=true"
+    )
+    resp = requests.get(url, timeout=20)
+    resp.raise_for_status()
+    # Savant prepends a UTF-8 BOM ("﻿\"year\"") on the first column header.
+    text = resp.text
+    rows = list(csv.DictReader(io.StringIO(text)))
+    df = pd.DataFrame(rows)
+    # Strip the BOM/quote wrapping from the first column name if present.
+    df.columns = [c.lstrip("﻿").strip('"') for c in df.columns]
+    logger.info(
+        "Statcast pitcher movement (IVB): %d rows for season=%d (pitch_type=FF)",
+        len(df), season,
+    )
+    return df
+
+
 def clear_statcast_cache() -> None:
     """Clear the in-process statcast tables (used between cron invocations)."""
     _batter_kinematics_table.cache_clear()
     _pitcher_percentile_table.cache_clear()
     _pitcher_arsenal_velocity_table.cache_clear()
+    _pitcher_movement_table.cache_clear()

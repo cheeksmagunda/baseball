@@ -92,6 +92,9 @@ from app.core.constants import (
     BATTER_ENV_ML_CEILING,
     BATTER_ENV_BULLPEN_ERA_FLOOR,
     BATTER_ENV_BULLPEN_ERA_CEILING,
+    BATTER_ENV_OPP_WHIP_FLOOR,
+    BATTER_ENV_OPP_WHIP_CEILING,
+    BATTER_ENV_OPP_WHIP_WEIGHT,
     BATTER_ENV_GROUP_A_SOFT_CAP_POINT,
     BATTER_ENV_GROUP_A_SOFT_CAP_SLOPE,
     BATTER_ENV_PARK_HITTER_FRIENDLY,
@@ -101,6 +104,8 @@ from app.core.constants import (
     BATTER_ENV_WARM_TEMP_BONUS,
     BATTER_ENV_WIND_OUT_BONUS,
     BATTER_ENV_WIND_OUT_DIRECTIONS,
+    BATTER_ENV_WIND_IN_PENALTY,
+    BATTER_ENV_WIND_IN_DIRECTIONS,
     BATTER_ENV_MAX_SCORE,
     # Group D — series/momentum context
     SERIES_LEADING_BONUS,
@@ -451,6 +456,7 @@ def compute_batter_env_score(
     series_team_wins: int | None = None,
     series_opp_wins: int | None = None,
     team_l10_wins: int | None = None,
+    opp_starter_whip: float | None = None,
 ) -> tuple[float, list[str], int]:
     """
     Compute environmental score for a batter (0-1.0).
@@ -526,6 +532,23 @@ def compute_batter_env_score(
     else:
         unknown_count += 1
 
+    # A5. Opposing starter WHIP — graduated, weighted at half of ERA's contribution.
+    # WHIP correlates with ERA (r=0.816 across 33 historical slates) but adds modest
+    # independent signal in the corners where ERA is misleading (one-bad-start
+    # inflation, low-ERA starter with poor command stats).  Weight cap at 0.5
+    # acknowledges the correlation: most signal already lives in ERA.  The Group A
+    # soft cap then absorbs any remaining redundancy when ERA and WHIP agree.
+    if opp_starter_whip is not None:
+        contrib = BATTER_ENV_OPP_WHIP_WEIGHT * graduated_scale(
+            opp_starter_whip, BATTER_ENV_OPP_WHIP_FLOOR, BATTER_ENV_OPP_WHIP_CEILING
+        )
+        run_env += contrib
+        if contrib > 0:
+            label = "Vulnerable starter command" if contrib >= 0.45 else "Below-avg starter command"
+            factors.append(f"{label} (WHIP={opp_starter_whip:.2f})")
+    else:
+        unknown_count += 1
+
     # Soft cap: first 2.0 of correlated-signal sum is taken full; sum above 2.0
     # contributes at 25% slope.  Preserves a little upside for "perfect storm"
     # games (all 4 signals lit) without letting redundant signals multiply
@@ -587,6 +610,15 @@ def compute_batter_env_score(
         if any(d in direction_upper for d in BATTER_ENV_WIND_OUT_DIRECTIONS):
             venue = min(1.0, venue + BATTER_ENV_WIND_OUT_BONUS)
             factors.append(f"Wind blowing out ({wind_speed_mph:.0f} mph)")
+        # V10.3 (Apr 27): symmetric wind IN penalty.  Previously wind blowing in
+        # was treated identical to neutral cross-wind.  HV rate analysis shows IN
+        # suppresses HV by ~2.2pts vs neutral baseline (45.8% vs 48.0%), about
+        # half the magnitude of OUT's +4.9pt boost — hence half the magnitude of
+        # the OUT bonus.  Floor at 0.0 matches the existing cold+pitcher-park
+        # compound penalty pattern.
+        elif any(d in direction_upper for d in BATTER_ENV_WIND_IN_DIRECTIONS):
+            venue = max(0.0, venue - BATTER_ENV_WIND_IN_PENALTY)
+            factors.append(f"Wind blowing in ({wind_speed_mph:.0f} mph)")
 
     if temperature_f is not None and temperature_f >= BATTER_ENV_WARM_TEMP_THRESHOLD:
         venue = min(1.0, venue + BATTER_ENV_WARM_TEMP_BONUS)

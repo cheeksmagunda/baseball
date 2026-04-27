@@ -303,10 +303,29 @@ BATTER_ENV_ML_CEILING = PITCHER_ENV_ML_CEILING
 BATTER_ENV_BULLPEN_ERA_FLOOR = 3.5    # bullpen ERA at or below → 0
 BATTER_ENV_BULLPEN_ERA_CEILING = 5.5  # bullpen ERA at or above → full
 
+# A5: Opposing starter WHIP (V10.3 calibration, Apr 27).  WHIP correlates with
+# ERA at r=0.816 across 33 historical slates, but adds modest independent
+# signal in the corners (low-ERA/high-WHIP starters get hit; high-ERA/low-WHIP
+# starters stabilise).  Cross-tab on HV outcomes:
+#     ERA <3.5, WHIP <1.20  → HV 38%
+#     ERA <3.5, WHIP ≥1.40  → HV 50%
+#     ERA ≥4.5, WHIP <1.20  → HV 37%
+#     ERA ≥4.5, WHIP ≥1.40  → HV 53%
+# Weight = 0.5 (half of ERA's 1.0 saturation contribution) reflects the smaller
+# marginal HV swing while still letting Group A's soft cap absorb correlation.
+BATTER_ENV_OPP_WHIP_FLOOR = 1.10      # opposing starter WHIP at or below → 0 (elite control)
+BATTER_ENV_OPP_WHIP_CEILING = 1.40    # opposing starter WHIP at or above → full (vulnerable)
+BATTER_ENV_OPP_WHIP_WEIGHT = 0.5      # max contribution to Group A run_env (half of ERA's 1.0)
+
 # Group A soft cap: first 2.0 of correlated-signal sum is taken at full value,
 # any additional sum above 2.0 contributes at 25% slope.  Preserves some upside
-# for "perfect storm" games (all 4 signals lit) without letting redundant
-# signals multiply linearly.  Raw max under 4 perfect signals: 2.0 + 0.25×2.0 = 2.5.
+# for "perfect storm" games (all signals lit) without letting redundant signals
+# multiply linearly.  V10.3: Group A has 5 signals — 4 main (O/U, ERA, ML,
+# bullpen) at weight 1.0 + WHIP at weight 0.5 — so raw max is 4.5, soft-cap
+# clamps it to 2.0 + 0.25×2.5 = 2.625 (was 2.5 pre-WHIP).  Note: WHIP scale
+# (floor 1.10, ceiling 1.40) is separate from the scoring engine's WHIP scale
+# (floor 0.9, ceiling 1.5 — `SCORING_BATTER_WHIP_*`); env scoring measures
+# opponent vulnerability while scoring engine measures own-staff quality.
 BATTER_ENV_GROUP_A_SOFT_CAP_POINT = 2.0
 BATTER_ENV_GROUP_A_SOFT_CAP_SLOPE = 0.25
 
@@ -318,6 +337,14 @@ BATTER_ENV_WARM_TEMP_THRESHOLD = 80      # °F at or above → warm-weather bonu
 BATTER_ENV_WARM_TEMP_BONUS = 0.2         # venue bonus for warm conditions
 BATTER_ENV_WIND_OUT_BONUS = 0.5          # venue bonus for wind blowing out
 BATTER_ENV_WIND_OUT_DIRECTIONS = ("OUT",)
+# V10.3 (Apr 27 calibration): symmetrise wind direction.  Previously only OUT was
+# scored, leaving wind blowing IN treated identical to neutral cross-wind.  HV
+# rate analysis across 33 slates: wind OUT 52.9%, neutral cross-wind 48.0%, wind
+# IN 45.8%.  IN suppresses HV by ~2.2pts (vs OUT's +4.9pts boost) — about half
+# the magnitude — so the penalty is half of the OUT bonus.  Floor on `venue` at
+# 0.0 matches the existing cold+pitcher-park compound penalty pattern.
+BATTER_ENV_WIND_IN_PENALTY = 0.2         # venue penalty for wind blowing in
+BATTER_ENV_WIND_IN_DIRECTIONS = ("IN",)
 
 # Batter env factors — Group C compound (temp × park interaction)
 BATTER_ENV_COMPOUND_HOT_THRESHOLD = 85      # °F above this triggers compound bonus

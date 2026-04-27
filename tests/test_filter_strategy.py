@@ -258,25 +258,28 @@ class TestBatterEnvScore:
             park_team="COL",
             team_moneyline=-250,
             opp_bullpen_era=5.5,
+            opp_starter_whip=1.40,
         )
-        # Group A run_env: 4 signals at 1.0 = 4.0 raw.  Soft cap: first 2.0 taken
-        #   at full value, excess 2.0 contributes at 25% slope → 2.0 + 0.5 = 2.5
+        # Group A run_env: 4 main signals at 1.0 + WHIP at 0.5 weight = 4.5 raw.
+        #   Soft cap: first 2.0 taken full, excess 2.5 at 25% slope → 2.0 + 0.625 = 2.625
         # Group B situation: platoon 1.0 + order 2 → 1.0 = 2.0
         # Group C venue: COL (1.38) → 1.0
         # Group D (momentum): none provided → 0.0
-        # Total = 2.5 + 2.0 + 1.0 = 5.5 / BATTER_ENV_MAX_SCORE
-        # V10.2: max bumped from 5.8 to 6.0 (TEAM_HOT_L10_BONUS doubled to 0.4),
-        # so the ratio is 5.5/6.0 ≈ 0.917 instead of the V10.1 5.5/5.8 ≈ 0.948.
+        # Total = 2.625 + 2.0 + 1.0 = 5.625 / BATTER_ENV_MAX_SCORE
+        # V10.3 (Apr 27): WHIP added as Group A A5 factor (weight 0.5 — half of ERA's
+        # contribution to reflect the r=0.816 correlation with ERA in the 33-slate
+        # window).  The soft cap absorbs most of the redundancy when ERA and WHIP agree.
         from app.core.constants import BATTER_ENV_MAX_SCORE
-        assert score == pytest.approx(5.5 / BATTER_ENV_MAX_SCORE, abs=0.01)
+        assert score == pytest.approx(5.625 / BATTER_ENV_MAX_SCORE, abs=0.01)
         assert unknown == 0
 
     def test_empty_env_tracks_unknowns(self):
         score, factors, unknown = compute_batter_env_score()
         # All inputs None: no signal contributes → score = 0.0
         assert score == pytest.approx(0.0, abs=0.01)
-        # vegas_total, opp_pitcher_era, batting_order, team_moneyline, opp_bullpen_era = 5 unknowns
-        assert unknown == 5
+        # vegas_total, opp_pitcher_era, batting_order, team_moneyline, opp_bullpen_era,
+        # opp_starter_whip = 6 unknowns (V10.3 added WHIP as Group A A5).
+        assert unknown == 6
 
     def test_correlated_signal_cap(self):
         """Run-env signals (O/U, ERA, ML, bullpen) compressed via soft cap.
@@ -304,8 +307,9 @@ class TestBatterEnvScore:
 
     def test_max_score_denominator_matches_constant(self):
         """max_score (BATTER_ENV_MAX_SCORE) is the env-score denominator.
-        Group A soft cap can reach 2.5 (perfect-storm).  V10.2: max is 6.0
-        because TEAM_HOT_L10_BONUS doubled from 0.2 to 0.4.
+        Group A soft cap can reach 2.5 (perfect-storm) without WHIP, or 2.625 with
+        WHIP at full saturation.  V10.2: max is 6.0 because TEAM_HOT_L10_BONUS
+        doubled from 0.2 to 0.4.  V10.3: WHIP A5 factor added at 0.5 weight.
         """
         from app.core.constants import BATTER_ENV_MAX_SCORE
         score, _, unknown = compute_batter_env_score(
@@ -316,11 +320,12 @@ class TestBatterEnvScore:
             park_team="COL",
             team_moneyline=-250,
             opp_bullpen_era=5.5,
+            opp_starter_whip=1.40,
         )
-        # Without Group D (momentum), total = 2.5+2.0+1.0 = 5.5 / BATTER_ENV_MAX_SCORE.
-        # V10.2 (max=6.0): 5.5/6.0 ≈ 0.917.  V10.1 (max=5.8) was: 5.5/5.8 ≈ 0.948.
+        # Without Group D (momentum), total = 2.625+2.0+1.0 = 5.625 / BATTER_ENV_MAX_SCORE.
+        # V10.3 (max=6.0, with WHIP): 5.625/6.0 ≈ 0.9375.
         assert score < 1.0, "Without momentum context, score should be < 1.0"
-        assert score == pytest.approx(5.5 / BATTER_ENV_MAX_SCORE, abs=0.01)
+        assert score == pytest.approx(5.625 / BATTER_ENV_MAX_SCORE, abs=0.01)
 
     def test_batting_order_unknown_contributes_zero(self):
         """Unknown batting order contributes 0 to situation — DNP risk is
@@ -340,8 +345,9 @@ class TestBatterEnvScore:
         assert score_unknown < score_known
         # Non-zero because Vegas+ERA still contribute to Group A run_env.
         assert score_unknown > 0, "Group A signals carry the env score when order is unknown"
-        # batting_order + team_moneyline + opp_bullpen_era = 3 unknowns
-        assert unknown == 3
+        # batting_order + team_moneyline + opp_bullpen_era + opp_starter_whip = 4 unknowns
+        # (V10.3: WHIP added as Group A A5)
+        assert unknown == 4
 
     def test_graduated_batting_order(self):
         """V8.0: batting order uses graduated scale, not hard top-5 gate."""
@@ -350,6 +356,87 @@ class TestBatterEnvScore:
         score_7, _, _ = compute_batter_env_score(batting_order=7)  # 0.50
         score_9, _, _ = compute_batter_env_score(batting_order=9)  # 0.25
         assert score_3 > score_5 > score_7 > score_9 > 0
+
+    def test_opp_starter_whip_signal(self):
+        """V10.3: opposing starter WHIP is a Group A A5 factor at 0.5 weight."""
+        # Vulnerable WHIP (≥1.40) should produce higher env than elite WHIP (<1.10)
+        # holding all other signals identical.
+        score_vuln, _, _ = compute_batter_env_score(
+            vegas_total=8.0,                  # below floor → 0 contribution from O/U
+            opp_pitcher_era=3.0,              # below floor → 0 contribution from ERA
+            opp_starter_whip=1.40,            # ceiling → full WHIP contribution (0.5)
+        )
+        score_elite, _, _ = compute_batter_env_score(
+            vegas_total=8.0,
+            opp_pitcher_era=3.0,
+            opp_starter_whip=1.05,            # below floor → 0 contribution
+        )
+        score_unknown, _, _ = compute_batter_env_score(
+            vegas_total=8.0,
+            opp_pitcher_era=3.0,
+            opp_starter_whip=None,
+        )
+        # Vulnerable WHIP > elite WHIP (positive signal)
+        assert score_vuln > score_elite
+        # Elite WHIP and unknown both contribute zero, so they should be equal
+        assert score_elite == pytest.approx(score_unknown, abs=0.001)
+
+    def test_opp_starter_whip_unknown_increments_count(self):
+        """V10.3: WHIP None bumps unknown_count, like other Group A signals."""
+        _, _, unknown_with_whip = compute_batter_env_score(
+            vegas_total=9.5,
+            opp_pitcher_era=5.0,
+            batting_order=3,
+            team_moneyline=-200,
+            opp_bullpen_era=4.5,
+            opp_starter_whip=1.30,
+        )
+        _, _, unknown_without_whip = compute_batter_env_score(
+            vegas_total=9.5,
+            opp_pitcher_era=5.0,
+            batting_order=3,
+            team_moneyline=-200,
+            opp_bullpen_era=4.5,
+            # opp_starter_whip omitted (None)
+        )
+        assert unknown_without_whip == unknown_with_whip + 1
+
+    def test_wind_in_penalty(self):
+        """V10.3: wind blowing IN penalises venue, mirroring the OUT bonus."""
+        # Neutral park (CLE pf=1.00) starts venue at 0.5 — leaves headroom for OUT
+        # to add and IN to subtract without saturating against the 0/1.0 bounds.
+        score_out, _, _ = compute_batter_env_score(
+            park_team="CLE",
+            wind_speed_mph=15,
+            wind_direction="OUT TO CF",
+        )
+        score_in, _, _ = compute_batter_env_score(
+            park_team="CLE",
+            wind_speed_mph=15,
+            wind_direction="IN FROM CF",
+        )
+        score_neutral, _, _ = compute_batter_env_score(
+            park_team="CLE",
+            wind_speed_mph=15,
+            wind_direction="WEST",  # cross-wind, no IN/OUT match
+        )
+        assert score_out > score_neutral > score_in
+        # Penalty floors venue at 0.0 — should never go negative.
+        assert score_in >= 0.0
+
+    def test_wind_in_below_speed_min_no_penalty(self):
+        """Wind IN below the speed minimum should NOT penalise (consistent with OUT)."""
+        score_in_calm, _, _ = compute_batter_env_score(
+            park_team="CLE",
+            wind_speed_mph=5,                 # below BATTER_ENV_WIND_SPEED_MIN (10)
+            wind_direction="IN FROM CF",
+        )
+        score_neutral, _, _ = compute_batter_env_score(
+            park_team="CLE",
+            wind_speed_mph=5,
+            wind_direction="WEST",
+        )
+        assert score_in_calm == pytest.approx(score_neutral, abs=0.001)
 
 
 # ===================================================================

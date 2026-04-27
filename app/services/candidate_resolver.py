@@ -227,6 +227,7 @@ async def resolve_candidates(
         else:
             is_home = game.home_team.upper() == card.team.upper()
             opp_era = game.away_starter_era if is_home else game.home_starter_era
+            opp_whip = game.away_starter_whip if is_home else game.home_starter_whip
             park_team = game.home_team.upper()
             team_ml = game.home_moneyline if is_home else game.away_moneyline
             opp_bp_era = game.away_bullpen_era if is_home else game.home_bullpen_era
@@ -249,6 +250,7 @@ async def resolve_candidates(
                 series_team_wins=series_team_w,
                 series_opp_wins=series_opp_w,
                 team_l10_wins=team_l10,
+                opp_starter_whip=opp_whip,
             )
 
         game_id = card.game_id or game.game_id
