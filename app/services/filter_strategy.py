@@ -63,6 +63,7 @@ from app.core.constants import (
     MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT,
     MAX_PLAYERS_PER_GAME_BATTERS,
     is_stack_eligible_game,
+    STACK_ELIGIBILITY_SHOOTOUT_TOTAL,
     STACK_BONUS,
     DNP_RISK_PENALTY,
     DNP_UNKNOWN_PENALTY,
@@ -137,12 +138,26 @@ class SlateType(str, Enum):
 
 @dataclass
 class StackableGame:
-    """A game identified as a blowout/stacking candidate."""
+    """A game-team pair eligible for mini-stacking.
+
+    A single game may produce up to TWO StackableGame entries:
+      - PATH 1 (blowout favorite): one entry, favored_team = the heavy
+        moneyline favorite, is_blowout_favorite=True.  Earns STACK_BONUS.
+      - PATH 2 (extreme shootout, O/U ≥ STACK_ELIGIBILITY_SHOOTOUT_TOTAL):
+        two entries (one per team), is_blowout_favorite=False.  Both teams
+        are stack-eligible but neither earns STACK_BONUS — the bonus stays
+        gated to true blowout favorites.
+
+    A game can satisfy both paths (e.g., LAD@COL ML=-290, O/U=11.5): the
+    favored team gets a PATH 1 entry (with STACK_BONUS) and the opposing
+    team gets a PATH 2 entry (stack-eligible, no bonus).
+    """
     game_id: int | str | None = None
     favored_team: str = ""
     moneyline: int | None = None
     vegas_total: float | None = None
     opp_starter_era: float | None = None
+    is_blowout_favorite: bool = True
 
 
 @dataclass
@@ -185,27 +200,58 @@ def classify_slate(
         if vt is not None and vt >= HITTER_DAY_VEGAS_TOTAL_THRESHOLD:
             high_total += 1
 
-        # Blowout detection (§2 Pillar 2): moneyline ≥ -200 = projected blowout
+        # PATH 1: blowout favorite (moneyline ≤ -200, paired with O/U ≥ 9.0
+        # downstream).  Counts toward `blowout_games` and earns STACK_BONUS.
         home_ml = g.get("home_moneyline")
         away_ml = g.get("away_moneyline")
+        home_team = g.get("home_team", "")
+        away_team = g.get("away_team", "")
         if home_ml is not None and home_ml <= BLOWOUT_MONEYLINE_THRESHOLD:
             blowout_games += 1
             stackable.append(StackableGame(
                 game_id=g.get("game_id"),
-                favored_team=g.get("home_team", ""),
+                favored_team=home_team,
                 moneyline=home_ml,
                 vegas_total=vt,
                 opp_starter_era=g.get("away_starter_era"),
+                is_blowout_favorite=True,
             ))
         elif away_ml is not None and away_ml <= BLOWOUT_MONEYLINE_THRESHOLD:
             blowout_games += 1
             stackable.append(StackableGame(
                 game_id=g.get("game_id"),
-                favored_team=g.get("away_team", ""),
+                favored_team=away_team,
                 moneyline=away_ml,
                 vegas_total=vt,
                 opp_starter_era=g.get("home_starter_era"),
+                is_blowout_favorite=True,
             ))
+
+        # PATH 2: extreme shootout (O/U ≥ SHOOTOUT_TOTAL, ML-agnostic).
+        # Both teams become stack-eligible but neither earns STACK_BONUS —
+        # they're not heavy favorites, just in a high-run game script.
+        if vt is not None and vt >= STACK_ELIGIBILITY_SHOOTOUT_TOTAL:
+            already_listed = {
+                s.favored_team for s in stackable if s.game_id == g.get("game_id")
+            }
+            if home_team and home_team not in already_listed:
+                stackable.append(StackableGame(
+                    game_id=g.get("game_id"),
+                    favored_team=home_team,
+                    moneyline=home_ml,
+                    vegas_total=vt,
+                    opp_starter_era=g.get("away_starter_era"),
+                    is_blowout_favorite=False,
+                ))
+            if away_team and away_team not in already_listed:
+                stackable.append(StackableGame(
+                    game_id=g.get("game_id"),
+                    favored_team=away_team,
+                    moneyline=away_ml,
+                    vegas_total=vt,
+                    opp_starter_era=g.get("home_starter_era"),
+                    is_blowout_favorite=False,
+                ))
 
         # Check home starter as quality matchup
         h_era = g.get("home_starter_era")
@@ -1185,10 +1231,14 @@ def run_filter_strategy(
 
     # Mark blowout-game players before EV computation so _compute_filter_ev()
     # can apply the stack_bonus without needing slate_classification as a parameter.
+    # STACK_BONUS (1.20× EV) is gated to PATH 1 blowout favorites only.
+    # PATH 2 shootout sides become stack-eligible (mini-stack cap lifts to 2)
+    # but do NOT receive the bonus — they're in a high-run game, not a
+    # predictable blowout, so the asymmetric upside is smaller.
     blowout_teams = {
         g.favored_team.upper()
         for g in slate_classification.stackable_games
-        if g.favored_team
+        if g.favored_team and g.is_blowout_favorite
     }
     for c in candidates:
         c.is_in_blowout_game = c.team.upper() in blowout_teams
@@ -1268,10 +1318,14 @@ def run_dual_filter_strategy(
     candidates = _exclude_fade_players(candidates)
 
     # 2. Mark blowout-game players and compute base EV for all candidates.
+    # STACK_BONUS (1.20× EV) is gated to PATH 1 blowout favorites only.
+    # PATH 2 shootout sides become stack-eligible (mini-stack cap lifts to 2)
+    # but do NOT receive the bonus — they're in a high-run game, not a
+    # predictable blowout, so the asymmetric upside is smaller.
     blowout_teams = {
         g.favored_team.upper()
         for g in slate_classification.stackable_games
-        if g.favored_team
+        if g.favored_team and g.is_blowout_favorite
     }
     for c in candidates:
         c.is_in_blowout_game = c.team.upper() in blowout_teams

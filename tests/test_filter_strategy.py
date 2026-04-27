@@ -264,8 +264,11 @@ class TestBatterEnvScore:
         # Group B situation: platoon 1.0 + order 2 → 1.0 = 2.0
         # Group C venue: COL (1.38) → 1.0
         # Group D (momentum): none provided → 0.0
-        # Total = 2.5 + 2.0 + 1.0 = 5.5 / 5.8 (BATTER_ENV_MAX_SCORE) ≈ 0.948
-        assert score == pytest.approx(5.5 / 5.8, abs=0.01)
+        # Total = 2.5 + 2.0 + 1.0 = 5.5 / BATTER_ENV_MAX_SCORE
+        # V10.2: max bumped from 5.8 to 6.0 (TEAM_HOT_L10_BONUS doubled to 0.4),
+        # so the ratio is 5.5/6.0 ≈ 0.917 instead of the V10.1 5.5/5.8 ≈ 0.948.
+        from app.core.constants import BATTER_ENV_MAX_SCORE
+        assert score == pytest.approx(5.5 / BATTER_ENV_MAX_SCORE, abs=0.01)
         assert unknown == 0
 
     def test_empty_env_tracks_unknowns(self):
@@ -299,8 +302,12 @@ class TestBatterEnvScore:
         assert score_all > score_two, "soft cap still rewards extra maxed signals"
         assert score_all - score_two < 0.10, "soft cap prevents redundant multiplication"
 
-    def test_max_score_denominator_is_5_8(self):
-        """max_score = 5.8.  Group A soft cap can reach 2.5 (in a perfect-storm)."""
+    def test_max_score_denominator_matches_constant(self):
+        """max_score (BATTER_ENV_MAX_SCORE) is the env-score denominator.
+        Group A soft cap can reach 2.5 (perfect-storm).  V10.2: max is 6.0
+        because TEAM_HOT_L10_BONUS doubled from 0.2 to 0.4.
+        """
+        from app.core.constants import BATTER_ENV_MAX_SCORE
         score, _, unknown = compute_batter_env_score(
             vegas_total=10.0,
             opp_pitcher_era=5.5,
@@ -310,9 +317,10 @@ class TestBatterEnvScore:
             team_moneyline=-250,
             opp_bullpen_era=5.5,
         )
-        # Without Group D (momentum), total = 2.5+2.0+1.0 = 5.5 / 5.8 ≈ 0.948
+        # Without Group D (momentum), total = 2.5+2.0+1.0 = 5.5 / BATTER_ENV_MAX_SCORE.
+        # V10.2 (max=6.0): 5.5/6.0 ≈ 0.917.  V10.1 (max=5.8) was: 5.5/5.8 ≈ 0.948.
         assert score < 1.0, "Without momentum context, score should be < 1.0"
-        assert score == pytest.approx(5.5 / 5.8, abs=0.01)
+        assert score == pytest.approx(5.5 / BATTER_ENV_MAX_SCORE, abs=0.01)
 
     def test_batting_order_unknown_contributes_zero(self):
         """Unknown batting order contributes 0 to situation — DNP risk is

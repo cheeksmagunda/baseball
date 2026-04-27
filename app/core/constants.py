@@ -95,7 +95,7 @@ HITTER_DAY_VEGAS_TOTAL_THRESHOLD = 9.0
 BLOWOUT_MONEYLINE_THRESHOLD = -200  # e.g. -210 means heavy favorite
 BLOWOUT_MIN_GAMES_FOR_STACK_DAY = 1  # 1+ blowout game → stack day eligible
 
-# V10.1 conservative stacking architecture.
+# V10.2 conservative stacking architecture.
 #
 # Stacking is powerful (pitcher shuts down opposing offense → teammates cash
 # the run/RBI bonuses) but it is also correlated — when the favorite loses,
@@ -104,18 +104,27 @@ BLOWOUT_MIN_GAMES_FOR_STACK_DAY = 1  # 1+ blowout game → stack day eligible
 # even then a MINI-stack (two teammates) captures most of the correlation
 # edge without the correlated-downside tail.
 #
-# Two gates must BOTH be satisfied for a team to be stack-eligible
-# (see is_stack_eligible_game() below):
+# A team is stack-eligible if its game satisfies EITHER:
 #
-#   1. Blowout favorite     — moneyline ≤ STACK_ELIGIBILITY_MONEYLINE
-#   2. High run environment — Vegas O/U  ≥ STACK_ELIGIBILITY_VEGAS_TOTAL
+#   PATH 1 (BLOWOUT FAVORITE — favored side only):
+#     moneyline ≤ STACK_ELIGIBILITY_MONEYLINE  AND
+#     Vegas O/U ≥ STACK_ELIGIBILITY_VEGAS_TOTAL
 #
-# Only teams on the favored side of a game satisfying BOTH gates may provide
-# more than one batter to a lineup.  All other teams fall back to the
-# one-batter-per-team default.  A heavy favorite in a low-scoring pitcher's
-# duel (-220 with O/U 7.0) is NOT stack-eligible.
-STACK_ELIGIBILITY_MONEYLINE = -200     # favorite threshold (reuses BLOWOUT_MONEYLINE)
-STACK_ELIGIBILITY_VEGAS_TOTAL = 9.0    # min O/U for stacks to fire
+#   PATH 2 (EXTREME SHOOTOUT — both sides eligible):
+#     Vegas O/U ≥ STACK_ELIGIBILITY_SHOOTOUT_TOTAL
+#
+# PATH 1 captures predictable blowouts (favorite scores; opposing pitcher
+# shelled).  PATH 2 captures Coors-class shootouts where both lineups
+# project to feast regardless of which side wins — those games are
+# "glaringly obvious" run environments where mini-stacking either side
+# is well-supported by Vegas.
+#
+# All other teams fall back to the one-batter-per-team default.  A heavy
+# favorite in a low-scoring pitcher's duel (-220 with O/U 7.0) is NOT
+# stack-eligible — fails both paths.
+STACK_ELIGIBILITY_MONEYLINE = -200     # favorite threshold (PATH 1)
+STACK_ELIGIBILITY_VEGAS_TOTAL = 9.0    # min O/U paired with ML in PATH 1
+STACK_ELIGIBILITY_SHOOTOUT_TOTAL = 10.5  # min O/U for ML-agnostic shootout PATH 2
 
 # Caps applied downstream of the stack-eligibility gate.  MAX=2 is the
 # deliberate mini-stack ceiling — never more than two teammates in a
@@ -137,15 +146,31 @@ MIN_GAMES_REPRESENTED = 2        # pipeline-level data-sufficiency guard (not a 
 def is_stack_eligible_game(
     moneyline: int | None, vegas_total: float | None
 ) -> bool:
-    """True if a game meets BOTH the moneyline and O/U thresholds for stacking.
+    """True if a game qualifies for mini-stacking via either path.
 
-    Evaluated on the favored side only — the caller is responsible for
-    identifying which team is the favorite.  Unknown fields return False
-    (no fallback; absence of signal is treated as absence of stack license).
+    PATH 1 (blowout favorite, favored side only): the caller's `moneyline`
+    must clear STACK_ELIGIBILITY_MONEYLINE AND O/U must clear
+    STACK_ELIGIBILITY_VEGAS_TOTAL.  Caller is responsible for evaluating
+    only the favored side.
+
+    PATH 2 (extreme shootout, both sides eligible): O/U must clear
+    STACK_ELIGIBILITY_SHOOTOUT_TOTAL — moneyline is ignored.  Caller may
+    pass the favored team's moneyline (or either side); only the O/U
+    threshold matters.
+
+    Unknown O/U returns False (no fallback).  Unknown moneyline only
+    fails PATH 1; PATH 2 still evaluates O/U-only.
     """
-    if moneyline is None or vegas_total is None:
+    if vegas_total is None:
         return False
-    return moneyline <= STACK_ELIGIBILITY_MONEYLINE and vegas_total >= STACK_ELIGIBILITY_VEGAS_TOTAL
+    if vegas_total >= STACK_ELIGIBILITY_SHOOTOUT_TOTAL:
+        return True
+    if moneyline is None:
+        return False
+    return (
+        moneyline <= STACK_ELIGIBILITY_MONEYLINE
+        and vegas_total >= STACK_ELIGIBILITY_VEGAS_TOTAL
+    )
 
 # Environmental filter thresholds (Filter 2)
 # Pitcher environmental pass conditions
@@ -255,8 +280,17 @@ PITCHER_ENV_K9_FLOOR = 6.0            # K/9 at or below this → 0 contribution
 PITCHER_ENV_K9_CEILING = 10.0         # K/9 at or above this → full contribution
 PITCHER_ENV_PARK_FLOOR = 0.90         # park factor at or below this → full contribution (pitcher-friendly)
 PITCHER_ENV_PARK_CEILING = 1.05       # park factor at or above this → 0 contribution
-PITCHER_ENV_ML_FLOOR = -110           # moneyline at or above this → 0 contribution
-PITCHER_ENV_ML_CEILING = -250         # moneyline at or below this → full contribution
+PITCHER_ENV_ML_FLOOR = -130           # moneyline at or above this → 0 contribution
+PITCHER_ENV_ML_CEILING = -220         # moneyline at or below this → full contribution
+                                      # V10.2 (April 27 calibration): widened the
+                                      # graduated band from (-110, -250) to (-130,
+                                      # -220) after observing that ~25% of HV
+                                      # pitchers across 33 historical slates pitched
+                                      # for coin-flip or mild-favorite teams.  The
+                                      # old floor zeroed-out ML credit for any
+                                      # pitcher whose team wasn't already favored,
+                                      # under-rating K-upside pitchers in tossup
+                                      # games.  Aliased to BATTER_ENV_ML_* below.
 PITCHER_ENV_MAX_SCORE = 5.5           # 5 main factors (1.0 each) + home (0.5)
 
 # Batter env factors — Group A (run environment, soft-capped)
@@ -299,10 +333,19 @@ SERIES_LEADING_BONUS = 0.6       # batter's team leads series 2-0 or better → 
 SERIES_TRAILING_PENALTY = 0.6    # batter's team trails series 0-2 or worse → -0.6
 TEAM_HOT_L10_THRESHOLD = 7       # last-10 wins at or above → hot team bonus
 TEAM_COLD_L10_THRESHOLD = 3      # last-10 wins at or below → cold team penalty
-TEAM_HOT_L10_BONUS = 0.2         # bonus for hot team (last 10 ≥ 7 wins)
-TEAM_COLD_L10_PENALTY = 0.2      # penalty for cold team (last 10 ≤ 3 wins)
+TEAM_HOT_L10_BONUS = 0.4         # bonus for hot team (last 10 ≥ 7 wins).
+                                 # V10.2 (April 27 calibration): doubled from 0.2
+                                 # to 0.4 after observing that hot-streak teams
+                                 # consistently produced HV batters across the
+                                 # 33-slate window (e.g., Apr 26 ATL 8-2 → 6 runs
+                                 # at home).  Old 0.2 was a 3% env swing — below
+                                 # the noise floor.
+TEAM_COLD_L10_PENALTY = 0.4      # penalty for cold team (last 10 ≤ 3 wins).
+                                 # V10.2: doubled from 0.2 to 0.4 (same rationale).
 
-BATTER_ENV_MAX_SCORE = 5.8               # 2.0 (run env soft-cap point) + 2.0 (situation) + 1.0 (venue) + 0.8 (series/momentum).
+BATTER_ENV_MAX_SCORE = 6.0               # 2.0 (run env soft-cap point) + 2.0 (situation) + 1.0 (venue) + 1.0 (series/momentum).
+                                         # V10.2: bumped from 5.8 to 6.0 because TEAM_HOT_L10_BONUS doubled (0.2 → 0.4),
+                                         # so max momentum is now 1.0 (0.6 series leading + 0.4 hot L10) instead of 0.8.
                                          # Group A can reach 2.5 via soft slope in perfect-storm cases; the final
                                          # `min(1.0, total / max_score)` clamp preserves correct normalization.
 

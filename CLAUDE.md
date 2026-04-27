@@ -676,14 +676,32 @@ Web-scraping signal aggregator that estimates crowd media attention. This is NOT
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V10.1 "Mini-Stack the Alpha — Statcast Kinematics + Game-Script-Gated Correlation"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs and do not exist on `FilteredCandidate`**. FADE players (high pre-game media attention) are **excluded from the candidate pool** before EV computation begins. EV is driven by Statcast pitch physics, exit-velocity kinematics, game conditions, and series context. **Stacking is capped at 2 batters per team AND 2 per game, and only fires on overwhelmingly clear game scripts.**
+**Strategy Version: V10.2 "Mini-Stack the Alpha — Statcast Kinematics + Two-Path Stack Eligibility"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs and do not exist on `FilteredCandidate`**. FADE players (high pre-game media attention) are **excluded from the candidate pool** before EV computation begins. EV is driven by Statcast pitch physics, exit-velocity kinematics, game conditions, and series context. **Stacking is capped at 2 batters per team AND 2 per game, and only fires on overwhelmingly clear game scripts.**
+
+### V10.2 Calibration Changes (April 27)
+
+V10.2 keeps every V10.1 structural rule (1P + 4B, mini-stack ceiling 2, per-game cap 2, no opposing batter in anchor's game). The changes are calibration-only, driven by reading the env-enriched 33-slate history (Mar 25 → Apr 26):
+
+1. **Two-path stack eligibility.** Replaced the single AND-gated rule with an OR of two paths (single source of truth: `is_stack_eligible_game()` in `app/core/constants.py`):
+   - **PATH 1 (blowout favorite, favored side only)** — `moneyline ≤ STACK_ELIGIBILITY_MONEYLINE` (−200) AND `O/U ≥ STACK_ELIGIBILITY_VEGAS_TOTAL` (9.0). Earns `STACK_BONUS` (1.20× EV).
+   - **PATH 2 (extreme shootout, both sides eligible)** — `O/U ≥ STACK_ELIGIBILITY_SHOOTOUT_TOTAL` (10.5), moneyline-agnostic. Both teams' batters are stack-eligible (2-cap mini-stack) but neither team earns `STACK_BONUS` — they're in a high-run game, not a predictable blowout.
+   - Empirical motivation: across 33 slates, ~3-5 PATH 2 games per slate produced 4-7 HV batters each but were missed by V10.1's stricter gate. Apr 23 SD@COL (O/U 12.0, ML −162, 18 actual runs) had 7 HV players spanning both teams; Apr 26 SD@ARI (O/U 15.5, ML −116, 19 actual runs) had 5. Coors-class shootouts are "glaringly obvious" by O/U alone — both lineups feast regardless of which side wins.
+   - `StackableGame.is_blowout_favorite` distinguishes the two paths so STACK_BONUS stays gated to PATH 1.
+
+2. **Pitcher moneyline floor/ceiling widened.** `PITCHER_ENV_ML_FLOOR: -110 → -130`, `PITCHER_ENV_ML_CEILING: -250 → -220`. Across the 33-slate window, ~25% of HV pitchers pitched for coin-flip or mild-favorite teams (ML between −150 and +200): Joe Ryan +128, Soriano +160, Gavin Williams +194, Mick Abel +148, Tyler Mahle +152, Lorenzen +184, etc. The old floor zeroed-out moneyline credit for any pitcher whose team wasn't already favored, mathematically discounting K-upside aces in tossup games. The new band gives partial credit at coin flips and full credit at clear favorites (not just blowouts). Aliased to `BATTER_ENV_ML_*`.
+
+3. **L10 momentum bonus/penalty doubled.** `TEAM_HOT_L10_BONUS: 0.2 → 0.4`, `TEAM_COLD_L10_PENALTY: 0.2 → 0.4`. Hot-streak teams consistently produced HV batters (Apr 26 ATL 8-2 in L10 → 6-run home win + 0 ATL HV but multi-game pattern); the old 0.2 contribution was a 3% env swing, below the noise floor. `BATTER_ENV_MAX_SCORE` correspondingly bumped from 5.8 to 6.0 (max momentum is now 1.0 = 0.6 series-leading + 0.4 hot-L10).
+
+V10.2 explicitly **does not** change: lineup composition (still 1P + 4B), per-team cap (still 2 for stack-eligible, 1 otherwise), per-game cap (still 2), opposing-batter prohibition (still on the anchor's game only), or any V10.1 structural rule. The off-limits "4-batter team stack" and "4P + 1B" composition options remain off-limits.
 
 ### V10.1 Structural Changes (April 21)
 
-V10.1 keeps the correlation edge of stacking but restricts the blast radius. Two gates must BOTH be satisfied for a team to contribute more than one batter:
+V10.1 kept the correlation edge of stacking but restricted the blast radius. Two gates must BOTH be satisfied for a team to contribute more than one batter:
 
 - Moneyline ≤ `STACK_ELIGIBILITY_MONEYLINE` (−200) — a genuine blowout favorite
 - Vegas O/U ≥ `STACK_ELIGIBILITY_VEGAS_TOTAL` (9.0) — a high-run game script
+
+V10.2 retains this rule as PATH 1 of `is_stack_eligible_game()` and adds the shootout PATH 2 (see above).
 
 Even when the gate is cleared, the per-team cap is **2** (`MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE`) — a mini-stack, never a full 4-man team stack. An independent per-game cap of 2 (`MAX_PLAYERS_PER_GAME_BATTERS`) prevents mixed-side clumps (2 from team A + 2 from team B in the same game). Every other team stays capped at one batter per lineup. `is_stack_eligible_game()` in `app/core/constants.py` is the single source of truth for the gate.
 
