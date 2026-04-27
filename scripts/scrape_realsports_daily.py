@@ -35,7 +35,6 @@ import logging
 import os
 import sys
 import time
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_EVEN
 from pathlib import Path

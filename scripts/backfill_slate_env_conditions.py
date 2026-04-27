@@ -32,12 +32,10 @@ Usage:
 import argparse
 import json
 import logging
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
 
 import requests
 from playwright.sync_api import sync_playwright
@@ -229,7 +227,8 @@ def fetch_mlb_schedule(date: str) -> list[dict]:
             teams = g.get("teams", {})
             h = teams.get("home", {})
             a = teams.get("away", {})
-            ht = h.get("team", {}); at = a.get("team", {})
+            ht = h.get("team", {})
+            at = a.get("team", {})
             hp = h.get("probablePitcher") or {}
             ap = a.get("probablePitcher") or {}
             out.append({
@@ -353,9 +352,12 @@ def fetch_team_full_schedule(team_id: int) -> list[dict]:
             teams = g.get("teams", {})
             h = teams.get("home", {})
             a = teams.get("away", {})
-            ht = h.get("team", {}); at = a.get("team", {})
-            home_id = ht.get("id"); away_id = at.get("id")
-            home_score = h.get("score"); away_score = a.get("score")
+            ht = h.get("team", {})
+            at = a.get("team", {})
+            home_id = ht.get("id")
+            away_id = at.get("id")
+            home_score = h.get("score")
+            away_score = a.get("score")
             if home_score is None or away_score is None:
                 continue
             is_home = (home_id == team_id)
@@ -430,7 +432,8 @@ def fetch_weather_archive(park_team: str, game_date: str, game_utc_hour: int) ->
             hr = int(t.split("T")[1][:2])
             diff = abs(hr - game_utc_hour)
             if diff < best_diff:
-                best_diff = diff; best_idx = i
+                best_diff = diff
+                best_idx = i
         except Exception:
             continue
     temp_c = temps[best_idx] if best_idx < len(temps) else None

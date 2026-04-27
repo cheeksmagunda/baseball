@@ -22,9 +22,8 @@ import csv
 import json
 import logging
 import re
-import sys
 import unicodedata
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import requests
@@ -198,13 +197,13 @@ def check_csv(path: Path, name_col: str, team_col: str,
     if auto_fix:
         print(f"  AUTO-FIXED: {fixed} rows")
     if confirmed:
-        print(f"  Confirmed wrong (auto-fixable):")
+        print("  Confirmed wrong (auto-fixable):")
         for date, name, our_team, actual_team in confirmed[:30]:
             print(f"    {date}  {name:30s}  ours={our_team:>3}  actual={actual_team:>3}")
         if len(confirmed) > 30:
             print(f"    ... and {len(confirmed) - 30} more")
     if ambiguous:
-        print(f"  Ambiguous (multiple possible teams — manual review):")
+        print("  Ambiguous (multiple possible teams — manual review):")
         for date, name, our_team, possible in ambiguous[:10]:
             print(f"    {date}  {name:30s}  ours={our_team:>3}  possible={possible}")
         if len(ambiguous) > 10:
