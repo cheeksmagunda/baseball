@@ -1245,11 +1245,27 @@ def _exclude_fade_players(candidates: list[FilteredCandidate]) -> list[FilteredC
     These players are excluded from the candidate pool entirely — not penalised
     via EV, not ranked last, just removed.  TARGET and NEUTRAL pass with no bonus.
 
+    Exception: a two-way player confirmed as today's starting pitcher (e.g. Ohtani)
+    always passes through regardless of popularity — the pitcher anchor slot must
+    reflect the actual starter, not popularity signal.
+
     Fails fast if the gate leaves no pitchers.  No fallback: a pool that cannot
     supply an SP anchor is a data/classification problem upstream, not something
     the optimizer should paper over.
     """
-    filtered = [c for c in candidates if c.popularity != PopularityClass.FADE]
+    def _passes_gate(c: FilteredCandidate) -> bool:
+        if c.popularity != PopularityClass.FADE:
+            return True
+        # TWP confirmed as starting pitcher bypasses the FADE gate
+        if c.is_pitcher and c.is_two_way_pitcher:
+            logger.info(
+                "TWP pitcher %s (%s) is FADE but passes popularity gate as confirmed starter",
+                c.player_name, c.team,
+            )
+            return True
+        return False
+
+    filtered = [c for c in candidates if _passes_gate(c)]
     excluded = len(candidates) - len(filtered)
     if excluded:
         logger.info(
