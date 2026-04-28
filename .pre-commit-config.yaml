@@ -23,3 +23,10 @@ repos:
         language: system
         pass_filenames: false
         files: ^app/(services|routers|core)/.*\.py$
+
+      - id: mypy
+        name: mypy (type-check app/)
+        entry: mypy app/
+        language: system
+        pass_filenames: false
+        files: ^app/.*\.py$

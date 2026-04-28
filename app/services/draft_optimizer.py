@@ -9,6 +9,7 @@ Moonshot, popularity gating, env/trait EV) lives in
 `app/services/filter_strategy.py`.
 """
 
+import logging
 from dataclasses import dataclass
 
 from app.core.constants import (
@@ -19,6 +20,8 @@ from app.core.constants import (
 from app.core.utils import BASE_MULTIPLIER, compute_total_value
 from app.services.scoring_engine import PlayerScoreResult
 from app.services.popularity import PopularityClass
+
+logger = logging.getLogger(__name__)
 
 
 # Popularity EV adjustments for the user-proposed-lineup warning path.
@@ -112,7 +115,12 @@ def optimize_lineup(
         pop_adj = POPULARITY_ADJUSTMENTS.get(card.popularity, 1.0)
         card.expected_value = raw_ev * pop_adj
 
-    return _assign_to_slots(cards, strategy)
+    result = _assign_to_slots(cards, strategy)
+    logger.debug(
+        "optimize_lineup: %d cards → total_ev=%.2f strategy=%s",
+        len(cards), result.total_expected_value, strategy,
+    )
+    return result
 
 
 def evaluate_lineup(

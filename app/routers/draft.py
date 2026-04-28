@@ -48,12 +48,20 @@ def _lineup_to_slots(result: OptimizedLineup) -> list[DraftSlotOut]:
     ]
 
 
-def _resolve_cards(cards: list[DraftCard], db: Session) -> list[CardWithScore]:
-    """Look up each card's player and score them (no popularity needed for evaluate)."""
+def _resolve_cards(
+    cards: list[DraftCard], db: Session
+) -> tuple[list[CardWithScore], list[str]]:
+    """Look up each card's player and score them.
+
+    Returns (resolved_cards, missing_names) so the caller can surface which
+    specific players were not found — far more actionable than a generic count.
+    """
     resolved = []
+    missing = []
     for card in cards:
         player = find_player_by_name(db, card.player_name)
         if not player:
+            missing.append(card.player_name)
             continue
         result = score_player(db, player)
         resolved.append(CardWithScore(
@@ -61,7 +69,7 @@ def _resolve_cards(cards: list[DraftCard], db: Session) -> list[CardWithScore]:
             card_boost=card.card_boost,
             score_result=result,
         ))
-    return resolved
+    return resolved, missing
 
 
 @router.post("/evaluate", response_model=EvaluateResponse)
@@ -70,10 +78,12 @@ def evaluate_draft(req: EvaluateRequest, db: Session = Depends(get_db)):
     if len(req.slots) != 5:
         raise HTTPException(400, "Need exactly 5 cards in slot order")
 
-    cards = _resolve_cards(req.slots, db)
-    if len(cards) < 5:
-        missing = len(req.slots) - len(cards)
-        raise HTTPException(404, f"{missing} players not found in database")
+    cards, missing = _resolve_cards(req.slots, db)
+    if missing:
+        raise HTTPException(
+            404,
+            f"Players not found in database: {', '.join(missing)}"
+        )
 
     result = evaluate_lineup(cards)
 

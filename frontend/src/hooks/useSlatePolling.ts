@@ -3,8 +3,13 @@
 import { useEffect, useRef, useCallback } from "react";
 import { fetchSlates } from "@/lib/api";
 
-const POLL_INTERVAL = 60_000; // 60 seconds
+const POLL_INTERVAL = 60_000; // 60 seconds base
+const POLL_JITTER = 10_000;   // ±10 s jitter to spread T-65 thundering herd
 const STALE_THRESHOLD = 5 * 60_000; // 5 minutes
+
+function jitteredInterval() {
+  return POLL_INTERVAL + (Math.random() * 2 - 1) * POLL_JITTER;
+}
 
 export function useSlatePolling(onSlateChange: () => void) {
   const lastSlateRef = useRef<string | null>(null);
@@ -27,10 +32,17 @@ export function useSlatePolling(onSlateChange: () => void) {
     }
   }, [onSlateChange]);
 
-  // Regular polling interval
+  // Polling with per-tick jitter to avoid thundering herd at T-65
   useEffect(() => {
-    const id = setInterval(poll, POLL_INTERVAL);
-    return () => clearInterval(id);
+    let id: ReturnType<typeof setTimeout>;
+    function schedule() {
+      id = setTimeout(() => {
+        poll();
+        schedule();
+      }, jitteredInterval());
+    }
+    schedule();
+    return () => clearTimeout(id);
   }, [poll]);
 
   // Page Visibility API: refetch if stale on return

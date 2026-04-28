@@ -5,6 +5,7 @@ Scores players 0-100 based on trait profiles derived from
 Highest Value player analysis across March 25-31, 2026 data.
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -58,6 +59,8 @@ from app.core.utils import get_recent_games, scale_score
 from app.core.weights import ScoringWeights, get_current_weights
 from app.models.player import Player, PlayerGameLog, PlayerStats
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class TraitResult:
@@ -84,6 +87,7 @@ class PlayerScoreResult:
 def score_ace_status(stats: PlayerStats | None, max_pts: float) -> TraitResult:
     """Score based on pitcher quality indicators (IP, ERA as proxy for rotation rank)."""
     if not stats or stats.ip == 0:
+        logger.debug("ace_status: no stats — returning 0")
         return TraitResult("ace_status", 0, max_pts, "no stats")
 
     # Use ERA as proxy: <2.5 = ace, <3.5 = solid, <4.5 = average, >4.5 = back-end
@@ -124,6 +128,7 @@ def score_pitcher_k_rate(stats: PlayerStats | None, max_pts: float) -> TraitResu
         ignores MLB-debut arms; our job is to not ignore them ourselves.
     """
     if not stats:
+        logger.debug("k_rate: no stats — returning rookie baseline (%.0f%%)", UNKNOWN_SCORE_RATIO * 100)
         return TraitResult("k_rate", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "no stats (rookie baseline)")
 
     subs: list[tuple[str, float]] = []
@@ -743,9 +748,21 @@ def score_player(
         .all()
     )
 
+    if stats is None:
+        logger.debug(
+            "score_player: no season-%d stats for %s (%s) — using defaults",
+            settings.current_season, player.name, player.team,
+        )
+
     # Caller override takes precedence; fall back to DB position.
     if is_pitcher is None:
         is_pitcher = player.position in PITCHER_POSITIONS
+
+    logger.debug(
+        "scoring %s (%s, %s) as_pitcher=%s stats=%s game_logs=%d",
+        player.name, player.team, player.position, is_pitcher,
+        "yes" if stats else "none", len(game_logs),
+    )
 
     if is_pitcher:
         return score_pitcher(

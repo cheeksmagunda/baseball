@@ -1,23 +1,29 @@
 from contextlib import asynccontextmanager
 import logging
 import logging.config
+import uuid
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
+from app.core.logging_config import JsonFormatter, request_id_var
 from app.database import init_db
 from app.routers import players, slates, scoring, draft, calibration, pipeline, popularity, filter_strategy
+from app.services import app_state as _app_state
 
 
-# Centralized logging configuration
+# ---------------------------------------------------------------------------
+# Structured JSON logging
+# ---------------------------------------------------------------------------
+
 LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "standard": {
-            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            "datefmt": "%Y-%m-%d %H:%M:%S",
+        "json": {
+            "()": JsonFormatter,
         },
     },
     "handlers": {
@@ -25,7 +31,7 @@ LOGGING_CONFIG = {
             "level": settings.log_level,
             "class": "logging.StreamHandler",
             "stream": "ext://sys.stdout",
-            "formatter": "standard",
+            "formatter": "json",
         },
     },
     "loggers": {
@@ -43,6 +49,22 @@ LOGGING_CONFIG = {
 }
 
 logging.config.dictConfig(LOGGING_CONFIG)
+
+
+# ---------------------------------------------------------------------------
+# Request-ID middleware — injects a short correlation ID into every log line
+# ---------------------------------------------------------------------------
+
+class _RequestIDMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> Response:
+        rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:8]
+        token = request_id_var.set(rid)
+        try:
+            response = await call_next(request)
+        finally:
+            request_id_var.reset(token)
+        response.headers["x-request-id"] = rid
+        return response
 
 
 @asynccontextmanager
@@ -105,7 +127,8 @@ async def lifespan(app: FastAPI):
         )
     logger.info("BO_ODDS_API_KEY configured — Vegas API enrichment enabled")
 
-    startup_done_event = asyncio.Event()
+    # Use the module-level event so the health endpoint can read it
+    startup_done_event = _app_state.startup_done_event
 
     def _sync_startup_init() -> None:
         """Blocking startup work. Runs in a worker thread via asyncio.to_thread."""
@@ -217,6 +240,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(_RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -240,4 +264,61 @@ app.include_router(filter_strategy.router, prefix="/api/filter-strategy", tags=[
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "0.1.0"}
+    """Deep health check: startup, Redis, and DB connectivity.
+
+    Returns HTTP 200 with status="ok" when all dependencies are healthy.
+    Returns HTTP 503 with status="degraded" when any dependency is down so
+    Railway's health probe can trigger a restart on unrecoverable failures.
+    """
+    import asyncio as _asyncio
+    import sqlalchemy as _sa
+    from fastapi.responses import JSONResponse as _JSONResponse
+
+    checks: dict[str, str] = {}
+
+    # 1. Startup completion
+    checks["startup"] = "ok" if _app_state.startup_done_event.is_set() else "starting"
+
+    # 2. Redis connectivity (synchronous ping via thread pool)
+    async def _check_redis() -> str:
+        if not settings.redis_url:
+            return "unconfigured"
+        try:
+            import redis as _redis
+            def _ping():
+                c = _redis.from_url(
+                    settings.redis_url,
+                    socket_connect_timeout=2,
+                    socket_timeout=2,
+                )
+                c.ping()
+            await _asyncio.to_thread(_ping)
+            return "ok"
+        except Exception as exc:
+            return f"error: {exc}"
+
+    # 3. DB connectivity
+    async def _check_db() -> str:
+        try:
+            from app.database import SessionLocal
+            def _select1():
+                with SessionLocal() as db:
+                    db.execute(_sa.text("SELECT 1"))
+            await _asyncio.to_thread(_select1)
+            return "ok"
+        except Exception as exc:
+            return f"error: {exc}"
+
+    checks["redis"], checks["db"] = await _asyncio.gather(
+        _check_redis(), _check_db()
+    )
+
+    ok = all(v == "ok" for v in checks.values())
+    return _JSONResponse(
+        status_code=200 if ok else 503,
+        content={
+            "status": "ok" if ok else "degraded",
+            "version": "0.1.0",
+            "checks": checks,
+        },
+    )

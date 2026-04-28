@@ -23,6 +23,9 @@ jobs:
       - name: Ruff lint
         run: ruff check .
 
+      - name: mypy type check
+        run: mypy app/
+
       - name: Live-isolation audit (no historical outcomes in T-65 path)
         run: python scripts/audit_live_isolation.py
 

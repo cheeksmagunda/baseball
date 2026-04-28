@@ -175,7 +175,7 @@ async def fetch_schedule_for_date(db: Session, game_date: date) -> Slate:
     return slate
 
 
-async def populate_slate_players(db: Session, slate: Slate) -> dict:
+async def populate_slate_players(db: Session, slate: Slate) -> dict[str, int]:
     """
     Populate SlatePlayer records from team active rosters.
 
