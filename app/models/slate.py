@@ -127,6 +127,13 @@ class SlatePlayer(Base):
 
     # Pre-game filter fields (§4.2 Filters 2-4, §5.2)
     batting_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Provenance for batting_order — drives DNP-adjustment confidence and
+    # post-slate calibration of which source maps best to outcomes.  Values:
+    #   "official"            — MLB Stats API boxscore (ground truth)
+    #   "rotowire_confirmed"  — RotoWire saw the official card before MLB serialised it
+    #   "rotowire_expected"   — RotoWire beat-reporter projection
+    #   NULL                  — no source provided a batting order
+    batting_order_source: Mapped[str | None] = mapped_column(String, nullable=True)
     platoon_advantage: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     player_status: Mapped[str] = mapped_column(String, default="active")  # active, DNP, scratched, data_missing
     game_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("slate_games.id"), nullable=True, index=True)

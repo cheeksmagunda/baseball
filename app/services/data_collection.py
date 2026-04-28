@@ -210,11 +210,17 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict:
 
     for result in roster_results:
         if isinstance(result, Exception):
-            logger.warning("Roster fetch failed for a team — skipping: %s", result)
-            continue
+            raise RuntimeError(
+                f"Roster fetch failed — pipeline must fail loudly. Skipping a team "
+                f"silently drops every batter and pitcher on it from the candidate pool, "
+                f"corrupting EV computation. Original error: {result}"
+            ) from result
         team, roster_data = result
         if roster_data is None:
-            continue
+            raise RuntimeError(
+                f"Roster fetch returned None for {team} — MLB API returned no roster data. "
+                "Pipeline must fail loudly per the no-fallbacks rule."
+            )
 
         game = team_games[team]
         roster = roster_data.get("roster", [])
@@ -272,20 +278,116 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict:
     db.commit()
 
     # Enrich with batting order from boxscores (if lineups have been posted)
+    # Phase 1: RotoWire expected lineups (best-effort).  Available up to 4 hours
+    # before first pitch, covering ~90% of teams at T-65.  Failures log loudly
+    # but do not abort the pipeline — the existing DNP_UNKNOWN_PENALTY (0.85)
+    # absorbs missing batting orders.  Per CLAUDE.md, this is graceful
+    # degradation (no fake data substituted), not a forbidden fallback.
+    rw_enriched = await _enrich_batting_order_from_rotowire(db, slate, logger)
+
+    # Phase 2: MLB Stats API boxscore (ground truth — overrides RotoWire when
+    # the official card has been posted, typically T-30 to T-60).
     enriched = await _enrich_batting_order(db, slate, games, logger)
 
-    logger.info("Populated %d slate players (%d skipped/existing, %d batting orders enriched)", added, skipped, enriched)
+    logger.info(
+        "Populated %d slate players (%d skipped/existing, %d batting orders enriched: "
+        "%d from RotoWire, %d from MLB official)",
+        added, skipped, rw_enriched + enriched, rw_enriched, enriched,
+    )
     return {"added": added, "skipped": skipped}
+
+
+async def _enrich_batting_order_from_rotowire(db: Session, slate: Slate, logger) -> int:
+    """
+    Pre-fill SlatePlayer.batting_order from RotoWire's expected lineups.
+
+    RotoWire publishes beat-reporter projections up to 4 hours before first
+    pitch — much earlier than MLB's official card serialisation.  At T-65 it
+    typically covers ~90% of teams in some form (Confirmed or Expected).
+
+    This function is **best-effort**: a failed fetch or parse logs at error
+    level and returns 0 enriched.  Downstream MLB API boxscore enrichment
+    (Phase 2) will still try to populate batting_order from official cards,
+    and any player whose order remains NULL falls into DNP_UNKNOWN_PENALTY
+    in the EV formula.
+
+    Sets `batting_order_source` to "rotowire_confirmed" or "rotowire_expected"
+    so the official-card phase can detect-and-override, and so post-slate
+    calibration can compare RotoWire predictions vs official cards.
+    """
+    from app.core.rotowire import LineupStatus, fetch_expected_lineups
+    from app.models.player import Player, normalize_name
+
+    try:
+        games = await fetch_expected_lineups()
+    except Exception as exc:
+        # No raise — graceful degradation. Loud warning so this is visible
+        # in production logs.  Empty enrichment count surfaces in the
+        # populate_slate_players() info line.
+        logger.error(
+            "RotoWire expected-lineup fetch failed: %s. SlatePlayer.batting_order "
+            "will be NULL for batters whose official card hasn't dropped yet. "
+            "DNP_UNKNOWN_PENALTY (0.85) will absorb the missing signal, but EV "
+            "ranking for these players is degraded. Investigate if this persists.",
+            exc,
+        )
+        return 0
+
+    if not games:
+        logger.warning("RotoWire returned 0 parseable games — markup may have changed")
+        return 0
+
+    # Build lookup: (team_uppercase, normalized_full_name) -> (order, source)
+    lookup: dict[tuple[str, str], tuple[int, str]] = {}
+    for game in games:
+        for team_lineup in (game.visitor, game.home):
+            source = (
+                "rotowire_confirmed" if team_lineup.status == LineupStatus.CONFIRMED
+                else "rotowire_expected"
+            )
+            for player in team_lineup.players:
+                key = (team_lineup.team.upper(), normalize_name(player.full_name))
+                lookup[key] = (player.batting_order, source)
+
+    if not lookup:
+        return 0
+
+    # Match against this slate's SlatePlayers via Player.name_normalized + team.
+    sps = (
+        db.query(SlatePlayer)
+        .join(Player, SlatePlayer.player_id == Player.id)
+        .filter(SlatePlayer.slate_id == slate.id)
+        .all()
+    )
+    enriched = 0
+    for sp in sps:
+        key = (sp.player.team.upper(), sp.player.name_normalized)
+        match = lookup.get(key)
+        if match is None:
+            continue
+        order, source = match
+        sp.batting_order = order
+        sp.batting_order_source = source
+        enriched += 1
+
+    if enriched:
+        db.commit()
+    return enriched
 
 
 async def _enrich_batting_order(db: Session, slate: Slate, games: list, logger) -> int:
     """
-    Enrich SlatePlayer batting_order from boxscores when lineups are posted.
+    Enrich SlatePlayer batting_order from MLB Stats API boxscores when the
+    official lineup card has been posted (typically 30-60 min before first
+    pitch — i.e. usually AFTER T-65 for early-window games).
 
-    This is optional enrichment — the pipeline works without it. When lineups
-    are available (typically 30-60 min before first pitch), boxscores contain
-    batting order data that feeds the lineup_position scoring trait.
+    Best-effort: missing/late official cards leave any RotoWire-projected
+    batting_order in place.  When an official card IS available, this
+    function OVERWRITES the RotoWire value and stamps source="official"
+    because the MLB card is ground truth.
     """
+    from app.models.player import Player
+
     async def _fetch_boxscore(game):
         if game.mlb_game_pk is None:
             raise ValueError(
@@ -338,9 +440,13 @@ async def _enrich_batting_order(db: Session, slate: Slate, games: list, logger) 
                     .filter_by(slate_id=slate.id, player_id=player.id)
                     .first()
                 )
-                if sp and sp.batting_order is None:
-                    sp.batting_order = batting_order
-                    enriched += 1
+                if sp:
+                    # Official card is ground truth — overwrite any RotoWire
+                    # projection unconditionally.
+                    if sp.batting_order != batting_order or sp.batting_order_source != "official":
+                        sp.batting_order = batting_order
+                        sp.batting_order_source = "official"
+                        enriched += 1
 
     if enriched:
         db.commit()
@@ -584,8 +690,12 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
     team_batting: dict[str, dict] = {}
     for result in batting_raw:
         if isinstance(result, Exception):
-            logger.warning("Team batting stats fetch failed — skipping: %s", result)
-            continue
+            raise RuntimeError(
+                f"Team batting stats fetch failed — pipeline must fail loudly. "
+                f"A skipped team produces NULL home/away_team_ops and home/away_team_k_pct, "
+                f"corrupting pitcher env scoring (Factor 1 weak-OPS, Factor 2 high-K). "
+                f"Original error: {result}"
+            ) from result
         team, data = result
         splits = (data.get("stats") or [{}])[0].get("splits", [])
         if not splits:
@@ -600,8 +710,12 @@ async def enrich_slate_game_team_stats(db: Session, slate: Slate, season: int) -
     team_pitching: dict[str, dict] = {}
     for result in pitching_raw:
         if isinstance(result, Exception):
-            logger.warning("Team pitching stats fetch failed — skipping: %s", result)
-            continue
+            raise RuntimeError(
+                f"Team pitching stats fetch failed — pipeline must fail loudly. "
+                f"A skipped team produces NULL home/away_bullpen_era, corrupting "
+                f"batter env Group A A4 (vulnerable bullpen signal). "
+                f"Original error: {result}"
+            ) from result
         team, data = result
         splits = (data.get("stats") or [{}])[0].get("splits", [])
         if not splits:
@@ -717,8 +831,12 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
     team_games: dict[str, list[dict]] = {}
     for result in raw_results:
         if isinstance(result, Exception):
-            logger.warning("Series context: schedule fetch failed — skipping: %s", result)
-            continue
+            raise RuntimeError(
+                f"Series context: schedule fetch failed — pipeline must fail loudly. "
+                f"A skipped team's series_wins/losses and l10_wins remain NULL on SlateGame, "
+                f"corrupting batter env Group D (series + recent form). "
+                f"Original error: {result}"
+            ) from result
         team, game_list = result
         team_games[team] = game_list
 

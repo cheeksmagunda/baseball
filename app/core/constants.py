@@ -298,8 +298,19 @@ BATTER_ENV_VEGAS_FLOOR = 7.0          # O/U at or below this → 0 contribution
 BATTER_ENV_VEGAS_CEILING = 9.5        # O/U at or above this → full contribution
 BATTER_ENV_ERA_FLOOR = 3.5            # opposing starter ERA at or below → 0
 BATTER_ENV_ERA_CEILING = 5.5          # opposing starter ERA at or above → full
-BATTER_ENV_ML_FLOOR = PITCHER_ENV_ML_FLOOR    # moneyline graduation shared with pitcher env
-BATTER_ENV_ML_CEILING = PITCHER_ENV_ML_CEILING
+# V10.4 (April 28 calibration): decoupled batter ML from pitcher ML.  The 33-slate
+# game-level analysis shows mild favorites (-110 to -169) produce the MOST HV per
+# game (1.27-1.32 HV/game vs 1.22 baseline), while strong favorites (-200 to -250)
+# produce the LOWEST (1.14 HV/game).  The pre-V10.4 batter range was aliased to
+# the pitcher range (-130 → -220), which gave full credit to the lowest-HV bucket
+# and zero credit to the highest.  Reasoning: ML is a "team wins" signal which
+# correlates with the OPPOSING starter being weak — but that's already scored
+# directly via BATTER_ENV_ERA_*.  For batters, ML adds the most marginal signal
+# in the mild-favorite zone where the game stays competitive (more PAs, deeper
+# bullpen exposure, more late-inning leverage).  Centering the curve at -180
+# captures this without over-rewarding extreme blowouts.
+BATTER_ENV_ML_FLOOR = -100            # team_ml at or above (less negative) → 0 contribution
+BATTER_ENV_ML_CEILING = -180          # team_ml at or below → full contribution (saturates)
 BATTER_ENV_BULLPEN_ERA_FLOOR = 3.5    # bullpen ERA at or below → 0
 BATTER_ENV_BULLPEN_ERA_CEILING = 5.5  # bullpen ERA at or above → full
 

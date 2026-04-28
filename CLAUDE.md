@@ -204,11 +204,13 @@ The app uses an event-driven timing model that triggers the ONLY full pipeline r
    - Monitor wakes up and runs the FULL pipeline:
      - Fetch fresh MLB schedule (handles weather delays via retry loop)
      - Populate SlatePlayer rosters from MLB API boxscores
+     - **Phase 1: RotoWire expected lineups** (best-effort) — populates `batting_order` from beat-reporter projections, sets `batting_order_source` to `"rotowire_confirmed"` or `"rotowire_expected"`. Fails gracefully (warns + continues) if RotoWire is unreachable; downstream DNP_UNKNOWN_PENALTY (0.85) absorbs missing data.
+     - **Phase 2: MLB Stats API boxscore** (ground truth) — overrides any RotoWire value with the official lineup card when posted, sets source to `"official"`. Typically populates 30-60 min before first pitch (i.e., usually after T-65), so RotoWire carries the load at the lock moment.
      - Fetch season stats for all players
      - Enrich game environment (Vegas lines, series context, bullpen ERA)
      - Score all players (0-100 trait profiles)
      - Run dual-filter strategy (Starting 5 + Moonshot)
-   - **No fallbacks.** If any stage fails, the monitor crashes so `/optimize` returns HTTP 503.
+   - **No fallbacks.** If any stage fails (except Phase 1 RotoWire), the monitor crashes so `/optimize` returns HTTP 503.
    - Freeze cache with `lineup_cache.freeze()` — picks are now immutable
 
 4. **Post-Lock Monitoring** (After T-65):
@@ -676,7 +678,38 @@ Web-scraping signal aggregator that estimates crowd media attention. This is NOT
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V10.2 "Mini-Stack the Alpha — Statcast Kinematics + Two-Path Stack Eligibility"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs and do not exist on `FilteredCandidate`**. FADE players (high pre-game media attention) are **excluded from the candidate pool** before EV computation begins. EV is driven by Statcast pitch physics, exit-velocity kinematics, game conditions, and series context. **Stacking is capped at 2 batters per team AND 2 per game, and only fires on overwhelmingly clear game scripts.**
+**Strategy Version: V10.4 "Mini-Stack the Alpha — Statcast Kinematics + Two-Path Stack Eligibility + Pre-Card Lineup Harvesting + Decoupled Batter ML"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs and do not exist on `FilteredCandidate`**. FADE players (high pre-game media attention) are **excluded from the candidate pool** before EV computation begins. EV is driven by Statcast pitch physics, exit-velocity kinematics, game conditions, and series context. **Stacking is capped at 2 batters per team AND 2 per game, and only fires on overwhelmingly clear game scripts.**
+
+### V10.4 Pre-Card Lineup Harvesting + Decoupled Batter ML (April 28)
+
+V10.4 ships three changes from a holistic re-read of all 33 slates × 354 games. No structural changes — same V10.1 lineup composition (1P + 4B, mini-stack ceiling 2, per-game cap 2).
+
+1. **RotoWire expected lineups (`app/core/rotowire.py`).** The MLB Stats API only exposes lineup cards 30-60 min before first pitch — typically *after* the T-65 lock. Before V10.4, ~95% of batters at T-65 had `batting_order=None` and got mass-haircut by `DNP_UNKNOWN_PENALTY` (0.85), neutralising the Group B "lineup_position" signal across the entire pool. V10.4 scrapes RotoWire's daily-lineups page (the de-facto source for every open-source MLB DFS optimizer — there is no free first-party API) and pre-fills `SlatePlayer.batting_order` from beat-reporter projections. The official MLB API boxscore (Phase 2 of `populate_slate_players`) overrides RotoWire as ground truth when posted; `batting_order_source` records provenance (`"rotowire_confirmed"` / `"rotowire_expected"` / `"official"`). RotoWire failures are best-effort — they log loudly but don't crash the pipeline (graceful degradation, not a forbidden fallback). See `app/services/data_collection.py::_enrich_batting_order_from_rotowire` for wiring; tests in `tests/test_rotowire.py`. Migration: `b2c3d4e5f6a7_add_batting_order_source.py`.
+
+2. **Batter ML decoupled from pitcher ML.** Pre-V10.4 `BATTER_ENV_ML_FLOOR/CEILING` was aliased to `PITCHER_ENV_ML_*` (-130 → -220), inherited as a V10.2 convenience. The 33-slate × 354-game outcome data shows the curve was inverted for batters:
+
+   | Favorite ML bucket | Games | HV per game | vs baseline |
+   |---|---|---|---|
+   | pickem (no fav) | 23 | 0.96 | -21% |
+   | **-110 to -139 (mild)** | 180 | **1.32** | **+8%** ← peak HV |
+   | -140 to -169 | 113 | 1.27 | +4% |
+   | -170 to -199 | 72 | 1.17 | -4% |
+   | **-200 to -250 (strong)** | 22 | **1.14** | **-7%** ← lowest |
+   | ≤-250 (extreme) | 11 | 1.55 | +27% |
+
+   The pre-V10.4 curve gave full ML credit at -220 (one of the lowest-HV buckets) and zero credit at -120 (the peak). V10.4 recenters: `BATTER_ENV_ML_FLOOR = -100`, `BATTER_ENV_ML_CEILING = -180`. Mild favorites now get partial-to-full credit; heavy favorites still saturate but aren't disproportionately rewarded. Reasoning: ML is a "team wins" signal — for batters, that's redundant with the opposing-starter ERA signal we score directly via `BATTER_ENV_ERA_*`. ML adds the most marginal signal in the mild-favorite zone where the game stays competitive (more PAs, more late-inning leverage), not in extreme blowouts. `PITCHER_ENV_ML_*` is unchanged — pitchers genuinely benefit from heavier favorites because win-bonus probability scales with ML. PATH 1 stack-eligibility (raw ML ≤ -200) is unchanged. Tests: `test_v10_4_mild_favorite_gets_ml_credit`, `test_v10_4_batter_ml_saturates_at_180`.
+
+3. **Production hardening — silent gather skips converted to raise.** `populate_slate_players` (roster fetch), `enrich_slate_game_team_stats` (batting/pitching), `enrich_slate_game_series_context` (schedule) previously logged + skipped on `asyncio.gather` exceptions, silently dropping a team's data and corrupting downstream env scoring. Per the no-fallbacks rule these now raise `RuntimeError`. Regression tests in `tests/test_smoke.py::TestNoFallbacksOnEnrichment`.
+
+### V10.3 Calibration (April 27 — opp WHIP, wind IN penalty, Statcast IVB)
+
+V10.3 added three signal refinements (no structural changes):
+
+1. **Opposing-starter WHIP added to Group A run-environment.** Cross-tab on the 33-slate history showed WHIP correlates with ERA at r=0.816 but adds modest independent signal in the corners (low-ERA/high-WHIP starters get hit; high-ERA/low-WHIP starters stabilise). Constants: `BATTER_ENV_OPP_WHIP_FLOOR = 1.10`, `BATTER_ENV_OPP_WHIP_CEILING = 1.40`, `BATTER_ENV_OPP_WHIP_WEIGHT = 0.5` (half of ERA's 1.0 saturation contribution — the Group A soft cap absorbs remaining redundancy when ERA and WHIP agree).
+
+2. **Wind direction symmetrised.** Previously only OUT was scored; IN was treated identical to neutral cross-wind. HV-rate analysis: wind OUT 52.9%, neutral 48.0%, wind IN 45.8% — IN suppresses HV by ~2.2 pts (vs OUT's +4.9 pts boost). Constant: `BATTER_ENV_WIND_IN_PENALTY = 0.2` (half the OUT bonus, mirroring the asymmetric magnitude). Floor on `venue` at 0.0 prevents over-penalising in cold/pitcher-park compound cases.
+
+3. **Statcast IVB fix.** Pitcher induced-vertical-break column in the Savant pull was reading the wrong field; corrected so high-IVB ride fastballs are properly weighted in the kinematic k_rate score.
 
 ### V10.2 Calibration Changes (April 27)
 
@@ -726,14 +759,17 @@ FADE players never reach EV scoring. TARGET and NEUTRAL players pass the gate an
 
 **The EV formula:**
 ```
-base_ev = env_factor × trait_factor × context × 100
+base_ev = env_factor × volatility_amplifier × trait_factor × context × 100
 ```
 
 | Signal | Source | Range | Role |
 |---|---|---|---|
 | env_factor | Pre-game conditions (Vegas O/U, ERA, bullpen ERA, park, weather, platoon, batting order, moneyline, series context) | 0.70–1.30 | **Primary** — 1.86× swing |
+| volatility_amplifier | Coefficient of variation of recent at-bat production (`recent_form_cv` from scoring engine, batters only — pitchers default 1.0) | 1.0–1.2 (`BATTER_FORM_VOLATILITY_MAX = 0.20`) | **Boom-or-bust amplifier** — high-variance hitters amplify env both ways |
 | trait_factor | Scoring engine (FB velo/IVB/extension/whiff%/chase% for SP; avg EV/hard-hit%/barrel%/max EV for batters; 0-100) | 0.85–1.15 | **Secondary** — 1.35× swing |
 | context | stack_bonus × dnp_adj | varies | Situational modifiers |
+
+The volatility amplifier is computed in [`_compute_base_ev`](app/services/filter_strategy.py:798) by reading `recent_form_cv` from the `recent_form` trait metadata (set in [`scoring_engine.py:528`](app/services/scoring_engine.py:528) as `std/mean` of recent at-bat production). Pitchers always score 1.0 since CV doesn't apply. Rationale: a hitter with steady singles output has low CV → no amplification; a hitter with multi-HR games sandwiched between 0-fers has high CV → env signals (good or bad) get amplified, capturing the boom/bust nature that maps directly to high real_score outcomes.
 
 **Moonshot differentiation** — same candidate pool as Starting 5, but a different formula:
 ```
@@ -784,109 +820,17 @@ Post-EV composition (applied in `_enforce_composition`):
 - **Pitcher anchor (Phase 1):** highest-EV pitcher selected, pinned to Slot 1. Only opposing batters in his game are blocked from batter picks.
 - **Batter fill (Phase 2):** top-4 batters by filter_ev. Teams in `stack_eligible_teams` may contribute up to 2 batters (mini-stack); every other team is capped at 1. Independent per-game cap of 2 prevents mixed-side clumps. Stacking therefore fires only on overwhelmingly clear game scripts AND is size-limited to mini-stacks.
 
-### V8.0 Changes (April 14 — Popularity-First Signal Hierarchy & Env Refinements)
+### Pre-V10 Strategy Evolution (V2.2–V9.0, condensed)
 
-> **Note:** V8.0 was superseded by V9.0 (April 16), which replaced the pop_factor EV multiplier with a hard FADE-exclusion gate. See the V9.0 section above for the current architecture. Production fixes in V8.0 changes 2–6 remain in effect.
+Earlier versions are superseded by the V10.x architecture above; the changelog narrative is preserved here in compact form for future-Claude context. **Active semantics live in code + constants.py + V10.x sections; nothing below is load-bearing.**
 
-**Design change:** The signal hierarchy is inverted based on 20-date empirical analysis. FADE/TARGET/NEUTRAL used as primary EV driver (3.0× swing). ENV_MODIFIER set to 0.70–1.30 (secondary). TRAIT_MODIFIER set to 0.85–1.15 (tertiary). V9.0 later replaced the popularity multiplier with a hard exclusion gate; env/trait now fully drive EV.
+- **V2.2–V3.4 (Apr 6–12):** explored graduated penalties, Bayesian DEAD_CAPITAL floors, percentile ownership tiers, dynamic pitcher cap (1/2/3 based on boosted-pool richness), three-tier lineup construction, correlation bonuses, draft-scarcity tiebreakers, and pitcher-specific FADE moderation. April 11 post-mortem (Suarez/Sheehan/Bassitt chalk+3x sweeping ghost+max_boost) showed the dynamic pitcher cap was insufficient — the boost-tier × pitcher-pool × spot-bias interaction needed structural redesign.
+- **V5.0 (Apr 13 — pitcher-anchor):** locked composition at 1 SP + 4 batters with pitcher pinned to Slot 1 (2.0×). Retired `compute_dynamic_pitcher_cap()` and the Slot 1 Differentiator contrarian swap. Constants `REQUIRED_PITCHERS_IN_LINEUP = 1` and `PITCHER_ANCHOR_SLOT = 1` come from here.
+- **V8.0 (Apr 14 — signal hierarchy):** introduced env/trait/popularity modifier bands. `ENV_MODIFIER 0.70–1.30`, `TRAIT_MODIFIER 0.85–1.15` (still active). Pitcher moneyline added to env. Batter env restructured into Groups A (run env, capped) / B (situation) / C (venue). Batting order replaced top-5 cliff with graduated scale (still active).
+- **V8.1 (Apr 15 — environment enrichment + production hardening):** added bullpen ERA via new `get_team_pitching_stats`; series/H2H context (Group D ±0.8); Vegas lines as a *required* enrichment (later promoted to fatal-on-failure under "Vegas Lines: Required, Never Optional"). Cache restart guard so post-T-65 dyno restarts call `lineup_cache.restore_and_refreeze()` instead of regenerating. Module-level loggers + `NON_PLAYING_GAME_STATUSES` extracted to constants.
+- **V9.0 (Apr 16 — FADE gate replaces popularity multiplier):** retired `pop_factor` as an EV multiplier. FADE players are now *excluded* from the candidate pool before EV is computed (`_exclude_fade_players`); TARGET and NEUTRAL flow through identically. Removed `RS_CONDITION_MATRIX` and `condition_classifier`'s outcome-observation logic.
 
-**Six changes:**
-
-1. **Signal hierarchy inversion** (`app/core/constants.py`) — `ENV_MODIFIER` set to 0.70–1.30. `TRAIT_MODIFIER` set to 0.85–1.15. V8.0 used `POP_MODIFIER` 0.50–1.50 as the primary signal; V9.0 replaced this with the FADE-exclusion gate (`_exclude_fade_players()`), removing pop_factor from EV entirely.
-
-2. **Pitcher moneyline added** (`app/services/filter_strategy.py`) — `compute_pitcher_env_score()` now accepts `team_moneyline`. Win bonus probability is a major pitcher RS component; heavy favorites (-250+) get full credit. Graduated from -110 (0) to -250 (1.0). `max_score` raised from 5.5 to 6.0.
-
-3. **Batter env correlated-signal cap** (`app/services/filter_strategy.py`) — `compute_batter_env_score()` restructured into three signal groups. Group A (run environment: O/U, opposing ERA, moneyline, bullpen) **capped at 2.0** to prevent 4 correlated signals from inflating env score. Group B (player situation: platoon, batting order) up to 2.0. Group C (venue: park + weather) up to 1.0. `max_score` reduced from 7.5 to 5.5.
-
-4. **Batting order graduated** — Hard top-5 gate replaced with graduated scale: order 1-3 → 1.0, 4-5 → 0.75, 6-7 → 0.50, 8-9 → 0.25. **Unknown batting order contributes 0 to the env situation group** — no mathematical guessing of a baseline. Missing-data risk is handled separately by `_compute_dnp_adjustment()`: ≥3 unknown env factors → DNP_UNKNOWN_PENALTY (0.85, data not published); <3 unknown → DNP_RISK_PENALTY (0.70, lineup published without player). This keeps env scoring faithful to actual pre-game signals while isolating DNP risk to a single multiplier — avoiding a double-penalty on ghost players whose orders are simply unpublished.
-
-5. **All thresholds graduated** — Binary thresholds replaced with linear interpolation across both pitcher and batter env functions. Examples: K/9 from 6.0 (0) to 10.0 (1.0); opposing OPS from 0.780 (0) to 0.650 (1.0); park factor from 1.05 (0) to 0.90 (1.0). Eliminates false-precision cliffs on early-season sample sizes.
-
-6. **Strategy documentation updated** — Filter 2 (now "Popularity / Crowd-Avoidance") formalized as the primary filter with empirical basis. Filter 3 (now "Environmental Advantage") demoted to secondary with correlated-signal grouping documented.
-
-**New constants:**
-- `POP_MODIFIER_FLOOR = 0.50`, `POP_MODIFIER_CEILING = 1.50` (was 0.85/1.15)
-- `ENV_MODIFIER_FLOOR = 0.70`, `ENV_MODIFIER_CEILING = 1.30` (was 0.50/1.50)
-- `TRAIT_MODIFIER_FLOOR = 0.85`, `TRAIT_MODIFIER_CEILING = 1.15` (was 0.70/1.30)
-
-### V8.1 Changes (April 15 — Series Context, Bullpen ERA, Vegas Lines, Cache Restart Guard)
-
-> **Note:** V8.1 was superseded by V9.0 (April 16) for EV architecture. Fixes 1–4 and 6 remain in effect. Fix 5 (condition matrix observations) is no longer relevant — the condition classifier no longer stores RS observations.
-
-**Six production fixes addressing the April 14 post-mortem (0/4 batters, Buxton missed).**
-
-**Fix 1 — Cache restart guard** (`app/main.py`, `app/services/lineup_cache.py`)
-- Root cause: `lineup_cache.purge()` was called unconditionally on every app start. A Railway dyno restart after T-65 wiped the frozen picks and regenerated from a smaller pool (started/final games excluded), producing different picks mid-slate.
-- Fix: On startup, check if today's slate is active AND T-65 has already passed. If so, call `lineup_cache.restore_and_refreeze(first_pitch_utc)` — loads from SQLite/Redis and re-freezes without regenerating. Only purge on normal (pre-T-65) restarts.
-- `slate_monitor.py` Phase 3 guarded with `if lineup_cache.is_frozen:` — skips the final pipeline run if picks were already restored on startup.
-
-**Fix 2 — Bullpen ERA** (`app/core/mlb_api.py`, `app/services/data_collection.py`)
-- Added `get_team_pitching_stats(team_id, season)`. `enrich_slate_game_team_stats()` now fetches hitting + pitching in parallel, populating `home/away_bullpen_era` on `SlateGame`.
-- Feeds Group A A4 (`opp_bullpen_era`) in `compute_batter_env_score()` — was always NULL before.
-
-**Fix 3 — Series/H2H context** (`app/models/slate.py`, `app/services/data_collection.py`, `app/services/filter_strategy.py`, `app/core/constants.py`)
-- Added 4 nullable columns to `SlateGame`: `series_home_wins`, `series_away_wins`, `home_team_l10_wins`, `away_team_l10_wins`.
-- `enrich_slate_game_series_context()`: fetches last 14 days of each team's schedule, computes current-series wins and last-10-game wins.
-- **Group D env scoring** (±0.8 additive): series leading ≥2 → +0.6; trailing ≥2 → −0.6; hot L10 ≥7 → +0.2; cold L10 ≤3 → −0.2. `BATTER_ENV_MAX_SCORE` raised to 6.3 (then reduced to 5.8 after debut bonus removed).
-- **Momentum gate** (removed in V9.0): previously capped `pop_factor` at NEUTRAL for cold/trailing teams. Removed when pop_factor was removed from EV. Series context still contributes to env Group D scoring.
-
-**Fix 4 — Vegas lines** (`app/core/odds_api.py`, `app/config.py`, `app/services/data_collection.py`, `app/services/pipeline.py`)
-- New `app/core/odds_api.py` client. `BO_ODDS_API_KEY` env var; omitting it skips enrichment with a loud warning (env scoring treats NULL lines as unknown/neutral — existing behavior).
-- `enrich_slate_game_vegas_lines()` populates `vegas_total`, `home_moneyline`, `away_moneyline`. Non-fatal in `run_full_pipeline()`. **Superseded — as of the "Vegas Lines: Required, Never Optional" policy, this call is now fatal. Any API failure or missing per-game odds raises `RuntimeError` and crashes the pipeline. The non-fatal note above applied to the initial V8.1 implementation only.**
-
-**Fix 5 — Condition matrix** (retired in V9.0)
-- `RS_CONDITION_MATRIX` and `RS_CONDITION_OBSERVATIONS` were removed in V9.0. `condition_classifier.py` now only exports `compute_draft_entropy()` and `compute_gini_coefficient()` for meta-game monitoring.
-
-**Fix 6 — Quality pass** (multiple files)
-- `NON_PLAYING_GAME_STATUSES` extracted to `constants.py`; 3 inline duplicates removed.
-- All inline imports inside hot functions moved to module-level in `filter_strategy.py`.
-- Module-level loggers added to `data_collection.py` and `pipeline.py`.
-- `_extract_record()` returns `(None, None, None)` on empty data — prevents momentum gate false-positive on partial API failure.
-
-**New constants (`app/core/constants.py`):**
-- `NON_PLAYING_GAME_STATUSES`, `SERIES_LEADING_BONUS`, `SERIES_TRAILING_PENALTY`, `TEAM_HOT_L10_THRESHOLD`, `TEAM_COLD_L10_THRESHOLD`, `TEAM_HOT_L10_BONUS`, `TEAM_COLD_L10_PENALTY`, `BATTER_ENV_MAX_SCORE = 5.8`, `MOMENTUM_GATE_SERIES_DEFICIT = 2`, `MOMENTUM_GATE_L10_CEILING = 3`
-
----
-
-### V5.0 Changes (April 13 — Pitcher-Anchor Rule)
-
-**Design change:** Every lineup (both Starting 5 and Moonshot) is now structurally fixed at **exactly 1 SP + 4 batters**, with the pitcher pinned to **Slot 1 (2.0x multiplier)**. The V3.x dynamic pitcher cap (1/2/3 based on boosted-pool richness) and the Slot 1 Differentiator contrarian swap are both retired.
-
-**Rationale (user directive):**
-- Every draft anchors on a pitcher in the 2.0x primary slot. The best-conditions pitcher gets the top multiplier regardless of whether they are boosted or unboosted.
-- Batters and pitchers should not compete against each other within a lineup — block the pitcher's `game_id` so no batter in that game (teammate or opponent) can be drafted.
-- Starting 5 and Moonshot each anchor on their own best pitcher; Moonshot still excludes Starting 5 player names, which forces a different pitcher in the vast majority of slates.
-
-**Changes:**
-
-1. **New constants (`app/core/constants.py`)**
-   - `REQUIRED_PITCHERS_IN_LINEUP = 1` — exactly this many pitchers per lineup
-   - `MAX_PITCHERS_IN_LINEUP = 1` — kept identical to REQUIRED for legacy validation paths
-   - `PITCHER_ANCHOR_SLOT = 1` — pitcher always goes in Slot 1 (2.0x)
-   - **Removed:** `MAX_PITCHERS_THIN_POOL`, `PITCHER_CAP_EV_THRESHOLD`, `BOOSTED_PITCHER_CAP_EXPAND_MIN`, `MAX_PITCHERS_BOOSTED_RICH`, `SLOT1_DIFFERENTIATOR_EV_THRESHOLD`
-
-2. **`compute_dynamic_pitcher_cap()` deleted** (`app/services/filter_strategy.py`)
-   - Replaced by a single-pitcher-anchor flow. Both `run_filter_strategy` and `run_dual_filter_strategy` no longer compute or pass a pitcher cap.
-
-3. **`_enforce_composition()` rewritten** — new signature `_enforce_composition(candidates, slate_class)` (no `pitcher_cap` param).
-   - **Phase 1:** select the highest-EV pitcher as the anchor. If the pool has no pitcher, raise `ValueError` (no-fallback rule).
-   - **Phase 2:** fill 4 batter slots from remaining candidates by `filter_ev` descending, blocking the anchor pitcher's `game_id`.
-   - Team cap (1) and overall game cap (1) still apply.
-
-4. **`_validate_lineup_structure()` rewritten** — new signature accepts `anchor_pitcher`.
-   - Anchor pitcher is exempt from team/game cap checks.
-   - Final sanity check asserts `pitcher_count_final == REQUIRED_PITCHERS_IN_LINEUP`.
-
-5. **`_smart_slot_assignment()` rewritten** — the anchor pitcher is pinned to `PITCHER_ANCHOR_SLOT` (Slot 1). Batters are distributed across Slots 2–5 with unboosted batters getting the highest available slots (Slot 2 → Slot 5 tail for boosted). The Slot 1 Differentiator contrarian swap is gone — Slot 1 is reserved for the anchor pitcher in every lineup.
-
-**Implications for prior strategy text:**
-- Any CLAUDE.md / README statement that the optimizer may produce 0, 2, or 3 pitchers is **obsolete**. The count is now fixed at 1.
-- The "unboosted players MUST go in Slot 1" guidance now applies only to batters — and only within Slots 2–5. Slot 1 is the pitcher anchor.
-- The "ghost+boost batters outweigh a 2nd pitcher slot" reasoning is no longer a dynamic comparison; the structure is pre-committed.
-
-### Historical Strategy Log (V2.2–V3.4, April 6–12)
-
-Versions V2.2 through V3.4 explored graduated penalty mechanics (env/score), probabilistic ownership tiers, dynamic pitcher capping, and within-tier differentiation via condition matrices. Key research directions: (1) Bayesian smoothing replaced binary DEAD_CAPITAL floors (Beta-Binomial prior: 0/8 obs → 0.10 floor vs 0.0). (2) Bifurcated DNP handling (unknown=0.85, confirmed=0.70, ghost_unknown=0.92) accounted for data sparsity. (3) Percentile-based ownership tiers (empirical CDF) replaced absolute draft thresholds. (4) Dynamic pitcher caps flexed between 1–3 based on boosted-pool size and ghost tier presence. (5) Three-tier lineup construction (auto/soft_auto/rest), correlation bonuses (+10–20% EV on ghost teammates), and draft-scarcity tiebreakers (+10% EV for < 5 drafts) differentiated within ownership tiers. (6) Pitcher-specific FADE moderation (15% haircut vs 25% for batters) recognized that pitchers control their own outcomes. April 11 empirical analysis (Suarez/Sheehan/Bassitt chalk+3x dominance vs ghost+max_boost busts) revealed that dynamic pitcher capping was insufficient — the interaction between boost tier, pitcher pool richness, and playoff-style spot bias required structural redesign. All graduated-penalty functions (`_graduated_env_penalty()`, `_graduated_score_penalty()`, `_apply_ghost_boost_ev_floor()`) and condition-matrix-dependent logic (Bayesian floors, percentile tiers, three-tier fill order) are superseded by V9.0's simplified FADE-gate + env/trait EV architecture. These versions remain instructive for understanding how information asymmetry (crowd vs real outcomes) drove repeated pivots.
+The V10 sections above describe the current architecture in full.
 
 ### Lineup Construction (V10.1 — Pitcher-Anchor + Game-Script-Gated Mini-Stack)
 Every lineup is **exactly 1 SP + 4 batters**. Stacking is conditional AND size-limited — it only fires when a team plays in a game that cleared both gates of `is_stack_eligible_game` (moneyline ≤ −200 AND O/U ≥ 9.0), and even then is capped at 2 teammates.

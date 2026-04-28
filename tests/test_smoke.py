@@ -479,3 +479,138 @@ class TestStartedGameFiltering:
 
         with pytest.raises(RuntimeError, match="Insufficient remaining games"):
             asyncio.run(run_full_pipeline(db_session, date(2026, 4, 20)))
+
+
+# ---------------------------------------------------------------------------
+# Fail-loud regression tests: silent-skip violations in data_collection.py
+# ---------------------------------------------------------------------------
+
+class TestNoFallbacksOnEnrichment:
+    """
+    Regression tests for the silent-skip patterns removed in the production
+    readiness audit (2026-04-27).
+
+    Prior to the fix, asyncio.gather(return_exceptions=True) loops in
+    populate_slate_players, enrich_slate_game_team_stats, and
+    enrich_slate_game_series_context would log a warning and skip a failed
+    team's data, silently corrupting the candidate pool and env scoring.
+
+    The "no fallbacks ever" rule requires these to raise RuntimeError so
+    the pipeline crashes loudly and /optimize returns HTTP 503 — never a
+    degraded lineup with missing teams or NULL env signals.
+    """
+
+    def test_populate_slate_players_raises_on_roster_failure(self, db_session, monkeypatch):
+        """A failed roster fetch must raise — silent skip drops every batter
+        and pitcher on that team from the candidate pool."""
+        import asyncio
+        from app.services.data_collection import populate_slate_players
+
+        slate = Slate(date=date(2026, 4, 20))
+        db_session.add(slate)
+        db_session.flush()
+        db_session.add_all([
+            SlateGame(slate_id=slate.id, home_team="NYY", away_team="BOS",
+                      game_status="Preview"),
+        ])
+        db_session.commit()
+
+        async def boom_roster(_team_id):
+            raise httpx_like_error("rate limit")
+
+        def httpx_like_error(msg):
+            return RuntimeError(msg)
+
+        monkeypatch.setattr(
+            "app.services.data_collection.get_team_roster", boom_roster
+        )
+
+        with pytest.raises(RuntimeError, match="Roster fetch failed"):
+            asyncio.run(populate_slate_players(db_session, slate))
+
+    def test_team_stats_raises_on_batting_failure(self, db_session, monkeypatch):
+        """A failed team batting fetch must raise — NULL home/away_team_ops
+        corrupts pitcher env scoring."""
+        import asyncio
+        from app.services.data_collection import enrich_slate_game_team_stats
+
+        slate = Slate(date=date(2026, 4, 20))
+        db_session.add(slate)
+        db_session.flush()
+        db_session.add_all([
+            SlateGame(slate_id=slate.id, home_team="NYY", away_team="BOS",
+                      game_status="Preview"),
+        ])
+        db_session.commit()
+
+        async def boom_batting(_team_id, _season):
+            raise RuntimeError("MLB API timeout")
+
+        async def ok_pitching(_team_id, _season):
+            return {"stats": [{"splits": [{"stat": {"era": "3.50"}}]}]}
+
+        monkeypatch.setattr(
+            "app.services.data_collection.get_team_stats", boom_batting
+        )
+        monkeypatch.setattr(
+            "app.core.mlb_api.get_team_pitching_stats", ok_pitching
+        )
+
+        with pytest.raises(RuntimeError, match="Team batting stats fetch failed"):
+            asyncio.run(enrich_slate_game_team_stats(db_session, slate, season=2026))
+
+    def test_team_stats_raises_on_pitching_failure(self, db_session, monkeypatch):
+        """A failed team pitching fetch must raise — NULL home/away_bullpen_era
+        corrupts batter env Group A A4."""
+        import asyncio
+        from app.services.data_collection import enrich_slate_game_team_stats
+
+        slate = Slate(date=date(2026, 4, 20))
+        db_session.add(slate)
+        db_session.flush()
+        db_session.add_all([
+            SlateGame(slate_id=slate.id, home_team="NYY", away_team="BOS",
+                      game_status="Preview"),
+        ])
+        db_session.commit()
+
+        async def ok_batting(_team_id, _season):
+            return {"stats": [{"splits": [{"stat": {
+                "ops": "0.720", "plateAppearances": 600, "strikeOuts": 150,
+            }}]}]}
+
+        async def boom_pitching(_team_id, _season):
+            raise RuntimeError("MLB API timeout")
+
+        monkeypatch.setattr(
+            "app.services.data_collection.get_team_stats", ok_batting
+        )
+        monkeypatch.setattr(
+            "app.core.mlb_api.get_team_pitching_stats", boom_pitching
+        )
+
+        with pytest.raises(RuntimeError, match="Team pitching stats fetch failed"):
+            asyncio.run(enrich_slate_game_team_stats(db_session, slate, season=2026))
+
+    def test_series_context_raises_on_schedule_failure(self, db_session, monkeypatch):
+        """A failed schedule fetch must raise — NULL series_wins/l10_wins
+        corrupts batter env Group D (momentum)."""
+        import asyncio
+        from app.services.data_collection import enrich_slate_game_series_context
+
+        slate = Slate(date=date(2026, 4, 20))
+        db_session.add(slate)
+        db_session.flush()
+        db_session.add_all([
+            SlateGame(slate_id=slate.id, home_team="NYY", away_team="BOS",
+                      game_status="Preview"),
+        ])
+        db_session.commit()
+
+        async def boom_get(_path, _params):
+            raise RuntimeError("MLB API timeout")
+
+        monkeypatch.setattr("app.core.mlb_api._get", boom_get)
+
+        with pytest.raises(RuntimeError, match="schedule fetch failed"):
+            asyncio.run(enrich_slate_game_series_context(db_session, slate))

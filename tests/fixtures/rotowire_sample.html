@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html><body>
+<!--
+Synthetic RotoWire sample mirroring the real markup at
+https://www.rotowire.com/baseball/daily-lineups.php (April 2026).
+
+Two games:
+  Game 1 — TB @ CLE, both teams Confirmed, full 9-batter cards
+  Game 2 — STL @ NYY, visitor Expected (yellow), home Confirmed
+Plus one decoy `lineup is-mlb is-tools` ad card to verify it's skipped.
+
+Names include accent characters and switch hitters to exercise the parser.
+-->
+<div class="lineup is-mlb is-tools">
+  <div class="lineup__teams"><div class="lineup__abbr">AD</div></div>
+</div>
+
+<div class="lineup is-mlb">
+  <div class="lineup__top">
+    <div class="lineup__teams">
+      <div class="lineup__team is-visit"><div class="lineup__abbr">TB</div></div>
+      <div class="lineup__team is-home"><div class="lineup__abbr">CLE</div></div>
+    </div>
+  </div>
+  <ul class="lineup__list is-visit">
+    <li class="lineup__player-highlight">
+      <div class="lineup__player-highlight-name">
+        <a href="/p/steven-matz">Steven Matz</a>
+        <span class="lineup__throws">L</span>
+      </div>
+    </li>
+    <li class="lineup__status is-confirmed">
+      <div class="dot is-medium is-green"></div>Confirmed Lineup
+    </li>
+    <li class="lineup__player">
+      <div class="lineup__pos">DH</div>
+      <a title="Yandy Diaz" href="/p/diaz">Yandy Diaz</a>
+      <span class="lineup__bats">R</span>
+    </li>
+    <li class="lineup__player">
+      <div class="lineup__pos">1B</div>
+      <a title="Jonathan Aranda" href="/p/aranda">J. Aranda</a>
+      <span class="lineup__bats">L</span>
+    </li>
+    <li class="lineup__player">
+      <div class="lineup__pos">3B</div>
+      <a title="Junior Caminero" href="/p/caminero">J. Caminero</a>
+      <span class="lineup__bats">R</span>
+    </li>
+    <li class="lineup__player">
+      <div class="lineup__pos">RF</div>
+      <a title="Ryan Vilade" href="/p/vilade">Ryan Vilade</a>
+      <span class="lineup__bats">R</span>
+    </li>
+    <li class="lineup__player">
+      <div class="lineup__pos">CF</div>
+      <a title="Jonny DeLuca" href="/p/deluca">Jonny DeLuca</a>
+      <span class="lineup__bats">R</span>
+    </li>
+    <li class="lineup__player">
+      <div class="lineup__pos">LF</div>
+      <a title="Chandler Simpson" href="/p/simpson">C. Simpson</a>
+      <span class="lineup__bats">L</span>
+    </li>
+    <li class="lineup__player">
+      <div class="lineup__pos">2B</div>
+      <a title="Ben Williamson" href="/p/williamson">B. Williamson</a>
+      <span class="lineup__bats">R</span>
+    </li>
+    <li class="lineup__player">
+      <div class="lineup__pos">C</div>
+      <a title="Nick Fortes" href="/p/fortes">Nick Fortes</a>
+      <span class="lineup__bats">R</span>
+    </li>
+    <li class="lineup__player">
+      <div class="lineup__pos">SS</div>
+      <a title="Taylor Walls" href="/p/walls">Taylor Walls</a>
+      <span class="lineup__bats">S</span>
+    </li>
+  </ul>
+  <ul class="lineup__list is-home">
+    <li class="lineup__player-highlight">
+      <div class="lineup__player-highlight-name">
+        <a href="/p/bibee">Tanner Bibee</a>
+        <span class="lineup__throws">R</span>
+      </div>
+    </li>
+    <li class="lineup__status is-confirmed">Confirmed Lineup</li>
+    <li class="lineup__player"><div class="lineup__pos">2B</div><a title="Andres Gimenez" href="/p/gimenez">A. Giménez</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">DH</div><a title="Jose Ramirez" href="/p/jramirez">José Ramírez</a><span class="lineup__bats">S</span></li>
+    <li class="lineup__player"><div class="lineup__pos">CF</div><a title="Steven Kwan" href="/p/kwan">Steven Kwan</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">1B</div><a title="Josh Naylor" href="/p/naylor">Josh Naylor</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">RF</div><a title="Lane Thomas" href="/p/thomas">Lane Thomas</a><span class="lineup__bats">R</span></li>
+    <li class="lineup__player"><div class="lineup__pos">3B</div><a title="Jhonkensy Noel" href="/p/noel">Jhonkensy Noel</a><span class="lineup__bats">R</span></li>
+    <li class="lineup__player"><div class="lineup__pos">LF</div><a title="Will Brennan" href="/p/brennan">Will Brennan</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">C</div><a title="Bo Naylor" href="/p/bnaylor">Bo Naylor</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">SS</div><a title="Brayan Rocchio" href="/p/rocchio">Brayan Rocchio</a><span class="lineup__bats">S</span></li>
+  </ul>
+</div>
+
+<div class="lineup is-mlb">
+  <div class="lineup__teams">
+    <div class="lineup__team is-visit"><div class="lineup__abbr">STL</div></div>
+    <div class="lineup__team is-home"><div class="lineup__abbr">NYY</div></div>
+  </div>
+  <ul class="lineup__list is-visit">
+    <li class="lineup__player-highlight">
+      <div class="lineup__player-highlight-name">
+        <a href="/p/mikolas">Miles Mikolas</a>
+        <span class="lineup__throws">R</span>
+      </div>
+    </li>
+    <li class="lineup__status is-expected">Expected Lineup</li>
+    <li class="lineup__player"><div class="lineup__pos">SS</div><a title="Masyn Winn" href="/p/winn">Masyn Winn</a><span class="lineup__bats">R</span></li>
+    <li class="lineup__player"><div class="lineup__pos">3B</div><a title="Nolan Arenado" href="/p/arenado">Nolan Arenado</a><span class="lineup__bats">R</span></li>
+    <li class="lineup__player"><div class="lineup__pos">DH</div><a title="Willson Contreras" href="/p/contreras">Willson Contreras</a><span class="lineup__bats">R</span></li>
+    <li class="lineup__player"><div class="lineup__pos">1B</div><a title="Alec Burleson" href="/p/burleson">Alec Burleson</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">RF">RF</div><a title="Lars Nootbaar" href="/p/nootbaar">Lars Nootbaar</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">CF</div><a title="Michael Siani" href="/p/siani">Michael Siani</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">LF</div><a title="Brendan Donovan" href="/p/donovan">Brendan Donovan</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">2B</div><a title="Thomas Saggese" href="/p/saggese">Thomas Saggese</a><span class="lineup__bats">R</span></li>
+    <li class="lineup__player"><div class="lineup__pos">C</div><a title="Pedro Pages" href="/p/pages">Pedro Pagés</a><span class="lineup__bats">R</span></li>
+  </ul>
+  <ul class="lineup__list is-home">
+    <li class="lineup__player-highlight">
+      <div class="lineup__player-highlight-name">
+        <a href="/p/cole">Gerrit Cole</a>
+        <span class="lineup__throws">R</span>
+      </div>
+    </li>
+    <li class="lineup__status is-confirmed">Confirmed Lineup</li>
+    <li class="lineup__player"><div class="lineup__pos">DH</div><a title="Aaron Judge" href="/p/judge">Aaron Judge</a><span class="lineup__bats">R</span></li>
+    <li class="lineup__player"><div class="lineup__pos">RF</div><a title="Juan Soto" href="/p/soto">Juan Soto</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">SS</div><a title="Anthony Volpe" href="/p/volpe">Anthony Volpe</a><span class="lineup__bats">R</span></li>
+    <li class="lineup__player"><div class="lineup__pos">3B</div><a title="Jazz Chisholm Jr." href="/p/chisholm">Jazz Chisholm Jr.</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">2B</div><a title="Gleyber Torres" href="/p/torres">Gleyber Torres</a><span class="lineup__bats">R</span></li>
+    <li class="lineup__player"><div class="lineup__pos">1B</div><a title="Anthony Rizzo" href="/p/rizzo">Anthony Rizzo</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">CF</div><a title="Trent Grisham" href="/p/grisham">Trent Grisham</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">LF</div><a title="Alex Verdugo" href="/p/verdugo">Alex Verdugo</a><span class="lineup__bats">L</span></li>
+    <li class="lineup__player"><div class="lineup__pos">C</div><a title="Austin Wells" href="/p/wells">Austin Wells</a><span class="lineup__bats">L</span></li>
+  </ul>
+</div>
+</body></html>

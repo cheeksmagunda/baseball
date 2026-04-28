@@ -37,9 +37,9 @@ See CLAUDE.md § "T-65 Sniper Architecture" for complete timing details.
 
 ### Four-Stage Pipeline (Runs Once at T-65)
 
-1. **Collect** (`app/services/data_collection.py`) — Fetch fresh MLB schedule, player stats, game context, Vegas lines
+1. **Collect** (`app/services/data_collection.py`) — Fetch fresh MLB schedule, player stats, game context, Vegas lines, and **RotoWire expected lineups** for batting-order enrichment (see V10.3 below)
 2. **Score** (`app/services/scoring_engine.py`) — Rate each player 0-100 via trait-based profiling (pitchers: 5 traits, batters: 7 traits)
-3. **Filter** (`app/services/filter_strategy.py`) — Apply V10.1 strategy: exclude FADE players, score env/trait EV (with Statcast kinematics), enforce composition rules with conditional stacking
+3. **Filter** (`app/services/filter_strategy.py`) — Apply V10.4 strategy: exclude FADE players, score env/trait EV with Statcast kinematics, enforce composition rules with two-path stacking
 4. **Optimize** (`app/routers/filter_strategy.py` → `run_dual_filter_strategy`) — Produce Starting 5 + Moonshot lineups, freeze in cache
 
 The primary optimization path is `filter_strategy`. The `/api/pipeline/*` manual endpoints exist for post-slate testing only and are gated to prevent mid-slate interference.
@@ -48,7 +48,19 @@ The primary optimization path is `filter_strategy`. The `/api/pipeline/*` manual
 
 It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor), then excludes high-media-attention players (FADE gate) before selecting the lineup. **Historical stats are reference data only — they never feed the live scoring pipeline directly.**
 
-Stacking (multiple batters from the same team) is powerful but correlated. V10.1 only unlocks a **mini-stack** (cap 2 per team, cap 2 per game) when a team plays in a game with BOTH `moneyline ≤ -200` AND `vegas_total ≥ 9.0` — see `is_stack_eligible_game()` in `app/core/constants.py`. Every other team is capped at one batter per lineup.
+Stacking (multiple batters from the same team) is powerful but correlated. V10.2 unlocks a **mini-stack** (cap 2 per team, cap 2 per game) via two paths:
+- **PATH 1** — `moneyline ≤ -200` AND `vegas_total ≥ 9.0` (favored side only, earns +20% STACK_BONUS)
+- **PATH 2** — `vegas_total ≥ 10.5` (both sides eligible, no extra bonus — already a high-run game)
+
+Every other team is capped at one batter per lineup. See `is_stack_eligible_game()` in `app/core/constants.py`.
+
+### Pre-Card Lineup Harvesting (V10.3 — RotoWire integration)
+
+The MLB Stats API only exposes lineup cards 30-60 min before first pitch — typically *after* the T-65 lock. Without external data, ~95% of batters at T-65 would have NULL `batting_order` and fall into the DNP_UNKNOWN_PENALTY (0.85), neutralising the Group B "lineup_position" signal across the entire pool.
+
+V10.3 scrapes RotoWire's daily-lineups page (the de-facto source for every open-source MLB DFS optimizer — there is no free first-party API) and pre-fills `SlatePlayer.batting_order` from beat-reporter projections up to 4 hours before first pitch. The official MLB API boxscore overrides RotoWire as ground truth when posted; `batting_order_source` records provenance (`"rotowire_confirmed"` / `"rotowire_expected"` / `"official"`). RotoWire failures are best-effort — they log loudly but don't crash the pipeline (graceful degradation, not a forbidden fallback).
+
+See `app/core/rotowire.py` for the parser and `app/services/data_collection.py::_enrich_batting_order_from_rotowire` for wiring.
 
 ## Scoring Engine
 
@@ -104,7 +116,7 @@ A fifth signal source used exclusively by the Moonshot lineup:
 
 If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +35% EV boost in Moonshot only.
 
-## Dual-Lineup Optimizer (V9.0 — Popularity Gate + Env/Trait EV)
+## Dual-Lineup Optimizer (V10.4)
 
 The optimizer produces **two lineups** from the same ranked candidate pool. Each lineup is structurally fixed at **exactly 1 starting pitcher + 4 batters**, with the pitcher pinned to Slot 1 (2.0x multiplier):
 
@@ -113,29 +125,37 @@ The optimizer produces **two lineups** from the same ranked candidate pool. Each
 | **Starting 5** | 1 SP (Slot 1) + 4 batters (Slots 2–5) | Best env+trait EV | FADE players **excluded** from pool | Primary win probability |
 | **Moonshot** | 1 SP (Slot 1) + 4 batters (Slots 2–5) | env+trait EV + sharp/explosive bonuses | FADE players **excluded** from pool | Anti-crowd, sharp signal, HR power |
 
-Each lineup's anchor pitcher is the highest-EV pitcher in its candidate pool. The anchor's `game_id` is blocked for batter selection so no batter (teammate or opponent) in that game can appear — no negative correlation between the pitcher and the rest of the lineup.
+Each lineup's anchor pitcher is the highest-EV pitcher in its candidate pool. The anchor's `game_id` is blocked for opposing-batter selection so no opposing batter in that game can appear — no negative correlation between the pitcher and the rest of the lineup. Anchor's teammates ARE allowed (within stack-eligibility caps) so PATH 1/PATH 2 mini-stacks can fire.
 
-**V9.0 EV formula (env/trait-only):**
+**EV formula:**
 
 ```
-base_ev = env_factor × trait_factor × stack_bonus × dnp_adj × 100
+base_ev = env_factor × volatility_amplifier × trait_factor × stack_bonus × dnp_adj × 100
 ```
 
-FADE players (high pre-game media attention) are excluded from the candidate pool before EV runs. The env_factor (0.70–1.30) is the primary differentiator; trait_factor (0.85–1.15) breaks ties within env tiers.
+| Signal | Range | Role |
+|---|---|---|
+| env_factor | 0.70–1.30 | Primary — game conditions (Vegas O/U, ERA, bullpen, park, weather, batting order, ML, series context, recent form) |
+| volatility_amplifier | 1.0–1.2 (batters only) | Boom-or-bust amplifier — recent_form CV, lets high-variance hitters amplify env both ways |
+| trait_factor | 0.85–1.15 | Secondary — Statcast pitch physics (SP) or exit-velocity kinematics (batters), 0-100 scale |
+| stack_bonus | 1.0 or 1.20 | PATH 1 blowout-favorite bonus (gated) |
+| dnp_adj | 0.70 / 0.85 / 1.00 | Confirmed-bad / unknown / known batting order |
 
 **Key optimizer behaviors:**
 - **Pitcher anchor**: exactly 1 SP per lineup, pinned to Slot 1. The highest-EV pitcher in the pool wins the anchor.
-- **Game-blocking**: the anchor pitcher's `game_id` is excluded from all batter picks (no batter from the same game).
-- **Team/game cap**: max 1 player per team and 1 player per game per lineup.
-- Moonshot uses the same FADE-excluded pool but adds sharp signal (+35% max from Reddit/FanGraphs/Prospects Live) and explosive bonus (+20% from power_profile or k_rate).
-- **Historical win rate data (draft tier × boost) is used for calibration reference only — not as a live EV input.**
+- **Stack eligibility**: PATH 1 (ML ≤ -200 AND O/U ≥ 9.0) gives the favored side mini-stack rights + STACK_BONUS. PATH 2 (O/U ≥ 10.5) gives both sides mini-stack rights without the bonus.
+- **Per-team cap**: 2 batters from a stack-eligible team, 1 from every other team.
+- **Per-game cap**: 2 batters per game (always — prevents mixed-side clumps in a single game).
+- Moonshot uses the same FADE-excluded pool but adds sharp signal (+35% max from Reddit/FanGraphs/Prospects Live) and explosive bonus (+20% from power_profile or k_rate). Player overlap with Starting 5 is allowed; the formula divergence naturally re-orders picks.
 
-## Strategy Insights
+## Strategy Insights — what 33 slates of data tell us
 
-- **Primary edge**: Ghost+high-boost (< 100 drafts, boost ≥ 2.5) wins 82–100% of the time historically. Picking this tier correctly matters more than any trait score.
-- **Boost trap**: Medium/chalk-draft players with high boost (200–1499 drafts, boost ≥ 2.0) win only 0–12% of the time. The crowd sees the boost and piles in, but RS doesn't follow.
-- **Card boost math**: A ghost with RS 3.0 and +3.0x boost (TV 15.0) decisively beats an unboosted chalk player with RS 5.0 (TV 10.0).
-- **Slot sequencing (V5.0)**: Slot 1 is always the anchor pitcher. Among batters in Slots 2–5, unboosted batters take the highest available slot (Slot 2 first) because of the 67% value loss from Slot 1→5; boosted batters tail into the lower slots (only 16% loss at +3.0x).
+- **Two-path stacking captures the highest-leverage games.** PATH 2 shootouts (O/U ≥ 10.5) yield 2.31 HV per game vs 1.22 baseline (+89%); PATH 1 blowouts yield 1.50 HV per game (+23%). The mini-stack cap of 2 captures the correlation edge without committing too much of the lineup to one game.
+- **Mild favorites produce more HV than heavy favorites.** Across all 33 slates, teams with ML -110 to -169 (mild favorite) yield ~1.30 HV per game; teams with ML -200 to -250 (strong favorite) yield only 1.14. V10.4 recalibrated `BATTER_ENV_ML_*` to reward this band rather than over-rewarding heavy blowouts.
+- **Batter ML is largely redundant with opp-pitcher ERA.** A bigger favorite usually means a worse opposing starter — that's already scored directly. The V10.4 ML range is centered to capture the *competitive-game* effect (more PAs, late-inning leverage) without double-counting opposing-SP weakness.
+- **Slot sequencing**: Slot 1 is always the anchor pitcher. Among batters in Slots 2–5, picks are sorted by `filter_ev` descending — the highest-EV batter takes Slot 2 (1.8×), tail batters fill the lower slots.
+
+> **Strategy details by version:** see CLAUDE.md § "V10.4 Batter ML Decoupling", "V10.3 Pre-Card Lineup Harvesting", "V10.2 Calibration Changes", "V10.1 Structural Changes", "V10.0 Core Architecture".
 
 ## API Endpoints
 
@@ -221,7 +241,9 @@ app/
 │   ├── utils.py            # Shared formulas (compute_total_value, scale_score, etc.)
 │   ├── mlb_api.py          # MLB Stats API client
 │   ├── odds_api.py         # The Odds API client (Vegas moneyline + O/U)
-│   └── open_meteo.py       # Weather API client (temperature, wind)
+│   ├── open_meteo.py       # Weather API client (temperature, wind)
+│   ├── statcast.py         # Baseball Savant kinematics (FB velo, IVB, exit velo, barrel%)
+│   └── rotowire.py         # RotoWire daily-lineups parser (V10.3 expected lineups)
 ├── models/
 │   ├── player.py           # Player, PlayerStats, PlayerGameLog
 │   ├── slate.py            # Slate, SlateGame, SlatePlayer
@@ -238,17 +260,16 @@ app/
     ├── lineup_cache.py     # Frozen-cache invariants (Redis + SQLite persistence)
     ├── slate_monitor.py    # T-65 event loop
     ├── popularity.py       # Web-scraping popularity signal aggregator
-    ├── data_collection.py  # MLB API data fetching
-    ├── pipeline.py         # Fetch → Score → Rank orchestrator
-    └── condition_classifier.py  # Meta-game monitoring (entropy, Gini)
+    ├── data_collection.py  # MLB API + RotoWire data fetching
+    └── pipeline.py         # Fetch → Score → Rank orchestrator
 data/
-├── historical_players.csv           # 904 rows / 25 dates — master player ledger
-├── historical_winning_drafts.csv    # 910 rows / 25 dates — top-ranked lineups (5 slots/lineup)
-├── historical_slate_results.json    # 25 entries            — per-date slate envelope
-└── hv_player_game_stats.csv         # 396 rows / 25 dates — box scores for HV players
+├── historical_players.csv           # 1221 rows / 33 dates — master player ledger
+├── historical_winning_drafts.csv    # ~1100 rows / 33 dates — top-ranked lineups (5 slots/lineup)
+├── historical_slate_results.json    # 33 entries           — per-date slate envelope
+└── hv_player_game_stats.csv         # ~500 rows / 33 dates — box scores for HV players
 ```
 
-Current coverage: 2026-03-25 → 2026-04-18 (25 slates). All four files stay in lockstep.
+Current coverage: 2026-03-25 → 2026-04-26 (33 slates). All four files stay in lockstep.
 
 ## Getting Started
 

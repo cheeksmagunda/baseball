@@ -438,6 +438,40 @@ class TestBatterEnvScore:
         )
         assert score_in_calm == pytest.approx(score_neutral, abs=0.001)
 
+    def test_v10_4_mild_favorite_gets_ml_credit(self):
+        """V10.4: mild favorites (-110 to -180) get partial-to-full ML credit
+        for batters.  Pre-V10.4 the band was -130 to -220, so a -120 mild-fav
+        team got ZERO ML contribution — but the 33-slate analysis shows
+        mild favorites concentrate HV (1.32 HV/game vs 1.14 for -200 favs)."""
+        score_mild, _, _ = compute_batter_env_score(
+            vegas_total=8.0,
+            opp_pitcher_era=4.0,
+            team_moneyline=-120,    # mild favorite — peak HV bucket per data
+        )
+        score_pickem, _, _ = compute_batter_env_score(
+            vegas_total=8.0,
+            opp_pitcher_era=4.0,
+            team_moneyline=-100,    # at floor — no ML credit
+        )
+        # Mild fav now meaningfully outscores a pickem game (was equal before).
+        assert score_mild > score_pickem
+
+    def test_v10_4_batter_ml_saturates_at_180(self):
+        """V10.4: ML at -180 saturates (full credit); going to -250 doesn't add more.
+        This prevents heavy-favorite batters from being over-rewarded."""
+        score_180, _, _ = compute_batter_env_score(
+            vegas_total=8.0,
+            opp_pitcher_era=4.0,
+            team_moneyline=-180,
+        )
+        score_250, _, _ = compute_batter_env_score(
+            vegas_total=8.0,
+            opp_pitcher_era=4.0,
+            team_moneyline=-250,
+        )
+        # Both saturate at the ceiling — heavy favorite gets no extra ML credit.
+        assert score_180 == pytest.approx(score_250, abs=0.001)
+
 
 # ===================================================================
 # 4. FADE Exclusion Gate (V9.0)
@@ -677,7 +711,9 @@ class TestComposition:
         assert all(v <= 2 for v in game_counts.values()), f"Per-game cap violated: {game_counts}"
 
     def test_stack_eligible_requires_both_moneyline_and_total(self):
-        """V10.1: moneyline-only favorite (O/U below 9.0) does NOT unlock a stack."""
+        """V10.2: a blowout favorite alone (PATH 1) requires O/U ≥ 9.0;
+        a low total below the shootout threshold (10.5) also fails PATH 2.
+        With ML=-230 and O/U=7.5, neither path fires → no stack unlocked."""
         pool = [
             _make_candidate(name="SP_0", team="BOS", is_pitcher=True, game_id=1, total_score=80, env_score=0.7),
             _make_candidate(name="NYY_1", team="NYY", is_pitcher=False, game_id=2, total_score=75, env_score=0.95),
