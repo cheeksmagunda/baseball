@@ -501,3 +501,80 @@ POPULARITY_HIGH_PERF_THRESHOLD = 60.0 # >= this = strong performance signal
 POPULARITY_MID_PERF_THRESHOLD = 25.0  # [mid, high) = decent performance
 
 
+# ---------------------------------------------------------------------------
+# Startup self-check: validate that all scoring constants are in sensible ranges.
+# This runs once at import time (cheap, all in-memory) and raises AssertionError
+# loudly if a constant edit produces an incoherent configuration — e.g., a
+# floor set above its ceiling, or an env modifier inverted.
+# ---------------------------------------------------------------------------
+
+def _validate_constants() -> None:
+    # Env modifier band must be ascending and centred around 1.0
+    assert ENV_MODIFIER_FLOOR < 1.0 < ENV_MODIFIER_CEILING, (
+        f"ENV_MODIFIER band must straddle 1.0: [{ENV_MODIFIER_FLOOR}, {ENV_MODIFIER_CEILING}]"
+    )
+    assert TRAIT_MODIFIER_FLOOR < 1.0 < TRAIT_MODIFIER_CEILING, (
+        f"TRAIT_MODIFIER band must straddle 1.0: [{TRAIT_MODIFIER_FLOOR}, {TRAIT_MODIFIER_CEILING}]"
+    )
+
+    # Pitcher env: floor must be less negative (higher) than ceiling
+    # (e.g., -130 > -220 in numeric order)
+    assert PITCHER_ENV_ML_FLOOR > PITCHER_ENV_ML_CEILING, (
+        f"PITCHER_ENV_ML_FLOOR ({PITCHER_ENV_ML_FLOOR}) must be > CEILING ({PITCHER_ENV_ML_CEILING})"
+    )
+    assert PITCHER_ENV_OPS_FLOOR < PITCHER_ENV_OPS_CEILING, (
+        f"PITCHER_ENV_OPS: floor ({PITCHER_ENV_OPS_FLOOR}) must be < ceiling ({PITCHER_ENV_OPS_CEILING})"
+    )
+    assert PITCHER_ENV_K9_FLOOR < PITCHER_ENV_K9_CEILING, (
+        f"PITCHER_ENV_K9: floor ({PITCHER_ENV_K9_FLOOR}) must be < ceiling ({PITCHER_ENV_K9_CEILING})"
+    )
+
+    # Batter env: ML band — floor must be less negative than ceiling
+    assert BATTER_ENV_ML_FLOOR > BATTER_ENV_ML_CEILING, (
+        f"BATTER_ENV_ML_FLOOR ({BATTER_ENV_ML_FLOOR}) must be > CEILING ({BATTER_ENV_ML_CEILING})"
+    )
+    assert BATTER_ENV_VEGAS_FLOOR < BATTER_ENV_VEGAS_CEILING, (
+        f"BATTER_ENV_VEGAS: floor ({BATTER_ENV_VEGAS_FLOOR}) must be < ceiling ({BATTER_ENV_VEGAS_CEILING})"
+    )
+    assert BATTER_ENV_ERA_FLOOR < BATTER_ENV_ERA_CEILING, (
+        f"BATTER_ENV_ERA: floor ({BATTER_ENV_ERA_FLOOR}) must be < ceiling ({BATTER_ENV_ERA_CEILING})"
+    )
+    assert BATTER_ENV_OPP_WHIP_FLOOR < BATTER_ENV_OPP_WHIP_CEILING, (
+        f"BATTER_ENV_OPP_WHIP: floor ({BATTER_ENV_OPP_WHIP_FLOOR}) must be < ceiling ({BATTER_ENV_OPP_WHIP_CEILING})"
+    )
+
+    # Scoring thresholds
+    assert SCORING_K9_FLOOR < SCORING_K9_CEILING, (
+        f"SCORING_K9: floor ({SCORING_K9_FLOOR}) must be < ceiling ({SCORING_K9_CEILING})"
+    )
+    assert SCORING_ERA_RANGE > 0, f"SCORING_ERA_RANGE must be positive: {SCORING_ERA_RANGE}"
+    assert SCORING_WHIP_RANGE > 0, f"SCORING_WHIP_RANGE must be positive: {SCORING_WHIP_RANGE}"
+    assert SCORING_FB_VELOCITY_FLOOR < SCORING_FB_VELOCITY_CEILING, (
+        f"SCORING_FB_VELOCITY: floor ({SCORING_FB_VELOCITY_FLOOR}) must be < ceiling ({SCORING_FB_VELOCITY_CEILING})"
+    )
+    assert SCORING_FB_IVB_FLOOR < SCORING_FB_IVB_CEILING, (
+        f"SCORING_FB_IVB: floor ({SCORING_FB_IVB_FLOOR}) must be < ceiling ({SCORING_FB_IVB_CEILING})"
+    )
+
+    # Slot multipliers must sum to a positive total
+    assert sum(SLOT_MULTIPLIERS.values()) > 0, "SLOT_MULTIPLIERS must have positive values"
+    assert SLOT_MULTIPLIERS[1] > SLOT_MULTIPLIERS[5], "Slot 1 must have the highest multiplier"
+
+    # Park factors: must have at least one entry; COL should be the highest
+    assert len(PARK_HR_FACTORS) >= 30, "PARK_HR_FACTORS missing teams"
+    assert PARK_HR_FACTOR_MIN < 1.0 < PARK_HR_FACTOR_MAX, (
+        f"PARK_HR_FACTOR range must straddle 1.0: [{PARK_HR_FACTOR_MIN}, {PARK_HR_FACTOR_MAX}]"
+    )
+
+    # DNP penalty tiers
+    assert 0 < DNP_RISK_PENALTY < DNP_UNKNOWN_PENALTY < 1.0, (
+        f"DNP penalties must satisfy 0 < RISK ({DNP_RISK_PENALTY}) < UNKNOWN ({DNP_UNKNOWN_PENALTY}) < 1"
+    )
+
+    # Stacking thresholds: shootout total must be higher than the PATH 1 total
+    assert STACK_ELIGIBILITY_SHOOTOUT_TOTAL > STACK_ELIGIBILITY_VEGAS_TOTAL, (
+        f"Shootout total ({STACK_ELIGIBILITY_SHOOTOUT_TOTAL}) must exceed PATH 1 total ({STACK_ELIGIBILITY_VEGAS_TOTAL})"
+    )
+
+
+_validate_constants()

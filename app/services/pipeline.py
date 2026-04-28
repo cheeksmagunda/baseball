@@ -102,7 +102,9 @@ def _build_starter_stats_cache(
 
 async def run_fetch(db: Session, game_date: date) -> dict:
     """Stage 1: Fetch today's schedule and create slate."""
+    logger.info("Pipeline stage 1: fetching schedule for %s", game_date)
     slate = await fetch_schedule_for_date(db, game_date)
+    logger.info("Pipeline stage 1 complete: %d games on %s", slate.game_count or 0, game_date)
     return {
         "date": game_date.isoformat(),
         "game_count": slate.game_count,
@@ -112,8 +114,10 @@ async def run_fetch(db: Session, game_date: date) -> dict:
 
 async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     """Fetch stats for all players in a slate, then backfill SlateGame starter stats."""
+    logger.info("Pipeline stage 2: fetching player stats for %s", game_date)
     slate = db.query(Slate).filter_by(date=game_date).first()
     if not slate:
+        logger.warning("Pipeline stage 2: no slate found for %s", game_date)
         return {"error": "No slate found for this date"}
 
     slate_players = (
@@ -200,13 +204,19 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
         )
 
     db.commit()
+    logger.info(
+        "Pipeline stage 2 complete: %d stats fetched, %d failed for %s",
+        fetched, failed, game_date,
+    )
     return {"fetched": fetched, "failed": failed}
 
 
 def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
-    """Stage 2: Score all players for a slate and store results."""
+    """Stage 3: Score all players for a slate and store results."""
+    logger.info("Pipeline stage 3: scoring players for %s", game_date)
     slate = db.query(Slate).filter_by(date=game_date).first()
     if not slate:
+        logger.warning("Pipeline stage 3: no slate found for %s", game_date)
         return []
 
     slate_players = (
@@ -311,6 +321,12 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
 
     # Sort by total score descending
     results.sort(key=lambda r: r.total_score, reverse=True)
+    logger.info(
+        "Pipeline stage 3 complete: %d players scored for %s (top: %s %.1f)",
+        len(results), game_date,
+        results[0].player_name if results else "n/a",
+        results[0].total_score if results else 0.0,
+    )
     return results
 
 
@@ -525,6 +541,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
 
 async def run_full_pipeline(db: Session, game_date: date) -> dict:
     """Full pipeline: fetch schedule → populate rosters → fetch stats → score → rank."""
+    logger.info("Full pipeline START for %s", game_date)
     fetch_result = await run_fetch(db, game_date)
 
     # Mid-slate cold-start guard: when the app redeploys after the day's first
@@ -581,6 +598,7 @@ async def run_full_pipeline(db: Session, game_date: date) -> dict:
         await enrich_slate_game_weather(db, slate)
 
     scores = run_score_slate(db, game_date)
+    logger.info("Full pipeline COMPLETE for %s — %d players scored", game_date, len(scores))
 
     return {
         "date": game_date.isoformat(),

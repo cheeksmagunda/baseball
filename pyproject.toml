@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "pre-commit>=3.7"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4", "pre-commit>=3.7", "mypy>=1.10", "types-redis>=4.6"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -39,3 +39,17 @@ target-version = "py311"
 # SQLAlchemy relationship() annotations use string forward references that ruff
 # cannot resolve. These are legitimate forward refs, not undefined names.
 "app/models/*.py" = ["F821"]
+
+[tool.mypy]
+python_version = "3.11"
+# Strict-mode flags most likely to catch real bugs without excessive noise
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+# Third-party stubs may not exist for every package; ignore missing imports
+# rather than failing the entire check.
+ignore_missing_imports = true
+# SQLAlchemy's relationship() and mapped_column() use complex metaclasses that
+# mypy cannot model well without the sqlalchemy2-stubs plugin.  Exclude models.
+exclude = ["app/models/", "app/seed\\.py", "scripts/"]

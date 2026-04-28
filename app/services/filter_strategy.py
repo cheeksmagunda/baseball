@@ -1,5 +1,42 @@
 """
-Filter Strategy V10.1: "Filter, Not Forecast" + conditional stacking.
+Filter Strategy V10.4: "Filter, Not Forecast" + conditional stacking.
+
+Public API (imported by pipeline.py, routers/filter_strategy.py, and tests)
+────────────────────────────────────────────────────────────────────────────
+Slate classification:
+  SlateType, SlateClassification, StackableGame
+  classify_slate(game_count, games) -> SlateClassification
+
+Environmental scoring:
+  compute_pitcher_env_score(...) -> tuple[float, dict]
+  compute_batter_env_score(...)  -> tuple[float, dict, int]
+
+Candidate model:
+  FilteredCandidate   — input to all optimization functions
+  FilterSlotAssignment, FilterOptimizedLineup — output structures
+
+Dual-lineup optimizer:
+  run_filter_strategy(candidates, slate_class)      -> FilterOptimizedLineup
+  run_dual_filter_strategy(candidates, slate_class) -> DualFilterOptimizedResult
+
+Internal helpers (used by tests and pipeline but not by external callers):
+  _compute_base_ev, _compute_filter_ev, _compute_moonshot_filter_ev
+  _exclude_fade_players, _enforce_composition, _validate_lineup_structure
+  _smart_slot_assignment, _compute_dnp_adjustment, _compute_stack_eligible_teams
+────────────────────────────────────────────────────────────────────────────
+
+Module sections (by line range, approximate):
+  1. Slate classification   — SlateType / SlateClassification / classify_slate
+  2. Env scoring helpers    — graduated_scale helpers shared with utils
+  3. Pitcher env scoring    — compute_pitcher_env_score
+  4. Batter env scoring     — compute_batter_env_score (Groups A/B/C/D)
+  5. Candidate data model   — FilteredCandidate, FilterSlotAssignment, etc.
+  6. EV computation         — _compute_base_ev, _compute_filter_ev, moonshot
+  7. Composition engine     — _enforce_composition, _validate_lineup_structure
+  8. Slot assignment        — _smart_slot_assignment
+  9. Public optimizers      — run_filter_strategy, run_dual_filter_strategy
+
+────────────────────────────────────────────────────────────────────────────
 
 This is the core strategic engine from the Master Strategy Document.
 We do NOT predict RS. We identify conditions under which high RS is

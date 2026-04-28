@@ -1,4 +1,5 @@
 import { ClientHome } from "./ClientHome";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import type { FilterOptimizeResponse } from "@/lib/types";
 
 async function getInitialLineups(): Promise<FilterOptimizeResponse | null> {
@@ -47,5 +48,9 @@ async function getInitialLineups(): Promise<FilterOptimizeResponse | null> {
 
 export default async function Home() {
   const initialData = await getInitialLineups();
-  return <ClientHome initialData={initialData} />;
+  return (
+    <ErrorBoundary>
+      <ClientHome initialData={initialData} />
+    </ErrorBoundary>
+  );
 }

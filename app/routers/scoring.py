@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
@@ -18,7 +18,7 @@ router = APIRouter()
 def score_single_player(
     player_name: str,
     team: str | None = None,
-    card_boost: float = 0.0,
+    card_boost: float = Query(default=0.0, ge=0.0, le=3.0, description="Card boost multiplier (0.0–3.0)"),
     db: Session = Depends(get_db),
 ):
     """Score a single player on demand."""
