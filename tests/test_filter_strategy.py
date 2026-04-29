@@ -109,7 +109,15 @@ def _stack_eligible_slate(favored_team: str, moneyline: int = -220, vegas_total:
 
 
 def _make_pool(n_pitchers: int = 2, n_batters: int = 10) -> list[FilteredCandidate]:
-    """Build a realistic candidate pool with distinct teams/games."""
+    """Build a realistic candidate pool with distinct teams/games.
+
+    Pitcher env_score=0.85 (favored-team confirmed starter, typical T-65 case).
+    Anything below ~0.80 is borderline; the V10.6 EV-driven chooser will flip
+    to 0P+5B if the batter pool is genuinely stronger, which is correct
+    behaviour but inconvenient for structural-invariant tests that want to
+    verify the 1P+4B path.  These tests should drive a clear pitcher win;
+    explicit-EV tests that care about marginal cases construct pools inline.
+    """
     teams = ["NYY", "BOS", "LAD", "HOU", "ATL", "CHC", "SF", "SEA", "MIN", "TB", "SD", "CLE"]
     pool = []
     idx = 0
@@ -120,7 +128,7 @@ def _make_pool(n_pitchers: int = 2, n_batters: int = 10) -> list[FilteredCandida
             is_pitcher=True,
             game_id=100 + idx,
             total_score=60 + i * 5,
-            env_score=0.7,
+            env_score=0.85,
         ))
         idx += 1
     for i in range(n_batters):
@@ -270,18 +278,20 @@ class TestBatterEnvScore:
             team_moneyline=-250,
             opp_bullpen_era=5.5,
             opp_starter_whip=1.40,
+            opp_starter_k_per_9=6.0,        # V10.6: contact pitcher → full K/9 credit (0.4)
         )
-        # Group A run_env: 4 main signals at 1.0 + WHIP at 0.5 weight = 4.5 raw.
-        #   Soft cap: first 2.0 taken full, excess 2.5 at 25% slope → 2.0 + 0.625 = 2.625
+        # Group A run_env: 4 main signals at 1.0 + WHIP at 0.5 weight + K/9 at 0.4 weight = 4.9 raw.
+        #   Soft cap: first 2.0 taken full, excess 2.9 at 25% slope → 2.0 + 0.725 = 2.725
         # Group B situation: platoon 1.0 + order 2 → 1.0 = 2.0
         # Group C venue: COL (1.38) → 1.0
-        # Group D (momentum): none provided → 0.0
-        # Total = 2.625 + 2.0 + 1.0 = 5.625 / BATTER_ENV_MAX_SCORE
-        # V10.3 (Apr 27): WHIP added as Group A A5 factor (weight 0.5 — half of ERA's
-        # contribution to reflect the r=0.816 correlation with ERA in the 33-slate
-        # window).  The soft cap absorbs most of the redundancy when ERA and WHIP agree.
-        from app.core.constants import BATTER_ENV_MAX_SCORE
-        assert score == pytest.approx(5.625 / BATTER_ENV_MAX_SCORE, abs=0.01)
+        # Group D (momentum): NEUTRALISED in V10.7 → 0.0 (always)
+        # Total = 2.725 + 2.0 + 1.0 = 5.725
+        # V10.7: BATTER_ENV_MAX_SCORE dropped to 5.0 to match the new max
+        # (Group D removed).  5.725 / 5.0 = 1.145 → clamped to 1.0 by the
+        # final `min(1.0, total/max)` step.  Perfect-storm matchups now
+        # saturate, which is the correct behaviour now that the inverted
+        # momentum signals don't artificially inflate the denominator.
+        assert score == pytest.approx(1.0, abs=0.01)
         assert unknown == 0
 
     def test_empty_env_tracks_unknowns(self):
@@ -289,38 +299,50 @@ class TestBatterEnvScore:
         # All inputs None: no signal contributes → score = 0.0
         assert score == pytest.approx(0.0, abs=0.01)
         # vegas_total, opp_pitcher_era, batting_order, team_moneyline, opp_bullpen_era,
-        # opp_starter_whip = 6 unknowns (V10.3 added WHIP as Group A A5).
-        assert unknown == 6
+        # opp_starter_whip, opp_starter_k_per_9 = 7 unknowns (V10.6 added K/9 as A6).
+        assert unknown == 7
 
     def test_correlated_signal_cap(self):
         """Run-env signals (O/U, ERA, ML, bullpen) compressed via soft cap.
 
-        Soft cap: first 2.0 of sum at full value, excess at 25% slope.  Four
-        maxed signals yield 2.5 (vs 4.0 raw), still far below a naive sum and
-        close in env_score to the 2-signal case — preserving the anti-
-        redundancy spirit of the original hard cap while keeping some upside.
+        Soft cap: first 2.0 of sum at full value, excess at 25% slope.  V10.8
+        Vegas O/U dropped from weight 1.0 to 0.5 after the audit showed it's a
+        flat signal, so the 4-signal raw sum is now 0.5 (O/U) + 1.0 (ERA) +
+        1.0 (ML) + 1.0 (bullpen) = 3.5 (vs 4.0 pre-V10.8).  Soft cap takes
+        2.0 full + 1.5 × 0.25 = 2.375 (was 2.5).  Still preserves the anti-
+        redundancy spirit — naive sum would be 4× the 2-signal case, soft-
+        capped result is closer to ~1.4×.
         """
-        # All 4 run-env signals maxed = 4.0 raw → soft-capped to 2.5
+        # All 4 run-env signals maxed = 3.5 raw (V10.8) → soft-capped to 2.375
         score_all, _, _ = compute_batter_env_score(
             vegas_total=10.0, opp_pitcher_era=5.5,
             team_moneyline=-250, opp_bullpen_era=5.5,
             batting_order=5,
         )
-        # Only 2 run-env signals maxed = 2.0 (below soft-cap point)
+        # Only 2 run-env signals maxed = 1.5 (V10.8: O/U weight 0.5 + ERA 1.0).
+        # Below soft-cap point so taken at full value.
         score_two, _, _ = compute_batter_env_score(
             vegas_total=10.0, opp_pitcher_era=5.5,
             batting_order=5,
         )
-        # Soft cap keeps the 4-signal case close to the 2-signal case (≤ 10% apart)
-        # while still rewarding the extra signal density.
+        # Soft cap keeps the 4-signal case from being a naive 4× the 2-signal
+        # case; the gap is ~0.175 in env_score units (about 1.4× the 2-signal).
+        # Threshold = 0.20 leaves headroom for future Group A weight changes
+        # without false alarms; the assertion still catches a regression that
+        # would let redundant signals multiply linearly.
         assert score_all > score_two, "soft cap still rewards extra maxed signals"
-        assert score_all - score_two < 0.10, "soft cap prevents redundant multiplication"
+        assert score_all - score_two < 0.20, "soft cap prevents redundant multiplication"
 
     def test_max_score_denominator_matches_constant(self):
         """max_score (BATTER_ENV_MAX_SCORE) is the env-score denominator.
-        Group A soft cap can reach 2.5 (perfect-storm) without WHIP, or 2.625 with
-        WHIP at full saturation.  V10.2: max is 6.0 because TEAM_HOT_L10_BONUS
-        doubled from 0.2 to 0.4.  V10.3: WHIP A5 factor added at 0.5 weight.
+        V10.7 dropped it from 6.0 → 5.0 because Group D (series + L10) was
+        neutralised after the fresh-eyes audit revealed those signals were
+        inverted at the player level.
+
+        This test calls compute_batter_env_score with K/9 absent, so total
+        without K/9 = 2.625 (Group A with WHIP at full saturation) +
+        2.0 (situation) + 1.0 (venue) + 0.0 (Group D) = 5.625 raw.
+        Divided by BATTER_ENV_MAX_SCORE=5.0 → 1.125 → clamped to 1.0.
         """
         from app.core.constants import BATTER_ENV_MAX_SCORE
         score, _, unknown = compute_batter_env_score(
@@ -333,10 +355,11 @@ class TestBatterEnvScore:
             opp_bullpen_era=5.5,
             opp_starter_whip=1.40,
         )
-        # Without Group D (momentum), total = 2.625+2.0+1.0 = 5.625 / BATTER_ENV_MAX_SCORE.
-        # V10.3 (max=6.0, with WHIP): 5.625/6.0 ≈ 0.9375.
-        assert score < 1.0, "Without momentum context, score should be < 1.0"
-        assert score == pytest.approx(5.625 / BATTER_ENV_MAX_SCORE, abs=0.01)
+        # Confirm BATTER_ENV_MAX_SCORE matches the V10.7 expected value (5.0)
+        # so a future re-bump catches a regression here.
+        assert BATTER_ENV_MAX_SCORE == 5.0
+        # Perfect-storm matchups saturate at 1.0 in V10.7.
+        assert score == pytest.approx(1.0, abs=0.01)
 
     def test_batting_order_unknown_contributes_zero(self):
         """Unknown batting order contributes 0 to situation — DNP risk is
@@ -356,9 +379,9 @@ class TestBatterEnvScore:
         assert score_unknown < score_known
         # Non-zero because Vegas+ERA still contribute to Group A run_env.
         assert score_unknown > 0, "Group A signals carry the env score when order is unknown"
-        # batting_order + team_moneyline + opp_bullpen_era + opp_starter_whip = 4 unknowns
-        # (V10.3: WHIP added as Group A A5)
-        assert unknown == 4
+        # batting_order + team_moneyline + opp_bullpen_era + opp_starter_whip +
+        # opp_starter_k_per_9 = 5 unknowns (V10.6: K/9 added as Group A A6)
+        assert unknown == 5
 
     def test_graduated_batting_order(self):
         """V8.0: batting order uses graduated scale, not hard top-5 gate."""
@@ -934,14 +957,20 @@ class TestRunFilterStrategy:
 
 class TestDualOptimizer:
     def _big_pool(self) -> list[FilteredCandidate]:
-        """Pool large enough for two full lineups (10+ unique teams/games)."""
+        """Pool large enough for two full lineups (10+ unique teams/games).
+
+        Pitcher env_score=0.85 (typical favored-team confirmed starter).  Below
+        ~0.80 is borderline; the V10.6 EV chooser will flip to 0P+5B if the
+        batter pool genuinely dominates, which would make these dual-optimizer
+        tests of the 1P-shared-anchor invariant unreliable.
+        """
         teams = ["NYY", "BOS", "LAD", "HOU", "ATL", "CHC", "SF", "SEA",
                  "MIN", "TB", "SD", "CLE", "PHI", "MIL"]
         pool = []
         for i in range(3):
             pool.append(_make_candidate(
                 name=f"SP_{i}", team=teams[i], is_pitcher=True,
-                game_id=200 + i, total_score=60 + i * 5, env_score=0.7,
+                game_id=200 + i, total_score=60 + i * 5, env_score=0.85,
             ))
         for i in range(12):
             pool.append(_make_candidate(
@@ -994,10 +1023,15 @@ class TestDualOptimizer:
             run_dual_filter_strategy(pool, _default_slate())
 
     def test_minimal_pool_with_8_batters_succeeds(self):
-        """A pool with 8+ batters across unique teams fills both lineups."""
+        """A pool with a clearly-dominant pitcher + 8 batters across unique
+        teams fills both lineups via the shared pitcher anchor.  Pitcher
+        env=0.85 ensures the V10.6 EV chooser picks 1P+4B for both lineups
+        — under 0P+5B the 5-batter Starting 5 would leave only 3 unique
+        non-overlapping batters for Moonshot."""
         teams = ["NYY", "BOS", "LAD", "HOU", "ATL", "CHC", "SF", "SEA", "MIN"]
         pool = [
-            _make_candidate(name="SP_0", team=teams[0], is_pitcher=True, game_id=1),
+            _make_candidate(name="SP_0", team=teams[0], is_pitcher=True,
+                            game_id=1, env_score=0.85),
         ] + [
             _make_candidate(name=f"B_{i}", team=teams[i + 1], game_id=10 + i)
             for i in range(8)

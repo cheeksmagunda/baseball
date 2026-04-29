@@ -25,14 +25,23 @@ from app.core.constants import (
     POWER_PROFILE_AVG_EV_MAX,
     POWER_PROFILE_BARREL_PCT_MAX,
     POWER_PROFILE_HARD_HIT_MAX,
-    POWER_PROFILE_HR_PA_MAX,
     POWER_PROFILE_MAX_EV_CEILING,
+    POWER_PROFILE_X_WOBA_CEILING,
+    POWER_PROFILE_X_WOBA_FLOOR,
+    SCORING_X_ERA_FLOOR,
+    SCORING_X_ERA_RANGE,
     SCORING_BATTER_ERA_FLOOR,
     SCORING_BATTER_ERA_RANGE,
+    SCORING_BATTER_K_PCT_CEILING,
+    SCORING_BATTER_K_PCT_FLOOR,
     SCORING_BATTER_OPS_SPLIT_FLOOR,
     SCORING_BATTER_OPS_SPLIT_RANGE,
     SCORING_BATTER_WHIP_FLOOR,
     SCORING_BATTER_WHIP_RANGE,
+    SCORING_OPP_K9_VULN_CEILING,
+    SCORING_OPP_K9_VULN_FLOOR,
+    SCORING_OPP_X_WOBA_AGAINST_CEILING,
+    SCORING_OPP_X_WOBA_AGAINST_FLOOR,
     SCORING_CHASE_PCT_CEILING,
     SCORING_CHASE_PCT_FLOOR,
     SCORING_ERA_CEILING,
@@ -43,6 +52,9 @@ from app.core.constants import (
     SCORING_FB_IVB_FLOOR,
     SCORING_FB_VELOCITY_CEILING,
     SCORING_FB_VELOCITY_FLOOR,
+    SCORING_FRAMING_K_RATE_MAX_ADJ,
+    SCORING_FRAMING_RUNS_CEILING,
+    SCORING_FRAMING_RUNS_FLOOR,
     SCORING_K9_CEILING,
     SCORING_K9_FLOOR,
     SCORING_PITCHER_K_PCT_FLOOR,
@@ -108,7 +120,11 @@ def score_ace_status(stats: PlayerStats | None, max_pts: float) -> TraitResult:
     return TraitResult("ace_status", round(score, 1), max_pts, f"ERA {era:.2f} | {stats.ip:.1f} IP")
 
 
-def score_pitcher_k_rate(stats: PlayerStats | None, max_pts: float) -> TraitResult:
+def score_pitcher_k_rate(
+    stats: PlayerStats | None,
+    max_pts: float,
+    team_framing_runs: float | None = None,
+) -> TraitResult:
     """Score strikeout upside.
 
     V10.0: Statcast kinematics replace raw K/9 as the dominant signal when
@@ -126,6 +142,16 @@ def score_pitcher_k_rate(stats: PlayerStats | None, max_pts: float) -> TraitResu
         benched — the env/popularity filters decide their fate from there.
         Rookie Arbitrage per strategy doc §"Rookie Variance Void": the crowd
         ignores MLB-debut arms; our job is to not ignore them ourselves.
+
+    V10.8: catcher framing adjustment.  When `team_framing_runs` is provided
+    (the pitcher's team's season framing aggregate from TeamSeasonStats),
+    the final k_rate score is scaled by 1 ± up to 5%, depending on how much
+    the team's catcher cohort is adding (or subtracting) called strikes.
+    Reduced magnitude under the 2026 ABS Challenge System but still
+    meaningful for the ~98% of unchallenged pitches.  Per the framing
+    research model: each framing run/game ≈ 3.9% K-rate impact; we cap at
+    ±5% conservatively because the season-aggregate runs is a coarser
+    signal than per-game rates.
     """
     if not stats:
         logger.debug("k_rate: no stats — returning rookie baseline (%.0f%%)", UNKNOWN_SCORE_RATIO * 100)
@@ -178,7 +204,35 @@ def score_pitcher_k_rate(stats: PlayerStats | None, max_pts: float) -> TraitResu
         )
 
     score = scale_score(stats.k_per_9, SCORING_K9_FLOOR, SCORING_K9_CEILING, max_pts)
+    score = _apply_framing_adjustment(score, max_pts, team_framing_runs)
     return TraitResult("k_rate", round(score, 1), max_pts, f"K/9 {stats.k_per_9:.1f} (no Statcast)")
+
+
+def _apply_framing_adjustment(
+    score: float, max_pts: float, team_framing_runs: float | None
+) -> float:
+    """V10.8 — apply ±max% scaling to a pitcher k_rate score based on team framing.
+
+    Linear in the runs value, clamped at SCORING_FRAMING_RUNS_FLOOR/CEILING.
+    Score is then clamped to [0, max_pts] so we never push a 0-score score
+    negative or a near-max score above max_pts.
+    """
+    if team_framing_runs is None:
+        return score
+    # Map runs to a -max..+max scaling in linear space.
+    if team_framing_runs >= SCORING_FRAMING_RUNS_CEILING:
+        adj = SCORING_FRAMING_K_RATE_MAX_ADJ
+    elif team_framing_runs <= SCORING_FRAMING_RUNS_FLOOR:
+        adj = -SCORING_FRAMING_K_RATE_MAX_ADJ
+    else:
+        # Linear interpolation through 0 → no adjustment at 0 framing runs.
+        if team_framing_runs >= 0:
+            ratio = team_framing_runs / SCORING_FRAMING_RUNS_CEILING
+        else:
+            ratio = team_framing_runs / abs(SCORING_FRAMING_RUNS_FLOOR)
+        adj = ratio * SCORING_FRAMING_K_RATE_MAX_ADJ
+    adjusted = score * (1.0 + adj)
+    return max(0.0, min(max_pts, adjusted))
 
 
 def score_pitcher_matchup(
@@ -259,7 +313,22 @@ def score_pitcher_recent_form(
 
 
 def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitResult:
-    """Combined ERA + WHIP score."""
+    """Combined ERA + WHIP + xERA score.
+
+    V10.8 — added xERA (Statcast expected ERA, derived from xwOBA-against) at
+    25% weight so the trait incorporates contact-quality leading indicators
+    alongside the realised ERA/WHIP outcomes.  Wide live-ERA-vs-xERA gaps
+    signal regression candidates: a pitcher with shiny ERA but poor xERA is
+    "regression-in-waiting" per FantasyLabs / PitcherList DFS literature.
+
+    Blend weights:
+      live ERA   45%  (was 60%)
+      WHIP       30%  (was 40%)
+      xERA       25%  (NEW V10.8)
+
+    When xERA is missing (pre-50 PA pitchers, schema drift), the live ERA +
+    WHIP path keeps its original blend (60/40) so the trait stays well-formed.
+    """
     if not stats:
         return TraitResult("era_whip", 0, max_pts, "no stats")
 
@@ -271,12 +340,21 @@ def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitRe
     # WHIP component: lower is better (inverted scale)
     whip_score = scale_score(SCORING_WHIP_CEILING - whip, 0, SCORING_WHIP_RANGE, 1.0)
 
-    combined = (era_score * 0.6 + whip_score * 0.4) * max_pts
+    # V10.8 — xERA component when available.  Lower is better (inverted scale).
+    x_era = stats.x_era
+    detail = f"ERA {era:.2f} | WHIP {whip:.2f}"
+    if x_era is not None:
+        x_era_score = scale_score(SCORING_X_ERA_FLOOR - x_era, 0, SCORING_X_ERA_RANGE, 1.0)
+        combined = (era_score * 0.45 + whip_score * 0.30 + x_era_score * 0.25) * max_pts
+        detail += f" | xERA {x_era:.2f}"
+    else:
+        combined = (era_score * 0.6 + whip_score * 0.4) * max_pts
+
     return TraitResult(
         "era_whip",
         round(combined, 1),
         max_pts,
-        f"ERA {era:.2f} | WHIP {whip:.2f}",
+        detail,
     )
 
 
@@ -293,12 +371,16 @@ def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResul
     and 105 mph hits.  HR/PA and max EV are kept as thin confirmation
     signals (2 pts each) — they lag the physical profile.
 
-    Components (25-pt denominator):
-      avg_exit_velocity  → 8 pts  (92 mph floor, league-avg power)
+    V10.8 components (25-pt denominator):
+      avg_exit_velocity  → 7 pts  (92 mph floor, league-avg power)
       hard_hit_pct       → 7 pts  (50% → elite sluggers)
       barrel_pct         → 6 pts  (15% → Stewart/DeLauter tier)
-      max_exit_velocity  → 2 pts  (112 mph peak)
-      HR/PA              → 2 pts  (retrospective confirmation)
+      x_woba             → 4 pts  (NEW V10.8 — Statcast xwOBA, contact-quality leading indicator)
+      max_exit_velocity  → 1 pt   (V10.8: trimmed from 2 → 1, x_woba absorbs power-tail confirmation)
+      HR/PA              → 0 pts  (V10.8: removed — MLB API never populated reliably; lagging outcome anyway)
+
+    The 25-pt total is preserved so the trait's contribution to total_score
+    stays comparable across versions and existing tests.
 
     Rookie Arbitrage (strategy doc §"Rookie Variance Void"): a true MLB debut
     with zero plate appearances AND no Statcast row returns the neutral
@@ -314,27 +396,28 @@ def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResul
             "no stats (rookie baseline)",
         )
 
-    hr_per_pa = stats.hr / max(stats.pa, 1)
     avg_ev = stats.avg_exit_velocity
     hard_hit = stats.hard_hit_pct
     barrel_pct = stats.barrel_pct
     max_ev = stats.max_exit_velocity
+    x_woba = stats.x_woba   # V10.8 — Savant xwOBA, contact-quality leading indicator
 
     # Each sub-score is 0.0–1.0, then weighted by its point allotment.
     avg_ev_score = scale_score(avg_ev, 85.0, POWER_PROFILE_AVG_EV_MAX, 1.0) if avg_ev is not None else None
     hard_hit_score = scale_score(hard_hit, 30.0, POWER_PROFILE_HARD_HIT_MAX, 1.0) if hard_hit is not None else None
     barrel_score = scale_score(barrel_pct, 4.0, POWER_PROFILE_BARREL_PCT_MAX, 1.0) if barrel_pct is not None else None
     max_ev_score = scale_score(max_ev, 105.0, POWER_PROFILE_MAX_EV_CEILING, 1.0) if max_ev is not None else None
-    hr_score = min(1.0, hr_per_pa / POWER_PROFILE_HR_PA_MAX)
+    x_woba_score = scale_score(x_woba, POWER_PROFILE_X_WOBA_FLOOR, POWER_PROFILE_X_WOBA_CEILING, 1.0) if x_woba is not None else None
 
     # Weighted sum. Missing sub-scores drop out of the numerator AND denominator
     # so rookies with partial Statcast coverage aren't penalised for sparse data.
+    # V10.8 weights: avg_ev 7 + hard_hit 7 + barrel 6 + x_woba 4 + max_ev 1 = 25.
     components = [
-        (avg_ev_score, 8.0, "EV"),
+        (avg_ev_score, 7.0, "EV"),
         (hard_hit_score, 7.0, "HH%"),
         (barrel_score, 6.0, "brl%"),
-        (max_ev_score, 2.0, "maxEV"),
-        (hr_score, 2.0, "HR/PA"),
+        (x_woba_score, 4.0, "xwOBA"),
+        (max_ev_score, 1.0, "maxEV"),
     ]
     weighted_sum = sum(s * w for s, w, _ in components if s is not None)
     denom = sum(w for s, w, _ in components if s is not None)
@@ -353,7 +436,8 @@ def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResul
         detail_parts.append(f"{hard_hit:.0f}% hard-hit")
     if barrel_pct is not None:
         detail_parts.append(f"{barrel_pct:.0f}% barrel")
-    detail_parts.append(f"{hr_per_pa:.1%} HR/PA")
+    if x_woba is not None:
+        detail_parts.append(f"{x_woba:.3f} xwOBA")
     if max_ev is not None:
         detail_parts.append(f"{max_ev:.1f} max EV")
 
@@ -395,12 +479,25 @@ def score_batter_matchup(
     starter_hand: str | None = None,
     batter_stats: PlayerStats | None = None,
 ) -> TraitResult:
-    """Score matchup vs opposing starter. Higher opponent ERA = better for batter.
+    """Score matchup vs opposing starter.  Higher opponent ERA = better for batter.
 
-    When starter_hand and batter splits (ops_vs_lhp / ops_vs_rhp) are available,
-    blends the batter's handedness-specific OPS into the score for a more direct
-    conditional sensitivity signal.  Falls back to ERA/WHIP-only when splits are
-    unavailable or the batter is ambidextrous (S).
+    Sub-signals (blended; weights re-normalised when one is missing):
+      * pitcher ERA       — opp ERA above 2.5 produces credit (35% weight).
+      * pitcher WHIP      — opp WHIP above 0.9 produces credit (20% weight).
+      * hand-split OPS    — batter's season OPS vs starter handedness, when
+                            both starter_hand and batter_hand are known and
+                            batter is not switch (30% weight).
+      * K-vulnerability   — V10.6: cross-axis penalty.  Batter K% × opp K/9
+                            crossed; full penalty fires only when BOTH are
+                            high (high-K batter vs elite K-pitcher = 0-fer
+                            floor risk).  Contact hitter or contact pitcher
+                            individually = no penalty.  15% weight, applied
+                            as `(1 - vuln) * weight` so the credit is
+                            preserved on safe matchups.
+
+    Falls back to ERA/WHIP-only when no other signal is available.  Switch
+    hitters (bat_side = "S") skip the hand-split — they don't carry a
+    single split.
     """
     if not opp_pitcher_stats:
         return TraitResult("matchup_quality", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "matchup unknown")
@@ -440,10 +537,95 @@ def score_batter_matchup(
             ops_split_score = scale_score(batter_ops - SCORING_BATTER_OPS_SPLIT_FLOOR, 0, SCORING_BATTER_OPS_SPLIT_RANGE, 1.0)
             detail += f" | {batter_ops:.3f} OPS vs RHP"
 
-    if ops_split_score is not None:
-        # Three-signal blend: pitcher ERA (40%), pitcher WHIP (25%), batter split (35%)
+    # V10.6: K-vulnerability cross-axis sub-signal.
+    # Computes 0..1 via batter_k_pct × opp_k9 (both normalised), inverted to a
+    # credit so safe matchups (low batter K% OR low opp K/9) preserve max
+    # contribution while only the cross (high × high) is penalised.
+    # Both stats must be present to evaluate; falls through to None otherwise.
+    k_vuln_credit = None
+    opp_k9 = opp_pitcher_stats.get("k_per_9")
+    if (
+        opp_k9 is not None
+        and batter_stats is not None
+        and batter_stats.pa is not None
+        and batter_stats.pa > 0
+        and batter_stats.so is not None
+    ):
+        batter_k_pct = batter_stats.so / max(batter_stats.pa, 1)
+        bk_norm = scale_score(
+            batter_k_pct - SCORING_BATTER_K_PCT_FLOOR,
+            0,
+            SCORING_BATTER_K_PCT_CEILING - SCORING_BATTER_K_PCT_FLOOR,
+            1.0,
+        )
+        opp_k9_norm = scale_score(
+            opp_k9 - SCORING_OPP_K9_VULN_FLOOR,
+            0,
+            SCORING_OPP_K9_VULN_CEILING - SCORING_OPP_K9_VULN_FLOOR,
+            1.0,
+        )
+        # Cross-axis: only the (high × high) corner fires the full penalty.
+        vuln = bk_norm * opp_k9_norm
+        k_vuln_credit = 1.0 - vuln
+        if vuln >= 0.30:
+            detail += f" | K-vuln {vuln:.0%} (batter K%={batter_k_pct:.0%}, opp K/9={opp_k9:.1f})"
+
+    # V10.8: opposing-arsenal-effectiveness sub-signal via xwOBA-against.
+    # Independent of ERA/WHIP — those are sequencing-sensitive outcomes;
+    # xwOBA-against is the leading indicator of contact quality the arsenal
+    # is allowing.  Inverted scale: lower xwOBA-against = elite arsenal =
+    # WORSE for the batter's matchup, hence the (1 − x_woba_credit) inverted
+    # contribution.  Skipped when the opposing pitcher has no Savant row
+    # yet (rookie pre-50 PA).  10% weight when present — meaningful without
+    # double-counting ERA which already captures the realised version of
+    # this signal.
+    arsenal_credit = None
+    opp_x_woba_against = opp_pitcher_stats.get("x_woba_against")
+    if opp_x_woba_against is not None:
+        # graduated_scale arg order — descending range (floor > ceiling).
+        norm = scale_score(
+            SCORING_OPP_X_WOBA_AGAINST_FLOOR - opp_x_woba_against,
+            0,
+            SCORING_OPP_X_WOBA_AGAINST_FLOOR - SCORING_OPP_X_WOBA_AGAINST_CEILING,
+            1.0,
+        )
+        # `norm` is 0 when opp xwOBA-against ≥ floor (weak arsenal, batter
+        # favored), 1 when ≤ ceiling (elite arsenal, batter suppressed).
+        # The matchup credit is the inverse — high norm = low credit.
+        arsenal_credit = 1.0 - norm
+        if norm >= 0.30:
+            detail += f" | arsenal xwOBA-against {opp_x_woba_against:.3f}"
+
+    # Blend.  Weight rebalancing depends on which sub-signals are available.
+    # V10.8 default (5 signals): era 30% + whip 18% + split 27% + k-vuln 15% + arsenal 10%.
+    if ops_split_score is not None and k_vuln_credit is not None and arsenal_credit is not None:
+        combined = (
+            era_score * 0.30
+            + whip_score * 0.18
+            + ops_split_score * 0.27
+            + k_vuln_credit * 0.15
+            + arsenal_credit * 0.10
+        ) * max_pts
+    elif ops_split_score is not None and k_vuln_credit is not None:
+        # 4 signals (no arsenal): the V10.6 blend.
+        combined = (
+            era_score * 0.35
+            + whip_score * 0.20
+            + ops_split_score * 0.30
+            + k_vuln_credit * 0.15
+        ) * max_pts
+    elif ops_split_score is not None:
+        # ERA + WHIP + split (no K-vuln, e.g., rookie batter with 0 PA so far).
         combined = (era_score * 0.40 + whip_score * 0.25 + ops_split_score * 0.35) * max_pts
+    elif k_vuln_credit is not None:
+        # ERA + WHIP + K-vuln (no hand split, e.g., switch hitter).
+        combined = (
+            era_score * 0.50
+            + whip_score * 0.30
+            + k_vuln_credit * 0.20
+        ) * max_pts
     else:
+        # ERA + WHIP only — bare-bones matchup with no additional signals.
         combined = (era_score * 0.6 + whip_score * 0.4) * max_pts
 
     return TraitResult("matchup_quality", round(combined, 1), max_pts, detail)
@@ -642,13 +824,22 @@ def score_pitcher(
     opp_team: str | None = None,
     opp_team_stats: dict | None = None,
     weights: ScoringWeights | None = None,
+    team_framing_runs: float | None = None,
 ) -> PlayerScoreResult:
-    """Score a pitcher on all traits."""
+    """Score a pitcher on all traits.
+
+    V10.8 — `team_framing_runs` is the pitcher's own team's catcher-framing
+    aggregate (TeamSeasonStats.framing_runs) for the season.  When present,
+    `score_pitcher_k_rate` applies a small ±5% scaling to the K-rate trait
+    based on how much the team's catchers add (or subtract) called strikes.
+    Reduced impact under 2026 ABS but still meaningful for unchallenged
+    pitches.  None → no adjustment (default safe).
+    """
     w = (weights or ScoringWeights()).pitcher
 
     traits = [
         score_ace_status(stats, w.ace_status),
-        score_pitcher_k_rate(stats, w.k_rate),
+        score_pitcher_k_rate(stats, w.k_rate, team_framing_runs=team_framing_runs),
         score_pitcher_matchup(opp_team, opp_team_stats, w.matchup_quality),
         score_pitcher_recent_form(game_logs, w.recent_form),
         score_pitcher_era_whip(stats, w.era_whip),
@@ -723,6 +914,7 @@ def score_player(
     temperature_f: int | None = None,
     is_pitcher: bool | None = None,
     starter_hand: str | None = None,
+    team_framing_runs: float | None = None,
 ) -> PlayerScoreResult:
     """Score any player (auto-detects pitcher vs batter, override with is_pitcher).
 
@@ -770,6 +962,7 @@ def score_player(
             opp_team=opp_team,
             opp_team_stats=opp_team_stats,
             weights=weights,
+            team_framing_runs=team_framing_runs,
         )
     else:
         return score_batter(

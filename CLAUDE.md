@@ -204,7 +204,7 @@ The app uses an event-driven timing model that triggers the ONLY full pipeline r
    - Monitor wakes up and runs the FULL pipeline:
      - Fetch fresh MLB schedule (handles weather delays via retry loop)
      - Populate SlatePlayer rosters from MLB API boxscores
-     - **Phase 1: RotoWire expected lineups** (best-effort) — populates `batting_order` from beat-reporter projections, sets `batting_order_source` to `"rotowire_confirmed"` or `"rotowire_expected"`. Fails gracefully (warns + continues) if RotoWire is unreachable; downstream DNP_UNKNOWN_PENALTY (0.85) absorbs missing data.
+     - **Phase 1: RotoWire expected lineups** (best-effort) — populates `batting_order` from beat-reporter projections, sets `batting_order_source` to `"rotowire_confirmed"` or `"rotowire_expected"`. Fails gracefully (warns + continues) if RotoWire is unreachable; downstream DNP_UNKNOWN_PENALTY (V10.6: 0.93, was 0.85) absorbs missing data.
      - **Phase 2: MLB Stats API boxscore** (ground truth) — overrides any RotoWire value with the official lineup card when posted, sets source to `"official"`. Typically populates 30-60 min before first pitch (i.e., usually after T-65), so RotoWire carries the load at the lock moment.
      - Fetch season stats for all players
      - Enrich game environment (Vegas lines, series context, bullpen ERA)
@@ -582,6 +582,8 @@ python -m app.seed
 
 **Batter traits** (7 traits, 0-100): power_profile(25), matchup_quality(20), lineup_position(15), recent_form(15), ballpark_factor(10), hot_streak(10), speed_component(5)
 
+`matchup_quality` (V10.6) is a four-sub-signal blend: opp ERA (35%), opp WHIP (20%), batter-vs-handedness OPS split (30%), and a K-vulnerability cross-penalty (15%). The K-vuln signal multiplies a normalised batter K% (`so/pa`, floor 18% / ceiling 30%) by a normalised opp K/9 (floor 7.5 / ceiling 11.0); only the (high × high) corner fires the full penalty. This is the trait-layer answer to "0-for-4 with 3K" risk: a contact-oriented hitter is fine vs an elite K-arm because their bat-to-ball floor protects them, and a high-K hitter is fine vs a contact pitcher because the pitcher won't generate the whiffs to bury him — only the cross is dangerous. Anti-aligned with env Group A6 (opp K/9 alone): env scores the OPPORTUNITY for runs, trait scores the FLOOR for an individual batter. When sub-signals are absent (rookie batter no PA, missing K/9), the blend re-normalises across the available terms.
+
 Weights are configurable via the weights API (`GET/PUT /api/calibration/weights`).
 
 **card_boost must NEVER appear in the scoring engine.** The scoring engine runs pre-game; card_boost is only revealed during/after the draft. `compute_total_value()` in `app/core/utils.py` is the only place that uses card_boost — for computing historical total_value from CSV data, not for prediction or scoring.
@@ -678,7 +680,87 @@ Web-scraping signal aggregator that estimates crowd media attention. This is NOT
 
 ## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V10.5 "EV Decides the Shape — 0P+5B Allowed + Bifurcated FADE Gate + L10/Stackable Bug Fixes"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs and do not exist on `FilteredCandidate`**. FADE batters are excluded from the candidate pool; FADE pitchers stay with a soft 15% EV haircut (the crowd is less wrong about pitchers). Each lineup independently chooses 0 or 1 pitcher based on slot-weighted total EV — pure-batter shootout shapes win when batter EVs dominate, anchored 1P+4B wins when the SP's slot-1 multiplier overcomes the marginal batter. EV is driven by Statcast pitch physics, exit-velocity kinematics, game conditions, and series context. **Stacking is still capped at 2 batters per team AND 2 per game, and only fires on overwhelmingly clear game scripts.**
+**Strategy Version: V10.8 "Sustainable Signal Expansion — xStats + Catcher Framing + Opp Rest Days"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs and do not exist on `FilteredCandidate`**. FADE batters are excluded from the candidate pool; FADE pitchers stay with a soft 15% EV haircut. Each lineup independently chooses 0 or 1 pitcher based on slot-weighted total EV. Pitchers now cap at env_factor 1.20 (vs batter 1.30) so dominant favorite-team starters no longer auto-win the top-10. Opposing-starter K/9 is a new Group A signal in batter env. Volatility amplifier is now env-conditional — boom/bust hitters get amplified only when the matchup justifies it, not by default. DNP_UNKNOWN_PENALTY raised from 0.85 → 0.93 reflecting RotoWire coverage at T-65. **Stacking is still capped at 2 batters per team AND 2 per game, and only fires on overwhelmingly clear game scripts.**
+
+### V10.8 Sustainable Signal Expansion (April 29)
+
+V10.8 is a research-driven add of four pre-game signals, prioritised after a literature scan of DFS best practices.  Decisions were guided by 2026 MLB rule changes (the ABS Challenge System affects framing/umpire signal magnitudes) and by published predictive-power studies.  All additions follow the no-historical-bleed rule — every new field is a factual season aggregate or a derived schedule fact, never an outcome label.
+
+**Sources reviewed:**
+- [MLB Glossary on xwOBA](https://www.mlb.com/glossary/statcast/expected-woba)
+- [Baseball Savant Expected Statistics Leaderboard](https://baseballsavant.mlb.com/leaderboard/expected_statistics)
+- [pybaseball GitHub](https://github.com/jldbc/pybaseball)
+- [MLB.com 2026 ABS Challenge System announcement](https://www.mlb.com/news/abs-challenge-system-mlb-2026)
+- [TruMedia Catcher Framing model — 3.9% K-rate per framing run](https://baseball.help.trumedianetworks.com/baseball/catcher-framing-model)
+- [FanGraphs — The Effect of Rest Days on Starting Pitcher Performance](https://community.fangraphs.com/the-effect-of-rest-days-on-starting-pitcher-performance/)
+- [FantasyLabs — Opponent Rest Days impact on DFS](https://www.fantasylabs.com/articles/how-does-a-well-rested-opponent-affect-hitters-and-pitchers/)
+
+**Five changes (one re-weight + four new signals):**
+
+1. **Vegas O/U weight 1.0 → 0.5 (`BATTER_ENV_VEGAS_WEIGHT`).** The V10.7 fresh-eyes audit showed Vegas O/U is essentially flat at the player level (Q1 mean_rs 2.35 vs Q4 2.62 — a 1.04× swing).  Pre-V10.8 it was a weight-1.0 PRIMARY signal in batter env Group A alongside ERA / ML / bullpen.  Down-weighting to 0.5 (matching WHIP's contribution) removes the over-weighting without losing the small signal entirely — O/U bakes in BOTH teams' offenses, so an individual batter's RS upside is only weakly correlated with the total.  Direct opp-pitcher signals (ERA, WHIP, K/9) carry the actual matchup-specific information.
+
+2. **Statcast xStats — xwOBA / xBA / xSLG (batters), xERA / xwOBA-against (pitchers).** Industry-standard predictive metrics derived from Statcast batted-ball data (exit velocity + launch angle + sprint speed for some plays).  xwOBA is more predictive than realised wOBA on small samples; xERA flags regression candidates when a pitcher's live ERA disagrees with his expected ERA (FantasyLabs / PitcherList: "1.00+ run gap is a screaming regression signal").  New PlayerStats columns: `x_woba`, `x_ba`, `x_slg`, `x_era`, `x_woba_against`.  Refresh path: `scripts/refresh_statcast.py::refresh_batter_expected_stats` and `refresh_pitcher_expected_stats` pull from pybaseball's wraps of Savant.  Wired into `score_power_profile` (xwOBA gets 4 of the 25 points, replacing HR/PA which the MLB API never reliably populated) and `score_pitcher_era_whip` (xERA blended at 25% with live ERA + WHIP).
+
+3. **Pitch-arsenal mismatch via opp xwOBA-against (simplified V10.8 take).** Full per-pitch-type batter-vs-pitcher arsenal modelling (`statcast_pitcher_pitch_arsenal` × `statcast_batter_pitch_arsenal`) is a deep wiring task with high implementation cost.  V10.8 ships the simplified version: the opposing pitcher's overall **xwOBA-against** captures arsenal effectiveness in one number — "is this pitcher's arsenal suppressing contact quality?".  Wired into `score_batter_matchup` as a 5th sub-signal at 10% weight (era 30% + whip 18% + hand-split 27% + K-vuln 15% + arsenal 10%).  When the opposing pitcher has no Savant row (rookie pre-50 PA), the trait falls through to the V10.6 four-sub-signal blend.  Future enhancement: full per-pitch-type modelling (deferred — see "What's deferred" below).
+
+4. **Catcher framing — small ±5% adjustment to pitcher k_rate.** Research model: each framing run/game ≈ 3.9% K-rate impact (TruMedia).  Top team framers run ~10-15 runs/season; we cap at ±5% to be conservative.  **2026 ABS Challenge System reduces the magnitude** because challenged calls auto-correct, but only ~2% of pitches get challenged per game (each team has 2 challenges) — so the ~98% unchallenged pitches still carry a real framing effect.  Implementation: new `TeamSeasonStats` table (per-team season aggregates), populated by `scripts/refresh_statcast.py::refresh_team_catcher_framing` from the embedded JSON of Savant's team framing leaderboard.  `candidate_resolver` and `pipeline.run_score_slate` build a `team_framing_lookup` dict per slate and pass it to `score_pitcher_k_rate`, which scales the trait via `_apply_framing_adjustment`.  Best-effort: framing scrape failure logs and falls through to neutral; the rest of the pipeline runs.
+
+5. **Opponent rest days — back-to-back bonus to batter env.** Research: the BATTER's edge comes from the OPPOSING team's rest, not their own.  FantasyLabs DFS data shows hitters facing teams with 0 rest days (back-to-back game) do measurably better — depleted opposing bullpen + tighter starter pitch leash.  New SlateGame columns: `home_team_rest_days`, `away_team_rest_days`.  Derived from the existing schedule lookback in `enrich_slate_game_series_context` (zero new MLB API calls — same data we already pull for L10 / series wins).  Wired into batter env Group A as a +0.2 bonus (binary, no graduated scale) when `opp_team_rest_days <= 0`.
+
+**What's deferred / skipped (and why):**
+
+- **Umpire K/BB tendencies — SKIPPED.**  Under the 2026 ABS Challenge System, the strike zone is still ~98% human-called but worst calls are corrected by challenges.  The umpire-level K/BB delta we'd score against is significantly compressed.  Implementation cost is high (need umpire ID per game from MLB API + a separate umpire stats database); ROI under ABS is low.  Will revisit if Year-1 ABS data shows a meaningful residual umpire effect.
+- **Pitcher's own rest days — SKIPPED.**  FanGraphs research: short rest (1-3 days) vs normal rest (4-6) vs extended rest (7+) shows no significant difference in starting pitcher performance.  Cumulative pitch-count workload from prior 5-10 games matters more, but adding that signal is a separate wiring effort.  Skipping the simpler "own rest days" form because the published evidence says it's not predictive.
+- **Full per-pitch-type pitch-arsenal mismatch — DEFERRED.**  Savant publishes batter wOBA / K% by pitch type AND pitcher pitch usage by type.  Computing the full mismatch requires storing per-(player, pitch_type) rows on a new table and joining the cross-product at scoring time.  Higher implementation cost than V10.8 budgets.  V10.8 ships the simplified "arsenal effectiveness via xwOBA-against" version; full mismatch is a Phase B enhancement.
+
+**Limitation: empirical validation requires historical backfill.**  The eval harness reads pre-game features from `historical_slate_results.json`, which doesn't have the new V10.8 fields (xStats, framing, opp rest days).  So the 33-slate audit can't currently bucket-rate HV outcomes against these signals — V10.8 is shipping on industry-research validation, not our own empirical check.  Backfill would require: (a) one-time `backfill_slate_results_and_hv_stats.py` extension to enrich historical_slate_results.json with current xStats / framing values (close-enough since these stabilise over the season; not point-in-time exact), (b) re-run of the bucket audit on the new fields to confirm direction, (c) constant tweaks if any signals are inverted.  The user opted to ship V10.8 first and validate retrospectively in a later pass.
+
+**Eval delta (V10.7 → V10.8 baseline, env+pitcher-trait variant on 33 slates):**
+
+| Metric | V10.7 | V10.8 |
+|---|---|---|
+| HV@20 | 9.15 | 9.18 (≈ flat — new signals don't fire in eval w/o backfill) |
+| TV@20 | 11.45 | 11.58 |
+
+V10.8 is essentially neutral on the eval because the new fields aren't in the historical data — the addition's correctness is verified by tests, code review, and adherence to research best practices.  Live impact will be visible once `refresh_statcast.py` populates the new tables on the next slate cycle.
+
+V10.8 explicitly **does not** change: pitcher env ceiling 1.20 (V10.6), V10.7-neutralised L10 / series momentum / heavy-fav pitcher ML curves, FADE bifurcation (V10.5), EV-driven 0P+5B chooser (V10.5), composition or stacking rules.
+
+### V10.7 Fresh-Eyes Feature Audit (April 29)
+
+V10.7 ships three calibration changes from a fresh-eyes feature audit on the same 33-slate corpus.  The audit ignored model assumptions and asked the data directly: which pre-game features actually correlate with HV outcomes and mean real_score?  The harness lives at `/tmp/baseball_eval/feature_audit.py` (manual analysis, never committed — per the no-historical-outcome-script rule).  Results bucketed each feature into quartiles and reported HV-rate + mean RS per bucket.  Three signals turned out to be **inverted** vs the live model's assumed direction:
+
+1. **Pitcher's team moneyline — peak at mild favorite, not heavy favorite (`PITCHER_ENV_ML_CEILING` -220 → -150).**  The bucket analysis decisively flipped the ML curve.  Q1 (heavy fav, ML -310 to -168): mean_rs **3.12** / HV-rate **12.7%**.  Q2 (mild fav, ML -164 to -120): mean_rs **4.20** / HV-rate **38.2%**.  Heavy-favorite pitchers underperform because their teams generate blowouts → starter pulled in the 5th-6th inning before K total / win-bonus stack up.  Mild favorites stay in tight games and pitch deeper.  The pre-V10.7 curve gave full ML credit at -220, increasing monotonically through the heavy-fav tail; the new curve saturates at -150 so additional ML weight stops being added once we're past the mild-favorite peak.
+
+2. **Team L10 wins — INVERTED at the player level (`TEAM_HOT_L10_BONUS` 0.4 → 0.0, `TEAM_COLD_L10_PENALTY` 0.4 → 0.0).**  Q1 (cold, 0-4 wins): mean_rs **2.86**.  Q4 (hot, 7-10 wins): mean_rs **2.40**.  Cold teams produce MORE individual RS upside, not less — likely because hot teams have multiple contributors so HV is spread thin, while cold teams have one star carrying the offense (regression candidate).  The V10.2 doubling of L10 bonuses (0.2 → 0.4) actively moved env-scoring in the wrong direction.  Neutralised to 0.0 rather than reversed because the inversion is real on 33 slates but the magnitude could regress with more data; flipping a sign on small-sample evidence is risky, removing the signal entirely is conservative.
+
+3. **Series lead — INVERTED at the player level (`SERIES_LEADING_BONUS` 0.6 → 0.0, `SERIES_TRAILING_PENALTY` 0.6 → 0.0).**  Series-trailing batters HV-rate 55.1% vs leading 44.8% — same inversion mechanism as L10.  Trailing teams are still taking PAs in must-score-now situations while leading teams ride bench bats.  Neutralised, not reversed, for the same risk-management reason.
+
+`BATTER_ENV_MAX_SCORE` dropped from 6.0 → 5.0 to match the new max (Group D is now structurally 0.0 — no momentum bonus or penalty).  Without this rebase every batter's env_score would silently shrink ~17% as a normalisation artefact, dragging the whole batter pool down vs pitchers and undoing V10.6's parity work.  Group A can still saturate (~2.625 with WHIP+K9 contributions through the soft-cap slope) so perfect-storm batter games hit env_score=1.0; the `min(1.0, total/5.0)` clamp preserves the upper bound.
+
+Eval impact (env+pitcher-trait variant, 33 slates):
+
+| Metric | V10.5 baseline | V10.6 | **V10.7** | User target |
+|---|---|---|---|---|
+| HV@20 | 8.24 / 20 | 8.73 / 20 | **9.15 / 20** | 8–9 ✓ above |
+| HV@10 | 3.85 | 4.09 | **4.15** | — |
+| TV@20 | 10.82 | 11.15 | **11.45** | — |
+
+V10.7 explicitly **does not** change: pitcher env ceiling 1.20 (V10.6), opp-K/9 batter env Group A6 (V10.6), env-conditional volatility amplifier (V10.6), batter K-vulnerability trait sub-signal (V10.6 follow-up), DNP_UNKNOWN_PENALTY 0.93 (V10.6), the FADE bifurcation (V10.5), the EV-driven 0P+5B chooser (V10.5), or any structural rule (composition, stacking, anchor logic).
+
+### V10.6 Pitcher-Batter Parity (April 28-29 — env eval cycle)
+
+V10.6 ships four targeted refinements from an offline evaluation of every V10.5 component on the 33-slate enriched corpus. The harness compared the live env-scoring engine's pre-game ranking against actual top-20-by-total-value and `is_highest_value` outcomes. Baseline metrics: TV@20 = 10.82/20 (54.1%), HV@20 = 8.24/20 (41.2%), with pitchers occupying 54% of the model's top-10 (target ~40%) and batter same-team ties dominating the rest of the pool. Post-V10.6 metrics: TV@20 = 11.09/20 (+1.4 pp), HV@20 = 8.52/20 (+1.4 pp), HV@5 = 1.91/5 (+21% relative), pitcher share dropped to 39.7%. Diagnostic CSVs and the harness itself live in `/tmp/baseball_eval/` (manual analysis tool, not committed to the repo per the no-historical-outcome-script rule).
+
+1. **Asymmetric env ceiling — pitchers cap at 1.20, batters at 1.30 (`PITCHER_ENV_MODIFIER_CEILING = 1.20`).** Pre-V10.6 both used `ENV_MODIFIER_CEILING = 1.30`. The harness showed any confirmed favored-team starter trivially saturated all 5 pitcher env signals (weak opp OPS + high opp K% + own K/9 + pitcher-friendly park + heavy ML), giving env_factor 1.30 → EV 130 — beating every batter in the pool because batter Group A is soft-capped before reaching saturation. Tightening pitcher EV to 1.20 means batters in genuinely strong run environments (Coors shootouts, weak-bullpen games, hot-streak teams) compete on EV with the dominant favorite-team SP. Pitcher floor is unchanged at 0.70 — bad-env pitchers still get priced out symmetrically. Implemented in `_compute_base_ev` via `env_ceiling = PITCHER_ENV_MODIFIER_CEILING if candidate.is_pitcher else ENV_MODIFIER_CEILING`.
+
+2. **Opposing-starter K/9 added as Group A A6 signal in batter env (NEW SIGNAL — `BATTER_ENV_OPP_K9_*`).** Previously absent — a glaring gap surfaced by the harness. K/9 is a strikeout-rate signal: a high-K starter (≥10 K/9) suppresses contact regardless of his ERA/WHIP, so even mid-tier batters in run-friendly games (high O/U, weak bullpen) underperform when the starter is mowing them down for 6 innings. Conversely a low-K starter (≤6 K/9) means more balls in play = more BABIP variance + more counting-stat upside. Anti-aligned vs the pitcher's own scoring path: the same K/9 number that earns the pitcher full env credit zeros out the opposing batters' contact upside. Floor=10.5 / ceiling=6.5 (descending: lower K/9 = better for batter), weight=0.4 (slightly less than WHIP's 0.5 because K/9 correlates with ERA more than WHIP does — soft cap absorbs the redundancy when ERA and K/9 agree). Wired through `compute_batter_env_score`, `candidate_resolver.py`, and `pipeline.py::run_filter_strategy_from_slate`.
+
+3. **Volatility amplifier env-CONDITIONAL** (`_compute_base_ev`). Pre-V10.6 the formula was `1.0 + cv × BATTER_FORM_VOLATILITY_MAX` — always boosted volatile boom-bust hitters regardless of context. The harness diagnostic surfaced this as the "model loves Max Muncy" pattern: a high-CV batter on a heavy-favorite team in any decent matchup got the full +20% amplification, but the same batter in a tough K-pitcher matchup got the same +20% even though boom-bust profiles are exactly the wrong fit when the env is poor (they bust, hard). New formula scales the amplifier by env deviation from neutral: `amp = 1 + cv × MAX × (env_score − 0.5) × 2`. Volatile batter in great env (env=1.0) → +20%; in neutral env (env=0.5) → 1.0×; in bad env (env=0.0) → −20% penalty. Steady batters (cv≈0) are unaffected. Pitchers never carry `recent_form_cv`, so they default to 1.0 (no change).
+
+4. **`DNP_UNKNOWN_PENALTY` 0.85 → 0.93.** When the constant was set, batting orders were rare at T-65 and 15% reflected genuine uncertainty. V10.4 wired RotoWire expected-lineup scraping which now covers ~90% of teams at T-65, so `batting_order=None` correlates much more with "RotoWire missed this team" than "this batter isn't starting." The harness showed batters were systematically out-ranked by the dominant pitcher pool — every batter paid 0.85 even when env conditions were strong. Reducing to 7% lets confirmed-team batters in good env situations compete on EV with the favorite-team SP. CONFIRMED_BAD (lineup published, player absent) remains at 0.70 — that's still a real signal.
+
+V10.6 explicitly **does not** change: lineup composition (still EV-chooser between 1P+4B and 0P+5B), per-team or per-game caps, the FADE bifurcation (FADE batters out, FADE pitchers soft-penalty), the stack-eligibility two-path rule, the `STACK_BONUS` 1.20×, or any V10.5 structural rule. Only the pitcher env ceiling, the new K/9 signal, the volatility amplifier formula, and the DNP-unknown haircut change.
 
 ### V10.5 EV-Driven Composition + Bifurcated FADE + Bug Fixes (April 28 evening)
 
@@ -778,12 +860,13 @@ base_ev = env_factor × volatility_amplifier × trait_factor × context × 100
 
 | Signal | Source | Range | Role |
 |---|---|---|---|
-| env_factor | Pre-game conditions (Vegas O/U, ERA, bullpen ERA, park, weather, platoon, batting order, moneyline, series context) | 0.70–1.30 | **Primary** — 1.86× swing |
-| volatility_amplifier | Coefficient of variation of recent at-bat production (`recent_form_cv` from scoring engine, batters only — pitchers default 1.0) | 1.0–1.2 (`BATTER_FORM_VOLATILITY_MAX = 0.20`) | **Boom-or-bust amplifier** — high-variance hitters amplify env both ways |
+| env_factor (batters) | Pre-game conditions (Vegas O/U, opp ERA, opp WHIP, **opp K/9 V10.6**, bullpen ERA, park, weather, platoon, batting order, moneyline, series context) | 0.70–1.30 | **Primary** — 1.86× swing |
+| env_factor (pitchers) | Same env scoring path (own K/9, opp OPS, opp K%, ML, park, home) | 0.70–1.20 | **V10.6 asymmetric ceiling** — pitcher 1-player dependence + Group A non-soft-cap saturation made 1.30 over-reward favorite-team SP |
+| volatility_amplifier | Coefficient of variation of recent at-bat production (`recent_form_cv` from scoring engine, batters only — pitchers default 1.0) | 0.8–1.2 (`BATTER_FORM_VOLATILITY_MAX = 0.20`) | **V10.6 env-CONDITIONAL boom-or-bust amplifier** — boost in good env, penalty in bad env |
 | trait_factor | Scoring engine (FB velo/IVB/extension/whiff%/chase% for SP; avg EV/hard-hit%/barrel%/max EV for batters; 0-100) | 0.85–1.15 | **Secondary** — 1.35× swing |
-| context | stack_bonus × dnp_adj | varies | Situational modifiers |
+| context | stack_bonus × dnp_adj × pitcher_pop_penalty | varies | Situational modifiers (V10.6 dnp_adj: 0.70 / 0.93 / 1.0; V10.5 pitcher_pop_penalty: 0.85 if FADE pitcher, else 1.0) |
 
-The volatility amplifier is computed in [`_compute_base_ev`](app/services/filter_strategy.py:798) by reading `recent_form_cv` from the `recent_form` trait metadata (set in [`scoring_engine.py:528`](app/services/scoring_engine.py:528) as `std/mean` of recent at-bat production). Pitchers always score 1.0 since CV doesn't apply. Rationale: a hitter with steady singles output has low CV → no amplification; a hitter with multi-HR games sandwiched between 0-fers has high CV → env signals (good or bad) get amplified, capturing the boom/bust nature that maps directly to high real_score outcomes.
+The volatility amplifier (V10.6) is `1 + cv × BATTER_FORM_VOLATILITY_MAX × (env_score − 0.5) × 2`. `recent_form_cv` is read from the `recent_form` trait metadata (set in `scoring_engine.py` as `std/mean` of recent per-game production). Pitchers default to 1.0 since CV doesn't apply. Rationale: a hitter with steady singles output has low CV → no amplification; a hitter with multi-HR games sandwiched between 0-fers has high CV → env signals get amplified BOTH WAYS — they're rewarded when env is genuinely strong but penalised when env is weak. Pre-V10.6 the amplifier was unconditional `1 + cv × 0.20`, which over-loved Muncy/Judge/Yordan-class profiles even on slates where their actual env was poor.
 
 **Moonshot differentiation** — same candidate pool as Starting 5, but a different formula:
 ```
@@ -813,19 +896,24 @@ Structural constraints:
 
 The active optimizer produces **two lineups** from the same FADE-excluded pool via `run_dual_filter_strategy`.
 
-### EV Formula (V10.0 — env/trait-only, single source: `_compute_base_ev()`)
+### EV Formula (V10.6 — env/trait + V10.6 multipliers, single source: `_compute_base_ev()`)
 ```
-filter_ev = env_factor                           # PRIMARY: 0.70–1.30 (1.86× swing)
+filter_ev = env_factor                           # PRIMARY: pitchers 0.70–1.20, batters 0.70–1.30 (V10.6 asymmetric)
+  × volatility_amplifier                         # 1 + cv × 0.20 × (env − 0.5) × 2 — V10.6 env-conditional, batters only
   × trait_factor                                 # SECONDARY: 0.85–1.15 (1.35× swing)
-  × stack_bonus (1.20 if blowout game, else 1.0)
-  × dnp_adj (unknown=0.85, confirmed_bad=0.70)
+  × stack_bonus (1.20 if PATH 1 blowout favorite team, else 1.0)
+  × dnp_adj (V10.6: unknown=0.93, confirmed_bad=0.70, known_order=1.0)
+  × pitcher_pop_penalty (V10.5: 0.85 if pitcher AND FADE, else 1.0)
   × 100
 ```
 
 **What each term uses (pre-game data only):**
-- `env_factor`: Vegas O/U, opposing starter ERA, bullpen ERA, platoon advantage, batting order (graduated 1-9, leadoff = premium), park factor, weather (wind/temp), moneyline, series context (wins leading/trailing), recent form (L10 wins).
+- `env_factor` (batter): Vegas O/U, opposing starter ERA, opposing starter WHIP, **opposing starter K/9 (V10.6)**, bullpen ERA, platoon advantage, batting order (graduated 1-9, top-of-order = premium), park factor, weather (wind/temp), moneyline, series context, L10 form. Caps at 1.30.
+- `env_factor` (pitcher): own K/9, opposing OPS, opposing K%, park, ML favorite, home field. Caps at 1.20 (V10.6 — pitcher 1-player dependence makes the saturation case dominate batters at 1.30).
 - `trait_factor` (pitcher): FB velocity, induced vertical break, extension, whiff %, chase % (Statcast kinematics — 70% weight); K/9 (30% weight). Falls back to K/9-only when Savant has no row yet (new call-ups).
 - `trait_factor` (batter): avg exit velocity (8 pts), hard-hit % (7), barrel % (6), max EV (2), HR/PA (2) — normalised over the POWER_PROFILE_DENOM of 25. Missing sub-signals drop out of both numerator and denominator so rookies with partial Savant coverage aren't penalised.
+- `volatility_amplifier`: V10.6 amplifies env signal in good matchups, penalises in bad. Pitchers always 1.0 (no recent_form_cv).
+- `pitcher_pop_penalty`: V10.5 — FADE-classified pitchers pay 15%; FADE batters never reach EV (excluded by `_exclude_fade_players`).
 
 card_boost and draft counts **are not present on `FilteredCandidate` at all**. The optimizer is structurally incapable of reading them. The router joins them onto the response from the source `FilterCard` for display only.
 
@@ -879,7 +967,7 @@ Each lineup is either **1 SP + 4 batters** or **0 SP + 5 batters** — the EV-dr
 - `_compute_base_ev()` — Shared formula: env × trait × context × 100
 - `_compute_filter_ev()` — Starting 5 EV (delegates to `_compute_base_ev`)
 - `_compute_moonshot_filter_ev()` — Moonshot EV (delegates to `_compute_base_ev` + sharp/explosive bonuses)
-- `_compute_dnp_adjustment()` — Bifurcated DNP risk (unknown=0.85, confirmed_bad=0.70)
+- `_compute_dnp_adjustment()` — Bifurcated DNP risk (V10.6: unknown=0.93, confirmed_bad=0.70)
 - `_compute_stack_eligible_teams()` — Returns the set of team abbreviations whose game clears the moneyline AND Vegas-total stacking gate
 - `_team_batter_cap()` — Returns the per-team batter cap (4 for stack-eligible, 1 otherwise)
 - `_enforce_composition()` — Phase 1 picks highest-EV pitcher; Phase 2 fills 4 batters with conditional per-team caps. Raises `ValueError` if pool has no pitcher.

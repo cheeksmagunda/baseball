@@ -47,15 +47,19 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.mlb_api import TEAM_ABBR_BY_MLB_ID
 from app.core.statcast import (
+    _batter_expected_stats_table,
     _batter_kinematics_table,
     _pitcher_arsenal_velocity_table,
+    _pitcher_expected_stats_table,
     _pitcher_movement_table,
     _pitcher_percentile_table,
+    _team_catcher_framing_table,
     _col,
 )
 from app.database import SessionLocal
-from app.models.player import Player, PlayerStats
+from app.models.player import Player, PlayerStats, TeamSeasonStats
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +208,112 @@ def refresh_pitcher_kinematics(db: Session, season: int) -> int:
     return updated
 
 
+def refresh_batter_expected_stats(db: Session, season: int) -> int:
+    """V10.8 — pull Savant's batter expected-stats leaderboard, upsert
+    x_woba/x_ba/x_slg onto PlayerStats."""
+    df = _batter_expected_stats_table(season)
+    id_col = _col(df, "player_id", "batter", "mlb_id")
+    if id_col is None:
+        raise RuntimeError(
+            f"Batter expected-stats leaderboard missing id column "
+            f"(columns: {list(df.columns)[:10]})"
+        )
+    updated = 0
+    for _, row in df.iterrows():
+        mlb_id = row[id_col]
+        if pd.isna(mlb_id):
+            continue
+        ps = _upsert_stats_row(db, int(mlb_id), season)
+        if ps is None:
+            continue
+        ps.x_woba = _safe_float(row.get("est_woba"))
+        ps.x_ba = _safe_float(row.get("est_ba"))
+        ps.x_slg = _safe_float(row.get("est_slg"))
+        updated += 1
+    db.commit()
+    return updated
+
+
+def refresh_pitcher_expected_stats(db: Session, season: int) -> int:
+    """V10.8 — pull Savant's pitcher expected-stats leaderboard, upsert
+    x_era and x_woba_against onto PlayerStats."""
+    df = _pitcher_expected_stats_table(season)
+    id_col = _col(df, "player_id", "pitcher", "mlb_id")
+    if id_col is None:
+        raise RuntimeError(
+            f"Pitcher expected-stats leaderboard missing id column "
+            f"(columns: {list(df.columns)[:10]})"
+        )
+    updated = 0
+    for _, row in df.iterrows():
+        mlb_id = row[id_col]
+        if pd.isna(mlb_id):
+            continue
+        ps = _upsert_stats_row(db, int(mlb_id), season)
+        if ps is None:
+            continue
+        ps.x_era = _safe_float(row.get("xera"))
+        ps.x_woba_against = _safe_float(row.get("est_woba"))
+        updated += 1
+    db.commit()
+    return updated
+
+
+def refresh_team_catcher_framing(db: Session, season: int) -> int:
+    """V10.8 — pull Savant's team-level catcher framing leaderboard, upsert
+    framing_runs / framing_strike_pct / framing_pitches onto TeamSeasonStats.
+
+    The Savant page exposes 30 team rows with `team_id`, `pitches`, `rv_tot`,
+    `pct_tot`.  We resolve `team_id` → 3-letter abbreviation via TEAM_ABBR_BY_MLB_ID
+    and upsert one row per team.
+
+    Fails loud: a fetch or parse failure raises and bubbles up to `main()`,
+    which exits non-zero so the slate monitor calls `lineup_cache.mark_failed()`.
+    Per CLAUDE.md "fail loud, never fallback" — Savant is fully public and
+    always live; a network or schema failure is a real problem that must be
+    fixed, not silently swallowed.  The framing adjustment is small (±5% on
+    pitcher k_rate) but the system shouldn't lie about which signals fired.
+
+    Returns the count of upserted team rows.  Zero updates is acceptable
+    (early-season corner case, no team rows yet); only an actual fetch /
+    parse failure aborts.
+    """
+    df = _team_catcher_framing_table(season)
+
+    updated = 0
+    for _, row in df.iterrows():
+        team_id = row.get("team_id")
+        if team_id in (None, "") or pd.isna(team_id):
+            continue
+        abbr = TEAM_ABBR_BY_MLB_ID.get(int(team_id))
+        if abbr is None:
+            continue
+        rv_tot = _safe_float(row.get("rv_tot"))
+        pct_tot = _safe_float(row.get("pct_tot"))
+        pitches_raw = row.get("pitches")
+        try:
+            pitches = int(pitches_raw) if pitches_raw not in (None, "") else None
+        except (TypeError, ValueError):
+            pitches = None
+
+        tss = (
+            db.query(TeamSeasonStats)
+            .filter_by(team=abbr, season=season)
+            .first()
+        )
+        if tss is None:
+            tss = TeamSeasonStats(team=abbr, season=season)
+            db.add(tss)
+        tss.framing_runs = rv_tot
+        tss.framing_strike_pct = pct_tot
+        tss.framing_pitches = pitches
+        from datetime import datetime as _dt
+        tss.updated_at = _dt.utcnow()
+        updated += 1
+    db.commit()
+    return updated
+
+
 def main() -> int:
     logging.basicConfig(
         level=logging.INFO,
@@ -226,19 +336,38 @@ def main() -> int:
     try:
         batter_updates = refresh_batter_kinematics(db, season)
         pitcher_updates = refresh_pitcher_kinematics(db, season)
+        # V10.8 additions — xStats + team framing.  These are independent
+        # tables/columns from the kinematics path, so a partial failure on
+        # one doesn't corrupt the others.  The xStats pulls are mandatory
+        # (we count them in the sanity floor); framing is best-effort
+        # because the team scrape is a separate Savant page.
+        batter_xstats_updates = refresh_batter_expected_stats(db, season)
+        pitcher_xstats_updates = refresh_pitcher_expected_stats(db, season)
+        framing_updates = refresh_team_catcher_framing(db, season)
     finally:
         db.close()
 
     logger.info(
-        "Statcast refresh done: batters updated=%d, pitchers updated=%d",
-        batter_updates, pitcher_updates,
+        "Statcast refresh done: batters kinematics=%d xStats=%d, pitchers kinematics=%d xStats=%d, team framing=%d",
+        batter_updates, batter_xstats_updates,
+        pitcher_updates, pitcher_xstats_updates,
+        framing_updates,
     )
-    # Sanity floor: if EITHER leaderboard returns zero updates, something is
-    # wrong (wrong season, schema change, or ID-join mismatch).  Fail loudly.
+    # Sanity floor: kinematics + xStats must update SOMETHING.  Framing is
+    # tolerated at 0 (Savant team-scrape can fail without breaking us; a
+    # team-framing miss just means the V10.8 framing adjustment falls
+    # through to neutral for that slate cycle).
     if batter_updates == 0 or pitcher_updates == 0:
         logger.error(
-            "Statcast refresh produced zero updates on one or both leaderboards — "
-            "inspect column naming and Player.mlb_id coverage."
+            "Statcast refresh produced zero updates on one or both kinematics "
+            "leaderboards — inspect column naming and Player.mlb_id coverage."
+        )
+        return 1
+    if batter_xstats_updates == 0 or pitcher_xstats_updates == 0:
+        logger.error(
+            "Statcast xStats refresh produced zero updates — inspect Savant "
+            "expected-stats column names (est_woba, est_ba, est_slg, xera) and "
+            "Player.mlb_id coverage."
         )
         return 1
     return 0

@@ -50,9 +50,15 @@ def _build_starter_stats_cache(
 ) -> dict[str, dict]:
     """Batch-fetch stats for every probable starter on *games* in 2 SQL queries.
 
-    Returns {starter_name: {"era", "whip", "k_per_9", "pitch_hand", "player_id"}}.
-    Starters with no matching Player/PlayerStats map to an empty dict so callers
-    can safely do cache.get(name, {}).get("era").
+    Returns {starter_name: {"era", "whip", "k_per_9", "x_era",
+    "x_woba_against", "pitch_hand", "player_id"}}.  Starters with no matching
+    Player/PlayerStats map to an empty dict so callers can safely do
+    cache.get(name, {}).get("era").
+
+    V10.8 — added x_era and x_woba_against (Statcast expected stats).  These
+    flow from the cache into `opp_pitcher_stats` for batter scoring, where
+    `score_batter_matchup` uses them as the simplified pitch-arsenal-
+    effectiveness signal.
     """
     starters: list[tuple[str, str, str]] = []  # (raw_name, team, normalized_name)
     for g in games:
@@ -94,6 +100,10 @@ def _build_starter_stats_cache(
             "era": ps.era if ps else None,
             "whip": ps.whip if ps else None,
             "k_per_9": ps.k_per_9 if ps else None,
+            # V10.8 expected-stats — None when no Savant row yet (rookies
+            # pre-50 PA); score_batter_matchup falls through cleanly.
+            "x_era": ps.x_era if ps else None,
+            "x_woba_against": ps.x_woba_against if ps else None,
             "pitch_hand": player.pitch_hand,
             "player_id": player.id,
         }
@@ -235,6 +245,26 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
 
     starter_stats_cache = _build_starter_stats_cache(db, games, game_date.year)
 
+    # V10.8 — team framing-runs lookup for the catcher-framing adjustment in
+    # score_pitcher_k_rate.  Single SQL query, keyed by team abbreviation.
+    # Empty dict when TeamSeasonStats hasn't been populated yet (first slate
+    # before refresh_statcast.py has run); the framing adjustment falls
+    # through to no-op.
+    from app.models.player import TeamSeasonStats as _TSS
+    teams_in_slate = {g.home_team.upper() for g in games} | {g.away_team.upper() for g in games}
+    team_framing_lookup: dict[str, float] = {}
+    if teams_in_slate:
+        for row in (
+            db.query(_TSS)
+            .filter(
+                _TSS.team.in_(teams_in_slate),
+                _TSS.season == game_date.year,
+            )
+            .all()
+        ):
+            if row.framing_runs is not None:
+                team_framing_lookup[row.team.upper()] = row.framing_runs
+
     # Ensure idempotency: remove any scores from a prior run of this slate.
     slate_player_ids = [sp.id for sp in slate_players]
     if slate_player_ids:
@@ -296,6 +326,7 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
             wind_speed_mph=game.wind_speed_mph,
             wind_direction=game.wind_direction,
             temperature_f=game.temperature_f,
+            team_framing_runs=team_framing_lookup.get(player.team.upper()),
         )
 
         # Store in DB
@@ -454,11 +485,13 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             is_home = game.home_team == player.team
             opp_era = game.away_starter_era if is_home else game.home_starter_era
             opp_whip = game.away_starter_whip if is_home else game.home_starter_whip
+            opp_k9 = game.away_starter_k_per_9 if is_home else game.home_starter_k_per_9
             team_ml = game.home_moneyline if is_home else game.away_moneyline
             opp_bp_era = game.away_bullpen_era if is_home else game.home_bullpen_era
             series_team_w: int | None = game.series_home_wins if is_home else game.series_away_wins
             series_opp_w: int | None = game.series_away_wins if is_home else game.series_home_wins
             team_l10: int | None = game.home_team_l10_wins if is_home else game.away_team_l10_wins
+            opp_rest: int | None = game.away_team_rest_days if is_home else game.home_team_rest_days
             env_score, env_factors, _unknown = compute_batter_env_score(
                 vegas_total=game.vegas_total,
                 opp_pitcher_era=opp_era,
@@ -474,6 +507,8 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 series_opp_wins=series_opp_w,
                 team_l10_wins=team_l10,
                 opp_starter_whip=opp_whip,
+                opp_starter_k_per_9=opp_k9,
+                opp_team_rest_days=opp_rest,
             )
 
         # Store env_score on slate player for reference

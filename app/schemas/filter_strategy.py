@@ -42,6 +42,9 @@ class GameEnvironment(BaseModel):
     series_away_wins: int | None = None
     home_team_l10_wins: int | None = None
     away_team_l10_wins: int | None = None
+    # V10.8 — calendar days since each team's last completed game (0 = back-to-back).
+    home_team_rest_days: int | None = None
+    away_team_rest_days: int | None = None
 
 
 class FilterCard(BaseModel):

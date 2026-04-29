@@ -85,6 +85,18 @@ class SlateGame(Base):
     home_team_l10_wins: Mapped[int | None] = mapped_column(Integer, nullable=True)
     away_team_l10_wins: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # V10.8 — opponent rest days (days since each team's most recent completed
+    # game).  Derived from the same schedule lookback that populates series
+    # context, so adds zero new MLB API calls.  0 = back-to-back game (played
+    # yesterday), 1 = one rest day, etc.  None = no completed games found in
+    # the lookback window (early-season corner case).  Per FantasyLabs DFS
+    # research, hitters facing pitchers whose team has 0 rest days
+    # (back-to-back) have a small but real edge — opposing bullpen is
+    # depleted and starters are on a tighter pitch leash.  Wired into batter
+    # env Group A as a tiny additive bonus when opp_team_rest_days <= 0.
+    home_team_rest_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    away_team_rest_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     slate: Mapped["Slate"] = relationship(back_populates="games")
 
     def get_context_for_team(self, team: str) -> dict:

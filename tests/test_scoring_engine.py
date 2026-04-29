@@ -11,6 +11,7 @@ from app.services.scoring_engine import (
     score_lineup_position,
     score_ballpark_factor,
     score_hot_streak,
+    score_batter_matchup,
 )
 
 
@@ -166,6 +167,63 @@ def test_score_pitcher_forwards_opp_team_to_matchup():
     matchup = next(t for t in result.traits if t.name == "matchup_quality")
     assert matchup.raw_value is not None
     assert matchup.raw_value.startswith("vs ")
+
+
+# ---------------------------------------------------------------------------
+# V10.6 batter K-vulnerability sub-signal
+#
+# Cross-axis penalty: high-K batter × elite K-pitcher = floor risk (0-fer).
+# Both have to be high; either side alone passes through.
+# ---------------------------------------------------------------------------
+
+
+def _high_k_bat() -> PlayerStats:
+    """Joey Gallo / Schwarber-class profile — 33% K rate."""
+    return PlayerStats(id=10, player_id=10, season=2026, pa=300, ab=260, so=100)
+
+
+def _contact_bat() -> PlayerStats:
+    """Arraez / Tucker-class — 12% K rate, well below the floor."""
+    return PlayerStats(id=11, player_id=11, season=2026, pa=300, ab=270, so=36)
+
+
+def test_k_vuln_fires_only_on_high_k_bat_vs_high_k_pitcher():
+    """The full penalty fires only when BOTH batter K% and opp K/9 are high.
+    Otherwise the cross product is small and the matchup score is preserved."""
+    high_k_pitcher = {"era": 3.0, "whip": 1.10, "k_per_9": 11.5}
+    contact_pitcher = {"era": 3.0, "whip": 1.10, "k_per_9": 6.5}
+
+    # Hi-K bat vs hi-K pitcher → cross fires → matchup score ↓
+    danger = score_batter_matchup(high_k_pitcher, "L", 20.0, batter_stats=_high_k_bat())
+    # Hi-K bat vs contact pitcher → batter K-vuln muted (no cross K-arm)
+    safe_pitcher = score_batter_matchup(contact_pitcher, "L", 20.0, batter_stats=_high_k_bat())
+    # Contact bat vs hi-K pitcher → batter floor protects, no cross
+    safe_bat = score_batter_matchup(high_k_pitcher, "L", 20.0, batter_stats=_contact_bat())
+
+    assert danger.score < safe_pitcher.score, (
+        "High-K bat vs elite K-arm must score worse than the same bat vs a contact pitcher"
+    )
+    assert danger.score < safe_bat.score, (
+        "High-K bat vs elite K-arm must score worse than a contact bat vs the same pitcher"
+    )
+
+
+def test_k_vuln_skipped_when_batter_has_no_pa():
+    """Rookie batters with PA=0 must not divide-by-zero or fire a phantom penalty."""
+    rookie = PlayerStats(id=12, player_id=12, season=2026, pa=0, so=0)
+    pitcher = {"era": 3.0, "whip": 1.10, "k_per_9": 11.5}
+    result = score_batter_matchup(pitcher, "L", 20.0, batter_stats=rookie)
+    # Should fall back to the era+whip-only blend; no K-vuln in the detail string.
+    assert "K-vuln" not in result.raw_value
+
+
+def test_k_vuln_skipped_when_opp_k9_unknown():
+    """If we don't have opp K/9, K-vuln cannot evaluate and must drop out cleanly."""
+    bat = _high_k_bat()
+    pitcher = {"era": 3.0, "whip": 1.10}  # no k_per_9
+    result = score_batter_matchup(pitcher, "L", 20.0, batter_stats=bat)
+    assert "K-vuln" not in result.raw_value
+    assert result.score > 0
 
 
 def test_batter_full_score():

@@ -39,14 +39,14 @@ See CLAUDE.md § "T-65 Sniper Architecture" for complete timing details.
 
 1. **Collect** (`app/services/data_collection.py`) — Fetch fresh MLB schedule, player stats, game context, Vegas lines, and **RotoWire expected lineups** for batting-order enrichment (see V10.3 below)
 2. **Score** (`app/services/scoring_engine.py`) — Rate each player 0-100 via trait-based profiling (pitchers: 5 traits, batters: 7 traits)
-3. **Filter** (`app/services/filter_strategy.py`) — Apply V10.5 strategy: exclude FADE batters (FADE pitchers stay with a soft 15% EV haircut), score env/trait EV with Statcast kinematics, enforce composition rules with two-path stacking
+3. **Filter** (`app/services/filter_strategy.py`) — Apply V10.8 strategy: exclude FADE batters (FADE pitchers stay with a soft 15% EV haircut), score env/trait EV with Statcast kinematics + Statcast xStats (xwOBA / xERA) + opp-K/9 batter penalty + opp-arsenal-effectiveness signal + small ±5% catcher-framing scaling on pitcher k_rate + opp-back-to-back bonus, enforce composition rules with two-path stacking. Pitcher env is capped 20% tighter than batter env (V10.6) so dominant favorite-team starters don't auto-stuff the top-10. V10.7 removed three INVERTED signals (team L10 momentum, series lead, heavy-favorite pitcher ML) that were pushing the model in the wrong direction.
 4. **Optimize** (`app/routers/filter_strategy.py` → `run_dual_filter_strategy`) — Produce Starting 5 + Moonshot lineups (each independently chooses 1P+4B or 0P+5B by total EV), freeze in cache
 
 The primary optimization path is `filter_strategy`. The `/api/pipeline/*` manual endpoints exist for post-slate testing only and are gated to prevent mid-slate interference.
 
 ### Philosophy
 
-It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor). High-media-attention batters (FADE) are excluded; high-media-attention pitchers stay in the pool with a soft 15% EV haircut (V10.5 — pitcher outcomes are one-player-dependent, the crowd is less wrong about them). **Historical stats are reference data only — they never feed the live scoring pipeline directly.**
+It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor). High-media-attention batters (FADE) are excluded; high-media-attention pitchers stay in the pool with a soft 15% EV haircut (V10.5 — pitcher outcomes are one-player-dependent, the crowd is less wrong about them). V10.6 added two structural fixes — pitchers cap at a tighter env ceiling (1.20× vs batter 1.30×) so confirmed favorite-team starters don't auto-saturate the top-10, and opposing-starter K/9 was added as a Group A signal so high-K aces correctly suppress the contact-floor of the batters they're facing. V10.7 ran a fresh-eyes feature audit on the 33-slate corpus and removed three INVERTED signals — pitcher heavy-favorite ML (peak is at mild fav, not heavy), team L10 momentum (cold teams produce more individual HV than hot teams), and series lead (trailing teams produce more than leading) — all of which were actively pushing the model in the wrong direction. **Historical stats are reference data only — they never feed the live scoring pipeline directly.**
 
 Stacking (multiple batters from the same team) is powerful but correlated. V10.2 unlocks a **mini-stack** (cap 2 per team, cap 2 per game) via two paths:
 - **PATH 1** — `moneyline ≤ -200` AND `vegas_total ≥ 9.0` (favored side only, earns +20% STACK_BONUS)
@@ -68,16 +68,16 @@ See `app/core/rotowire.py` for the parser and `app/services/data_collection.py::
 | Trait | Default Weight | What It Measures |
 |---|---|---|
 | ace_status | 25 | ERA-based rotation rank proxy |
-| k_rate | 25 | **Statcast (FB velo / IVB / extension / whiff% / chase% — 70% weight) + K/9 (30%)** |
+| k_rate | 25 | **Statcast (FB velo / IVB / extension / whiff% / chase% — 70% weight) + K/9 (30%)**. V10.8 applies a small ±5% scaling based on the pitcher's team catcher-framing aggregate (TruMedia: 3.9% K-rate per framing run; capped conservatively for 2026 ABS era). |
 | matchup_quality | 20 | Opponent offensive weakness |
 | recent_form | 15 | Last 3 starts quality |
-| era_whip | 15 | Combined ERA + WHIP |
+| era_whip | 15 | **V10.8: live ERA (45%) + WHIP (30%) + xERA (25%)** — xERA flags regression candidates when live ERA disagrees with Statcast expected ERA |
 
 ### Batter Traits (7 traits, 0-100 total)
 | Trait | Default Weight | What It Measures |
 |---|---|---|
-| power_profile | 25 | **avg EV (8 pts) / hard-hit% (7) / barrel% (6) / max EV (2) / HR/PA (2)** |
-| matchup_quality | 20 | Opposing pitcher weakness |
+| power_profile | 25 | **avg EV (7 pts) / hard-hit% (7) / barrel% (6) / V10.8 xwOBA (4) / max EV (1)** — xwOBA is Statcast expected wOBA, the contact-quality leading indicator |
+| matchup_quality | 20 | Opposing pitcher weakness — opp ERA (30%), opp WHIP (18%), hand-split OPS (27%), V10.6 K-vulnerability (15%, batter K% × opp K/9 cross-penalty for the 0-for-4-with-3K floor), **V10.8 arsenal effectiveness (10%, opp xwOBA-against — captures how well the pitcher's overall arsenal suppresses contact regardless of BABIP/sequencing luck)**. Sub-signals fall through cleanly when missing (rookie batter no PA, opp pitcher no Savant row). |
 | lineup_position | 15 | Batting order (slots 1-4 = equal max) |
 | recent_form | 15 | Last 7 games production |
 | ballpark_factor | 10 | Home park HR factor |
@@ -86,7 +86,23 @@ See `app/core/rotowire.py` for the parser and `app/services/data_collection.py::
 
 The scoring engine outputs a **0-100 ranking signal**, not an RS prediction.
 
-**Statcast kinematics** (exit velocity, barrel %, hard-hit %, FB velocity, induced vertical break, extension, whiff %, chase %) are populated by `scripts/refresh_statcast.py`. It fires automatically inside the slate monitor's Phase 2 as a detached background task — the monitor enters its T-65 sleep, and the refresh bulk-loads Baseball Savant's season leaderboards in parallel. On a typical day Phase 2 has hours of runway before T-65, so the refresh finishes long before the lock. The T-65 pipeline then reads the kinematic columns straight from the DB with zero Savant calls. No fixed cron, no Railway UI config — merge and deploy, the next slate fires the refresh on its own. When no Savant row exists yet (new call-ups pre-50 BBE), the engine transparently falls back to the non-Statcast path; true zero-data rookies (MLB debuts) receive the UNKNOWN_SCORE_RATIO baseline so env + popularity + park can still promote them (strategy doc §"Rookie Variance Void").
+**Statcast kinematics** (exit velocity, barrel %, hard-hit %, FB velocity, induced vertical break, extension, whiff %, chase %) — plus **V10.8 expected stats** (xwOBA, xBA, xSLG for batters; xERA, xwOBA-against for pitchers) and **V10.8 team catcher framing** — are populated by `scripts/refresh_statcast.py`. It fires automatically inside the slate monitor's Phase 2 as a detached background task — the monitor enters its T-65 sleep, and the refresh bulk-loads Baseball Savant's season leaderboards (kinematics + xStats + framing) in parallel. On a typical day Phase 2 has hours of runway before T-65, so the refresh finishes long before the lock. The T-65 pipeline then reads the columns straight from the DB with zero Savant calls. No fixed cron, no Railway UI config — merge and deploy, the next slate fires the refresh on its own. When no Savant row exists yet (new call-ups pre-50 BBE), the engine transparently falls back to the non-Statcast path; true zero-data rookies (MLB debuts) receive the UNKNOWN_SCORE_RATIO baseline so env + popularity + park can still promote them (strategy doc §"Rookie Variance Void").
+
+### Fail-loud T-65 data fetch (V10.8 audit)
+
+Every live-data fetch path used by the T-65 pipeline either succeeds and produces data, or fails loud — there is no silent fallback that lets the pipeline produce lineups built on partial data. The fail modes:
+
+| Path | Failure → behaviour |
+|---|---|
+| Alembic migration (startup) | App lifespan crashes; Railway restarts and operator sees the failure |
+| V10.8 schema-drift smoke check (startup, in `app/main.py`) | `RuntimeError` if expected `player_stats` / `slate_games` columns or `team_season_stats` table are missing — catches a bad migration before the slate monitor is even spawned |
+| Statcast kinematics + xStats refresh (in-monitor Phase 2) | `scripts/refresh_statcast.py` exits non-zero on schema drift, network failure, or zero rows updated → `_refresh_statcast_background` calls `lineup_cache.mark_failed()` → `/optimize` returns 503 |
+| Team catcher framing scrape (V10.8) | Direct Savant CSV/JSON scrape; HTTP error or page-schema change raises and bubbles up to `main()` exit-1 → same mark-failed path. Zero updates is acceptable (early-season pre-data) |
+| Vegas lines (Odds API) | `enrich_slate_game_vegas_lines` raises if `BO_ODDS_API_KEY` missing, quota exhausted, or any game without lines — pipeline aborts, `/optimize` returns 503 |
+| Weather (Open-Meteo) | `enrich_slate_game_weather` raises if any game's weather can't be fetched |
+| Series context + L10 + V10.8 opp-rest-days | `enrich_slate_game_series_context` raises if any team's schedule lookback fails. Date parsing for rest-days has no try/except — a malformed MLB ISO date propagates |
+| Team batting / pitching stats | `enrich_slate_game_team_stats` raises if any field NULL post-fetch |
+| RotoWire expected lineups (V10.4) | Best-effort — failure logs loudly but doesn't abort. Missing batting orders fall through to `DNP_UNKNOWN_PENALTY` (0.93 in V10.6). The only intentional graceful-degradation path |
 
 **Important:** `card_boost` is revealed during/after the draft and is **structurally absent from `FilteredCandidate`** — the optimizer cannot read it even by accident. League-average defaults (ERA, WHIP, OPS, K%) and all scaling thresholds are centralized in `app/core/constants.py`. Env-score functions use shared `graduated_scale()` helpers in `app/core/utils.py`.
 
@@ -116,9 +132,9 @@ A fifth signal source used exclusively by the Moonshot lineup:
 
 If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +35% EV boost in Moonshot only.
 
-## Dual-Lineup Optimizer (V10.5)
+## Dual-Lineup Optimizer (V10.8)
 
-The optimizer produces **two lineups** from the same ranked candidate pool. Each lineup independently chooses its shape — **1 SP + 4 batters** (anchored) or **0 SP + 5 batters** (pure-batter shootout) — based on slot-weighted total EV (V10.5):
+The optimizer produces **two lineups** from the same ranked candidate pool. Each lineup independently chooses its shape — **1 SP + 4 batters** (anchored) or **0 SP + 5 batters** (pure-batter shootout) — based on slot-weighted total EV (V10.5/V10.6):
 
 | Lineup | Possible shapes | Strategy | Popularity handling | Edge |
 |---|---|---|---|---|
@@ -135,15 +151,19 @@ base_ev = env_factor × volatility_amplifier × trait_factor × stack_bonus × d
 
 | Signal | Range | Role |
 |---|---|---|
-| env_factor | 0.70–1.30 | Primary — game conditions (Vegas O/U, ERA, bullpen, park, weather, batting order, ML, series context, recent form) |
-| volatility_amplifier | 1.0–1.2 (batters only) | Boom-or-bust amplifier — recent_form CV, lets high-variance hitters amplify env both ways |
+| env_factor (batters) | 0.70–1.30 | Primary — game conditions (Vegas O/U, opp ERA, opp WHIP, opp K/9, bullpen, park, weather, batting order, ML, series context, recent form) |
+| env_factor (pitchers) | 0.70–1.20 | V10.6 — tighter ceiling than batters; prevents favorite-team SP saturation from stuffing top-10 |
+| volatility_amplifier | 0.8–1.2 (batters only) | V10.6 env-CONDITIONAL boom-or-bust amplifier — high-CV hitters get +20% in good env, −20% in bad env. Pre-V10.6 was unconditional +20%, which over-loved Muncy/Judge/Yordan-class profiles regardless of matchup |
 | trait_factor | 0.85–1.15 | Secondary — Statcast pitch physics (SP) or exit-velocity kinematics (batters), 0-100 scale |
 | stack_bonus | 1.0 or 1.20 | PATH 1 blowout-favorite bonus (gated) |
-| dnp_adj | 0.70 / 0.85 / 1.00 | Confirmed-bad / unknown / known batting order |
+| dnp_adj | 0.70 / 0.93 / 1.00 | Confirmed-bad / unknown / known batting order. V10.6 lifted UNKNOWN from 0.85 → 0.93 because RotoWire (V10.4) covers ~90% of teams at T-65, so the missing-batting-order state is now mostly "RotoWire missed this team", not "this batter isn't starting" |
+| pitcher_pop_penalty | 0.85 (FADE pitcher) / 1.00 | Soft 15% haircut for FADE-classified pitchers (V10.5). FADE batters are excluded entirely upstream of EV |
 
 **Key optimizer behaviors:**
 - **EV-driven shape (V10.5)**: each lineup builds both a 1P+4B and a 0P+5B variant and returns the higher slot-weighted total EV. Tiebreak → pitcher variant.
-- **Pitcher anchor (when present)**: highest-EV pitcher pinned to Slot 1 (2.0×). FADE pitchers stay in the pool with a 15% EV haircut.
+- **Pitcher anchor (when present)**: highest-EV pitcher pinned to Slot 1 (2.0×). FADE pitchers stay in the pool with a 15% EV haircut. V10.6 caps pitcher env at 1.20× so the saturation no longer crowds out batter slots.
+- **Pitcher-batter parity (V10.6)**: opposing-starter K/9 added to batter env Group A — high-K aces (≥10 K/9) zero out the contact-floor of the batters they face. Anti-aligned with the pitcher's own scoring path: the same K/9 number that earns the pitcher full env credit penalises every opposing batter.
+- **Volatility amplifier env-conditional (V10.6)**: high-CV boom-or-bust batters get amplified in good env but penalised in bad env. Boom-bust profiles in tough K-pitcher matchups now correctly de-rank.
 - **Stack eligibility**: PATH 1 (ML ≤ -200 AND O/U ≥ 9.0) gives the favored side mini-stack rights + STACK_BONUS. PATH 2 (O/U ≥ 10.5) gives both sides mini-stack rights without the bonus.
 - **Per-team cap**: 2 batters from a stack-eligible team, 1 from every other team.
 - **Per-game cap**: 2 batters per game (always — prevents mixed-side clumps in a single game).
@@ -152,11 +172,25 @@ base_ev = env_factor × volatility_amplifier × trait_factor × stack_bonus × d
 ## Strategy Insights — what 33 slates of data tell us
 
 - **Two-path stacking captures the highest-leverage games.** PATH 2 shootouts (O/U ≥ 10.5) yield 2.31 HV per game vs 1.22 baseline (+89%); PATH 1 blowouts yield 1.50 HV per game (+23%). The mini-stack cap of 2 captures the correlation edge without committing too much of the lineup to one game.
-- **Mild favorites produce more HV than heavy favorites.** Across all 33 slates, teams with ML -110 to -169 (mild favorite) yield ~1.30 HV per game; teams with ML -200 to -250 (strong favorite) yield only 1.14. V10.4 recalibrated `BATTER_ENV_ML_*` to reward this band rather than over-rewarding heavy blowouts.
-- **Batter ML is largely redundant with opp-pitcher ERA.** A bigger favorite usually means a worse opposing starter — that's already scored directly. The V10.4 ML range is centered to capture the *competitive-game* effect (more PAs, late-inning leverage) without double-counting opposing-SP weakness.
-- **Slot sequencing**: Slot 1 is always the anchor pitcher. Among batters in Slots 2–5, picks are sorted by `filter_ev` descending — the highest-EV batter takes Slot 2 (1.8×), tail batters fill the lower slots.
+- **Mild-favorite pitchers crush heavy-favorite pitchers (V10.7 fix).** Bucketing pitcher's-team ML by quartile: heavy fav (-310 to -168) mean_rs **3.12** / HV-rate **12.7%**; mild fav (-164 to -120) mean_rs **4.20** / HV-rate **38.2%**. Heavy favorites generate blowouts where the starter gets pulled in the 5th-6th inning before K/win-bonus stack up. V10.7 tightened `PITCHER_ENV_ML_CEILING` from -220 to -150 so the curve saturates at the mild-fav peak.
+- **Team momentum signals are INVERTED at the individual-RS level (V10.7 fix).** The L10-wins bucketing showed cold teams (0-4 wins) mean_rs **2.86** vs hot teams (7-10 wins) **2.40** — the opposite of the V10.2 assumption. Same inversion on series lead. Likely mechanism: hot/leading teams have multiple contributors so HV is spread thin; cold/trailing teams have one star carrying the offense. V10.7 neutralised both signals (set bonuses/penalties to 0.0) rather than reversing them — conservative call given the 33-slate sample.
+- **Vegas O/U is barely a player-level signal (V10.8 down-weight).** Bucketing 983 batter-slates by O/U: Q1 (6.5-7.5) mean_rs 2.35; Q4 (9.0+) mean_rs 2.62 — a 1.04× swing, barely above noise. Treated as PRIMARY pre-V10.8 (full 1.0 weight in Group A) alongside ERA/ML/bullpen; V10.8 dropped to 0.5 (matching WHIP). Logic: O/U bakes in BOTH teams' offenses; direct opp-pitcher signals (ERA, WHIP, K/9) carry the matchup-specific information.
+- **Pitchers were saturating the top-10 (V10.6 fix).** An offline harness against the same 33-slate corpus showed 54% of model top-10 were pitchers (target ~40% given ~50% of HV slots historically go to batters). Tightening the pitcher env ceiling to 1.20× and refining DNP_UNKNOWN_PENALTY brought pitcher share to 39.7%.
+- **V10.8 sustainable signal expansion**: added Statcast xStats (xwOBA / xERA), opp-arsenal-effectiveness via xwOBA-against, conservative ±5% catcher framing scaling, and opponent rest days. xStats are research-backed industry-standard predictive metrics; framing is throttled for the 2026 ABS Challenge System era; opp rest days substitutes for own-rest-days (which FanGraphs research shows has no edge for starters).
+- **Cumulative eval impact**: V10.5 baseline HV@20 = 8.24/20. V10.6 → 8.73/20. V10.7 → 9.15/20. **V10.8 → 9.18/20** (above the 8-9 target). The V10.8 lift is small in eval because historicals don't yet have the new fields populated; live impact will be larger once the refresh script populates xStats/framing on the next slate cycle.
+- **Slot sequencing**: Slot 1 is always the anchor pitcher (when present). Among batters in Slots 2–5, picks are sorted by `filter_ev` descending — the highest-EV batter takes Slot 2 (1.8×), tail batters fill the lower slots.
 
-> **Strategy details by version:** see CLAUDE.md § "V10.5 EV-Driven Composition + Bifurcated FADE", "V10.4 Pre-Card Lineup Harvesting + Decoupled Batter ML", "V10.3 Calibration", "V10.2 Calibration Changes", "V10.1 Structural Changes", "V10.0 Core Architecture".
+> **Strategy details by version:** see CLAUDE.md § "V10.8 Sustainable Signal Expansion", "V10.7 Fresh-Eyes Feature Audit", "V10.6 Pitcher-Batter Parity", "V10.5 EV-Driven Composition + Bifurcated FADE", "V10.4 Pre-Card Lineup Harvesting + Decoupled Batter ML", "V10.3 Calibration", "V10.2 Calibration Changes", "V10.1 Structural Changes", "V10.0 Core Architecture".
+
+### V10.8 research citations (DFS literature consulted before adding signals)
+
+- [MLB Glossary on xwOBA](https://www.mlb.com/glossary/statcast/expected-woba)
+- [Baseball Savant Expected Statistics Leaderboard](https://baseballsavant.mlb.com/leaderboard/expected_statistics)
+- [pybaseball — Statcast wrapper](https://github.com/jldbc/pybaseball)
+- [MLB.com — 2026 ABS Challenge System](https://www.mlb.com/news/abs-challenge-system-mlb-2026)
+- [TruMedia Catcher Framing model — 3.9% K-rate per framing run](https://baseball.help.trumedianetworks.com/baseball/catcher-framing-model)
+- [FanGraphs — Effect of Rest Days on Starting Pitchers (no significant edge)](https://community.fangraphs.com/the-effect-of-rest-days-on-starting-pitcher-performance/)
+- [FantasyLabs — Opponent Rest Days as DFS edge](https://www.fantasylabs.com/articles/how-does-a-well-rested-opponent-affect-hitters-and-pitchers/)
 
 ## API Endpoints
 
@@ -246,7 +280,7 @@ app/
 │   ├── statcast.py         # Baseball Savant kinematics (FB velo, IVB, exit velo, barrel%)
 │   └── rotowire.py         # RotoWire daily-lineups parser (V10.3 expected lineups)
 ├── models/
-│   ├── player.py           # Player, PlayerStats, PlayerGameLog
+│   ├── player.py           # Player, PlayerStats, PlayerGameLog, TeamSeasonStats (V10.8)
 │   ├── slate.py            # Slate, SlateGame, SlatePlayer
 │   ├── scoring.py          # PlayerScore, ScoreBreakdown
 │   ├── draft.py            # DraftLineup, DraftSlot

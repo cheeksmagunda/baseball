@@ -193,7 +193,24 @@ PITCHER_ENV_MIN_K_PER_9 = 8.0         # min K/9 for "K upside"
 #                  Applies a lighter penalty reflecting true uncertainty.
 # ---------------------------------------------------------------------------
 DNP_RISK_PENALTY = 0.70               # CONFIRMED bad: 30% haircut (lineup published, player absent)
-DNP_UNKNOWN_PENALTY = 0.85            # UNKNOWN: 15% haircut (lineup not published, could go either way)
+DNP_UNKNOWN_PENALTY = 0.93            # UNKNOWN: 7% haircut.
+                                      # V10.6 (April 28-29 evaluation): lifted from
+                                      # 0.85 → 0.93.  When the constant was set,
+                                      # batting orders were rare at T-65 and the
+                                      # 15% haircut reflected genuine DNP uncertainty.
+                                      # V10.4 wired RotoWire expected-lineup scraping
+                                      # which covers ~90% of teams at T-65, so the
+                                      # batting_order=None state now correlates much
+                                      # more with "RotoWire missed this team" than
+                                      # with "this batter isn't starting".  The harness
+                                      # showed batters were systematically out-ranked
+                                      # by the dominant pitcher pool — every batter
+                                      # paid 0.85 even when env conditions were strong.
+                                      # Reducing the haircut to 7% lets confirmed-team
+                                      # batters in good env situations compete on EV
+                                      # with the favorite-team SP.  CONFIRMED_BAD
+                                      # (lineup published, player absent) remains
+                                      # at 0.70 — that's still a real signal.
 ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data not published" (not "bad env")
 
 # Env modifier bounds — PRIMARY EV signal.
@@ -201,6 +218,19 @@ ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data
 # park, weather, platoon, batting order, moneyline).
 ENV_MODIFIER_FLOOR = 0.70
 ENV_MODIFIER_CEILING = 1.30
+
+# V10.6 (April 28-29 evaluation): pitcher-specific env ceiling, asymmetric.
+# 33-slate harness analysis showed pitchers occupied 54% of model top-10 (target
+# ~40% given ~50% of HV slots historically go to batters).  Root cause: pitcher
+# env saturates at 1.0 too easily (5 factors × 1.0 + home 0.5 → 5.5/5.5 = 1.0)
+# while batter env is soft-capped in Group A and unlikely to break 0.85.  Two
+# pitchers each at env 0.95 + bare trait both clear 110 EV; the batter pool
+# tops out around 100 EV → top-10 stuffed with starters.  Tightening the
+# pitcher band lets exceptional batter env situations (Coors shootouts, weak
+# bullpen blowups) compete with the dominant favorite-team SP.  The pitcher
+# floor is unchanged at 0.70 — bad-env pitchers should still be priced out
+# at the floor, just with a smaller upside cap.
+PITCHER_ENV_MODIFIER_CEILING = 1.20
 
 # Trait modifier bounds — SECONDARY EV signal.
 # Range: 0.85–1.15 (1.35x swing) — season stats (K/9, ISO, barrel%, ERA, WHIP,
@@ -281,21 +311,49 @@ PITCHER_ENV_K9_CEILING = 10.0         # K/9 at or above this → full contributi
 PITCHER_ENV_PARK_FLOOR = 0.90         # park factor at or below this → full contribution (pitcher-friendly)
 PITCHER_ENV_PARK_CEILING = 1.05       # park factor at or above this → 0 contribution
 PITCHER_ENV_ML_FLOOR = -130           # moneyline at or above this → 0 contribution
-PITCHER_ENV_ML_CEILING = -220         # moneyline at or below this → full contribution
-                                      # V10.2 (April 27 calibration): widened the
-                                      # graduated band from (-110, -250) to (-130,
-                                      # -220) after observing that ~25% of HV
-                                      # pitchers across 33 historical slates pitched
-                                      # for coin-flip or mild-favorite teams.  The
-                                      # old floor zeroed-out ML credit for any
-                                      # pitcher whose team wasn't already favored,
-                                      # under-rating K-upside pitchers in tossup
-                                      # games.  Aliased to BATTER_ENV_ML_* below.
+PITCHER_ENV_ML_CEILING = -150         # moneyline at or below this → full contribution.
+                                      # V10.7 (Apr 29 fresh-eyes audit): tightened
+                                      # ceiling from -220 to -150 because the 33-slate
+                                      # bucket analysis showed pitcher HV-rate INVERTS
+                                      # at heavy favorite ML.  Q1 (ML -310 to -168,
+                                      # heavy/strong favorites) → mean_rs 3.12 / HV
+                                      # 12.7%; Q2 (ML -164 to -120, mild favorites)
+                                      # → mean_rs 4.20 / HV 38.2%.  The mild-fav peak
+                                      # is real: heavy favorites generate blowouts
+                                      # where the starter gets pulled in the 5th-6th
+                                      # inning before the K/win-bonus stack up.  Mild
+                                      # favorites stay in tighter games and pitch
+                                      # deeper.  By saturating ML credit at -150
+                                      # (instead of -220) we stop over-rewarding the
+                                      # heavy-favorite tail; the curve still climbs
+                                      # smoothly from -130 to -150 to capture the
+                                      # peak band.
+                                      # V10.2 (April 27 calibration): had previously
+                                      # widened the band from (-110, -250) to (-130,
+                                      # -220) under the assumption that bigger fav =
+                                      # better; the bucket analysis disproves that.
+                                      # Aliased to BATTER_ENV_ML_* below — but
+                                      # batter ML is decoupled (V10.4) at -100 / -180.
 PITCHER_ENV_MAX_SCORE = 5.5           # 5 main factors (1.0 each) + home (0.5)
 
 # Batter env factors — Group A (run environment, soft-capped)
 BATTER_ENV_VEGAS_FLOOR = 7.0          # O/U at or below this → 0 contribution
 BATTER_ENV_VEGAS_CEILING = 9.5        # O/U at or above this → full contribution
+BATTER_ENV_VEGAS_WEIGHT = 0.5         # V10.8 (Apr 29 fresh-eyes audit): the 33-slate
+                                      # bucket analysis showed Vegas O/U is essentially
+                                      # a flat signal at the player level — Q1 (6.5-7.5
+                                      # O/U) mean_rs 2.35; Q4 (9.0-15.5) mean_rs 2.62.
+                                      # That's a 1.04× swing — barely above noise.  Vegas
+                                      # O/U was previously a weight-1.0 PRIMARY signal in
+                                      # Group A (alongside ERA at 1.0, ML at 1.0, bullpen
+                                      # at 1.0, WHIP at 0.5, K9 at 0.4).  Dropping it to
+                                      # 0.5 (matching WHIP's weight) removes the over-
+                                      # weighting without losing the small signal.  The
+                                      # mechanism is intuitive: O/U bakes in BOTH teams'
+                                      # offenses, so an individual batter's RS upside is
+                                      # only weakly correlated with the total.  Direct
+                                      # opp-pitcher signals (ERA, WHIP, K/9) carry the
+                                      # actual matchup-specific information.
 BATTER_ENV_ERA_FLOOR = 3.5            # opposing starter ERA at or below → 0
 BATTER_ENV_ERA_CEILING = 5.5          # opposing starter ERA at or above → full
 # V10.4 (April 28 calibration): decoupled batter ML from pitcher ML.  The 33-slate
@@ -327,6 +385,26 @@ BATTER_ENV_BULLPEN_ERA_CEILING = 5.5  # bullpen ERA at or above → full
 BATTER_ENV_OPP_WHIP_FLOOR = 1.10      # opposing starter WHIP at or below → 0 (elite control)
 BATTER_ENV_OPP_WHIP_CEILING = 1.40    # opposing starter WHIP at or above → full (vulnerable)
 BATTER_ENV_OPP_WHIP_WEIGHT = 0.5      # max contribution to Group A run_env (half of ERA's 1.0)
+
+# A6: Opposing starter K/9 (V10.6 — Apr 28-29 evaluation).  Previously absent
+# from batter env scoring — a glaring gap surfaced by the 33-slate harness.
+# K/9 is a strikeout-rate signal: a high-K starter (≥10 K/9) suppresses contact
+# regardless of his ERA/WHIP, so even mid-tier batters in run-friendly games
+# (high O/U, weak bullpen) underperform when the starter is mowing them down
+# for 6 innings.  Conversely, a low-K starter (≤6 K/9) means more balls in play
+# = more BABIP variance + more counting-stat upside for batters.  Anti-aligned
+# vs the pitcher's own scoring (PITCHER_ENV_K9_*) — a high-K pitcher is good
+# for the pitcher AND bad for opposing batters.
+#
+# Floor=10.5 (full penalty — elite K-arm), ceiling=6.5 (full credit — contact
+# pitcher).  Note the descending range: lower K/9 = better for batter, so
+# graduated_scale must be called with (k9, 10.5, 6.5) — floor and ceiling
+# in that order produce the descending scale.  Weight 0.4 (slightly less
+# than WHIP's 0.5) — K/9 is less independent of ERA than WHIP is, so we
+# don't double-count as much.
+BATTER_ENV_OPP_K9_FLOOR = 10.5        # K/9 at or above → 0 contribution (elite K-arm)
+BATTER_ENV_OPP_K9_CEILING = 6.5       # K/9 at or below → full contribution (contact pitcher)
+BATTER_ENV_OPP_K9_WEIGHT = 0.4        # max contribution to Group A run_env (less than WHIP)
 
 # Group A soft cap: first 2.0 of correlated-signal sum is taken at full value,
 # any additional sum above 2.0 contributes at 25% slope.  Preserves some upside
@@ -367,25 +445,60 @@ BATTER_ENV_COMPOUND_BONUS = 0.3             # additive to Group C for favorable 
 # Applied as bonus/deduction based on series context and recent form.
 # A batter whose team trails 0-2 in a series and is on a cold L10 streak
 # is in a genuinely bad situation regardless of their low media buzz.
-SERIES_LEADING_BONUS = 0.6       # batter's team leads series 2-0 or better → +0.6
-SERIES_TRAILING_PENALTY = 0.6    # batter's team trails series 0-2 or worse → -0.6
+SERIES_LEADING_BONUS = 0.0       # V10.7 (Apr 29 fresh-eyes audit): NEUTRALISED.
+                                 # Was 0.6.  Bucket analysis: series-trailing
+                                 # batters had HV-rate 55.1% vs leading 44.8% —
+                                 # the same inversion as L10 (cold/trailing teams
+                                 # produce more individual RS upside, probably
+                                 # because the trailing team's stars are still
+                                 # taking PAs in must-score-now situations while
+                                 # the leading team can ride bench bats).  Removed
+                                 # entirely rather than reversed — same risk-
+                                 # management rationale as the L10 neutralisation.
+SERIES_TRAILING_PENALTY = 0.0    # V10.7: NEUTRALISED (was 0.6).  Audit showed
+                                 # trailing-team batters produce MORE HV, not less.
 TEAM_HOT_L10_THRESHOLD = 7       # last-10 wins at or above → hot team bonus
 TEAM_COLD_L10_THRESHOLD = 3      # last-10 wins at or below → cold team penalty
-TEAM_HOT_L10_BONUS = 0.4         # bonus for hot team (last 10 ≥ 7 wins).
-                                 # V10.2 (April 27 calibration): doubled from 0.2
-                                 # to 0.4 after observing that hot-streak teams
-                                 # consistently produced HV batters across the
-                                 # 33-slate window (e.g., Apr 26 ATL 8-2 → 6 runs
-                                 # at home).  Old 0.2 was a 3% env swing — below
-                                 # the noise floor.
-TEAM_COLD_L10_PENALTY = 0.4      # penalty for cold team (last 10 ≤ 3 wins).
-                                 # V10.2: doubled from 0.2 to 0.4 (same rationale).
+TEAM_HOT_L10_BONUS = 0.0         # V10.7 (Apr 29 fresh-eyes audit): NEUTRALISED.
+                                 # Was 0.4.  Bucket analysis on the 33-slate
+                                 # corpus revealed the L10 signal is INVERTED at
+                                 # the player level: cold teams (Q1, 0-4 L10 wins)
+                                 # produced mean_rs 2.86 vs hot teams (Q4, 7-10
+                                 # wins) mean_rs 2.40 — a -0.46 RS swing the wrong
+                                 # direction from V10.2's intuition.  Likely
+                                 # mechanism: hot teams have multiple contributors
+                                 # so HV is spread thin; cold teams have one star
+                                 # carrying the offense (regression candidate).
+                                 # Either way our model used to bonus the wrong
+                                 # tail.  Neutralising (vs reversing) is the
+                                 # conservative call — the inversion is real on
+                                 # 33 slates but the magnitude could regress with
+                                 # more data, so we remove the signal entirely
+                                 # rather than risk over-fitting a flipped sign.
+                                 # The L10 fields stay populated on SlateGame for
+                                 # future use; this just zeros the env-score
+                                 # contribution.
+TEAM_COLD_L10_PENALTY = 0.0      # V10.7: NEUTRALISED (was 0.4).  Same rationale —
+                                 # the audit showed cold teams over-perform vs
+                                 # baseline, so penalising them was directly
+                                 # mis-calibrated.
 
-BATTER_ENV_MAX_SCORE = 6.0               # 2.0 (run env soft-cap point) + 2.0 (situation) + 1.0 (venue) + 1.0 (series/momentum).
-                                         # V10.2: bumped from 5.8 to 6.0 because TEAM_HOT_L10_BONUS doubled (0.2 → 0.4),
-                                         # so max momentum is now 1.0 (0.6 series leading + 0.4 hot L10) instead of 0.8.
-                                         # Group A can reach 2.5 via soft slope in perfect-storm cases; the final
-                                         # `min(1.0, total / max_score)` clamp preserves correct normalization.
+BATTER_ENV_MAX_SCORE = 5.0               # V10.7 (Apr 29): dropped from 6.0 → 5.0 because
+                                         # Group D (series + L10 momentum) is fully neutralised
+                                         # (max momentum = 0.0 instead of 1.0).  Without re-
+                                         # baselining the denominator, every batter's env_score
+                                         # would silently shrink by ~17%, dragging the entire
+                                         # batter pool down vs pitchers and undoing V10.6's
+                                         # pitcher-batter parity work.  New decomposition:
+                                         #   2.0 (run env soft-cap point)
+                                         # + 2.0 (situation: platoon + batting order)
+                                         # + 1.0 (venue: park + weather + compound)
+                                         # + 0.0 (Group D neutralised)
+                                         # = 5.0 max.  Group A can still reach ~2.625 via the
+                                         # soft cap with WHIP+K9 saturation, so total uncapped
+                                         # max ≈ 5.625; the final `min(1.0, total / 5.0)` clamp
+                                         # preserves correct normalisation and lets perfect-storm
+                                         # batter games still hit env_score=1.0.
 
 # ---------------------------------------------------------------------------
 # Game status constants
@@ -436,6 +549,85 @@ SCORING_BATTER_WHIP_RANGE = 0.6       # WHIP scoring range (1.5 - 0.9)
 SCORING_BATTER_OPS_SPLIT_FLOOR = 0.600   # batter OPS-vs-hand at or below → 0 split score
 SCORING_BATTER_OPS_SPLIT_RANGE = 0.300   # range for full split score (0.600 → 0.900)
 
+# V10.6 (Apr 28-29 evaluation, follow-up): batter K-vulnerability signal.
+# Closes the floor-risk gap surfaced by user feedback on the eval results:
+# even with V10.6 env-side opp K/9 (Group A6), the model can still recommend
+# a high-strikeout batter (e.g., Joey Gallo, Jake Burger, Schwarber) into a
+# matchup vs an elite K-pitcher and miss the obvious 0-for-4-with-3K floor.
+#
+# Mechanism: the BATTER's own season K% (so / max(pa, 1)) is combined with
+# the OPPOSING starter's K/9 to produce a "double-jeopardy" sub-signal.
+# Both have to be high for the penalty to fully fire — a contact-oriented
+# hitter (low K%) is fine vs an elite K-pitcher because their bat-to-ball
+# floor protects them; a high-K hitter is fine vs a contact pitcher because
+# the pitcher won't generate the whiffs to bury him.  Only the cross
+# (high × high) is the dangerous combination.
+#
+# Wired into score_batter_matchup() as a 4th sub-signal at 15% weight (era
+# 35%, whip 20%, hand-split 30%, k-vuln 15%).  Anti-aligned with the
+# Group A6 env signal: env scores the OPPORTUNITY for runs (via opp K/9
+# alone), trait scores the FLOOR for an individual batter (batter K% × opp
+# K/9).  Two distinct signals, naturally redundant when both lit.
+#
+# Floor=0.18 (elite contact, e.g., Arraez/Tucker tier) → no penalty.
+# Ceiling=0.30 (high-whiff bat) → full sub-signal contribution to penalty.
+SCORING_BATTER_K_PCT_FLOOR = 0.18         # batter K% at or below → 0 vulnerability score
+SCORING_BATTER_K_PCT_CEILING = 0.30       # batter K% at or above → full vulnerability score
+# K-vulnerability cross-axis: opposing-starter K/9 thresholds.
+# These are tighter than the env A6 thresholds (10.5 / 6.5) because we
+# want the trait penalty to fire on truly-elite K-arms only — Group A6
+# already broadly de-rates batters in any high-K matchup at the env layer.
+SCORING_OPP_K9_VULN_FLOOR = 7.5           # opp K/9 at or below → 0 cross contribution
+SCORING_OPP_K9_VULN_CEILING = 11.0        # opp K/9 at or above → full cross contribution
+
+# V10.8 — opposing-starter xwOBA-against thresholds for batter matchup_quality.
+# This is the simplified pitch-arsenal-mismatch signal: a single number
+# capturing how well the pitcher's overall arsenal suppresses contact
+# quality, independent of BABIP / sequencing luck.  See research:
+# https://baseballsavant.mlb.com/leaderboard/expected_statistics
+#
+# Floor 0.330 = league-average wOBA-against (no penalty), ceiling 0.265 =
+# elite arsenal (full penalty for the opposing batter's matchup quality).
+# The descending range mirrors the scale: lower xwOBA-against = better
+# arsenal = worse for the batter.
+SCORING_OPP_X_WOBA_AGAINST_FLOOR = 0.330      # at or above → 0 contribution (weak arsenal, batter favored)
+SCORING_OPP_X_WOBA_AGAINST_CEILING = 0.265    # at or below → full contribution (elite arsenal)
+
+# V10.8 — catcher framing adjustment to pitcher k_rate trait.
+#
+# Research (TruMedia framing model, FanGraphs 2026 catcher rankings): each
+# framing run per game adds ~3.9% to a pitcher's K rate and subtracts ~3.9%
+# from his BB rate.  Top team catcher framing aggregates run ~10-15 runs/season
+# (over ~22,000 called pitches), so the per-pitch impact is small but real.
+#
+# Under the 2026 ABS Challenge System, catcher framing's predictive value is
+# REDUCED — challenges fix the worst calls — but the system still calls
+# ~98% of pitches via human umpires (per ESPN/MLB ABS announcement, only
+# 2 challenges per team per game).  So we apply a CONSERVATIVE adjustment:
+# at most ±5% on the k_rate trait, scaled linearly by team framing runs.
+#
+# `framing_runs_floor` / `_ceiling`: the team-level framing_runs values
+# that map to ±max adjustment.  A team at +12 runs/season gets +5% on k_rate;
+# a team at -12 runs/season gets -5%.  Mid-pack teams (~0 runs) → no change.
+SCORING_FRAMING_RUNS_CEILING = 12.0           # at or above → +max k_rate adjustment
+SCORING_FRAMING_RUNS_FLOOR = -12.0            # at or below → -max k_rate adjustment
+SCORING_FRAMING_K_RATE_MAX_ADJ = 0.05         # ±5% scale factor on k_rate
+                                              # (deliberately conservative for ABS era)
+
+# V10.8 — opponent rest days bonus for batter env Group A.
+#
+# FantasyLabs DFS research: hitters facing teams with 0 rest days (back-to-
+# back game) have a small but real edge — opposing bullpen is depleted from
+# the prior day, and the opposing starter is on a tighter pitch leash.
+# The hitter's own rest is unrelated to performance per the research; only
+# the OPPOSING team's rest matters for the batter's matchup.
+#
+# Conservative single-tier bump: +0.2 (Group A weight 0.2) when opponent
+# played yesterday (rest_days <= 0).  No graduated scale — the signal is a
+# binary "fresh vs depleted opposing pen" effect.  No penalty when opp has
+# rest — that's the baseline state.
+BATTER_ENV_OPP_BACK_TO_BACK_BONUS = 0.2       # additive to Group A run_env when opp_rest <= 0
+
 # Scoring engine — park factor range boundaries (LAD floor, COL ceiling)
 # Used in score_ballpark_factor() to normalise the effective park factor.
 PARK_HR_FACTOR_MIN = 0.89             # lowest value in PARK_HR_FACTORS (LAD)
@@ -466,6 +658,33 @@ POWER_PROFILE_AVG_EV_MAX = 92.0
 POWER_PROFILE_HARD_HIT_MAX = 50.0
 POWER_PROFILE_MAX_EV_CEILING = 112.0
 POWER_PROFILE_DENOM = 25.0
+
+# V10.8 — batter xwOBA scaling for power_profile.  Replaces some weight from
+# HR/PA (a lagging outcome proxy that the MLB API never reliably populates)
+# with the industry-standard quality-of-contact signal.  xwOBA derives from
+# exit velocity + launch angle (and sprint speed for some batted balls); it
+# captures the full value of contact, including weak grounders and warning-
+# track flies that don't show up in HR counts.  See MLB Glossary on
+# xwOBA: https://www.mlb.com/glossary/statcast/expected-woba
+#
+# Floor 0.300 = league-average wOBA (no credit), ceiling 0.400 = elite
+# (Judge / Soto / Ohtani tier, full credit).  4 points out of the 25-pt
+# power_profile denom — meaningful weight without dominating the kinematic
+# signals.  Redistribution is balanced inside `score_power_profile` by
+# trimming HR/PA from 2 → 1 and shaving 1 point off avg_ev / hard_hit
+# (8+7→7+7); the denom stays at 25 so existing tests don't drift.
+POWER_PROFILE_X_WOBA_FLOOR = 0.300        # at or below → 0 contribution
+POWER_PROFILE_X_WOBA_CEILING = 0.400      # at or above → full contribution
+
+# V10.8 — pitcher xERA scaling for era_whip trait.  xERA is a 1:1 conversion
+# of xwOBA-against onto the ERA scale; widely-used in DFS to flag regression
+# candidates (live ERA shiny but xERA bad → coming back to earth).  See
+# https://baseballsavant.mlb.com/leaderboard/expected_statistics
+#
+# Floor 5.0 = no credit (poor expected results), ceiling 2.0 = full credit
+# (elite arsenal, ace-tier expected ERA).
+SCORING_X_ERA_FLOOR = 5.0                 # xERA at or above → 0 score
+SCORING_X_ERA_RANGE = 3.0                 # 5.0 - 2.0 = full-credit range
 
 # Pitcher K/9 kinematics — Statcast-driven version of k_rate scoring.
 # Strategy doc §"Kinematics of the Pitching Anchor": K/9 is downstream;
@@ -536,6 +755,22 @@ def _validate_constants() -> None:
     )
     assert TRAIT_MODIFIER_FLOOR < 1.0 < TRAIT_MODIFIER_CEILING, (
         f"TRAIT_MODIFIER band must straddle 1.0: [{TRAIT_MODIFIER_FLOOR}, {TRAIT_MODIFIER_CEILING}]"
+    )
+
+    # Pitcher env ceiling must be tighter than (or equal to) the batter ceiling
+    # — pitcher outcomes are 1-player-dependent so over-saturating pitcher EV
+    # leaves batters out-priced even in genuinely strong run environments.
+    assert ENV_MODIFIER_FLOOR < PITCHER_ENV_MODIFIER_CEILING <= ENV_MODIFIER_CEILING, (
+        f"PITCHER_ENV_MODIFIER_CEILING ({PITCHER_ENV_MODIFIER_CEILING}) must satisfy "
+        f"FLOOR ({ENV_MODIFIER_FLOOR}) < this <= batter CEILING ({ENV_MODIFIER_CEILING})"
+    )
+
+    # Opp K/9 (batter env A6) is a descending scale: higher K/9 = worse for batter.
+    # The constants are passed to graduated_scale() in (floor, ceiling) order, so
+    # FLOOR (high K/9) > CEILING (low K/9).
+    assert BATTER_ENV_OPP_K9_FLOOR > BATTER_ENV_OPP_K9_CEILING, (
+        f"BATTER_ENV_OPP_K9_FLOOR ({BATTER_ENV_OPP_K9_FLOOR}) must be > CEILING "
+        f"({BATTER_ENV_OPP_K9_CEILING}) — higher K/9 is worse for batters"
     )
 
     # Pitcher env: floor must be less negative (higher) than ceiling

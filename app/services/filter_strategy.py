@@ -1,5 +1,5 @@
 """
-Filter Strategy V10.4: "Filter, Not Forecast" + conditional stacking.
+Filter Strategy V10.6: "Filter, Not Forecast" + conditional stacking.
 
 Public API (imported by pipeline.py, routers/filter_strategy.py, and tests)
 ────────────────────────────────────────────────────────────────────────────
@@ -45,32 +45,53 @@ most likely to emerge, then select from that filtered pool.
 Five filters applied sequentially:
   1. Slate Architecture    — classify the day type + identify blowout/high-total
                              games that unlock stacking for their favored team.
-  2. Popularity gate       — FADE players (high pre-game media attention) are
-                             excluded from the candidate pool.  TARGET/NEUTRAL
-                             pass with no bonus.  No RS data involved.
+  2. Popularity gate       — FADE batters (high pre-game media attention) are
+                             excluded from the candidate pool entirely; FADE
+                             pitchers stay with PITCHER_FADE_PENALTY = 0.85
+                             (V10.5).  TARGET/NEUTRAL pass with no bonus.  No
+                             RS data involved.
   3. Environmental Advantage — PRIMARY signal: game conditions (Vegas O/U,
-                             opposing ERA, bullpen ERA, park, weather, platoon,
-                             batting order, moneyline). Groups A/B/C/D.
+                             opposing ERA, opposing WHIP, opposing K/9 (V10.6),
+                             bullpen ERA, park, weather, platoon, batting
+                             order, moneyline, series context). Groups A/B/C/D.
   4. Individual Explosive Traits — SECONDARY: Statcast kinematics (FB velo/IVB/
                              extension/whiff/chase for SP; avg EV/hard-hit%/
                              barrel% for batters) + K/9 / HR/PA fallback.
-  5. Slot Sequencing (Pitcher-Anchor + conditional stacks) — 1 SP pinned to
-                             Slot 1 (2.0×); 4 batters fill Slots 2–5 honouring
+  5. Slot Sequencing (Pitcher-Anchor + conditional stacks) — when the EV
+                             chooser picks 1P+4B, 1 SP is pinned to Slot 1
+                             (2.0×) and 4 batters fill Slots 2–5 honouring
                              per-team caps that vary by stack eligibility.
+                             When the chooser picks 0P+5B, the highest-EV
+                             batter takes Slot 1 instead.
 
-EV formula (V10.1 — unchanged from V9.0 at this layer):
-    base_ev = env_factor × trait_factor × stack_bonus × dnp_adj × 100
+EV formula (V10.6):
+    base_ev = env_factor × volatility_amplifier × trait_factor
+              × stack_bonus × dnp_adj × pitcher_pop_penalty × 100
+
+    env_factor          — pitchers cap at PITCHER_ENV_MODIFIER_CEILING (1.20),
+                          batters at ENV_MODIFIER_CEILING (1.30).  V10.6
+                          asymmetric to prevent SP saturation from stuffing
+                          the top-10.
+    volatility_amplifier— V10.6 env-CONDITIONAL: 1 + cv × MAX × (env − 0.5) × 2.
+                          Boom-bust hitters amplified in good env, penalised
+                          in bad env.  Pre-V10.6 was unconditional +20%, which
+                          systematically over-loved Muncy/Judge-class profiles.
+    trait_factor        — 0.85–1.15 (TRAIT_MODIFIER bounds).
+    stack_bonus         — 1.20 if PATH 1 blowout favorite team, else 1.0.
+    dnp_adj             — 0.70 (CONFIRMED_BAD) / 0.93 (UNKNOWN, V10.6) / 1.0.
+    pitcher_pop_penalty — 0.85 if pitcher AND FADE (V10.5), else 1.0.
 
     Starting 5:  base_ev (pure env + trait ranking)
     Moonshot:    base_ev × sharp_bonus × explosive_bonus
                  sharp_bonus    — underground Reddit/FanGraphs analyst buzz (+35% max)
                  explosive_bonus — power_profile / k_rate upside (+20% max)
 
-Stacking (V10.1):
-    A team contributes more than one batter ONLY if its game clears both
-    is_stack_eligible_game() gates (ML ≤ -200 AND O/U ≥ 9.0).  Every other
-    team is capped at one batter per lineup.  See _compute_stack_eligible_teams
-    and _team_batter_cap below.
+Stacking (V10.2 two-path):
+    A team contributes more than one batter ONLY if its game clears
+    is_stack_eligible_game() — PATH 1 (ML ≤ -200 AND O/U ≥ 9.0, favored side
+    only, earns STACK_BONUS) OR PATH 2 (O/U ≥ 10.5, both sides eligible, no
+    bonus).  Every other team is capped at one batter per lineup.  See
+    _compute_stack_eligible_teams and _team_batter_cap below.
 """
 
 from __future__ import annotations
@@ -124,6 +145,7 @@ from app.core.constants import (
     PITCHER_ENV_MAX_SCORE,
     BATTER_ENV_VEGAS_FLOOR,
     BATTER_ENV_VEGAS_CEILING,
+    BATTER_ENV_VEGAS_WEIGHT,
     BATTER_ENV_ERA_FLOOR,
     BATTER_ENV_ERA_CEILING,
     BATTER_ENV_ML_FLOOR,
@@ -133,6 +155,10 @@ from app.core.constants import (
     BATTER_ENV_OPP_WHIP_FLOOR,
     BATTER_ENV_OPP_WHIP_CEILING,
     BATTER_ENV_OPP_WHIP_WEIGHT,
+    BATTER_ENV_OPP_K9_FLOOR,
+    BATTER_ENV_OPP_K9_CEILING,
+    BATTER_ENV_OPP_K9_WEIGHT,
+    BATTER_ENV_OPP_BACK_TO_BACK_BONUS,
     BATTER_ENV_GROUP_A_SOFT_CAP_POINT,
     BATTER_ENV_GROUP_A_SOFT_CAP_SLOPE,
     BATTER_ENV_PARK_HITTER_FRIENDLY,
@@ -163,6 +189,8 @@ from app.core.constants import (
     QUALITY_SP_ERA_THRESHOLD,
     # V10.5 — pitcher FADE soft penalty (pitchers are kept in pool but discounted)
     PITCHER_FADE_PENALTY,
+    # V10.6 — asymmetric pitcher env ceiling (vs batter)
+    PITCHER_ENV_MODIFIER_CEILING,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score, graduated_scale, graduated_scale_moneyline
 from app.services.popularity import PopularityClass
@@ -500,29 +528,40 @@ def compute_batter_env_score(
     series_opp_wins: int | None = None,
     team_l10_wins: int | None = None,
     opp_starter_whip: float | None = None,
+    opp_starter_k_per_9: float | None = None,
+    opp_team_rest_days: int | None = None,
 ) -> tuple[float, list[str], int]:
     """
     Compute environmental score for a batter (0-1.0).
 
-    V8.0 changes:
-    - Correlated run-environment signals (O/U, ERA, moneyline, bullpen)
-      grouped and capped at 2.0 to prevent redundancy inflation.
-    - Batting order graduated (1-9 scale) with neutral baseline for unknowns.
-    - All thresholds graduated via linear interpolation.
-
-    V8.1 changes (April 15):
-    - Group D added: series/momentum context (series wins, recent L10 form).
-      Addresses "correctly-avoided player disguised as a ghost" problem where
-      a low-media batter gets TARGET classification despite a terrible matchup.
+    Composes pre-game signals into a 0-1.0 normalised score.  Group A is the
+    correlated run-environment cluster (soft-capped to prevent redundancy
+    inflation), Groups B/C/D are independent contributions.
 
     Returns a third value, `unknown_count`, tracking how many environmental
-    factors were missing (None) vs. confirmed bad.
+    factors were missing (None).  Used downstream by `_compute_dnp_adjustment`
+    to distinguish "lineup not yet published" from "confirmed not starting".
 
     Signal groups:
-      Group A — Run environment (O/U, ERA, moneyline, bullpen) — capped 2.0
-      Group B — Player situation (platoon, batting order) — up to 2.0
-      Group C — Venue (park + weather) — up to 1.0
-      Group D — Series/momentum (series record, recent L10) — ±0.8
+      Group A — Run environment, soft-capped at 2.0 then 25% slope (V8.0)
+        A1: Vegas O/U                    weight 1.0
+        A2: Opposing starter ERA         weight 1.0
+        A3: Team moneyline               weight 1.0  (V10.4 batter band)
+        A4: Opposing bullpen ERA         weight 1.0
+        A5: Opposing starter WHIP        weight 0.5  (V10.3 calibration)
+        A6: Opposing starter K/9         weight 0.4  (V10.6 — NEW)
+                                                     descending: lower K/9 =
+                                                     better for batter
+      Group B — Player situation (independent, up to 2.0)
+        platoon advantage 1.0  +  batting order 0.25–1.0 graduated
+      Group C — Venue (park + weather, up to 1.0)
+        park HR factor + wind direction (OUT bonus / IN penalty) +
+        warm-temp bonus + compound park×temp interaction
+      Group D — Series/momentum (±0.8 V10.2 doubled bonuses/penalties)
+        series leading +0.6 / trailing -0.6
+        L10 hot +0.4 / cold -0.4
+
+    Final score = (A_capped + B + C + D) / BATTER_ENV_MAX_SCORE, clamped 0-1.0.
     """
     factors: list[str] = []
     unknown_count = 0
@@ -535,12 +574,16 @@ def compute_batter_env_score(
     # ---------------------------------------------------------------
     run_env = 0.0
 
-    # A1. Vegas O/U — graduated
+    # A1. Vegas O/U — graduated, weight 0.5 (V10.8 down from 1.0).
+    # Audit showed O/U is barely above noise as a player-level signal (1.04×
+    # swing) so we down-weight it to match WHIP's contribution.
     if vegas_total is not None:
-        contrib = graduated_scale(vegas_total, BATTER_ENV_VEGAS_FLOOR, BATTER_ENV_VEGAS_CEILING)
+        contrib = BATTER_ENV_VEGAS_WEIGHT * graduated_scale(
+            vegas_total, BATTER_ENV_VEGAS_FLOOR, BATTER_ENV_VEGAS_CEILING
+        )
         run_env += contrib
         if contrib > 0:
-            label = "High-run environment" if contrib >= 0.9 else "Run environment"
+            label = "High-run environment" if contrib >= 0.45 else "Run environment"
             factors.append(f"{label} (O/U={vegas_total:.1f})")
     else:
         unknown_count += 1
@@ -591,6 +634,32 @@ def compute_batter_env_score(
             factors.append(f"{label} (WHIP={opp_starter_whip:.2f})")
     else:
         unknown_count += 1
+
+    # A6. Opposing starter K/9 (V10.6) — descending scale: higher K/9 is worse
+    # for batters. graduated_scale takes (value, floor, ceiling) with floor >
+    # ceiling to produce the descending shape.  Anti-aligned with the pitcher's
+    # own scoring path: the same K/9 number that earns the pitcher full env
+    # credit here zeros out the opposing batters' contact upside.
+    if opp_starter_k_per_9 is not None:
+        contrib = BATTER_ENV_OPP_K9_WEIGHT * graduated_scale(
+            opp_starter_k_per_9, BATTER_ENV_OPP_K9_FLOOR, BATTER_ENV_OPP_K9_CEILING
+        )
+        run_env += contrib
+        if contrib > 0:
+            label = "Contact-pitcher matchup" if contrib >= 0.32 else "Below-avg K-rate starter"
+            factors.append(f"{label} (opp K/9={opp_starter_k_per_9:.1f})")
+    else:
+        unknown_count += 1
+
+    # A7. Opponent back-to-back game (V10.8) — small bonus when the opposing
+    # team has 0 rest days (played yesterday).  Per FantasyLabs DFS research,
+    # depleted opposing bullpen + tighter starter pitch leash on a back-to-back
+    # day produces a small batter edge.  Binary signal (no graduated scale).
+    # None passes through (no signal yet — early-season corner case where
+    # the lookback found no completed games).
+    if opp_team_rest_days is not None and opp_team_rest_days <= 0:
+        run_env += BATTER_ENV_OPP_BACK_TO_BACK_BONUS
+        factors.append("Opponent on 0 rest days (depleted pen edge)")
 
     # Soft cap: first 2.0 of correlated-signal sum is taken full; sum above 2.0
     # contributes at 25% slope.  Preserves a little upside for "perfect storm"
@@ -815,35 +884,69 @@ def _compute_dnp_adjustment(candidate: FilteredCandidate) -> float:
 def _compute_base_ev(candidate: FilteredCandidate) -> float:
     """Compute the shared base EV used by both Starting 5 and Moonshot.
 
-    V9.0 "Filter, Not Forecast" — EV is built exclusively from pre-game
+    V10.6 "Filter, Not Forecast" — EV is built exclusively from pre-game
     signals.  No RS data, no historical outcomes, no ownership counts.
-    FADE players are excluded from the candidate pool before this runs.
+    FADE batters are excluded from the candidate pool before this runs;
+    FADE pitchers stay in the pool and pay PITCHER_FADE_PENALTY here.
 
-    Two signals:
-      1. env_factor   — PRIMARY: game conditions (Vegas O/U, opposing ERA,
-                        bullpen ERA, park, weather, platoon, batting order,
-                        moneyline).  Range: 0.70–1.30 (1.86× swing).
-      2. trait_factor — SECONDARY: intrinsic player quality (K/9, ISO,
-                        barrel%, SB pace, ERA, WHIP, recent form, 0-100).
-                        Range: 0.85–1.15 (1.35× swing).
-
-    Plus contextual multipliers: stack_bonus, dnp_adj, volatility_amplifier.
+    Six multiplicative terms:
+      1. env_factor          — PRIMARY: game conditions.  Pitchers cap at
+                               PITCHER_ENV_MODIFIER_CEILING (1.20), batters
+                               at ENV_MODIFIER_CEILING (1.30) — V10.6
+                               asymmetric.
+      2. volatility_amplifier— Boom-bust hitter amplifier.  V10.6 env-
+                               CONDITIONAL: amplifies env in good matchups,
+                               penalises in bad.  Pitchers always 1.0 (no
+                               recent_form_cv).
+      3. trait_factor        — SECONDARY: intrinsic player quality (Statcast
+                               kinematics + ERA/K9/WHIP for SP; exit-velo +
+                               hard-hit% + barrel% for batters).  0.85–1.15.
+      4. stack_bonus         — 1.20 if PATH 1 blowout-favorite team, else 1.0.
+      5. dnp_adj             — Confirmed-bad 0.70 / unknown 0.93 (V10.6) /
+                               known 1.0.
+      6. pitcher_pop_penalty — 0.85 if pitcher AND FADE (V10.5), else 1.0.
 
     Formula:
-        base_ev = env_factor × volatility_amplifier × trait_factor × stack_bonus × dnp_adj × 100
+        base_ev = env_factor × volatility_amplifier × trait_factor
+                  × stack_bonus × dnp_adj × pitcher_pop_penalty × 100
     """
     raw_env = max(candidate.env_score, 0.0)
-    env_factor = ENV_MODIFIER_FLOOR + raw_env * (ENV_MODIFIER_CEILING - ENV_MODIFIER_FLOOR)
-    env_factor = max(ENV_MODIFIER_FLOOR, min(ENV_MODIFIER_CEILING, env_factor))
+    # V10.6 (April 28-29 evaluation): asymmetric env ceiling — pitchers cap at
+    # PITCHER_ENV_MODIFIER_CEILING (1.20) vs batters at ENV_MODIFIER_CEILING
+    # (1.30).  Pitcher outcomes are 1-player-dependent, so over-saturating
+    # pitcher EV (5 env factors trivially → 1.0 saturation → 1.30 multiplier)
+    # priced batters out of the top-10 even on shootout slates.  The harness
+    # showed 54% of model top-10 were pitchers (target ~40%); tightening the
+    # pitcher band lets exceptional batter env situations compete.
+    env_ceiling = PITCHER_ENV_MODIFIER_CEILING if candidate.is_pitcher else ENV_MODIFIER_CEILING
+    env_factor = ENV_MODIFIER_FLOOR + raw_env * (env_ceiling - ENV_MODIFIER_FLOOR)
+    env_factor = max(ENV_MODIFIER_FLOOR, min(env_ceiling, env_factor))
 
-    # Volatility amplifier: high-variance players amplify env conditions (both good and bad).
-    # Recent form CV is only available for batters; pitchers default to 1.0.
+    # Volatility amplifier: high-variance batters amplify env signal both ways.
+    # V10.6 (April 28-29 evaluation): made the amplifier env-CONDITIONAL.  Pre-
+    # V10.6 it was unconditional `1.0 + cv × 0.20`, which always boosted volatile
+    # boom-bust hitters regardless of context — that's why the live pipeline
+    # systematically over-loved Max Muncy / Aaron Judge / Yordan-class profiles
+    # even on slates where their actual env (cold weather, ace pitcher matchup)
+    # was poor.  New formula scales the boost by env deviation from neutral:
+    #
+    #     amp = 1 + cv × MAX × (env_score − 0.5) × 2
+    #
+    # Volatile batter in great env (env=1.0) gets +20% amplification; in
+    # neutral env (env=0.5) gets 1.0× (no amplification, no penalty); in
+    # bad env (env=0.0) gets −20% (penalty for boom-bust profile in a matchup
+    # they're likely to bust in).  Steady batters (cv ≈ 0) are unaffected
+    # by this term, leaving the env signal alone to rank them.  Pitchers
+    # never carry recent_form_cv, so they default to 1.0 (no change).
     volatility_amplifier = 1.0
     if candidate.traits:
         for trait in candidate.traits:
             if trait.name == "recent_form" and "recent_form_cv" in trait.metadata:
                 cv = trait.metadata["recent_form_cv"]
-                volatility_amplifier = 1.0 + (cv * BATTER_FORM_VOLATILITY_MAX)
+                # Env deviation from neutral: (raw_env - 0.5) × 2 maps env [0,1]
+                # to [-1, +1].  Clamp to keep extreme rookies/ghosts within band.
+                env_deviation = max(-1.0, min(1.0, (raw_env - 0.5) * 2.0))
+                volatility_amplifier = 1.0 + (cv * BATTER_FORM_VOLATILITY_MAX * env_deviation)
                 break
 
     trait_floor = MIN_SCORE_THRESHOLD / 100.0

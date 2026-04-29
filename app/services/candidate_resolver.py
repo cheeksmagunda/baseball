@@ -18,6 +18,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.constants import (
     DEFAULT_OPP_K_PCT,
     DEFAULT_OPP_OPS,
@@ -26,6 +27,7 @@ from app.core.constants import (
     PITCHER_POSITIONS,
 )
 from app.core.utils import find_players_by_name_team_batch
+from app.models.player import Player, PlayerStats, TeamSeasonStats
 from app.schemas.filter_strategy import FilterCard, GameEnvironment
 from app.services.filter_strategy import (
     FilteredCandidate,
@@ -98,17 +100,49 @@ def _prepare_pitcher_env_kwargs(game: GameEnvironment, card: FilterCard) -> dict
     return score_kwargs
 
 
-def _prepare_batter_env_kwargs(game: GameEnvironment, card: FilterCard) -> dict:
-    """Extract batter environment scoring kwargs from game context."""
+def _prepare_batter_env_kwargs(
+    game: GameEnvironment,
+    card: FilterCard,
+    starter_xstats_lookup: dict[int, dict] | None = None,
+) -> dict:
+    """Extract batter environment scoring kwargs from game context.
+
+    V10.6 carries opp K/9 into `opp_pitcher_stats` so `score_batter_matchup`
+    can fire the K-vulnerability sub-signal (batter K% × opp K/9 cross
+    penalty for high-K bats vs elite K-arms).  Without K/9 here the trait
+    layer would still rely on ERA/WHIP only, missing the floor-risk angle.
+
+    V10.8 carries opp x_era and x_woba_against into `opp_pitcher_stats` —
+    the simplified pitch-arsenal-mismatch signal.  These flow from the
+    starter_xstats_lookup (built once per slate by resolve_candidates by
+    mlb_id) into score_batter_matchup, which uses them as a 5th sub-signal
+    measuring how the opposing arsenal suppresses contact independent of
+    BABIP / sequencing luck.  When the lookup is None or the starter row
+    is missing (rookie pre-50 PA, schema drift), trait layer falls through
+    to the V10.6 four-sub-signal blend.
+    """
     is_home = game.home_team.upper() == card.team.upper()
     opp_era = game.away_starter_era if is_home else game.home_starter_era
     opp_whip = game.away_starter_whip if is_home else game.home_starter_whip
+    opp_k9 = game.away_starter_k_per_9 if is_home else game.home_starter_k_per_9
+    opp_starter_id = (
+        game.away_starter_mlb_id if is_home else game.home_starter_mlb_id
+    )
     starter_hand = game.away_starter_hand if is_home else game.home_starter_hand
     score_kwargs: dict = {}
-    if opp_era is not None or opp_whip is not None:
+    if opp_era is not None or opp_whip is not None or opp_k9 is not None:
+        opp_xstats = (
+            starter_xstats_lookup.get(opp_starter_id, {})
+            if starter_xstats_lookup is not None and opp_starter_id is not None
+            else {}
+        )
         score_kwargs["opp_pitcher_stats"] = {
             "era": opp_era if opp_era is not None else DEFAULT_PITCHER_ERA,
             "whip": opp_whip if opp_whip is not None else DEFAULT_PITCHER_WHIP,
+            "k_per_9": opp_k9,  # V10.6 — None passes through; trait layer skips K-vuln if so
+            # V10.8 — None when no Savant row yet; trait layer falls through to V10.6 blend.
+            "x_era": opp_xstats.get("x_era"),
+            "x_woba_against": opp_xstats.get("x_woba_against"),
         }
     score_kwargs["batting_order"] = card.batting_order
     score_kwargs["park_team"] = game.home_team.upper()
@@ -138,6 +172,62 @@ async def resolve_candidates(
     # Drop cards without a player_name. Draft counts are ingested post-slate,
     # so drafts=None is routine pre-game and should NOT filter the card out.
     cards = [c for c in cards if c.player_name]
+
+    # V10.8 — pre-build a starter xStats lookup keyed by MLB ID.  One SQL
+    # query for every probable starter on the slate, then per-card matchup
+    # scoring resolves x_era / x_woba_against in O(1) without re-querying.
+    # Falls through cleanly when a starter has no PlayerStats row.
+    starter_mlb_ids: list[int] = []
+    for g in games:
+        if g.home_starter_mlb_id is not None:
+            starter_mlb_ids.append(g.home_starter_mlb_id)
+        if g.away_starter_mlb_id is not None:
+            starter_mlb_ids.append(g.away_starter_mlb_id)
+    _current_season = settings.current_season
+
+    starter_xstats_lookup: dict[int, dict] = {}
+    if starter_mlb_ids:
+        starter_players = (
+            db.query(Player).filter(Player.mlb_id.in_(set(starter_mlb_ids))).all()
+        )
+        if starter_players:
+            stats_rows = (
+                db.query(PlayerStats)
+                .filter(
+                    PlayerStats.player_id.in_([p.id for p in starter_players]),
+                    PlayerStats.season == _current_season,
+                )
+                .all()
+            )
+            stats_by_pid = {s.player_id: s for s in stats_rows}
+            for p in starter_players:
+                ps = stats_by_pid.get(p.id)
+                if p.mlb_id is None:
+                    continue
+                starter_xstats_lookup[p.mlb_id] = {
+                    "x_era": ps.x_era if ps else None,
+                    "x_woba_against": ps.x_woba_against if ps else None,
+                }
+
+    # V10.8 — pre-build a team framing-runs lookup for the slate.  One SQL
+    # query per slate, keyed by team abbreviation.  Pass into score_player so
+    # `score_pitcher_k_rate` can apply the small ±5% framing adjustment.
+    # Falls through cleanly when TeamSeasonStats has no row for a team
+    # (refresh hasn't run yet, or Savant scrape failed).
+    teams_in_slate = {g.home_team.upper() for g in games} | {g.away_team.upper() for g in games}
+    team_framing_lookup: dict[str, float] = {}
+    if teams_in_slate:
+        framing_rows = (
+            db.query(TeamSeasonStats)
+            .filter(
+                TeamSeasonStats.team.in_(teams_in_slate),
+                TeamSeasonStats.season == _current_season,
+            )
+            .all()
+        )
+        for row in framing_rows:
+            if row.framing_runs is not None:
+                team_framing_lookup[row.team.upper()] = row.framing_runs
 
     # Stage 0: map cards to Player records in one batched query.
     pairs = [(c.player_name, c.team) for c in cards]
@@ -181,8 +271,15 @@ async def resolve_candidates(
         # systematically outscore boosted batters regardless of matchup or order.
         if is_pitcher:
             score_kwargs = _prepare_pitcher_env_kwargs(game, card)
+            # V10.8 — pitcher's own team framing aggregate, threaded into
+            # score_pitcher_k_rate as the ±5% catcher-framing adjustment.
+            score_kwargs["team_framing_runs"] = team_framing_lookup.get(
+                card.team.upper()
+            )
         else:
-            score_kwargs = _prepare_batter_env_kwargs(game, card)
+            score_kwargs = _prepare_batter_env_kwargs(
+                game, card, starter_xstats_lookup=starter_xstats_lookup
+            )
 
         score_result = score_player(db, player, is_pitcher=is_pitcher, **score_kwargs)
 
@@ -228,6 +325,7 @@ async def resolve_candidates(
             is_home = game.home_team.upper() == card.team.upper()
             opp_era = game.away_starter_era if is_home else game.home_starter_era
             opp_whip = game.away_starter_whip if is_home else game.home_starter_whip
+            opp_k9 = game.away_starter_k_per_9 if is_home else game.home_starter_k_per_9
             park_team = game.home_team.upper()
             team_ml = game.home_moneyline if is_home else game.away_moneyline
             opp_bp_era = game.away_bullpen_era if is_home else game.home_bullpen_era
@@ -235,6 +333,10 @@ async def resolve_candidates(
             series_team_w = game.series_home_wins if is_home else game.series_away_wins
             series_opp_w = game.series_away_wins if is_home else game.series_home_wins
             team_l10 = game.home_team_l10_wins if is_home else game.away_team_l10_wins
+
+            opp_rest = (
+                game.away_team_rest_days if is_home else game.home_team_rest_days
+            )
 
             env_score, env_factors, env_unknown_count = compute_batter_env_score(
                 vegas_total=game.vegas_total,
@@ -251,6 +353,8 @@ async def resolve_candidates(
                 series_opp_wins=series_opp_w,
                 team_l10_wins=team_l10,
                 opp_starter_whip=opp_whip,
+                opp_starter_k_per_9=opp_k9,
+                opp_team_rest_days=opp_rest,
             )
 
         game_id = card.game_id or game.game_id

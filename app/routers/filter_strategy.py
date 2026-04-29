@@ -129,6 +129,8 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             series_away_wins=g.series_away_wins,
             home_team_l10_wins=g.home_team_l10_wins,
             away_team_l10_wins=g.away_team_l10_wins,
+            home_team_rest_days=g.home_team_rest_days,
+            away_team_rest_days=g.away_team_rest_days,
         )
         for g in remaining_games
     ]

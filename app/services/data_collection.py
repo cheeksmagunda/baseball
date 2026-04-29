@@ -862,13 +862,16 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
                 return looked_up.upper()
         return ""
 
-    def _extract_record(team: str, opp: str) -> tuple[int | None, int | None, int | None]:
+    def _extract_record(team: str, opp: str) -> tuple[int | None, int | None, int | None, int | None]:
         """
-        Return (series_wins, series_losses, l10_wins) for `team` vs `opp`.
+        Return (series_wins, series_losses, l10_wins, rest_days) for `team` vs `opp`.
 
         series_wins/losses: consecutive games vs. opp immediately before
         slate_date (the current series).
         l10_wins: wins in the 10 most recent completed games (any opponent).
+        rest_days: V10.8 — calendar days between the team's most recent
+        completed game and `slate_date`.  0 = back-to-back (played yesterday),
+        1 = one rest day, etc.  None = no completed games in lookback.
 
         Raises RuntimeError if no completed games are found in the lookback
         window — indicates an API or data problem mid-season.
@@ -880,12 +883,32 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
                 "series context will be NULL for this team",
                 team,
             )
-            return None, None, None
+            return None, None, None, None
 
         def _game_date(g: dict) -> str:
             return g.get("officialDate", g.get("gameDate", "")[:10])
 
         sorted_games = sorted(raw, key=_game_date, reverse=True)
+
+        # V10.8 — rest days between most recent completed game and the slate date.
+        # FantasyLabs DFS research: opponent rest is a real edge (back-to-back
+        # opp = depleted bullpen + tighter starter pitch leash).  Slot it onto
+        # the team's home/away side; the env-scoring layer reads the OPPOSING
+        # side when computing the batter's environment.
+        #
+        # No try/except on date parsing here — the existing L10 / series_wins
+        # logic below already trusts MLB Stats API ISO dates.  A malformed date
+        # would indicate an upstream API problem worth failing on; ValueError
+        # propagates up to enrich_slate_game_series_context's caller per the
+        # "fail loud, never fallback" rule.
+        from datetime import date as _date
+
+        rest_days: int | None = None
+        if sorted_games:
+            most_recent_str = _game_date(sorted_games[0])
+            if most_recent_str:
+                most_recent_date = _date.fromisoformat(most_recent_str[:10])
+                rest_days = max(0, (slate_date - most_recent_date).days - 1)
 
         l10 = 0
         for g in sorted_games[:10]:
@@ -937,17 +960,20 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
                 else:
                     series_losses += 1
 
-        return series_wins, series_losses, l10
+        return series_wins, series_losses, l10, rest_days
 
     updated = 0
     for game in games:
-        home_sw, _home_sl, home_l10 = _extract_record(game.home_team, game.away_team)
-        away_sw, _away_sl, away_l10 = _extract_record(game.away_team, game.home_team)
+        home_sw, _home_sl, home_l10, home_rest = _extract_record(game.home_team, game.away_team)
+        away_sw, _away_sl, away_l10, away_rest = _extract_record(game.away_team, game.home_team)
 
         game.series_home_wins = home_sw
         game.series_away_wins = away_sw
         game.home_team_l10_wins = home_l10
         game.away_team_l10_wins = away_l10
+        # V10.8 — rest days, derived from the same schedule lookback.
+        game.home_team_rest_days = home_rest
+        game.away_team_rest_days = away_rest
         updated += 1
 
     db.commit()

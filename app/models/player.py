@@ -64,6 +64,17 @@ class PlayerStats(Base):
     max_exit_velocity: Mapped[float | None] = mapped_column(Float, nullable=True)   # mph, single-hit peak
     hard_hit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)        # % of BBE ≥ 95 mph
 
+    # Batter expected stats (V10.8 — Statcast xStats from Baseball Savant).
+    # These are the industry-standard predictive metrics: wOBA derived from
+    # exit velocity + launch angle (and sprint speed for some batted balls)
+    # rather than realised outcomes.  Strategy doc lift: when the live wOBA
+    # vs xwOBA gap is wide, xwOBA is the leading indicator.  See
+    # https://www.mlb.com/glossary/statcast/expected-woba and
+    # https://baseballsavant.mlb.com/leaderboard/expected_statistics.
+    x_woba: Mapped[float | None] = mapped_column(Float, nullable=True)              # est_woba (Savant)
+    x_ba: Mapped[float | None] = mapped_column(Float, nullable=True)                # est_ba
+    x_slg: Mapped[float | None] = mapped_column(Float, nullable=True)               # est_slg
+
     # Pitcher
     ip: Mapped[float] = mapped_column(Float, default=0.0)
     era: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -80,9 +91,54 @@ class PlayerStats(Base):
     whiff_pct: Mapped[float | None] = mapped_column(Float, nullable=True)           # whiffs / swings
     chase_pct: Mapped[float | None] = mapped_column(Float, nullable=True)           # o-swing%
 
+    # Pitcher expected stats (V10.8 — Statcast xStats from Baseball Savant).
+    # xERA is the 1:1 conversion of xwOBA-against onto the ERA scale, and
+    # captures arsenal effectiveness independent of BABIP / sequencing luck.
+    # Wide ERA-vs-xERA gaps are screaming regression signals (FantasyLabs,
+    # PitcherList — see CLAUDE.md V10.8 section for citations).  V10.8 also
+    # uses xwOBA-against as the simplified pitch-arsenal-mismatch proxy:
+    # the headline number that a pitcher's overall arsenal performs well.
+    x_era: Mapped[float | None] = mapped_column(Float, nullable=True)               # ERA-scale xERA
+    x_woba_against: Mapped[float | None] = mapped_column(Float, nullable=True)      # est_woba-against
+
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     player: Mapped["Player"] = relationship(back_populates="stats")
+
+
+class TeamSeasonStats(Base):
+    """Per-team season aggregates that aren't tied to an individual player.
+
+    V10.8 lifecycle: populated by `scripts/refresh_statcast.py` once per
+    slate cycle, looked up by env-enrichment in `data_collection.py` and
+    by the slate router for display.  All fields are factual season stats
+    fetched from public Savant CSVs / pybaseball — they're inputs in the
+    same sense as Player.PlayerStats.{era, k_per_9, ...}, NOT slate-day
+    outcomes (which would violate the no-historical-bleed rule).
+
+    Currently stores team catcher framing aggregate (V10.8); future
+    candidates: park-specific BA/SLG splits, team-level pitch-mix profile,
+    bullpen recent xFIP, etc.  Single home for "team-level signal" so the
+    schema doesn't sprawl across SlateGame columns.
+    """
+
+    __tablename__ = "team_season_stats"
+    __table_args__ = (UniqueConstraint("team", "season", name="uq_team_season"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Catcher framing (V10.8) — aggregated across all of a team's catchers
+    # for the season.  framing_runs = total run value added by framing,
+    # framing_strike_pct = % of shadow-zone called pitches converted to
+    # strikes.  Reduced impact under 2026 ABS challenge system but still
+    # meaningful for the ~98% of pitches that aren't challenged.
+    framing_runs: Mapped[float | None] = mapped_column(Float, nullable=True)
+    framing_strike_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    framing_pitches: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class PlayerGameLog(Base):
