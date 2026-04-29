@@ -89,6 +89,7 @@ from app.core.constants import (
     HITTER_DAY_VEGAS_TOTAL_THRESHOLD,
     BLOWOUT_MONEYLINE_THRESHOLD,
     BLOWOUT_MIN_GAMES_FOR_STACK_DAY,
+    STACK_ELIGIBILITY_VEGAS_TOTAL,
     MIN_SCORE_THRESHOLD,
     PITCHER_ENV_WEAK_OPP_OPS,
     PITCHER_ENV_MIN_K_PER_9,
@@ -160,6 +161,8 @@ from app.core.constants import (
     BATTER_FORM_VOLATILITY_MAX,
     # Slate classification — quality-SP ERA gate
     QUALITY_SP_ERA_THRESHOLD,
+    # V10.5 — pitcher FADE soft penalty (pitchers are kept in pool but discounted)
+    PITCHER_FADE_PENALTY,
 )
 from app.core.utils import BASE_MULTIPLIER, get_trait_score, graduated_scale, graduated_scale_moneyline
 from app.services.popularity import PopularityClass
@@ -242,13 +245,16 @@ def classify_slate(
         if vt is not None and vt >= HITTER_DAY_VEGAS_TOTAL_THRESHOLD:
             high_total += 1
 
-        # PATH 1: blowout favorite (moneyline ≤ -200, paired with O/U ≥ 9.0
-        # downstream).  Counts toward `blowout_games` and earns STACK_BONUS.
+        # PATH 1: blowout favorite (moneyline ≤ -200 AND O/U ≥ 9.0).
+        # Both gates required — a heavy ML favorite in a low-total pitcher's
+        # duel is NOT stack-eligible (correlation upside requires runs).
+        # Counts toward `blowout_games` and earns STACK_BONUS.
         home_ml = g.get("home_moneyline")
         away_ml = g.get("away_moneyline")
         home_team = g.get("home_team", "")
         away_team = g.get("away_team", "")
-        if home_ml is not None and home_ml <= BLOWOUT_MONEYLINE_THRESHOLD:
+        path1_ou_ok = vt is not None and vt >= STACK_ELIGIBILITY_VEGAS_TOTAL
+        if home_ml is not None and home_ml <= BLOWOUT_MONEYLINE_THRESHOLD and path1_ou_ok:
             blowout_games += 1
             stackable.append(StackableGame(
                 game_id=g.get("game_id"),
@@ -258,7 +264,7 @@ def classify_slate(
                 opp_starter_era=g.get("away_starter_era"),
                 is_blowout_favorite=True,
             ))
-        elif away_ml is not None and away_ml <= BLOWOUT_MONEYLINE_THRESHOLD:
+        elif away_ml is not None and away_ml <= BLOWOUT_MONEYLINE_THRESHOLD and path1_ou_ok:
             blowout_games += 1
             stackable.append(StackableGame(
                 game_id=g.get("game_id"),
@@ -850,12 +856,24 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
     stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
     dnp_adj = _compute_dnp_adjustment(candidate)
 
+    # V10.5: FADE pitchers stay in the pool but pay a soft penalty.
+    # Batters are still excluded entirely at the popularity gate, so a
+    # FADE candidate that survives EV must be a pitcher.  The 15% haircut
+    # is small enough that a genuinely strong pitcher (good env + good
+    # traits) can still beat the field — the gate only sorts ties.
+    pitcher_pop_penalty = (
+        PITCHER_FADE_PENALTY
+        if candidate.is_pitcher and candidate.popularity == PopularityClass.FADE
+        else 1.0
+    )
+
     return (
         env_factor
         * volatility_amplifier
         * trait_factor
         * stack_bonus
         * dnp_adj
+        * pitcher_pop_penalty
         * 100.0
     )
 
@@ -897,18 +915,23 @@ def _fill_batter_slots(
     anchor_game_id: int | str | None,
     anchor_team: str,
     stack_eligible_teams: set[str],
+    slots_to_fill: int = 4,
 ) -> list[FilteredCandidate]:
-    """Fill 4 batter slots from an EV-ordered batter pool.
+    """Fill `slots_to_fill` batter slots from an EV-ordered batter pool.
 
     Applies the anti-correlation guard, per-team cap, and per-game cap.
     Pool must already be sorted by filter_ev descending and must exclude pitchers.
+
+    `slots_to_fill` defaults to 4 (the 1P+4B path); the V10.5 pure-batter
+    path passes 5 to fill the entire lineup with no anchor restrictions
+    (caller passes anchor_game_id=None, anchor_team="" to disable that guard).
     """
     batters: list[FilteredCandidate] = []
     team_count: dict[str, int] = {}
     game_count: dict[int | str, int] = {}
 
     for c in ordered_batters:
-        if len(batters) == 4:
+        if len(batters) == slots_to_fill:
             break
         team_key = c.team.upper()
         if anchor_game_id is not None and c.game_id == anchor_game_id and team_key != anchor_team:
@@ -926,66 +949,148 @@ def _fill_batter_slots(
     return batters
 
 
+def _lineup_total_ev(lineup: list[FilteredCandidate]) -> float:
+    """Compute the slot-weighted total EV for a candidate ordering.
+
+    Mirrors `_smart_slot_assignment`: highest-EV candidate gets slot 1
+    (2.0×); subsequent candidates fill slots 2-5 by EV descending.  Pitchers
+    are pinned to slot 1 if present.  This is the comparison metric used to
+    pick between 1P+4B and 0P+5B variants — see `_build_best_lineup_variant`.
+    """
+    if not lineup:
+        return 0.0
+    pitcher = next((c for c in lineup if c.is_pitcher), None)
+    batters = sorted(
+        [c for c in lineup if not c.is_pitcher],
+        key=lambda c: c.filter_ev,
+        reverse=True,
+    )
+    slot_mults_desc = sorted(SLOT_MULTIPLIERS.values(), reverse=True)
+    total = 0.0
+    if pitcher is not None:
+        total += pitcher.filter_ev * (slot_mults_desc[0] / BASE_MULTIPLIER)
+        remaining_mults = slot_mults_desc[1:]
+    else:
+        remaining_mults = slot_mults_desc
+    for batter, mult in zip(batters, remaining_mults):
+        total += batter.filter_ev * (mult / BASE_MULTIPLIER)
+    return total
+
+
+def _build_pure_batter_lineup(
+    candidates: list[FilteredCandidate],
+    slate_class: SlateClassification,
+) -> list[FilteredCandidate]:
+    """Build a 0P+5B lineup: top-5 batters by filter_ev under team/game caps.
+
+    No anchor pitcher → no opposing-side restriction.  Returns [] if fewer
+    than 5 batters can be assembled under the caps (extremely rare in
+    practice; ~30 teams × cap of 1 + a couple stack-eligible teams × 2
+    means we typically have 30+ legal batter slots).  An empty return
+    signals the caller to fall back to the 1P+4B path.
+    """
+    ordered_batters = sorted(
+        [c for c in candidates if not c.is_pitcher],
+        key=lambda c: c.filter_ev,
+        reverse=True,
+    )
+    stack_eligible_teams = _compute_stack_eligible_teams(slate_class)
+    batters = _fill_batter_slots(
+        ordered_batters,
+        anchor_game_id=None,
+        anchor_team="",
+        stack_eligible_teams=stack_eligible_teams,
+        slots_to_fill=5,
+    )
+    if len(batters) < 5:
+        return []
+    return batters
+
+
 def _enforce_composition(
     candidates: list[FilteredCandidate],
     slate_class: SlateClassification,
 ) -> list[FilteredCandidate]:
     """
-    V10.1 pitcher-anchored composition: 1 pitcher + 4 batters, MINI-STACK.
+    V10.5 EV-driven composition: 0 OR 1 pitcher, EV decides.
 
-    Composition is fixed at 1 SP (Slot 1) + 4 batters (Slots 2-5).  Stacking
-    is gated on overwhelming game-script evidence — a team must be in a game
-    with moneyline ≤ -200 AND O/U ≥ 9.0 for its batters to be eligible as a
-    mini-stack (max 2 teammates).  Every other team is capped at one batter
-    per lineup, preserving diversification on normal slates.
+    Builds the standard 1P+4B (anchor) variant AND a 0P+5B (pure-batter)
+    variant, then returns the higher slot-weighted total.  This lets shootout
+    slates — where 4 of yesterday's top 5 winning lineups had zero pitchers —
+    naturally surface a 5-batter lineup, while heavy-pitcher days still
+    return the anchored shape because the pitcher's slot-1 multiplier (2.0×)
+    keeps it competitive when his EV beats the marginal batter.
 
-    Construction:
-    1. Compute stack-eligible teams from slate_class.stackable_games.
-    2. Select highest-EV pitcher as anchor. Pin to Slot 1.
-    3. NEVER draft a batter from the opposing side of the anchor's game
-       (pitcher ↔ hitter negative correlation).  Teammates of the anchor
-       are allowed because SP success implies low opposing offense.
-    4. Fill 4 batter slots by filter_ev descending, applying BOTH caps:
-       per-team  — 2 for stackable teams, 1 otherwise
-       per-game  — at most 2 batters from any single game (even across
-                   teams, for non-anchor games with mixed-side picks).
+    Stacking gates and per-team / per-game caps apply identically to both
+    variants — the only difference is whether slot 1 is taken by a pitcher
+    or by the highest-EV batter.
+
+    Anchor variant construction (unchanged from V10.1):
+    1. Select highest-EV pitcher.
+    2. NEVER draft an opposing batter in his game (pitcher ↔ hitter
+       negative correlation).  Teammates allowed within stack caps.
+    3. Fill 4 batter slots by filter_ev descending under team + game caps.
+
+    Pure-batter variant: top-5 batters by filter_ev, no anchor restriction.
+
+    Tiebreak: pitcher variant wins exact ties so we keep the conservative
+    shape unless the 5B EV truly dominates.
     """
     all_sorted = sorted(candidates, key=lambda c: c.filter_ev, reverse=True)
 
-    # Phase 1: Select the anchor pitcher (highest-EV pitcher in the pool).
-    anchor_pitcher = next((c for c in all_sorted if c.is_pitcher), None)
-    if anchor_pitcher is None:
-        raise ValueError(
-            "Candidate pool contains no pitcher. "
-            "Cannot build a lineup without an SP anchor."
-        )
-
-    anchor_game_id = anchor_pitcher.game_id
-    anchor_team = anchor_pitcher.team.upper()
-
     stack_eligible_teams = _compute_stack_eligible_teams(slate_class)
-
-    # Phase 2: Batters ordered by filter_ev (env×trait ranking).
     ordered_batters = [c for c in all_sorted if not c.is_pitcher]
 
-    # Phase 3: Fill 4 batter slots via shared helper.
-    lineup: list[FilteredCandidate] = [anchor_pitcher]
-    lineup.extend(_fill_batter_slots(ordered_batters, anchor_game_id, anchor_team, stack_eligible_teams))
+    # Variant A: 1P + 4B (pitcher-anchored).  Build only if a pitcher exists.
+    anchor_pitcher = next((c for c in all_sorted if c.is_pitcher), None)
+    anchor_lineup: list[FilteredCandidate] = []
+    if anchor_pitcher is not None:
+        anchor_game_id = anchor_pitcher.game_id
+        anchor_team = anchor_pitcher.team.upper()
+        anchor_lineup = [anchor_pitcher]
+        anchor_lineup.extend(
+            _fill_batter_slots(ordered_batters, anchor_game_id, anchor_team, stack_eligible_teams)
+        )
+        anchor_lineup = _validate_lineup_structure(
+            anchor_lineup, ordered_batters, anchor_pitcher=anchor_pitcher,
+            stack_eligible_teams=stack_eligible_teams,
+        )
 
-    lineup = _validate_lineup_structure(
-        lineup, ordered_batters, anchor_pitcher=anchor_pitcher,
-        stack_eligible_teams=stack_eligible_teams,
-    )
-    batter_count = len(lineup) - 1
+    # Variant B: 0P + 5B (pure-batter).
+    pure_batter_lineup = _build_pure_batter_lineup(candidates, slate_class)
+    if pure_batter_lineup:
+        pure_batter_lineup = _validate_lineup_structure(
+            pure_batter_lineup, ordered_batters, anchor_pitcher=None,
+            stack_eligible_teams=stack_eligible_teams,
+        )
+
+    # Tiebreak: pitcher variant wins ties (>=, not >) — conservative default
+    # keeps the strategy doc's pitcher-anchor identity unless 5B truly dominates.
+    anchor_ev = _lineup_total_ev(anchor_lineup) if len(anchor_lineup) == 5 else -1.0
+    pure_ev = _lineup_total_ev(pure_batter_lineup) if len(pure_batter_lineup) == 5 else -1.0
+
+    if anchor_ev < 0 and pure_ev < 0:
+        raise ValueError(
+            "Candidate pool produced neither a 1P+4B nor a 0P+5B lineup. "
+            "Cannot build a lineup."
+        )
+
+    if anchor_ev >= pure_ev:
+        chosen, label = anchor_lineup, "1P/4H"
+    else:
+        chosen, label = pure_batter_lineup, "0P/5H"
+
     from collections import Counter
-    stack_teams = [t for t, n in Counter(c.team for c in lineup if not c.is_pitcher).items() if n >= 2]
+    stack_teams = [t for t, n in Counter(c.team for c in chosen if not c.is_pitcher).items() if n >= 2]
+    anchor_name = anchor_pitcher.player_name if anchor_pitcher is not None else "—"
     logger.info(
-        "V10.1 composition: 1P/%dH — anchor=%s (EV=%.2f) stack_eligible=%s mini_stacks_used=%s (candidates: %d)",
-        batter_count, anchor_pitcher.player_name, anchor_pitcher.filter_ev,
+        "V10.5 composition: chose %s (anchor_ev=%.2f, pure_ev=%.2f) — anchor=%s "
+        "stack_eligible=%s mini_stacks_used=%s (candidates: %d)",
+        label, anchor_ev, pure_ev, anchor_name,
         sorted(stack_eligible_teams) or "none",
         stack_teams or "none", len(candidates),
     )
-    return lineup
+    return chosen
 
 
 def _validate_lineup_structure(
@@ -1134,11 +1239,14 @@ def _validate_lineup_structure(
                         replacement.player_name, replacement.game_id,
                     )
 
-    # Rule 4: Exactly 1 pitcher.
+    # Rule 4 (V10.5): At most 1 pitcher.  0 (pure-batter shootout shape) and
+    # 1 (anchored) are both legal; the EV-driven chooser in `_enforce_composition`
+    # picks between them.  Anything > 1 is a structural bug (we never assemble
+    # multiple pitchers into the same lineup), so warn loudly if it happens.
     pitcher_count_final = sum(1 for c in lineup if c.is_pitcher)
-    if pitcher_count_final != REQUIRED_PITCHERS_IN_LINEUP:
+    if pitcher_count_final > REQUIRED_PITCHERS_IN_LINEUP:
         logger.warning(
-            "Pitcher-count invariant violated: expected %d, got %d in %s",
+            "Pitcher-count invariant violated: expected at most %d, got %d in %s",
             REQUIRED_PITCHERS_IN_LINEUP, pitcher_count_final,
             [c.player_name for c in lineup],
         )
@@ -1183,11 +1291,12 @@ def _apply_game_diversification(
 def _smart_slot_assignment(
     candidates: list[FilteredCandidate],
 ) -> list[FilterSlotAssignment]:
-    """V6.0 slot assignment: pitcher anchors Slot 1, batters fill Slots 2-5.
+    """Slot assignment: pitcher (if present) anchors Slot 1, then highest-EV
+    batters fill remaining slots in descending order.
 
-    Retains V5.0 structure.  The pitcher is pinned to Slot 1 (2.0x).
-    Batters are assigned to Slots 2-5 by filter_ev descending (highest
-    EV batter gets Slot 2 at 1.8x).
+    V10.5: extended to handle the 0-pitcher pure-batter case.  When the lineup
+    has no pitcher, the highest-EV batter gets Slot 1 (2.0×) and the remaining
+    four batters fill Slots 2-5 by filter_ev descending.
     """
     if not candidates:
         return []
@@ -1202,9 +1311,10 @@ def _smart_slot_assignment(
     )
 
     assignments: list[FilterSlotAssignment] = []
+    slots_desc = sorted(slot_mults.items(), key=lambda x: x[1], reverse=True)
 
-    # Pitcher → Slot 1 (2.0x multiplier).
     if pitcher is not None:
+        # Pitcher → Slot 1 (2.0×); batters → Slots 2-5 by EV descending.
         anchor_mult = slot_mults[PITCHER_ANCHOR_SLOT]
         slot_value = pitcher.filter_ev * (anchor_mult / BASE_MULTIPLIER)
         assignments.append(FilterSlotAssignment(
@@ -1213,22 +1323,25 @@ def _smart_slot_assignment(
             candidate=pitcher,
             expected_slot_value=round(slot_value, 2),
         ))
-
-    # Batters → remaining slots by filter_ev descending.
-    batter_slots = sorted(
-        ((idx, mult) for idx, mult in slot_mults.items() if idx != PITCHER_ANCHOR_SLOT),
-        key=lambda x: x[1],
-        reverse=True,
-    )
-
-    for player, (slot_idx, slot_mult) in zip(batters, batter_slots):
-        slot_value = player.filter_ev * (slot_mult / BASE_MULTIPLIER)
-        assignments.append(FilterSlotAssignment(
-            slot_index=slot_idx,
-            slot_mult=slot_mult,
-            candidate=player,
-            expected_slot_value=round(slot_value, 2),
-        ))
+        remaining_slots = [(idx, mult) for idx, mult in slots_desc if idx != PITCHER_ANCHOR_SLOT]
+        for player, (slot_idx, slot_mult) in zip(batters, remaining_slots):
+            slot_value = player.filter_ev * (slot_mult / BASE_MULTIPLIER)
+            assignments.append(FilterSlotAssignment(
+                slot_index=slot_idx,
+                slot_mult=slot_mult,
+                candidate=player,
+                expected_slot_value=round(slot_value, 2),
+            ))
+    else:
+        # 0-pitcher lineup: top batter takes Slot 1, rest descend.
+        for player, (slot_idx, slot_mult) in zip(batters, slots_desc):
+            slot_value = player.filter_ev * (slot_mult / BASE_MULTIPLIER)
+            assignments.append(FilterSlotAssignment(
+                slot_index=slot_idx,
+                slot_mult=slot_mult,
+                candidate=player,
+                expected_slot_value=round(slot_value, 2),
+            ))
 
     assignments.sort(key=lambda a: a.slot_index)
     return assignments
@@ -1239,26 +1352,43 @@ def _smart_slot_assignment(
 # ---------------------------------------------------------------------------
 
 def _exclude_fade_players(candidates: list[FilteredCandidate]) -> list[FilteredCandidate]:
-    """Popularity gate: remove FADE-classified players before EV computation.
+    """Popularity gate (V10.5): exclude FADE batters; keep FADE pitchers
+    with a soft EV penalty applied later in `_compute_base_ev`.
 
-    FADE = high pre-game media attention (Google Trends, ESPN, Reddit).
-    These players are excluded from the candidate pool entirely — not penalised
-    via EV, not ranked last, just removed.  TARGET and NEUTRAL pass with no bonus.
+    Rationale: the crowd is structurally wrong about batter ownership
+    (TARGET batters average RS 3.57 / HV 73% vs FADE batters RS 0.98 /
+    HV 9.6%), so removing FADE batters is the highest-EV pre-EV filter
+    we have.  But pitcher outcomes are one-player-dependent, so the
+    FADE-vs-TARGET differential collapses to ~1.4×; eliminating
+    confirmed probable starters of heavy ML favorites (Ohtani, Yamamoto,
+    Fried) on popularity alone systematically misses obvious value.
 
-    Fails fast if the gate leaves no pitchers.  No fallback: a pool that cannot
-    supply an SP anchor is a data/classification problem upstream, not something
-    the optimizer should paper over.
+    Pitchers therefore stay in the pool here and pay PITCHER_FADE_PENALTY
+    (0.85×) in EV — a soft "name-recognition tax" that lets genuinely
+    strong matchups survive.
+
+    No fallback path: if every pitcher is excluded somewhere upstream
+    we still fail fast, because a 0-pitcher pool means the candidate
+    resolver itself is broken.
     """
-    filtered = [c for c in candidates if c.popularity != PopularityClass.FADE]
+    filtered = [
+        c for c in candidates
+        if c.is_pitcher or c.popularity != PopularityClass.FADE
+    ]
     excluded = len(candidates) - len(filtered)
-    if excluded:
+    fade_pitcher_count = sum(
+        1 for c in filtered
+        if c.is_pitcher and c.popularity == PopularityClass.FADE
+    )
+    if excluded or fade_pitcher_count:
         logger.info(
-            "Popularity gate: excluded %d FADE players (%d remain)",
-            excluded, len(filtered),
+            "Popularity gate: excluded %d FADE batters; kept %d FADE pitchers "
+            "with soft penalty (%d pool size)",
+            excluded, fade_pitcher_count, len(filtered),
         )
     if not any(c.is_pitcher for c in filtered):
         raise ValueError(
-            "Candidate pool contains no non-FADE pitchers. "
+            "Candidate pool contains no pitchers. "
             "Cannot build a lineup without an SP anchor."
         )
     return filtered
@@ -1372,25 +1502,75 @@ class DualFilterOptimizedResult:
     moonshot: FilterOptimizedLineup
 
 
+def _build_best_variant(
+    pitcher: FilteredCandidate | None,
+    batter_pool: list[FilteredCandidate],
+    slate_class: SlateClassification,
+    stack_eligible_teams: set[str],
+) -> list[FilteredCandidate]:
+    """Pick the higher-EV of (1P+4B with given pitcher) vs (0P+5B from pool).
+
+    Used by both Starting 5 and Moonshot to honour the V10.5 rule that
+    composition is EV-driven — pure-batter lineups win on shootout slates,
+    pitcher-anchored lineups win when the SP's slot-1 multiplier overcomes
+    the marginal batter.
+
+    `batter_pool` must already be sorted by the caller's relevant filter_ev
+    (base EV for Starting 5; moonshot EV for Moonshot).  Pitchers are pruned
+    from `batter_pool` before this function is called.
+    """
+    anchor_game_id = pitcher.game_id if pitcher is not None else None
+    anchor_team = pitcher.team.upper() if pitcher is not None else ""
+
+    # Variant A: 1P + 4B
+    anchor_lineup: list[FilteredCandidate] = []
+    if pitcher is not None:
+        anchor_lineup = [pitcher]
+        anchor_lineup.extend(_fill_batter_slots(
+            batter_pool, anchor_game_id, anchor_team, stack_eligible_teams,
+        ))
+        anchor_lineup = _validate_lineup_structure(
+            anchor_lineup, batter_pool, anchor_pitcher=pitcher,
+            stack_eligible_teams=stack_eligible_teams,
+        )
+
+    # Variant B: 0P + 5B (no anchor restriction — top-5 batters)
+    pure_batters = _fill_batter_slots(
+        batter_pool, anchor_game_id=None, anchor_team="",
+        stack_eligible_teams=stack_eligible_teams, slots_to_fill=5,
+    )
+    pure_lineup: list[FilteredCandidate] = []
+    if len(pure_batters) == 5:
+        pure_lineup = _validate_lineup_structure(
+            pure_batters, batter_pool, anchor_pitcher=None,
+            stack_eligible_teams=stack_eligible_teams,
+        )
+
+    anchor_ev = _lineup_total_ev(anchor_lineup) if len(anchor_lineup) == 5 else -1.0
+    pure_ev = _lineup_total_ev(pure_lineup) if len(pure_lineup) == 5 else -1.0
+    return anchor_lineup if anchor_ev >= pure_ev else pure_lineup
+
+
 def run_dual_filter_strategy(
     candidates: list[FilteredCandidate],
     slate_classification: SlateClassification,
 ) -> DualFilterOptimizedResult:
-    """Produce Starting 5 and Moonshot from the same FADE-excluded pool.
+    """Produce Starting 5 and Moonshot from the same FADE-batter-excluded pool.
 
-    Both lineups share the same pitcher anchor (highest base EV SP).  Batters
-    split at the end of the pipeline: Starting 5 takes the top-4 by env×trait
-    EV; Moonshot takes the next-4 by sharp×explosive EV from the remaining
-    pool.  Zero batter overlap is guaranteed by construction.
+    V10.5: each lineup independently chooses its optimal shape (1P+4B or
+    0P+5B) based on slot-weighted EV.  When both choose 1P, they share the
+    same pitcher anchor (highest base EV SP) — the existing divergence
+    pattern (different batters via sharp×explosive re-ranking) is preserved.
+    When the slate is a shootout and the top batter EVs dominate, either
+    or both lineups may go pure-batter.  Zero batter overlap is guaranteed
+    by construction.
     """
-    # 1. Popularity gate — shared for both lineups.
+    # 1. Popularity gate (V10.5: bifurcated — FADE batters out, FADE pitchers
+    #    stay with soft EV penalty applied in _compute_base_ev).
     candidates = _exclude_fade_players(candidates)
 
     # 2. Mark blowout-game players and compute base EV for all candidates.
     # STACK_BONUS (1.20× EV) is gated to PATH 1 blowout favorites only.
-    # PATH 2 shootout sides become stack-eligible (mini-stack cap lifts to 2)
-    # but do NOT receive the bonus — they're in a high-run game, not a
-    # predictable blowout, so the asymmetric upside is smaller.
     blowout_teams = {
         g.favored_team.upper()
         for g in slate_classification.stackable_games
@@ -1400,23 +1580,26 @@ def run_dual_filter_strategy(
         c.is_in_blowout_game = c.team.upper() in blowout_teams
         c.filter_ev = _compute_filter_ev(c)
 
-    # 3. Select shared pitcher anchor (highest base EV).
+    # 3. Identify the shared pitcher anchor (highest base EV).  May be None
+    #    in degenerate slates with no pitcher; the variant builder handles that.
     sorted_by_base = sorted(candidates, key=lambda c: c.filter_ev, reverse=True)
     shared_pitcher = next((c for c in sorted_by_base if c.is_pitcher), None)
     if shared_pitcher is None:
         raise ValueError("Candidate pool contains no pitcher after FADE exclusion.")
 
-    anchor_game_id = shared_pitcher.game_id
-    anchor_team = shared_pitcher.team.upper()
     stack_eligible_teams = _compute_stack_eligible_teams(slate_classification)
 
     logger.info(
-        "Dual strategy: shared anchor=%s (EV=%.2f) stack_eligible=%s",
+        "Dual strategy: shared anchor candidate=%s (EV=%.2f) stack_eligible=%s",
         shared_pitcher.player_name, shared_pitcher.filter_ev,
         sorted(stack_eligible_teams) or "none",
     )
 
-    # 4. Base batter pool: no pitchers, no opposing batters in anchor's game.
+    # 4. Base batter pool: no pitchers, exclude opposing batters in the
+    #    candidate anchor's game (they'd be invalid in the anchor variant
+    #    and we'd rather keep one pool consistent across variants).
+    anchor_game_id = shared_pitcher.game_id
+    anchor_team = shared_pitcher.team.upper()
     base_batter_pool = [
         c for c in sorted_by_base
         if not c.is_pitcher
@@ -1427,29 +1610,28 @@ def run_dual_filter_strategy(
         )
     ]
 
-    # 5. Starting 5: top-4 batters by base EV.
-    s5_batters = _fill_batter_slots(base_batter_pool, anchor_game_id, anchor_team, stack_eligible_teams)
-    s5_lineup = _validate_lineup_structure(
-        [shared_pitcher] + s5_batters,
-        base_batter_pool,
-        anchor_pitcher=shared_pitcher,
-        stack_eligible_teams=stack_eligible_teams,
+    # 5. Starting 5: pick best of 1P+4B vs 0P+5B by base EV.
+    s5_lineup = _build_best_variant(
+        shared_pitcher, base_batter_pool, slate_classification, stack_eligible_teams,
     )
     s5_warnings = _apply_game_diversification(s5_lineup)
     s5_slots = _smart_slot_assignment(s5_lineup)
     s5_total_ev = sum(sl.expected_slot_value for sl in s5_slots)
+    s5_pitcher_count = sum(1 for c in s5_lineup if c.is_pitcher)
 
     starting_5 = FilterOptimizedLineup(
         slots=s5_slots,
         total_expected_value=round(s5_total_ev, 2),
         strategy="filter_not_forecast",
         slate_classification=slate_classification,
-        composition={"pitchers": 1, "hitters": len(s5_lineup) - 1},
+        composition={"pitchers": s5_pitcher_count, "hitters": len(s5_lineup) - s5_pitcher_count},
         warnings=s5_warnings,
     )
 
-    # 6. Moonshot: re-rank remaining batters by sharp×explosive EV, pick next-4.
-    s5_batter_keys = {(c.player_name, c.team) for c in s5_batters}
+    # 6. Moonshot: re-rank remaining batters by sharp×explosive EV, then pick
+    #    best of 1P+4B vs 0P+5B.  Non-overlap with Starting 5 batters is
+    #    enforced by removing s5 batter keys from the moonshot batter pool.
+    s5_batter_keys = {(c.player_name, c.team) for c in s5_lineup if not c.is_pitcher}
     moonshot_pool = [
         c for c in base_batter_pool
         if (c.player_name, c.team) not in s5_batter_keys
@@ -1462,23 +1644,21 @@ def run_dual_filter_strategy(
     for c in moonshot_pool:
         c.filter_ev = _compute_moonshot_filter_ev(c)
     moonshot_pool.sort(key=lambda c: c.filter_ev, reverse=True)
-    moonshot_batters = _fill_batter_slots(moonshot_pool, anchor_game_id, anchor_team, stack_eligible_teams)
-    moonshot_lineup = _validate_lineup_structure(
-        [shared_pitcher] + moonshot_batters,
-        moonshot_pool,
-        anchor_pitcher=shared_pitcher,
-        stack_eligible_teams=stack_eligible_teams,
+
+    moonshot_lineup = _build_best_variant(
+        shared_pitcher, moonshot_pool, slate_classification, stack_eligible_teams,
     )
     moonshot_warnings = _apply_game_diversification(moonshot_lineup)
     moonshot_slots = _smart_slot_assignment(moonshot_lineup)
     moonshot_total_ev = sum(sl.expected_slot_value for sl in moonshot_slots)
+    moonshot_pitcher_count = sum(1 for c in moonshot_lineup if c.is_pitcher)
 
     moonshot = FilterOptimizedLineup(
         slots=moonshot_slots,
         total_expected_value=round(moonshot_total_ev, 2),
         strategy="moonshot",
         slate_classification=slate_classification,
-        composition={"pitchers": 1, "hitters": len(moonshot_lineup) - 1},
+        composition={"pitchers": moonshot_pitcher_count, "hitters": len(moonshot_lineup) - moonshot_pitcher_count},
         warnings=moonshot_warnings,
     )
 

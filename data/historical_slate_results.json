@@ -20116,5 +20116,95 @@
     "source": "realsports_scraper",
     "saved_at": "2026-04-27T05:40:04.027440+00:00",
     "notes": "Scraped via realsports.io on 2026-04-27 05:40:04Z"
+  },
+  {
+    "date": "2026-04-27",
+    "game_count": 8,
+    "games": [
+      {
+        "home": "CLE",
+        "away": "TB",
+        "home_score": 2,
+        "away_score": 3,
+        "winner": "TB",
+        "loser": "CLE",
+        "winner_score": 3,
+        "loser_score": 2
+      },
+      {
+        "home": "PIT",
+        "away": "STL",
+        "home_score": 2,
+        "away_score": 4,
+        "winner": "STL",
+        "loser": "PIT",
+        "winner_score": 4,
+        "loser_score": 2
+      },
+      {
+        "home": "TOR",
+        "away": "BOS",
+        "home_score": 0,
+        "away_score": 5,
+        "winner": "BOS",
+        "loser": "TOR",
+        "winner_score": 5,
+        "loser_score": 0
+      },
+      {
+        "home": "MIN",
+        "away": "SEA",
+        "home_score": 11,
+        "away_score": 4,
+        "winner": "MIN",
+        "loser": "SEA",
+        "winner_score": 11,
+        "loser_score": 4
+      },
+      {
+        "home": "CWS",
+        "away": "LAA",
+        "home_score": 8,
+        "away_score": 7,
+        "winner": "CWS",
+        "loser": "LAA",
+        "winner_score": 8,
+        "loser_score": 7
+      },
+      {
+        "home": "TEX",
+        "away": "NYY",
+        "home_score": 2,
+        "away_score": 4,
+        "winner": "NYY",
+        "loser": "TEX",
+        "winner_score": 4,
+        "loser_score": 2
+      },
+      {
+        "home": "SD",
+        "away": "CHC",
+        "home_score": 9,
+        "away_score": 7,
+        "winner": "SD",
+        "loser": "CHC",
+        "winner_score": 9,
+        "loser_score": 7
+      },
+      {
+        "home": "LAD",
+        "away": "MIA",
+        "home_score": 5,
+        "away_score": 4,
+        "winner": "LAD",
+        "loser": "MIA",
+        "winner_score": 5,
+        "loser_score": 4
+      }
+    ],
+    "season_stage": "regular-season",
+    "source": "realsports_scraper",
+    "saved_at": "2026-04-29T03:54:22.057868+00:00",
+    "notes": "Scraped via realsports.io on 2026-04-29 03:54:22Z"
   }
 ]

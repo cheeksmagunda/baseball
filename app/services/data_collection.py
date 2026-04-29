@@ -25,6 +25,7 @@ from app.core.mlb_api import (
     get_team_roster,
     search_player,
     TEAM_MLB_IDS,
+    TEAM_ABBR_BY_MLB_ID,
 )
 from app.models.player import Player, PlayerStats, PlayerGameLog, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
@@ -843,6 +844,24 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
     def _normalize(abbr: str) -> str:
         return canonicalize_team(abbr).upper()
 
+    def _team_abbr_from_mlb(team_obj: dict) -> str:
+        """Resolve a team's canonical abbreviation from an MLB API team object.
+
+        The /schedule endpoint without `team` hydration returns only
+        {id, name, link} for the team object — no `abbreviation` field —
+        so we must reverse-look up by id. Without this, every team's
+        L10 wins silently computed to 0, killing the recent-form signal.
+        """
+        abbr = team_obj.get("abbreviation")
+        if abbr:
+            return _normalize(abbr)
+        team_id = team_obj.get("id")
+        if team_id is not None:
+            looked_up = TEAM_ABBR_BY_MLB_ID.get(team_id)
+            if looked_up:
+                return looked_up.upper()
+        return ""
+
     def _extract_record(team: str, opp: str) -> tuple[int | None, int | None, int | None]:
         """
         Return (series_wins, series_losses, l10_wins) for `team` vs `opp`.
@@ -871,8 +890,8 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
         l10 = 0
         for g in sorted_games[:10]:
             teams_info = g.get("teams", {})
-            home_t = _normalize(teams_info.get("home", {}).get("team", {}).get("abbreviation", ""))
-            away_t = _normalize(teams_info.get("away", {}).get("team", {}).get("abbreviation", ""))
+            home_t = _team_abbr_from_mlb(teams_info.get("home", {}).get("team", {}))
+            away_t = _team_abbr_from_mlb(teams_info.get("away", {}).get("team", {}))
             home_score = teams_info.get("home", {}).get("score")
             away_score = teams_info.get("away", {}).get("score")
             if home_score is None or away_score is None:
@@ -892,8 +911,8 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
         in_series = False
         for g in sorted_games:
             teams_info = g.get("teams", {})
-            home_t = _normalize(teams_info.get("home", {}).get("team", {}).get("abbreviation", ""))
-            away_t = _normalize(teams_info.get("away", {}).get("team", {}).get("abbreviation", ""))
+            home_t = _team_abbr_from_mlb(teams_info.get("home", {}).get("team", {}))
+            away_t = _team_abbr_from_mlb(teams_info.get("away", {}).get("team", {}))
             is_vs_opp = (home_t == opp_n and away_t == team_n) or (away_t == opp_n and home_t == team_n)
 
             if not is_vs_opp:

@@ -90,3 +90,9 @@ TEAM_MLB_IDS = {
     "PHI": 143, "PIT": 134, "SD": 135, "SF": 137, "SEA": 136,
     "STL": 138, "TB": 139, "TEX": 140, "TOR": 141, "WSH": 120,
 }
+
+# Reverse lookup: team_id → abbreviation. The /schedule endpoint without
+# `team` hydration returns only {id, name, link} for the team object —
+# no `abbreviation` field — so series_context enrichment must resolve
+# the abbreviation from id. Rebuilt at module import; cheap.
+TEAM_ABBR_BY_MLB_ID = {v: k for k, v in TEAM_MLB_IDS.items()}

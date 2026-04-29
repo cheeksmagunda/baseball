@@ -500,6 +500,27 @@ POPULARITY_MID_THRESHOLD = 25.0       # [mid, high) = moderate buzz
 POPULARITY_HIGH_PERF_THRESHOLD = 60.0 # >= this = strong performance signal
 POPULARITY_MID_PERF_THRESHOLD = 25.0  # [mid, high) = decent performance
 
+# V10.5 (April 28): bifurcate the FADE gate by position.
+#
+# Pre-V10.5, FADE was a hard exclusion for everyone.  Empirically this kept
+# eliminating confirmed probable starters of heavy moneyline favorites
+# (Ohtani, Yamamoto, Fried) — the crowd is correctly on these arms because
+# pitcher outcomes are one-player-dependent and Vegas already prices them in.
+# CLAUDE.md V8.0 strategy doc explicitly notes the pitcher TARGET-vs-FADE
+# differential is 1.4× (vs the batter 3.0× swing).
+#
+# New rule:
+#   - FADE batters → still excluded from the candidate pool (data shows the
+#     crowd is ~3× wrong about batter ownership).
+#   - FADE pitchers → kept in the pool, pay PITCHER_FADE_PENALTY in EV.
+#     A genuinely strong pitcher (good env + good traits) can still beat a
+#     FADE-untouched competitor; a weak pitcher cannot paper over the haircut.
+#
+# 0.85 = 15% haircut.  Inverse (1/0.85 ≈ 1.18) means a FADE pitcher needs
+# ~18% more env+trait juice to displace a TARGET/NEUTRAL pitcher of equal
+# raw ability — meaningful, not prohibitive.
+PITCHER_FADE_PENALTY = 0.85
+
 
 # ---------------------------------------------------------------------------
 # Startup self-check: validate that all scoring constants are in sensible ranges.

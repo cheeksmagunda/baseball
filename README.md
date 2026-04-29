@@ -39,14 +39,14 @@ See CLAUDE.md § "T-65 Sniper Architecture" for complete timing details.
 
 1. **Collect** (`app/services/data_collection.py`) — Fetch fresh MLB schedule, player stats, game context, Vegas lines, and **RotoWire expected lineups** for batting-order enrichment (see V10.3 below)
 2. **Score** (`app/services/scoring_engine.py`) — Rate each player 0-100 via trait-based profiling (pitchers: 5 traits, batters: 7 traits)
-3. **Filter** (`app/services/filter_strategy.py`) — Apply V10.4 strategy: exclude FADE players, score env/trait EV with Statcast kinematics, enforce composition rules with two-path stacking
-4. **Optimize** (`app/routers/filter_strategy.py` → `run_dual_filter_strategy`) — Produce Starting 5 + Moonshot lineups, freeze in cache
+3. **Filter** (`app/services/filter_strategy.py`) — Apply V10.5 strategy: exclude FADE batters (FADE pitchers stay with a soft 15% EV haircut), score env/trait EV with Statcast kinematics, enforce composition rules with two-path stacking
+4. **Optimize** (`app/routers/filter_strategy.py` → `run_dual_filter_strategy`) — Produce Starting 5 + Moonshot lineups (each independently chooses 1P+4B or 0P+5B by total EV), freeze in cache
 
 The primary optimization path is `filter_strategy`. The `/api/pipeline/*` manual endpoints exist for post-slate testing only and are gated to prevent mid-slate interference.
 
 ### Philosophy
 
-It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor), then excludes high-media-attention players (FADE gate) before selecting the lineup. **Historical stats are reference data only — they never feed the live scoring pipeline directly.**
+It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor). High-media-attention batters (FADE) are excluded; high-media-attention pitchers stay in the pool with a soft 15% EV haircut (V10.5 — pitcher outcomes are one-player-dependent, the crowd is less wrong about them). **Historical stats are reference data only — they never feed the live scoring pipeline directly.**
 
 Stacking (multiple batters from the same team) is powerful but correlated. V10.2 unlocks a **mini-stack** (cap 2 per team, cap 2 per game) via two paths:
 - **PATH 1** — `moneyline ≤ -200` AND `vegas_total ≥ 9.0` (favored side only, earns +20% STACK_BONUS)
@@ -102,7 +102,7 @@ The optimizer automatically fades over-hyped players and targets under-the-radar
 
 **Intentionally excluded:** RotoGrinders/NumberFire platform ownership — this is only visible during the draft and violates the pre-game signals constraint.
 
-**Classification:** FADE, TARGET, or NEUTRAL. FADE players are **excluded from the candidate pool before EV runs** — they never reach the optimizer. TARGET and NEUTRAL players pass the gate and are scored identically by env/trait EV (no popularity multiplier). Target batters average RS 3.57 with 73.6% Highest-Value rate. Fade batters average RS 0.98 with 9.6% HV rate — a **3.6× differential** that makes the exclusion gate the single most impactful pre-game filter. See CLAUDE.md § "V9.0 Core Architecture" for the full EV formula.
+**Classification:** FADE, TARGET, or NEUTRAL. **V10.5: bifurcated by position.** FADE *batters* are excluded from the candidate pool before EV runs (Target batters average RS 3.57 / 73.6% HV vs Fade batters RS 0.98 / 9.6% HV — a 3.6× differential). FADE *pitchers* stay in the pool and pay `PITCHER_FADE_PENALTY = 0.85` in `_compute_base_ev` — a 15% haircut, not a hard exclusion, because pitcher outcomes are one-player-dependent and the crowd correctly piles onto confirmed probable starters of heavy ML favorites (Ohtani, Yamamoto, Fried). TARGET and NEUTRAL players pass without penalty. See CLAUDE.md § "V10.5 EV-Driven Composition + Bifurcated FADE" for the rationale.
 
 ### Sharp Signal (Underground)
 
@@ -116,16 +116,16 @@ A fifth signal source used exclusively by the Moonshot lineup:
 
 If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +35% EV boost in Moonshot only.
 
-## Dual-Lineup Optimizer (V10.4)
+## Dual-Lineup Optimizer (V10.5)
 
-The optimizer produces **two lineups** from the same ranked candidate pool. Each lineup is structurally fixed at **exactly 1 starting pitcher + 4 batters**, with the pitcher pinned to Slot 1 (2.0x multiplier):
+The optimizer produces **two lineups** from the same ranked candidate pool. Each lineup independently chooses its shape — **1 SP + 4 batters** (anchored) or **0 SP + 5 batters** (pure-batter shootout) — based on slot-weighted total EV (V10.5):
 
-| Lineup | Structure | Strategy | Popularity handling | Edge |
+| Lineup | Possible shapes | Strategy | Popularity handling | Edge |
 |---|---|---|---|---|
-| **Starting 5** | 1 SP (Slot 1) + 4 batters (Slots 2–5) | Best env+trait EV | FADE players **excluded** from pool | Primary win probability |
-| **Moonshot** | 1 SP (Slot 1) + 4 batters (Slots 2–5) | env+trait EV + sharp/explosive bonuses | FADE players **excluded** from pool | Anti-crowd, sharp signal, HR power |
+| **Starting 5** | 1P+4B or 0P+5B | Best env+trait EV per variant; chooser picks the higher total | FADE batters excluded; FADE pitchers kept w/ 15% EV haircut | Primary win probability |
+| **Moonshot** | 1P+4B or 0P+5B | env+trait EV + sharp/explosive bonuses; chooser picks the higher total | Same as Starting 5 | Anti-crowd, sharp signal, HR power |
 
-Each lineup's anchor pitcher is the highest-EV pitcher in its candidate pool. The anchor's `game_id` is blocked for opposing-batter selection so no opposing batter in that game can appear — no negative correlation between the pitcher and the rest of the lineup. Anchor's teammates ARE allowed (within stack-eligibility caps) so PATH 1/PATH 2 mini-stacks can fire.
+When a lineup goes 1P+4B, the anchor pitcher is the highest-EV pitcher in the pool, pinned to Slot 1 (2.0× multiplier). The anchor's `game_id` blocks opposing-batter selection — no negative correlation between the pitcher and the rest of the lineup. Anchor's teammates ARE allowed (within stack-eligibility caps). When a lineup goes 0P+5B, the highest-EV batter takes Slot 1, no anchor restrictions apply, and the same per-team / per-game caps still hold. Tiebreak goes to the pitcher variant — conservative default keeps the V5.0 anchor identity unless 5B truly dominates.
 
 **EV formula:**
 
@@ -142,11 +142,12 @@ base_ev = env_factor × volatility_amplifier × trait_factor × stack_bonus × d
 | dnp_adj | 0.70 / 0.85 / 1.00 | Confirmed-bad / unknown / known batting order |
 
 **Key optimizer behaviors:**
-- **Pitcher anchor**: exactly 1 SP per lineup, pinned to Slot 1. The highest-EV pitcher in the pool wins the anchor.
+- **EV-driven shape (V10.5)**: each lineup builds both a 1P+4B and a 0P+5B variant and returns the higher slot-weighted total EV. Tiebreak → pitcher variant.
+- **Pitcher anchor (when present)**: highest-EV pitcher pinned to Slot 1 (2.0×). FADE pitchers stay in the pool with a 15% EV haircut.
 - **Stack eligibility**: PATH 1 (ML ≤ -200 AND O/U ≥ 9.0) gives the favored side mini-stack rights + STACK_BONUS. PATH 2 (O/U ≥ 10.5) gives both sides mini-stack rights without the bonus.
 - **Per-team cap**: 2 batters from a stack-eligible team, 1 from every other team.
 - **Per-game cap**: 2 batters per game (always — prevents mixed-side clumps in a single game).
-- Moonshot uses the same FADE-excluded pool but adds sharp signal (+35% max from Reddit/FanGraphs/Prospects Live) and explosive bonus (+20% from power_profile or k_rate). Player overlap with Starting 5 is allowed; the formula divergence naturally re-orders picks.
+- Moonshot uses the same FADE-batter-excluded pool but adds sharp signal (+35% max from Reddit/FanGraphs/Prospects Live) and explosive bonus (+20% from power_profile or k_rate). Player overlap with Starting 5 is allowed; the formula divergence naturally re-orders picks.
 
 ## Strategy Insights — what 33 slates of data tell us
 
@@ -155,7 +156,7 @@ base_ev = env_factor × volatility_amplifier × trait_factor × stack_bonus × d
 - **Batter ML is largely redundant with opp-pitcher ERA.** A bigger favorite usually means a worse opposing starter — that's already scored directly. The V10.4 ML range is centered to capture the *competitive-game* effect (more PAs, late-inning leverage) without double-counting opposing-SP weakness.
 - **Slot sequencing**: Slot 1 is always the anchor pitcher. Among batters in Slots 2–5, picks are sorted by `filter_ev` descending — the highest-EV batter takes Slot 2 (1.8×), tail batters fill the lower slots.
 
-> **Strategy details by version:** see CLAUDE.md § "V10.4 Batter ML Decoupling", "V10.3 Pre-Card Lineup Harvesting", "V10.2 Calibration Changes", "V10.1 Structural Changes", "V10.0 Core Architecture".
+> **Strategy details by version:** see CLAUDE.md § "V10.5 EV-Driven Composition + Bifurcated FADE", "V10.4 Pre-Card Lineup Harvesting + Decoupled Batter ML", "V10.3 Calibration", "V10.2 Calibration Changes", "V10.1 Structural Changes", "V10.0 Core Architecture".
 
 ## API Endpoints
 

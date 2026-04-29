@@ -158,11 +158,22 @@ class TestSlateClassification:
         assert result.high_total_games == 5
 
     def test_hitter_day_blowout(self):
-        games = [{"home_moneyline": -220, "home_team": "NYY"}]
+        # V10.5: PATH 1 stackable now requires both ML ≤ -200 AND O/U ≥ 9.0.
+        # A heavy ML favorite in a low-total pitcher's duel is no longer
+        # treated as a "blowout" because runs (and HR correlation) can't materialize.
+        games = [{"home_moneyline": -220, "home_team": "NYY", "vegas_total": 9.5}]
         result = classify_slate(5, games=games)
         assert result.slate_type == SlateType.HITTER_DAY
         assert result.blowout_games == 1
         assert result.stackable_games[0].favored_team == "NYY"
+
+    def test_blowout_with_low_ou_not_stackable(self):
+        """Heavy ML favorite + low O/U (e.g. LAD vs MIA, ML -290 / O/U 7.5)
+        is NOT a stackable blowout — fails PATH 1 OU gate."""
+        games = [{"home_moneyline": -290, "home_team": "LAD", "vegas_total": 7.5}]
+        result = classify_slate(5, games=games)
+        assert result.blowout_games == 0
+        assert result.stackable_games == []
 
     def test_pitcher_day(self):
         games = [
@@ -497,20 +508,41 @@ class TestFADEGate:
         ]
         assert len(_exclude_fade_players(pool)) == 2
 
-    def test_all_pitchers_fade_raises(self):
-        """Fail fast: a pool with zero non-FADE pitchers is unrecoverable upstream."""
+    def test_all_pitchers_fade_kept(self):
+        """V10.5: FADE pitchers stay in the pool — they pay a soft EV penalty,
+        not a hard exclusion.  Only an empty *pitcher pool overall* still raises.
+        """
         pool = [
             _make_candidate("P1", is_pitcher=True, popularity=PopularityClass.FADE),
             _make_candidate("P2", is_pitcher=True, popularity=PopularityClass.FADE),
             _make_candidate("B1", popularity=PopularityClass.TARGET),
         ]
-        with pytest.raises(ValueError, match="[Pp]itcher"):
-            _exclude_fade_players(pool)
+        result = _exclude_fade_players(pool)
+        names = {c.player_name for c in result}
+        assert "P1" in names and "P2" in names, "FADE pitchers must survive the gate"
+        assert "B1" in names
 
     def test_no_pitchers_at_all_raises(self):
         pool = [_make_candidate("B1", popularity=PopularityClass.TARGET)]
         with pytest.raises(ValueError, match="[Pp]itcher"):
             _exclude_fade_players(pool)
+
+    def test_fade_pitcher_pays_ev_penalty(self):
+        """A FADE pitcher's filter_ev should be lower than a NEUTRAL pitcher's
+        with otherwise identical inputs — by exactly PITCHER_FADE_PENALTY."""
+        from app.core.constants import PITCHER_FADE_PENALTY
+        from app.services.filter_strategy import _compute_filter_ev
+        target = _make_candidate(
+            "P_target", is_pitcher=True, popularity=PopularityClass.NEUTRAL,
+            env_score=0.7, total_score=70,
+        )
+        fade = _make_candidate(
+            "P_fade", is_pitcher=True, popularity=PopularityClass.FADE,
+            env_score=0.7, total_score=70,
+        )
+        target_ev = _compute_filter_ev(target)
+        fade_ev = _compute_filter_ev(fade)
+        assert fade_ev == pytest.approx(target_ev * PITCHER_FADE_PENALTY, rel=1e-6)
 
 
 # ===================================================================
@@ -765,15 +797,78 @@ class TestComposition:
         names = [c.player_name for c in lineup]
         assert "Teammate_1" in names, "Stack-eligible anchor teammate should be allowed"
 
-    def test_no_pitcher_raises(self):
+    def test_no_pitcher_returns_pure_batter_lineup(self):
+        """V10.5: a pitcher-free pool now produces a 5-batter lineup
+        (the pure-batter shootout shape) instead of raising."""
         batters_only = [
             _make_candidate(name=f"B{i}", team=t, game_id=i)
             for i, t in enumerate(["NYY", "BOS", "LAD", "HOU", "ATL"])
         ]
         for c in batters_only:
             c.filter_ev = 50.0
-        with pytest.raises(ValueError, match="no pitcher"):
-            _enforce_composition(batters_only, _default_slate())
+        lineup = _enforce_composition(batters_only, _default_slate())
+        assert len(lineup) == 5
+        assert sum(1 for c in lineup if c.is_pitcher) == 0
+
+    def test_too_few_batters_no_pitcher_raises(self):
+        """If there's no pitcher AND fewer than 5 batters, neither variant works."""
+        from app.services.filter_strategy import _enforce_composition
+        too_few = [
+            _make_candidate(name=f"B{i}", team=t, game_id=i)
+            for i, t in enumerate(["NYY", "BOS", "LAD"])
+        ]
+        for c in too_few:
+            c.filter_ev = 50.0
+        with pytest.raises(ValueError):
+            _enforce_composition(too_few, _default_slate())
+
+    def test_pure_batter_wins_when_batter_evs_dominate(self):
+        """When the top batter EVs vastly exceed the best pitcher's EV, the
+        EV-driven chooser should pick 0P+5B.  This is the V10.5 behavior that
+        unlocks the 4-of-5-winners-yesterday shootout shape."""
+        # Single weak pitcher
+        weak_pitcher = _make_candidate(
+            "WeakP", is_pitcher=True, env_score=0.4, total_score=30,
+            game_id=99, team="WSH",
+        )
+        # 5 strong batters on different teams
+        strong_batters = [
+            _make_candidate(
+                name=f"StrongB{i}", team=t, game_id=i,
+                env_score=0.9, total_score=85,
+            )
+            for i, t in enumerate(["NYY", "BOS", "LAD", "HOU", "ATL"])
+        ]
+        pool = [weak_pitcher] + strong_batters
+        for c in pool:
+            c.filter_ev = _compute_filter_ev(c)
+        lineup = _enforce_composition(pool, _default_slate())
+        assert len(lineup) == 5
+        assert sum(1 for c in lineup if c.is_pitcher) == 0, (
+            f"Expected pure-batter lineup; got {[(c.player_name, c.is_pitcher) for c in lineup]}"
+        )
+
+    def test_pitcher_wins_when_anchor_ev_dominates(self):
+        """When the best pitcher has a strong EV edge over the marginal batter,
+        the 1P+4B shape should win.  Sanity check that V10.5 doesn't regress."""
+        strong_pitcher = _make_candidate(
+            "AcePitcher", is_pitcher=True, env_score=0.95, total_score=95,
+            game_id=99, team="WSH",
+        )
+        weak_batters = [
+            _make_candidate(
+                name=f"WeakB{i}", team=t, game_id=i,
+                env_score=0.30, total_score=20,
+            )
+            for i, t in enumerate(["NYY", "BOS", "LAD", "HOU", "ATL"])
+        ]
+        pool = [strong_pitcher] + weak_batters
+        for c in pool:
+            c.filter_ev = _compute_filter_ev(c)
+        lineup = _enforce_composition(pool, _default_slate())
+        assert len(lineup) == 5
+        assert sum(1 for c in lineup if c.is_pitcher) == 1
+        assert lineup[0].player_name == "AcePitcher"
 
 
 # ===================================================================

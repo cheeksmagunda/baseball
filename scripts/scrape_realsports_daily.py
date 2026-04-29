@@ -456,7 +456,8 @@ def parse_players(stats_payload: dict, player_info: dict[int, dict],
     by_key: dict[tuple[str, str], dict] = {}
 
     for sec in stats_payload.get("draftStats", []):
-        section_name = sec["sectionName"]  # 'highestBoostedValuePlayers' / 'popularPlayers' / 'mostCommon3xPlayers'
+        # Use .get() — platform added a 'My draft' section without sectionName
+        section_name = sec.get("sectionName")
         flag_field = {
             "highestBoostedValuePlayers": "is_highest_value",
             "popularPlayers": "is_most_popular",
@@ -606,7 +607,7 @@ def parse_hv_stats_blank(stats_payload: dict, player_info: dict[int, dict],
         team_to_game[g["away"]] = g
 
     for sec in stats_payload.get("draftStats", []):
-        if sec["sectionName"] != "highestBoostedValuePlayers":
+        if sec.get("sectionName") != "highestBoostedValuePlayers":
             continue
         for p in sec["players"]:
             pl = p["player"]
@@ -728,6 +729,12 @@ def main():
     player_info = _fetch_mlb_player_info(all_player_ids)
     team_lookup = _build_team_lookup(payloads["daily"], payloads["stats"])
     log.info(f"  built team lookup: {len(team_lookup)} teamIds")
+
+    # DEBUG: dump raw stats payload structure for inspection
+    import os as _os
+    if _os.environ.get("BO_SCRAPER_DEBUG"):
+        Path("/tmp/scraper_stats_payload.json").write_text(json.dumps(payloads["stats"], indent=2))
+        log.info("  DEBUG: dumped stats payload to /tmp/scraper_stats_payload.json")
 
     log.info("Parsing payloads ...")
     games_env = parse_games(payloads["daily"], target_date)

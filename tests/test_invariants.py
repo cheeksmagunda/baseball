@@ -168,8 +168,13 @@ class TestFadeGateIdempotence:
         once = _exclude_fade_players(pool)
         twice = _exclude_fade_players(once)
         assert [c.player_name for c in once] == [c.player_name for c in twice]
-        # And of course no FADE survived.
-        assert all(c.popularity != PopularityClass.FADE for c in once)
+        # V10.5: FADE batters excluded; FADE pitchers preserved (soft EV penalty
+        # applied later in _compute_base_ev).  Idempotence still holds because
+        # both sets of rules are stable under repeated application.
+        assert all(
+            c.popularity != PopularityClass.FADE or c.is_pitcher
+            for c in once
+        )
 
 
 # ---------------------------------------------------------------------------
