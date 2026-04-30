@@ -300,7 +300,7 @@ async def resolve_candidates(
             park_team = game.home_team.upper()
 
             pitcher_k9 = game.home_starter_k_per_9 if is_home else game.away_starter_k_per_9
-
+            own_era = game.home_starter_era if is_home else game.away_starter_era
             team_ml = game.home_moneyline if is_home else game.away_moneyline
 
             env_score, env_factors = compute_pitcher_env_score(
@@ -310,6 +310,8 @@ async def resolve_candidates(
                 park_team=park_team,
                 is_home=is_home,
                 team_moneyline=team_ml,
+                vegas_total=game.vegas_total,
+                own_starter_era=own_era,
             )
             env_unknown_count = 0  # confirmed starters; env data is reliable
         else:

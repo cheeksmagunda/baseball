@@ -26,7 +26,6 @@ from app.services.filter_strategy import (
     run_filter_strategy,
 )
 from app.core.constants import (
-    REQUIRED_PITCHERS_IN_LINEUP,
     MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT,
     PITCHER_ANCHOR_SLOT,
     SLOT_MULTIPLIERS,
@@ -200,61 +199,68 @@ class TestSlateClassification:
 # ===================================================================
 
 class TestPitcherEnvScore:
+    """V12 pitcher env tests — calibrated against 222-pitcher historical audit.
+
+    Key behaviors:
+      * ML peak at -120 to -180 (mild fav) — beats heavy fav and underdog
+      * Vegas O/U inverse — low total = pitcher game
+      * Park HR factor — pitcher-friendly = bonus
+      * K/9 talent — modest only
+      * ERA tail — small lever
+    """
+
     def test_perfect_env(self):
+        # Every strong V12 signal lit: mild fav, low O/U, pitcher park, elite K/9, elite ERA.
         score, factors = compute_pitcher_env_score(
-            opp_team_ops=0.650,
-            opp_team_k_pct=0.26,
-            pitcher_k_per_9=10.0,
-            park_team="SF",  # PF=0.92 → graduated (1.05-0.92)/0.15 = 0.867
-            is_home=True,
-            team_moneyline=-250,
+            team_moneyline=-150,           # mild fav peak → +1.0
+            vegas_total=7.0,               # low total → +1.0
+            park_team="LAD",               # pitcher-ish park → ≤0.95 → +0.6
+            pitcher_k_per_9=11.0,          # elite → +0.4
+            own_starter_era=2.5,           # elite → +0.3
+            opp_team_ops=0.660,            # weak opp → +0.3
         )
-        # 5 main factors + home (0.5), max_score = 5.5
-        # SF park (0.92): (1.05-0.92)/0.15 = 0.867 (graduated, not 1.0)
-        # Total ≈ 1.0 + 1.0 + 1.0 + 0.867 + 1.0 + 0.5 = 5.367 / 5.5 ≈ 0.976
-        assert score > 0.9
-        assert len(factors) >= 5
+        # Expected total ≈ 3.6 / 4.0 ≈ 0.90 (saturates if more signals stack)
+        assert score >= 0.85
+        assert any("Mild favorite" in f for f in factors)
 
     def test_empty_env(self):
         score, factors = compute_pitcher_env_score()
         assert score == pytest.approx(0.0, abs=0.01)
         assert factors == []
 
-    def test_home_field_only(self):
-        score, factors = compute_pitcher_env_score(is_home=True)
-        assert score > 0
-        assert any("Home" in f for f in factors)
+    def test_ml_peak_at_mild_fav(self):
+        """V12: data shows mild fav (-180 to -120) wins HV 37.5%, heavy fav 14.5%."""
+        score_mild, _ = compute_pitcher_env_score(team_moneyline=-150)
+        score_heavy, _ = compute_pitcher_env_score(team_moneyline=-250)
+        score_underdog, _ = compute_pitcher_env_score(team_moneyline=+150)
+        assert score_mild > score_heavy, "mild fav must score higher than heavy fav (V12 audit)"
+        assert score_mild > score_underdog
+        # Heavy fav explicitly penalised vs underdog tossup (heavy fav 0.3 vs underdog 0.2)
+        assert score_heavy > score_underdog or score_heavy >= score_underdog
 
-    def test_moneyline_adds_win_bonus(self):
-        """V8.0: pitcher moneyline captures Win bonus probability."""
-        score_no_ml, _ = compute_pitcher_env_score(
-            pitcher_k_per_9=9.0, is_home=True,
-        )
-        score_heavy_fav, factors = compute_pitcher_env_score(
-            pitcher_k_per_9=9.0, is_home=True, team_moneyline=-250,
-        )
-        assert score_heavy_fav > score_no_ml
-        assert any("Win" in f or "Favorite" in f or "favorite" in f for f in factors)
+    def test_vegas_total_inverse(self):
+        """V12: low O/U is a pitcher game; high O/U penalises pitcher EV."""
+        score_low, _ = compute_pitcher_env_score(team_moneyline=-150, vegas_total=7.0)
+        score_high, _ = compute_pitcher_env_score(team_moneyline=-150, vegas_total=10.0)
+        assert score_low > score_high
 
-    def test_max_score_denominator_is_5_5(self):
-        """max_score = 5.5 (5 main factors at 1.0 each + home 0.5)."""
-        score, _ = compute_pitcher_env_score(
-            opp_team_ops=0.650,
-            opp_team_k_pct=0.26,
-            pitcher_k_per_9=10.0,
-            park_team="LAD",  # PF=0.89 → full 1.0 (≤ 0.90)
-            is_home=True,
-            team_moneyline=-250,
+    def test_pitcher_park_bonus(self):
+        score_pitcher_park, _ = compute_pitcher_env_score(
+            team_moneyline=-150, park_team="SF"  # PF≈0.92
         )
-        # All 5 factors at 1.0 + home 0.5 = 5.5 / 5.5 = 1.0
-        assert score == pytest.approx(1.0, abs=0.01), "All signals maxed should reach 1.0"
+        score_hitter_park, _ = compute_pitcher_env_score(
+            team_moneyline=-150, park_team="COL"  # PF≈1.38
+        )
+        assert score_pitcher_park > score_hitter_park
 
-    def test_graduated_thresholds(self):
-        """V8.0: thresholds use linear interpolation, not hard cliffs."""
-        # K/9 of 8.0 should get partial credit (graduated 6→0, 10→1)
-        score_k8, _ = compute_pitcher_env_score(pitcher_k_per_9=8.0)
-        score_k10, _ = compute_pitcher_env_score(pitcher_k_per_9=10.0)
-        assert 0 < score_k8 < score_k10, "K/9=8.0 should get partial, not full credit"
+    def test_dead_signals_no_longer_score(self):
+        """V12 audit removed opp_team_k_pct (Q1 25% / Q4 23% HV — dead).
+        Passing it should have no effect on score."""
+        score_with_kpct, _ = compute_pitcher_env_score(
+            team_moneyline=-150, opp_team_k_pct=0.26  # was a "high-K opponent" bonus
+        )
+        score_without_kpct, _ = compute_pitcher_env_score(team_moneyline=-150)
+        assert score_with_kpct == pytest.approx(score_without_kpct, abs=0.001)
 
 
 # ===================================================================
@@ -262,243 +268,108 @@ class TestPitcherEnvScore:
 # ===================================================================
 
 class TestBatterEnvScore:
+    """V12 batter env tests — calibrated against 994-batter historical audit.
+
+    Strong signals (audit-validated):
+      * Opp starter ERA: Q1 34% HV → Q4 57% HV (+23pp swing)
+      * Opp starter WHIP: Q1 39% → Q4 55% (+16pp)
+      * Wind speed (real, survives park control): +12-15pp at ≥10 mph
+      * Underdog premium: +ML teams produce MORE HV (inverted from intuition)
+
+    Removed dead signals: vegas_total, opp_bullpen_era, opp_starter_k_per_9,
+    series wins, L10 wins, opp rest days, compound park×temp.
+    """
+
     def test_perfect_env(self):
+        # Lit up: weak opp ERA + WHIP, hitter park, wind out, underdog, top order
         score, factors, unknown = compute_batter_env_score(
-            vegas_total=10.0,
-            opp_pitcher_era=5.5,
-            platoon_advantage=True,
-            batting_order=2,
-            park_team="COL",
-            team_moneyline=-250,
-            opp_bullpen_era=5.5,
-            opp_starter_whip=1.40,
-            opp_starter_k_per_9=6.0,        # V10.6: contact pitcher → full K/9 credit (0.4)
+            opp_pitcher_era=6.0,             # +1.4
+            opp_starter_whip=1.55,           # +0.9
+            park_team="COL",                 # +0.3
+            wind_speed_mph=12,
+            wind_direction="OUT TO CF",      # +0.6
+            team_moneyline=+150,             # +0.3 (underdog premium)
+            batting_order=2,                 # +0.4
+            temperature_f=80,                # +0.1
+            platoon_advantage=True,          # +0.3
         )
-        # Group A run_env: 4 main signals at 1.0 + WHIP at 0.5 weight + K/9 at 0.4 weight = 4.9 raw.
-        #   Soft cap: first 2.0 taken full, excess 2.9 at 25% slope → 2.0 + 0.725 = 2.725
-        # Group B situation: platoon 1.0 + order 2 → 1.0 = 2.0
-        # Group C venue: COL (1.38) → 1.0
-        # Group D (momentum): NEUTRALISED in V10.7 → 0.0 (always)
-        # Total = 2.725 + 2.0 + 1.0 = 5.725
-        # V10.7: BATTER_ENV_MAX_SCORE dropped to 5.0 to match the new max
-        # (Group D removed).  5.725 / 5.0 = 1.145 → clamped to 1.0 by the
-        # final `min(1.0, total/max)` step.  Perfect-storm matchups now
-        # saturate, which is the correct behaviour now that the inverted
-        # momentum signals don't artificially inflate the denominator.
-        assert score == pytest.approx(1.0, abs=0.01)
+        # Total ~4.3 / 4.0 → saturates at 1.0
+        assert score >= 0.95
         assert unknown == 0
+        assert any("Bloated" in f or "Weak" in f for f in factors)
 
     def test_empty_env_tracks_unknowns(self):
-        score, factors, unknown = compute_batter_env_score()
-        # All inputs None: no signal contributes → score = 0.0
+        score, _, unknown = compute_batter_env_score()
         assert score == pytest.approx(0.0, abs=0.01)
-        # vegas_total, opp_pitcher_era, batting_order, team_moneyline, opp_bullpen_era,
-        # opp_starter_whip, opp_starter_k_per_9 = 7 unknowns (V10.6 added K/9 as A6).
-        assert unknown == 7
+        # V12: tracks opp_pitcher_era, opp_starter_whip, batting_order = 3 critical missing
+        assert unknown == 3
 
-    def test_correlated_signal_cap(self):
-        """Run-env signals (O/U, ERA, ML, bullpen) compressed via soft cap.
-
-        Soft cap: first 2.0 of sum at full value, excess at 25% slope.  V10.8
-        Vegas O/U dropped from weight 1.0 to 0.5 after the audit showed it's a
-        flat signal, so the 4-signal raw sum is now 0.5 (O/U) + 1.0 (ERA) +
-        1.0 (ML) + 1.0 (bullpen) = 3.5 (vs 4.0 pre-V10.8).  Soft cap takes
-        2.0 full + 1.5 × 0.25 = 2.375 (was 2.5).  Still preserves the anti-
-        redundancy spirit — naive sum would be 4× the 2-signal case, soft-
-        capped result is closer to ~1.4×.
-        """
-        # All 4 run-env signals maxed = 3.5 raw (V10.8) → soft-capped to 2.375
-        score_all, _, _ = compute_batter_env_score(
-            vegas_total=10.0, opp_pitcher_era=5.5,
-            team_moneyline=-250, opp_bullpen_era=5.5,
-            batting_order=5,
-        )
-        # Only 2 run-env signals maxed = 1.5 (V10.8: O/U weight 0.5 + ERA 1.0).
-        # Below soft-cap point so taken at full value.
-        score_two, _, _ = compute_batter_env_score(
-            vegas_total=10.0, opp_pitcher_era=5.5,
-            batting_order=5,
-        )
-        # Soft cap keeps the 4-signal case from being a naive 4× the 2-signal
-        # case; the gap is ~0.175 in env_score units (about 1.4× the 2-signal).
-        # Threshold = 0.20 leaves headroom for future Group A weight changes
-        # without false alarms; the assertion still catches a regression that
-        # would let redundant signals multiply linearly.
-        assert score_all > score_two, "soft cap still rewards extra maxed signals"
-        assert score_all - score_two < 0.20, "soft cap prevents redundant multiplication"
-
-    def test_max_score_denominator_matches_constant(self):
-        """max_score (BATTER_ENV_MAX_SCORE) is the env-score denominator.
-        V10.7 dropped it from 6.0 → 5.0 because Group D (series + L10) was
-        neutralised after the fresh-eyes audit revealed those signals were
-        inverted at the player level.
-
-        This test calls compute_batter_env_score with K/9 absent, so total
-        without K/9 = 2.625 (Group A with WHIP at full saturation) +
-        2.0 (situation) + 1.0 (venue) + 0.0 (Group D) = 5.625 raw.
-        Divided by BATTER_ENV_MAX_SCORE=5.0 → 1.125 → clamped to 1.0.
-        """
-        from app.core.constants import BATTER_ENV_MAX_SCORE
-        score, _, unknown = compute_batter_env_score(
+    def test_dead_signals_no_longer_score(self):
+        """V12 deletes vegas_total, opp_bullpen_era, opp_starter_k_per_9,
+        series_*, team_l10_wins, opp_team_rest_days from the env score.
+        Passing them should have ZERO effect on the result."""
+        score_with_dead, _, _ = compute_batter_env_score(
+            opp_pitcher_era=5.0,
+            opp_starter_whip=1.4,
+            batting_order=3,
+            # Dead signals (formerly contributed):
             vegas_total=10.0,
-            opp_pitcher_era=5.5,
-            platoon_advantage=True,
-            batting_order=2,
-            park_team="COL",
-            team_moneyline=-250,
             opp_bullpen_era=5.5,
-            opp_starter_whip=1.40,
+            opp_starter_k_per_9=6.0,
+            series_team_wins=3, series_opp_wins=0,
+            team_l10_wins=8,
+            opp_team_rest_days=0,
         )
-        # Confirm BATTER_ENV_MAX_SCORE matches the V10.7 expected value (5.0)
-        # so a future re-bump catches a regression here.
-        assert BATTER_ENV_MAX_SCORE == 5.0
-        # Perfect-storm matchups saturate at 1.0 in V10.7.
-        assert score == pytest.approx(1.0, abs=0.01)
-
-    def test_batting_order_unknown_contributes_zero(self):
-        """Unknown batting order contributes 0 to situation — DNP risk is
-        handled separately by _compute_dnp_adjustment (single multiplier),
-        so env scoring stays faithful to actual pre-game signals."""
-        score_unknown, _, unknown = compute_batter_env_score(
-            vegas_total=9.0,
+        score_without_dead, _, _ = compute_batter_env_score(
             opp_pitcher_era=5.0,
-            batting_order=None,
-        )
-        score_known, _, _ = compute_batter_env_score(
-            vegas_total=9.0,
-            opp_pitcher_era=5.0,
-            batting_order=7,  # middle of lineup = 0.50
-        )
-        # Unknown (0 contribution) should be strictly less than any confirmed order.
-        assert score_unknown < score_known
-        # Non-zero because Vegas+ERA still contribute to Group A run_env.
-        assert score_unknown > 0, "Group A signals carry the env score when order is unknown"
-        # batting_order + team_moneyline + opp_bullpen_era + opp_starter_whip +
-        # opp_starter_k_per_9 = 5 unknowns (V10.6: K/9 added as Group A A6)
-        assert unknown == 5
-
-    def test_graduated_batting_order(self):
-        """V8.0: batting order uses graduated scale, not hard top-5 gate."""
-        score_3, _, _ = compute_batter_env_score(batting_order=3)  # 1.0
-        score_5, _, _ = compute_batter_env_score(batting_order=5)  # 0.75
-        score_7, _, _ = compute_batter_env_score(batting_order=7)  # 0.50
-        score_9, _, _ = compute_batter_env_score(batting_order=9)  # 0.25
-        assert score_3 > score_5 > score_7 > score_9 > 0
-
-    def test_opp_starter_whip_signal(self):
-        """V10.3: opposing starter WHIP is a Group A A5 factor at 0.5 weight."""
-        # Vulnerable WHIP (≥1.40) should produce higher env than elite WHIP (<1.10)
-        # holding all other signals identical.
-        score_vuln, _, _ = compute_batter_env_score(
-            vegas_total=8.0,                  # below floor → 0 contribution from O/U
-            opp_pitcher_era=3.0,              # below floor → 0 contribution from ERA
-            opp_starter_whip=1.40,            # ceiling → full WHIP contribution (0.5)
-        )
-        score_elite, _, _ = compute_batter_env_score(
-            vegas_total=8.0,
-            opp_pitcher_era=3.0,
-            opp_starter_whip=1.05,            # below floor → 0 contribution
-        )
-        score_unknown, _, _ = compute_batter_env_score(
-            vegas_total=8.0,
-            opp_pitcher_era=3.0,
-            opp_starter_whip=None,
-        )
-        # Vulnerable WHIP > elite WHIP (positive signal)
-        assert score_vuln > score_elite
-        # Elite WHIP and unknown both contribute zero, so they should be equal
-        assert score_elite == pytest.approx(score_unknown, abs=0.001)
-
-    def test_opp_starter_whip_unknown_increments_count(self):
-        """V10.3: WHIP None bumps unknown_count, like other Group A signals."""
-        _, _, unknown_with_whip = compute_batter_env_score(
-            vegas_total=9.5,
-            opp_pitcher_era=5.0,
+            opp_starter_whip=1.4,
             batting_order=3,
-            team_moneyline=-200,
-            opp_bullpen_era=4.5,
-            opp_starter_whip=1.30,
         )
-        _, _, unknown_without_whip = compute_batter_env_score(
-            vegas_total=9.5,
-            opp_pitcher_era=5.0,
-            batting_order=3,
-            team_moneyline=-200,
-            opp_bullpen_era=4.5,
-            # opp_starter_whip omitted (None)
-        )
-        assert unknown_without_whip == unknown_with_whip + 1
+        assert score_with_dead == pytest.approx(score_without_dead, abs=0.001)
 
-    def test_wind_in_penalty(self):
-        """V10.3: wind blowing IN penalises venue, mirroring the OUT bonus."""
-        # Neutral park (CLE pf=1.00) starts venue at 0.5 — leaves headroom for OUT
-        # to add and IN to subtract without saturating against the 0/1.0 bounds.
+    def test_underdog_premium_v12(self):
+        """V12: data shows underdogs (ML +100+) HV 57% vs heavy favs 36%."""
+        score_underdog, _, _ = compute_batter_env_score(
+            opp_pitcher_era=4.0, team_moneyline=+150
+        )
+        score_heavy_fav, _, _ = compute_batter_env_score(
+            opp_pitcher_era=4.0, team_moneyline=-250
+        )
+        # Underdog premium beats heavy-favorite penalty (-0.2)
+        assert score_underdog > score_heavy_fav
+
+    def test_batting_order_top_premium(self):
+        """V12: batting order 1-3 gets premium, declining through tail."""
+        s_top, _, _ = compute_batter_env_score(opp_pitcher_era=4.0, batting_order=2)
+        s_mid, _, _ = compute_batter_env_score(opp_pitcher_era=4.0, batting_order=5)
+        s_bot, _, _ = compute_batter_env_score(opp_pitcher_era=4.0, batting_order=8)
+        assert s_top > s_mid > s_bot
+
+    def test_opp_starter_whip_independent_of_era(self):
+        """V12: WHIP and ERA are independent positive contributions (no soft cap)."""
+        score_just_era, _, _ = compute_batter_env_score(opp_pitcher_era=5.5)
+        score_era_plus_whip, _, _ = compute_batter_env_score(
+            opp_pitcher_era=5.5, opp_starter_whip=1.5
+        )
+        assert score_era_plus_whip > score_just_era
+
+    def test_wind_out_beats_wind_in(self):
+        """V12: wind OUT bonus, wind IN penalty (both at 10+ mph)."""
         score_out, _, _ = compute_batter_env_score(
-            park_team="CLE",
-            wind_speed_mph=15,
-            wind_direction="OUT TO CF",
+            opp_pitcher_era=4.0, wind_speed_mph=15, wind_direction="OUT TO CF"
         )
         score_in, _, _ = compute_batter_env_score(
-            park_team="CLE",
-            wind_speed_mph=15,
-            wind_direction="IN FROM CF",
+            opp_pitcher_era=4.0, wind_speed_mph=15, wind_direction="IN FROM CF"
         )
-        score_neutral, _, _ = compute_batter_env_score(
-            park_team="CLE",
-            wind_speed_mph=15,
-            wind_direction="WEST",  # cross-wind, no IN/OUT match
-        )
-        assert score_out > score_neutral > score_in
-        # Penalty floors venue at 0.0 — should never go negative.
-        assert score_in >= 0.0
+        assert score_out > score_in
 
-    def test_wind_in_below_speed_min_no_penalty(self):
-        """Wind IN below the speed minimum should NOT penalise (consistent with OUT)."""
-        score_in_calm, _, _ = compute_batter_env_score(
-            park_team="CLE",
-            wind_speed_mph=5,                 # below BATTER_ENV_WIND_SPEED_MIN (10)
-            wind_direction="IN FROM CF",
+    def test_calm_wind_no_effect(self):
+        """V12: wind below 6 mph contributes nothing regardless of direction."""
+        score_calm_in, _, _ = compute_batter_env_score(
+            opp_pitcher_era=4.0, wind_speed_mph=3, wind_direction="IN"
         )
-        score_neutral, _, _ = compute_batter_env_score(
-            park_team="CLE",
-            wind_speed_mph=5,
-            wind_direction="WEST",
-        )
-        assert score_in_calm == pytest.approx(score_neutral, abs=0.001)
-
-    def test_v10_4_mild_favorite_gets_ml_credit(self):
-        """V10.4: mild favorites (-110 to -180) get partial-to-full ML credit
-        for batters.  Pre-V10.4 the band was -130 to -220, so a -120 mild-fav
-        team got ZERO ML contribution — but the 33-slate analysis shows
-        mild favorites concentrate HV (1.32 HV/game vs 1.14 for -200 favs)."""
-        score_mild, _, _ = compute_batter_env_score(
-            vegas_total=8.0,
-            opp_pitcher_era=4.0,
-            team_moneyline=-120,    # mild favorite — peak HV bucket per data
-        )
-        score_pickem, _, _ = compute_batter_env_score(
-            vegas_total=8.0,
-            opp_pitcher_era=4.0,
-            team_moneyline=-100,    # at floor — no ML credit
-        )
-        # Mild fav now meaningfully outscores a pickem game (was equal before).
-        assert score_mild > score_pickem
-
-    def test_v10_4_batter_ml_saturates_at_180(self):
-        """V10.4: ML at -180 saturates (full credit); going to -250 doesn't add more.
-        This prevents heavy-favorite batters from being over-rewarded."""
-        score_180, _, _ = compute_batter_env_score(
-            vegas_total=8.0,
-            opp_pitcher_era=4.0,
-            team_moneyline=-180,
-        )
-        score_250, _, _ = compute_batter_env_score(
-            vegas_total=8.0,
-            opp_pitcher_era=4.0,
-            team_moneyline=-250,
-        )
-        # Both saturate at the ceiling — heavy favorite gets no extra ML credit.
-        assert score_180 == pytest.approx(score_250, abs=0.001)
+        score_no_wind, _, _ = compute_batter_env_score(opp_pitcher_era=4.0)
+        assert score_calm_in == pytest.approx(score_no_wind, abs=0.001)
 
 
 # ===================================================================
@@ -574,13 +445,15 @@ class TestComposition:
         lineup = _enforce_composition(pool, _default_slate())
         assert len(lineup) == 5
 
-    def test_exactly_1_pitcher(self):
+    def test_pitcher_count_in_legal_range(self):
+        """V12: pitcher count is unconstrained — any of 0..5 is legal.
+        The EV-driven chooser picks the best variant by slot-weighted EV."""
         pool = _make_pool()
         for c in pool:
             c.filter_ev = _compute_filter_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         pitcher_count = sum(1 for c in lineup if c.is_pitcher)
-        assert pitcher_count == REQUIRED_PITCHERS_IN_LINEUP
+        assert 0 <= pitcher_count <= 5
 
     def test_default_slate_caps_batters_at_one_per_team(self):
         """V10.1: with no stack-eligible games, every team is capped at 1 batter."""
@@ -780,14 +653,19 @@ class TestComposition:
 # ===================================================================
 
 class TestSlotAssignment:
-    def test_pitcher_in_slot_1(self):
+    def test_slot_1_is_highest_ev_player(self):
+        """V12: slot 1 (2.0× multiplier) goes to the highest-EV player —
+        not necessarily a pitcher.  Rearrangement inequality: best player
+        in best slot."""
         pool = _make_pool()
         for c in pool:
             c.filter_ev = _compute_filter_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         slots = _smart_slot_assignment(lineup)
         slot1 = next(s for s in slots if s.slot_index == PITCHER_ANCHOR_SLOT)
-        assert slot1.candidate.is_pitcher
+        # Slot 1 candidate must have the highest filter_ev among the lineup
+        max_ev = max(c.filter_ev for c in lineup)
+        assert slot1.candidate.filter_ev == pytest.approx(max_ev, abs=0.001)
 
     def test_5_slots_assigned(self):
         pool = _make_pool()
@@ -818,13 +696,14 @@ class TestSlotAssignment:
 
 class TestRunFilterStrategy:
     def test_produces_valid_lineup(self):
+        """V12: any pitcher count 0..5 is legal; chooser picks best by EV."""
         pool = _make_pool()
         result = run_filter_strategy(pool, _default_slate())
         assert isinstance(result, FilterOptimizedLineup)
         assert len(result.slots) == 5
         assert result.total_expected_value > 0
-        assert result.composition["pitchers"] == 1
-        assert result.composition["hitters"] == 4
+        # Total players = 5
+        assert result.composition["pitchers"] + result.composition["hitters"] == 5
 
     def test_empty_candidates(self):
         result = run_filter_strategy([], _default_slate())

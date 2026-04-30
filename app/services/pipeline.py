@@ -467,6 +467,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                     continue
 
             pitcher_k9 = game.home_starter_k_per_9 if is_home else game.away_starter_k_per_9
+            own_era = game.home_starter_era if is_home else game.away_starter_era
             opp_ops = game.away_team_ops if is_home else game.home_team_ops
             opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
             team_ml = game.home_moneyline if is_home else game.away_moneyline
@@ -477,6 +478,8 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 park_team=game.home_team,
                 is_home=is_home,
                 team_moneyline=team_ml,
+                vegas_total=game.vegas_total,
+                own_starter_era=own_era,
             )
             series_team_w: int | None = None
             series_opp_w: int | None = None
