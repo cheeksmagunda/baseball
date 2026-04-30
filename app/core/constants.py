@@ -269,7 +269,7 @@ PITCHER_ANCHOR_SLOT = 1              # legacy constant — Slot 1 index, used in
 
 # ---------------------------------------------------------------------------
 # Blowout game stack bonus (4-term EV formula)
-# Applied in _compute_filter_ev() when a player's team is the favored side
+# Applied in _compute_base_ev() when a player's team is the favored side
 # in a blowout game (moneyline <= BLOWOUT_MONEYLINE_THRESHOLD).
 # ---------------------------------------------------------------------------
 STACK_BONUS = 1.20  # 20% EV bonus for players on blowout-game teams

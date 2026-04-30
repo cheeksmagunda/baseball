@@ -507,9 +507,9 @@ async def diagnostics(db: Session = Depends(get_db)):
     candidates = await resolve_candidates(cards, games, db)
 
     # Quick EV computation for diagnostics (without full optimization)
-    from app.services.filter_strategy import _compute_filter_ev
+    from app.services.filter_strategy import _compute_base_ev
     for c in candidates:
-        c.filter_ev = _compute_filter_ev(c)
+        c.filter_ev = _compute_base_ev(c)
     candidates.sort(key=lambda c: c.filter_ev, reverse=True)
 
     top_evs = [

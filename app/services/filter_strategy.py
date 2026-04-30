@@ -1,72 +1,43 @@
 """
-Filter Strategy V11.0: "Filter, Not Forecast" — popularity-agnostic, single lineup.
+Filter Strategy V12.3 — audit-driven env scoring + multi-pitcher variants.
 
-Public API (imported by pipeline.py, routers/filter_strategy.py, and tests)
-────────────────────────────────────────────────────────────────────────────
-Slate classification:
-  SlateType, SlateClassification, StackableGame
+Public API (imported by pipeline.py, routers/filter_strategy.py, and tests):
   classify_slate(game_count, games) -> SlateClassification
-
-Environmental scoring:
-  compute_pitcher_env_score(...) -> tuple[float, dict]
-  compute_batter_env_score(...)  -> tuple[float, dict, int]
-
-Candidate model:
-  FilteredCandidate   — input to all optimization functions
+  compute_pitcher_env_score(...)    -> (env_score, factors)
+  compute_batter_env_score(...)     -> (env_score, factors, unknown_count)
+  run_filter_strategy(cands, sc)    -> FilterOptimizedLineup
+  FilteredCandidate (dataclass)     — optimizer input
   FilterSlotAssignment, FilterOptimizedLineup — output structures
 
-Single-lineup optimizer:
-  run_filter_strategy(candidates, slate_class) -> FilterOptimizedLineup
-
 Internal helpers:
-  _compute_base_ev, _compute_filter_ev
-  _enforce_composition, _validate_lineup_structure
-  _smart_slot_assignment, _compute_dnp_adjustment, _compute_stack_eligible_teams
-────────────────────────────────────────────────────────────────────────────
+  _compute_base_ev — single source of EV truth
+  _enforce_composition — V12 multi-pitcher variant chooser (0P-5P)
+  _build_variant — single-shape builder w/ anti-correlation guard
+  _smart_slot_assignment — sort-by-EV, assign multipliers desc
+  _compute_dnp_adjustment, _compute_stack_eligible_teams, _team_batter_cap
 
-V11.0 (April 30): popularity removed — no more FADE/TARGET/NEUTRAL gating, no
-sharp_score scraping, no Moonshot.  The optimizer ranks purely on env + trait
-+ context.  Rationale: web-scraped popularity was a noisy proxy for "what the
-crowd thinks", which actively distorted ranking toward contrarian picks even
-when env + trait disagreed.  Pure pre-game signal ranking — predict high
-performers, ignore the crowd.
-
-Filters applied sequentially:
-  1. Slate Architecture    — classify the day type + identify blowout/high-total
-                             games that unlock stacking for their favored team.
-  2. Environmental Advantage — PRIMARY signal: game conditions (Vegas O/U,
-                             opposing ERA, opposing WHIP, opposing K/9,
-                             bullpen ERA, park, weather, platoon, batting
-                             order, moneyline, series context). Groups A/B/C/D.
-  3. Individual Explosive Traits — SECONDARY: Statcast kinematics (FB velo/IVB/
-                             extension/whiff/chase for SP; avg EV/hard-hit%/
-                             barrel% for batters) + K/9 / HR/PA fallback.
-  4. Slot Sequencing (Pitcher-Anchor + conditional stacks) — when the EV
-                             chooser picks 1P+4B, 1 SP is pinned to Slot 1
-                             (2.0×) and 4 batters fill Slots 2–5 honouring
-                             per-team caps that vary by stack eligibility.
-                             When the chooser picks 0P+5B, the highest-EV
-                             batter takes Slot 1 instead.
-
-EV formula (V11.0):
-    base_ev = env_factor × volatility_amplifier × trait_factor
+EV formula (V12.3):
+    filter_ev = env_factor × volatility_amplifier × trait_factor
               × stack_bonus × dnp_adj × 100
 
-    env_factor          — pitchers cap at PITCHER_ENV_MODIFIER_CEILING (1.20),
-                          batters at ENV_MODIFIER_CEILING (1.30).
-    volatility_amplifier— Env-CONDITIONAL: 1 + cv × MAX × (env − 0.5) × 2.
-                          Boom-bust hitters amplified in good env, penalised
-                          in bad env.
-    trait_factor        — 0.85–1.15 (TRAIT_MODIFIER bounds).
-    stack_bonus         — 1.20 if PATH 1 blowout favorite team, else 1.0.
-    dnp_adj             — 0.70 (CONFIRMED_BAD) / 0.93 (UNKNOWN) / 1.0.
+    env_factor: floor 0.20 (V12.1), pitcher ceiling 1.40 (V12), batter 1.30
+    volatility_amplifier: env-conditional, batters only
+    trait_factor: 0.85-1.15
+    stack_bonus: 1.0 / 1.20 (PATH 1 blowout-fav teams only)
+    dnp_adj: 0.70 / 0.93 / 1.0
 
-Stacking (two-path):
-    A team contributes more than one batter ONLY if its game clears
-    is_stack_eligible_game() — PATH 1 (ML ≤ -200 AND O/U ≥ 9.0, favored side
-    only, earns STACK_BONUS) OR PATH 2 (O/U ≥ 10.5, both sides eligible, no
-    bonus).  Every other team is capped at one batter per lineup.  See
-    _compute_stack_eligible_teams and _team_batter_cap below.
+Composition: builds variants 0P-5P, returns highest slot-weighted total EV.
+Slot 1 (2.0×) goes to the highest-EV PLAYER regardless of position.
+
+Stacking (is_stack_eligible_game): PATH 1 (ML≤-200 AND O/U≥9.0, favored
+side only, earns STACK_BONUS) OR PATH 2 (O/U≥10.5, both sides, no bonus).
+
+V12 was rebuilt from a 35-slate audit of every pre-game signal against
+actual HV outcomes.  Dead/inverted signals (Vegas O/U batter, opp K/9,
+bullpen ERA, opp K%, heavy-fav ML positive bonus, L10 momentum, series
+lead, opp rest days) deleted.  Strong signals (opp ERA, opp WHIP, wind
+out, ML mild-fav peak for pitchers, ML underdog premium for batters)
+kept.  See CLAUDE.md V12.x changelog for full rationale.
 """
 
 from __future__ import annotations
@@ -781,11 +752,6 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
     )
 
 
-def _compute_filter_ev(candidate: FilteredCandidate) -> float:
-    """Compute Starting 5 EV: env × trait × context (no RS data)."""
-    return _compute_base_ev(candidate)
-
-
 def _compute_stack_eligible_teams(slate_class: SlateClassification) -> set[str]:
     """Return the set of team abbreviations allowed to contribute a stack today.
 
@@ -1213,7 +1179,7 @@ def run_filter_strategy(
             slate_classification=slate_classification,
         )
 
-    # Mark blowout-game players before EV computation so _compute_filter_ev()
+    # Mark blowout-game players before EV computation so _compute_base_ev()
     # can apply the stack_bonus without needing slate_classification as a parameter.
     # STACK_BONUS (1.20× EV) is gated to PATH 1 blowout favorites only.
     # PATH 2 shootout sides become stack-eligible (mini-stack cap lifts to 2)
@@ -1229,7 +1195,7 @@ def run_filter_strategy(
 
     # Step 1: Compute filter-adjusted EV (env + trait + context)
     for c in candidates:
-        c.filter_ev = _compute_filter_ev(c)
+        c.filter_ev = _compute_base_ev(c)
 
     # Step 2: Enforce composition — 1P+4B (anchor) or 0P+5B (pure-batter),
     # chosen by slot-weighted total EV.

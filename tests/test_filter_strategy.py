@@ -20,7 +20,6 @@ from app.services.filter_strategy import (
     compute_batter_env_score,
     _compute_dnp_adjustment,
     _compute_base_ev,
-    _compute_filter_ev,
     _enforce_composition,
     _smart_slot_assignment,
     run_filter_strategy,
@@ -425,12 +424,12 @@ class TestBaseEV:
 class TestFilterEV:
     def test_filter_ev_positive(self):
         c = _make_candidate()
-        assert _compute_filter_ev(c) > 0
+        assert _compute_base_ev(c) > 0
 
     def test_filter_ev_matches_base_ev(self):
         """V11.0: filter EV is the base EV.  No popularity bonus or penalty."""
         c = _make_candidate(env_score=0.7, total_score=65)
-        assert _compute_filter_ev(c) == pytest.approx(_compute_base_ev(c), rel=1e-9)
+        assert _compute_base_ev(c) == pytest.approx(_compute_base_ev(c), rel=1e-9)
 
 
 # ===================================================================
@@ -441,7 +440,7 @@ class TestComposition:
     def test_exactly_5_players(self):
         pool = _make_pool()
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         assert len(lineup) == 5
 
@@ -450,7 +449,7 @@ class TestComposition:
         The EV-driven chooser picks the best variant by slot-weighted EV."""
         pool = _make_pool()
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         pitcher_count = sum(1 for c in lineup if c.is_pitcher)
         assert 0 <= pitcher_count <= 5
@@ -459,7 +458,7 @@ class TestComposition:
         """V10.1: with no stack-eligible games, every team is capped at 1 batter."""
         pool = _make_pool()
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         from collections import Counter
         batter_team_counts = Counter(c.team for c in lineup if not c.is_pitcher)
@@ -480,7 +479,7 @@ class TestComposition:
             _make_candidate(name="HOU_1", team="HOU", is_pitcher=False, game_id=4, total_score=50, env_score=0.55),
         ]
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         slate = _stack_eligible_slate(favored_team="NYY")
         lineup = _enforce_composition(pool, slate)
         nyy = [c for c in lineup if c.team == "NYY"]
@@ -500,7 +499,7 @@ class TestComposition:
             _make_candidate(name="HOU_1", team="HOU", is_pitcher=False, game_id=4, total_score=50, env_score=0.55),
         ]
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         # Both NYY and BOS are "stack-eligible" here so per-team is 2 for each.
         # The per-game cap must prevent all four game_id=2 picks from being drafted.
         slate = SlateClassification(
@@ -532,7 +531,7 @@ class TestComposition:
             _make_candidate(name="SF_1", team="SF", is_pitcher=False, game_id=5, total_score=48, env_score=0.5),
         ]
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         # Blowout ML but low total — should NOT unlock stacking.
         slate = _stack_eligible_slate(favored_team="NYY", moneyline=-230, vegas_total=7.5)
         lineup = _enforce_composition(pool, slate)
@@ -546,7 +545,7 @@ class TestComposition:
         """V10.1: the only game-level rule — never draft an opposing batter against our anchor."""
         pool = _make_pool()
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         pitcher = next(c for c in lineup if c.is_pitcher)
         anchor_team = pitcher.team.upper()
@@ -568,7 +567,7 @@ class TestComposition:
             _make_candidate(name="Bat_Hou", team="HOU", is_pitcher=False, game_id=4, total_score=50, env_score=0.7),
         ]
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         slate = _stack_eligible_slate(favored_team="NYY")
         lineup = _enforce_composition(pool, slate)
         names = [c.player_name for c in lineup]
@@ -618,7 +617,7 @@ class TestComposition:
         ]
         pool = [weak_pitcher] + strong_batters
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         assert len(lineup) == 5
         assert sum(1 for c in lineup if c.is_pitcher) == 0, (
@@ -641,7 +640,7 @@ class TestComposition:
         ]
         pool = [strong_pitcher] + weak_batters
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         assert len(lineup) == 5
         assert sum(1 for c in lineup if c.is_pitcher) == 1
@@ -659,7 +658,7 @@ class TestSlotAssignment:
         in best slot."""
         pool = _make_pool()
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         slots = _smart_slot_assignment(lineup)
         slot1 = next(s for s in slots if s.slot_index == PITCHER_ANCHOR_SLOT)
@@ -670,7 +669,7 @@ class TestSlotAssignment:
     def test_5_slots_assigned(self):
         pool = _make_pool()
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         slots = _smart_slot_assignment(lineup)
         assert len(slots) == 5
@@ -679,7 +678,7 @@ class TestSlotAssignment:
     def test_slot_multipliers_correct(self):
         pool = _make_pool()
         for c in pool:
-            c.filter_ev = _compute_filter_ev(c)
+            c.filter_ev = _compute_base_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         slots = _smart_slot_assignment(lineup)
         for s in slots:
