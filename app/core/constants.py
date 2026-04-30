@@ -68,16 +68,9 @@ ALL_POSITIONS = PITCHER_POSITIONS | BATTER_POSITIONS
 # Teams
 MLB_TEAMS = sorted(PARK_HR_FACTORS.keys())
 
-# Draft evaluation: warn if user's lineup is this % worse than optimal
-SUBOPTIMAL_THRESHOLD = 1.05  # 5% EV variance
-
-# Minimum score threshold: players below this get a graduated EV penalty.
-# Instead of a binary cliff (old: 50% haircut at <15), the penalty now scales
-# linearly from MIN_SCORE_PENALTY_FLOOR at score=0 up to 1.0 at the threshold.
-# This prevents ghost+boost players with score=14 from being treated identically
-# to score=0 players.  See _graduated_score_penalty() in filter_strategy.py.
-MIN_SCORE_THRESHOLD = 15  # out of 100 — full penalty below 0, no penalty at/above 15
-MIN_SCORE_PENALTY_FLOOR = 0.40  # worst-case multiplier at score=0 (60% haircut)
+# Minimum score threshold for the trait_factor mapping.  Players below this
+# get the floor trait_factor (0.85).
+MIN_SCORE_THRESHOLD = 15  # out of 100
 
 # ---------------------------------------------------------------------------
 # Filter Strategy constants (§4 "Filter, Not Forecast")
@@ -420,20 +413,6 @@ SCORING_FRAMING_RUNS_FLOOR = -12.0            # at or below → -max k_rate adju
 SCORING_FRAMING_K_RATE_MAX_ADJ = 0.05         # ±5% scale factor on k_rate
                                               # (deliberately conservative for ABS era)
 
-# V10.8 — opponent rest days bonus for batter env Group A.
-#
-# FantasyLabs DFS research: hitters facing teams with 0 rest days (back-to-
-# back game) have a small but real edge — opposing bullpen is depleted from
-# the prior day, and the opposing starter is on a tighter pitch leash.
-# The hitter's own rest is unrelated to performance per the research; only
-# the OPPOSING team's rest matters for the batter's matchup.
-#
-# Conservative single-tier bump: +0.2 (Group A weight 0.2) when opponent
-# played yesterday (rest_days <= 0).  No graduated scale — the signal is a
-# binary "fresh vs depleted opposing pen" effect.  No penalty when opp has
-# rest — that's the baseline state.
-BATTER_ENV_OPP_BACK_TO_BACK_BONUS = 0.2       # additive to Group A run_env when opp_rest <= 0
-
 # Scoring engine — park factor range boundaries (LAD floor, COL ceiling)
 # Used in score_ballpark_factor() to normalise the effective park factor.
 PARK_HR_FACTOR_MIN = 0.89             # lowest value in PARK_HR_FACTORS (LAD)
@@ -458,7 +437,6 @@ QUALITY_SP_ERA_THRESHOLD = 3.5
 # ISO was removed as a power signal — it is a downstream SLG-AVG outcome that
 # correlates with exit velocity but adds noise.  The V9.x code read ps.iso
 # regardless and the MLB API never populated it.
-POWER_PROFILE_HR_PA_MAX = 0.06
 POWER_PROFILE_BARREL_PCT_MAX = 15.0
 POWER_PROFILE_AVG_EV_MAX = 92.0
 POWER_PROFILE_HARD_HIT_MAX = 50.0
@@ -485,13 +463,6 @@ POWER_PROFILE_X_WOBA_CEILING = 0.400      # at or above → full contribution
 # V10.8 — pitcher xERA scaling for era_whip trait.  xERA is a 1:1 conversion
 # of xwOBA-against onto the ERA scale; widely-used in DFS to flag regression
 # candidates (live ERA shiny but xERA bad → coming back to earth).  See
-# https://baseballsavant.mlb.com/leaderboard/expected_statistics
-#
-# Floor 5.0 = no credit (poor expected results), ceiling 2.0 = full credit
-# (elite arsenal, ace-tier expected ERA).
-SCORING_X_ERA_FLOOR = 5.0                 # xERA at or above → 0 score
-SCORING_X_ERA_RANGE = 3.0                 # 5.0 - 2.0 = full-credit range
-
 # Pitcher K/9 kinematics — Statcast-driven version of k_rate scoring.
 # Strategy doc §"Kinematics of the Pitching Anchor": K/9 is downstream;
 # the upstream physics are FB velocity, induced vertical break, extension

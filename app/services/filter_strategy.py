@@ -330,32 +330,6 @@ def classify_slate(
 # Filter 2: Environmental Advantage (§4.2 Filter 2)
 # ---------------------------------------------------------------------------
 
-@dataclass
-class EnvironmentalProfile:
-    """Pre-game environmental factors for a single player."""
-    player_name: str
-    team: str
-    position: str
-    is_pitcher: bool = False
-    env_score: float = 0.5  # 0-1.0; >0.5 = passes environmental filter
-    env_factors: list[str] = field(default_factory=list)
-    env_unknown_count: int = 0  # how many factors were missing (unknown vs bad)
-
-    # Pitcher-specific
-    opp_team_ops: float | None = None
-    opp_team_k_pct: float | None = None
-    pitcher_k_per_9: float | None = None
-    park_factor: float | None = None
-    is_home: bool = False
-
-    # Batter-specific
-    vegas_total: float | None = None
-    opp_pitcher_era: float | None = None
-    platoon_advantage: bool = False
-    batting_order: int | None = None
-
-
-
 def compute_pitcher_env_score(
     opp_team_ops: float | None = None,
     opp_team_k_pct: float | None = None,  # V12: ignored — audit shows this signal is dead (Q1=25% vs Q4=23% HV)
@@ -839,45 +813,6 @@ def _team_batter_cap(team: str, stack_eligible_teams: set[str]) -> int:
     return MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT
 
 
-def _fill_batter_slots(
-    ordered_batters: list[FilteredCandidate],
-    anchor_game_id: int | str | None,
-    anchor_team: str,
-    stack_eligible_teams: set[str],
-    slots_to_fill: int = 4,
-) -> list[FilteredCandidate]:
-    """Fill `slots_to_fill` batter slots from an EV-ordered batter pool.
-
-    Applies the anti-correlation guard, per-team cap, and per-game cap.
-    Pool must already be sorted by filter_ev descending and must exclude pitchers.
-
-    `slots_to_fill` defaults to 4 (the 1P+4B path); the V10.5 pure-batter
-    path passes 5 to fill the entire lineup with no anchor restrictions
-    (caller passes anchor_game_id=None, anchor_team="" to disable that guard).
-    """
-    batters: list[FilteredCandidate] = []
-    team_count: dict[str, int] = {}
-    game_count: dict[int | str, int] = {}
-
-    for c in ordered_batters:
-        if len(batters) == slots_to_fill:
-            break
-        team_key = c.team.upper()
-        if anchor_game_id is not None and c.game_id == anchor_game_id and team_key != anchor_team:
-            continue
-        cap = _team_batter_cap(team_key, stack_eligible_teams)
-        if team_count.get(team_key, 0) >= cap:
-            continue
-        if c.game_id is not None and game_count.get(c.game_id, 0) >= MAX_PLAYERS_PER_GAME_BATTERS:
-            continue
-        team_count[team_key] = team_count.get(team_key, 0) + 1
-        if c.game_id is not None:
-            game_count[c.game_id] = game_count.get(c.game_id, 0) + 1
-        batters.append(c)
-
-    return batters
-
-
 def _lineup_total_ev(lineup: list[FilteredCandidate]) -> float:
     """Compute the slot-weighted total EV for a lineup.
 
@@ -893,36 +828,6 @@ def _lineup_total_ev(lineup: list[FilteredCandidate]) -> float:
     for player, mult in zip(sorted_lineup, slot_mults_desc):
         total += player.filter_ev * (mult / BASE_MULTIPLIER)
     return total
-
-
-def _build_pure_batter_lineup(
-    candidates: list[FilteredCandidate],
-    slate_class: SlateClassification,
-) -> list[FilteredCandidate]:
-    """Build a 0P+5B lineup: top-5 batters by filter_ev under team/game caps.
-
-    No anchor pitcher → no opposing-side restriction.  Returns [] if fewer
-    than 5 batters can be assembled under the caps (extremely rare in
-    practice; ~30 teams × cap of 1 + a couple stack-eligible teams × 2
-    means we typically have 30+ legal batter slots).  An empty return
-    signals the caller to fall back to the 1P+4B path.
-    """
-    ordered_batters = sorted(
-        [c for c in candidates if not c.is_pitcher],
-        key=lambda c: c.filter_ev,
-        reverse=True,
-    )
-    stack_eligible_teams = _compute_stack_eligible_teams(slate_class)
-    batters = _fill_batter_slots(
-        ordered_batters,
-        anchor_game_id=None,
-        anchor_team="",
-        stack_eligible_teams=stack_eligible_teams,
-        slots_to_fill=5,
-    )
-    if len(batters) < 5:
-        return []
-    return batters
 
 
 def _build_variant(

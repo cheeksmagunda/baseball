@@ -28,8 +28,6 @@ from app.core.constants import (
     POWER_PROFILE_MAX_EV_CEILING,
     POWER_PROFILE_X_WOBA_CEILING,
     POWER_PROFILE_X_WOBA_FLOOR,
-    SCORING_X_ERA_FLOOR,
-    SCORING_X_ERA_RANGE,
     SCORING_BATTER_ERA_FLOOR,
     SCORING_BATTER_ERA_RANGE,
     SCORING_BATTER_K_PCT_CEILING,
@@ -313,21 +311,16 @@ def score_pitcher_recent_form(
 
 
 def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitResult:
-    """Combined ERA + WHIP + xERA score.
+    """Combined ERA + WHIP score.
 
-    V10.8 — added xERA (Statcast expected ERA, derived from xwOBA-against) at
-    25% weight so the trait incorporates contact-quality leading indicators
-    alongside the realised ERA/WHIP outcomes.  Wide live-ERA-vs-xERA gaps
-    signal regression candidates: a pitcher with shiny ERA but poor xERA is
-    "regression-in-waiting" per FantasyLabs / PitcherList DFS literature.
+    V12.2: removed xERA blend.  V12 audit (35-slate quartile bucketing)
+    showed xERA produces near-identical bucket distributions to ERA
+    (Q1 25.5% HV / Q4 28.6% HV — flat, vs ERA Q1 25.5% / Q4 33.9% — small
+    monotonic).  xERA is algebraically related to xwOBA-against and adds
+    no independent signal beyond raw ERA.  V10.8 had it at 25% weight;
+    removed.
 
-    Blend weights:
-      live ERA   45%  (was 60%)
-      WHIP       30%  (was 40%)
-      xERA       25%  (NEW V10.8)
-
-    When xERA is missing (pre-50 PA pitchers, schema drift), the live ERA +
-    WHIP path keeps its original blend (60/40) so the trait stays well-formed.
+    Blend: ERA 60% + WHIP 40% (the pre-V10.8 blend, restored).
     """
     if not stats:
         return TraitResult("era_whip", 0, max_pts, "no stats")
@@ -335,26 +328,16 @@ def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitRe
     era = stats.era or DEFAULT_PITCHER_ERA
     whip = stats.whip or DEFAULT_PITCHER_WHIP
 
-    # ERA component: lower is better (inverted scale)
+    # ERA + WHIP both inverted (lower is better)
     era_score = scale_score(SCORING_ERA_CEILING - era, 0, SCORING_ERA_RANGE, 1.0)
-    # WHIP component: lower is better (inverted scale)
     whip_score = scale_score(SCORING_WHIP_CEILING - whip, 0, SCORING_WHIP_RANGE, 1.0)
-
-    # V10.8 — xERA component when available.  Lower is better (inverted scale).
-    x_era = stats.x_era
-    detail = f"ERA {era:.2f} | WHIP {whip:.2f}"
-    if x_era is not None:
-        x_era_score = scale_score(SCORING_X_ERA_FLOOR - x_era, 0, SCORING_X_ERA_RANGE, 1.0)
-        combined = (era_score * 0.45 + whip_score * 0.30 + x_era_score * 0.25) * max_pts
-        detail += f" | xERA {x_era:.2f}"
-    else:
-        combined = (era_score * 0.6 + whip_score * 0.4) * max_pts
+    combined = (era_score * 0.6 + whip_score * 0.4) * max_pts
 
     return TraitResult(
         "era_whip",
         round(combined, 1),
         max_pts,
-        detail,
+        f"ERA {era:.2f} | WHIP {whip:.2f}",
     )
 
 
