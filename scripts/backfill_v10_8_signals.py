@@ -42,7 +42,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import re
 import sys
 from datetime import date as _date
 from pathlib import Path

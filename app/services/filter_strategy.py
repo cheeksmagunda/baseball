@@ -84,7 +84,7 @@ from app.core.constants import (
     # V10.6 — asymmetric pitcher env ceiling (vs batter)
     PITCHER_ENV_MODIFIER_CEILING,
 )
-from app.core.utils import BASE_MULTIPLIER
+from app.core.utils import BASE_MULTIPLIER, graduated_scale
 
 logger = logging.getLogger(__name__)
 
@@ -410,7 +410,7 @@ def compute_pitcher_env_score(
         elif opp_team_ops <= 0.720:
             score += 0.1
 
-    env_score = max(0.0, min(1.0, score / max_score))
+    env_score = graduated_scale(score, 0.0, max_score)
     return env_score, factors
 
 
@@ -568,7 +568,7 @@ def compute_batter_env_score(
     if unknown_count > 0:
         factors.append(f"{unknown_count} unknown factor(s)")
 
-    env_score = max(0.0, min(1.0, score / max_score))
+    env_score = graduated_scale(score, 0.0, max_score)
     return env_score, factors, unknown_count
 
 

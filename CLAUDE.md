@@ -203,7 +203,7 @@ The app uses an event-driven timing model that triggers the ONLY full pipeline r
 3. **T-65 Final Run** (Exactly at T-65):
    - Monitor wakes up and runs the FULL pipeline:
      - Fetch fresh MLB schedule (handles weather delays via retry loop)
-     - Populate SlatePlayer rosters from MLB API boxscores
+     - Populate Player + SlatePlayer rows by fetching each team's active roster from the MLB Stats API team endpoint (the DB is empty until this point — there is no historical seed)
      - **Phase 1: RotoWire expected lineups** (best-effort) — populates `batting_order` from beat-reporter projections, sets `batting_order_source` to `"rotowire_confirmed"` or `"rotowire_expected"`. Fails gracefully (warns + continues) if RotoWire is unreachable; downstream DNP_UNKNOWN_PENALTY (V10.6: 0.93, was 0.85) absorbs missing data.
      - **Phase 2: MLB Stats API boxscore** (ground truth) — overrides any RotoWire value with the official lineup card when posted, sets source to `"official"`. Typically populates 30-60 min before first pitch (i.e., usually after T-65), so RotoWire carries the load at the lock moment.
      - Fetch season stats for all players

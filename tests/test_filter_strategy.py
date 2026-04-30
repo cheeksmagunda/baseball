@@ -418,22 +418,7 @@ class TestBaseEV:
         assert ev_high > ev_low
 
 # ===================================================================
-# 6. Filter EV
-# ===================================================================
-
-class TestFilterEV:
-    def test_filter_ev_positive(self):
-        c = _make_candidate()
-        assert _compute_base_ev(c) > 0
-
-    def test_filter_ev_matches_base_ev(self):
-        """V11.0: filter EV is the base EV.  No popularity bonus or penalty."""
-        c = _make_candidate(env_score=0.7, total_score=65)
-        assert _compute_base_ev(c) == pytest.approx(_compute_base_ev(c), rel=1e-9)
-
-
-# ===================================================================
-# 9. Composition Enforcement
+# 8. Composition Enforcement
 # ===================================================================
 
 class TestComposition:
