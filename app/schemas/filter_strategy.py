@@ -52,11 +52,9 @@ class FilterCard(BaseModel):
     player_name: str
     team: str
     position: str
-    card_boost: float = 0.0
     game_id: int | str | None = None
     batting_order: int | None = None
     platoon_advantage: bool = False
-    drafts: int | None = None  # ownership data
 
 
 # ---------------------------------------------------------------------------
@@ -85,14 +83,12 @@ class FilterCandidateOut(BaseModel):
     player_name: str
     team: str
     position: str
-    card_boost: float
     total_score: float
     env_score: float
     env_factors: list[str] = []
     is_two_way_pitcher: bool = False  # True if detected as starter despite non-pitcher position (e.g., Ohtani)
     filter_ev: float
     game_id: int | str | None = None
-    drafts: int | None = None
     breakdowns: list[TraitBreakdown] = []
 
 
@@ -102,7 +98,6 @@ class FilterSlotOut(BaseModel):
     player_name: str
     team: str
     position: str
-    card_boost: float
     total_score: float
     env_score: float
     env_factors: list[str] = []
@@ -110,7 +105,6 @@ class FilterSlotOut(BaseModel):
     filter_ev: float
     expected_slot_value: float
     game_id: int | str | None = None
-    drafts: int | None = None
     breakdowns: list[TraitBreakdown] = []
 
 

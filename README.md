@@ -46,7 +46,7 @@ The primary optimization path is `filter_strategy`. The `/api/pipeline/*` manual
 
 ### Philosophy
 
-It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor). V12 rebuilt env scoring from a 35-slate audit against actual HV outcomes — every dead or inverted signal got deleted, only audit-validated signals are scored. The model is popularity-agnostic: don't favor popular players, don't fade unpopular ones either. Multi-pitcher variants (0P-5P) replaced the V11 0P/1P-only constraint that was structurally barring 57% of empirical winning shapes. Slot 1 goes to the highest-EV player regardless of position. **Historical stats are reference data only — they never feed the live scoring pipeline directly. card_boost and drafts are revealed during the draft and never reach the optimizer.**
+It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor). V12 rebuilt env scoring from a 35-slate audit against actual HV outcomes — every dead or inverted signal got deleted, only audit-validated signals are scored. The model is popularity-agnostic: don't favor popular players, don't fade unpopular ones either. Multi-pitcher variants (0P-5P) replaced the V11 0P/1P-only constraint that was structurally barring 57% of empirical winning shapes. Slot 1 goes to the highest-EV player regardless of position. **Historical stats are reference data only — they never feed the live scoring pipeline.**
 
 Stacking (multiple batters from the same team) is powerful but correlated. V10.2 unlocks a **mini-stack** (cap 2 per team, cap 2 per game) via two paths:
 - **PATH 1** — `moneyline ≤ -200` AND `vegas_total ≥ 9.0` (favored side only, earns +20% STACK_BONUS)
@@ -104,7 +104,7 @@ Every live-data fetch path used by the T-65 pipeline either succeeds and produce
 | Team batting / pitching stats | `enrich_slate_game_team_stats` raises if any field NULL post-fetch |
 | RotoWire expected lineups (V10.4) | Best-effort — failure logs loudly but doesn't abort. Missing batting orders fall through to `DNP_UNKNOWN_PENALTY` (0.93 in V10.6). The only intentional graceful-degradation path |
 
-**Important:** `card_boost` is revealed during/after the draft and is **structurally absent from `FilteredCandidate`** — the optimizer cannot read it even by accident. League-average defaults (ERA, WHIP, OPS, K%) and all scaling thresholds are centralized in `app/core/constants.py`. Env-score functions use shared `graduated_scale()` helpers in `app/core/utils.py`.
+League-average defaults (ERA, WHIP, OPS, K%) and all scaling thresholds are centralized in `app/core/constants.py`. Env-score functions use shared `graduated_scale()` helpers in `app/core/utils.py`.
 
 ## Optimizer (V12.2)
 

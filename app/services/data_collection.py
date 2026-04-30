@@ -269,7 +269,6 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict[str, int]:
             sp = SlatePlayer(
                 slate_id=slate.id,
                 player_id=player.id,
-                card_boost=0.0,
                 game_id=game.id,
                 player_status="active",
             )

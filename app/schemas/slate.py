@@ -28,10 +28,8 @@ class SlatePlayerIn(BaseModel):
     player_name: str
     team: str | None = None
     position: str | None = None
-    card_boost: float = 0.0
     batting_order: int | None = None
     platoon_advantage: bool | None = None
-    drafts: int | None = None
 
 
 class SlatePlayerOut(BaseModel):
@@ -39,11 +37,6 @@ class SlatePlayerOut(BaseModel):
     player_name: str
     team: str
     position: str
-    card_boost: float
-    real_score: float | None = None
-    total_value: float | None = None
-    is_highest_value: bool = False
-    drafts: int | None = None
     opponent_team: str | None = None
     batting_order: int | None = None
     platoon_advantage: bool | None = None

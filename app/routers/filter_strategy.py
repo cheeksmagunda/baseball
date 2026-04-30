@@ -142,18 +142,13 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
         # Skip players from games that have already started
         if sp.game_id is not None and sp.game_id not in remaining_game_ids:
             continue
-        # display-only fields (card_boost, drafts) are read from SlatePlayer
-        # and carried on the FilterCard for response payload rendering.
-        # They never reach FilteredCandidate or any EV computation.
         cards.append(FilterCard(
             player_name=player.name,
             team=player.team,
             position=player.position,
-            card_boost=sp.card_boost,    # display only — see _build_display_map
             game_id=sp.game_id,
             batting_order=sp.batting_order,
             platoon_advantage=bool(sp.platoon_advantage),
-            drafts=sp.drafts,            # display only — see _build_display_map
         ))
 
     return cards, games
@@ -166,32 +161,15 @@ def _traits_to_breakdowns(traits: list) -> list[TraitBreakdown]:
     ]
 
 
-def _build_display_map(cards: list[FilterCard]) -> dict[tuple[str, str], tuple[float, int | None]]:
-    """Build a (player_name, team) → (card_boost, drafts) lookup for display only.
-
-    These fields are kept strictly in the router layer — the optimizer never
-    sees them.  Frontend needs them to render the draft UI, but they must not
-    flow through EV.
-    """
-    return {
-        (c.player_name, c.team.upper()): (c.card_boost, c.drafts)  # display only
-        for c in cards
-    }
-
-
-def _build_lineup_out(result, display_map: dict) -> FilterLineupOut:
+def _build_lineup_out(result) -> FilterLineupOut:
     slots_out = []
     for s in result.slots:
-        boost, drafts = display_map.get(
-            (s.candidate.player_name, s.candidate.team.upper()), (0.0, None)
-        )
         slots_out.append(FilterSlotOut(
             slot_index=s.slot_index,
             slot_mult=s.slot_mult,
             player_name=s.candidate.player_name,
             team=s.candidate.team,
             position=s.candidate.position,
-            card_boost=boost,
             total_score=s.candidate.total_score,
             env_score=round(s.candidate.env_score, 3),
             env_factors=s.candidate.env_factors,
@@ -199,7 +177,6 @@ def _build_lineup_out(result, display_map: dict) -> FilterLineupOut:
             filter_ev=round(s.candidate.filter_ev, 2),
             expected_slot_value=s.expected_slot_value,
             game_id=s.candidate.game_id,
-            drafts=drafts,
             breakdowns=_traits_to_breakdowns(s.candidate.traits),
         ))
     return FilterLineupOut(
@@ -211,25 +188,20 @@ def _build_lineup_out(result, display_map: dict) -> FilterLineupOut:
     )
 
 
-def _build_response(lineup_result, candidates, display_map: dict) -> FilterOptimizeResponse:
+def _build_response(lineup_result, candidates) -> FilterOptimizeResponse:
     """Assemble the FilterOptimizeResponse from a lineup result + candidate list."""
     all_candidates_out = []
     for c in candidates:
-        boost, drafts = display_map.get(
-            (c.player_name, c.team.upper()), (0.0, None)
-        )
         all_candidates_out.append(FilterCandidateOut(
             player_name=c.player_name,
             team=c.team,
             position=c.position,
-            card_boost=boost,
             total_score=c.total_score,
             env_score=round(c.env_score, 3),
             env_factors=c.env_factors,
             is_two_way_pitcher=c.is_two_way_pitcher,
             filter_ev=round(c.filter_ev, 2),
             game_id=c.game_id,
-            drafts=drafts,
             breakdowns=_traits_to_breakdowns(c.traits),
         ))
     sc = lineup_result.slate_classification
@@ -253,7 +225,7 @@ def _build_response(lineup_result, candidates, display_map: dict) -> FilterOptim
             stackable_games=stackable_out,
             reason=sc.reason,
         ),
-        lineup=_build_lineup_out(lineup_result, display_map),
+        lineup=_build_lineup_out(lineup_result),
         all_candidates=sorted(all_candidates_out, key=lambda c: c.filter_ev, reverse=True),
     )
 
@@ -286,8 +258,7 @@ async def build_and_cache_lineups(db: Session, slate_date: date | None = None) -
 
     lineup_result = run_filter_strategy(candidates, slate_class)
 
-    display_map = _build_display_map(cards)
-    response = _build_response(lineup_result, candidates, display_map)
+    response = _build_response(lineup_result, candidates)
     lineup_cache.store(response, slate_date=active_date)
     logger.info(
         "Lineup cache warmed: %d candidates, slate=%s",

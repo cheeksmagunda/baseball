@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.core.utils import compute_total_value, find_player_by_name
+from app.core.utils import find_player_by_name
 from app.models.player import Player, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.schemas.slate import SlateOut, SlatePlayerIn, SlatePlayerOut, SlateResultsIn
@@ -80,11 +80,6 @@ def get_slate_players(slate_date: date, db: Session = Depends(get_db)):
             player_name=player.name if player else "Unknown",
             team=team,
             position=player.position if player else "",
-            card_boost=sp.card_boost,
-            real_score=sp.real_score,
-            total_value=sp.total_value,
-            is_highest_value=sp.is_highest_value,
-            drafts=sp.drafts,
             opponent_team=opponent_team,
             batting_order=sp.batting_order,
             platoon_advantage=sp.platoon_advantage,
@@ -123,10 +118,8 @@ def add_slate_players(
         sp = SlatePlayer(
             slate_id=slate.id,
             player_id=player.id,
-            card_boost=card.card_boost,
             batting_order=card.batting_order,
             platoon_advantage=card.platoon_advantage,
-            drafts=card.drafts,
         )
         db.add(sp)
         db.flush()
@@ -136,11 +129,6 @@ def add_slate_players(
             player_name=player.name,
             team=player.team,
             position=player.position,
-            card_boost=sp.card_boost,
-            real_score=None,
-            total_value=None,
-            is_highest_value=False,
-            drafts=None,
         ))
 
     db.commit()
@@ -171,7 +159,6 @@ def update_slate_results(
         )
         if sp:
             sp.real_score = result.real_score
-            sp.total_value = compute_total_value(result.real_score, sp.card_boost)
             updated += 1
 
     slate.status = "completed"
