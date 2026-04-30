@@ -139,7 +139,7 @@ def score_pitcher_k_rate(
       * If 0–2 are present, fall back to K/9 scaling at full weight.
       * If NONE of the signals are present (true MLB-debut rookie), return
         UNKNOWN_SCORE_RATIO × max_pts so the player doesn't get mathematically
-        benched — the env/popularity filters decide their fate from there.
+        benched — the env / park filters decide their fate from there.
         Rookie Arbitrage per strategy doc §"Rookie Variance Void": the crowd
         ignores MLB-debut arms; our job is to not ignore them ourselves.
 
@@ -195,7 +195,7 @@ def score_pitcher_k_rate(
     # No Statcast — fall back to K/9 scaling (covers new call-ups without Savant rows).
     if stats.k_per_9 is None:
         # True zero-data rookie (MLB debut).  Return the neutral baseline so
-        # env + popularity + park can still lift them into the pool.
+        # env + park can still lift them into the pool.
         return TraitResult(
             "k_rate",
             round(max_pts * UNKNOWN_SCORE_RATIO, 1),
@@ -385,8 +385,8 @@ def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResul
     Rookie Arbitrage (strategy doc §"Rookie Variance Void"): a true MLB debut
     with zero plate appearances AND no Statcast row returns the neutral
     baseline (UNKNOWN_SCORE_RATIO × max_pts) rather than zero, so the env /
-    popularity / park filters can still promote them.  The crowd fades
-    rookies; our engine must not also fade them by default.
+    park filters can still promote them.  The crowd fades rookies; our
+    engine must not also fade them by default.
     """
     if not stats or stats.pa == 0:
         return TraitResult(

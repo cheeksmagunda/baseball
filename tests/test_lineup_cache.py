@@ -33,7 +33,7 @@ def _make_cache(redis_mock: MagicMock | None = None) -> _LineupCache:
     return cache
 
 
-def _fake_response(json_str: str = '{"starting_5":{},"moonshot":{}}'):
+def _fake_response(json_str: str = '{"lineup":{}}'):
     """Return a minimal mock that satisfies model_dump_json()."""
     mock = MagicMock()
     mock.model_dump_json.return_value = json_str

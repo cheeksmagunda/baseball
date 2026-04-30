@@ -268,8 +268,8 @@ Bad data is worse than no data. Operations must restore the system rather than s
 
 ### At T-60 Unlock Time (60 minutes before first pitch)
 - [ ] GET /api/filter-strategy/optimize returns HTTP 200 (not 425)
-- [ ] Response contains two lineups (Starting 5 + Moonshot)
-- [ ] Each lineup has exactly 1 pitcher + 4 batters
+- [ ] Response contains a single lineup (V11.0 single-lineup architecture)
+- [ ] Lineup has exactly 1 pitcher + 4 batters, OR 0 pitchers + 5 batters (EV-driven choice)
 - [ ] EV values are non-zero and reasonable (50-80 range typical)
 
 ### Post-Lock (During Slate)

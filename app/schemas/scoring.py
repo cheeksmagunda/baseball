@@ -13,8 +13,6 @@ class PlayerScoreOut(BaseModel):
     team: str
     position: str
     total_score: float
-    card_boost: float = 0.0
-    expected_value: float | None = None
     breakdowns: list[TraitBreakdown] = []
 
 

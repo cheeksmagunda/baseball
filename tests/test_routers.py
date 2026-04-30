@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.models.player import Player, normalize_name
-from app.routers import players, scoring, draft
+from app.routers import players, scoring
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,6 @@ def _make_app(session_factory) -> FastAPI:
     app.dependency_overrides[get_db] = _override_db
     app.include_router(players.router, prefix="/api/players")
     app.include_router(scoring.router, prefix="/api/score")
-    app.include_router(draft.router, prefix="/api/draft")
     return app
 
 
@@ -158,15 +157,28 @@ class TestScorePlayer:
         r = c.post("/api/score/player?player_name=Nobody+McFakename")
         assert r.status_code == 404
 
-    def test_card_boost_above_3_rejected(self, client):
-        c, _ = client
-        r = c.post("/api/score/player?player_name=Aaron+Judge&card_boost=3.1")
-        assert r.status_code == 422
+    def test_card_boost_param_no_longer_accepted(self, client):
+        """V11.0: card_boost was removed from /api/score/player.  Sending it
+        as a query param is silently ignored (FastAPI doesn't 422 on extras),
+        and the response no longer contains a card_boost field."""
+        c, Session = client
+        with Session() as db:
+            _add_player(db, name="Aaron Judge", team="NYY", position="OF")
 
-    def test_card_boost_below_0_rejected(self, client):
-        c, _ = client
-        r = c.post("/api/score/player?player_name=Aaron+Judge&card_boost=-0.1")
-        assert r.status_code == 422
+        with patch("app.routers.scoring.score_player") as mock_score:
+            mock_result = MagicMock()
+            mock_result.player_name = "Aaron Judge"
+            mock_result.team = "NYY"
+            mock_result.position = "OF"
+            mock_result.total_score = 72.5
+            mock_result.traits = []
+            mock_score.return_value = mock_result
+
+            r = c.post("/api/score/player?player_name=Aaron+Judge&card_boost=3.1")
+
+        assert r.status_code == 200
+        assert "card_boost" not in r.json()
+        assert "expected_value" not in r.json()
 
     def test_valid_player_returns_score(self, client):
         c, Session = client
@@ -188,72 +200,6 @@ class TestScorePlayer:
         data = r.json()
         assert data["player_name"] == "Aaron Judge"
         assert data["total_score"] == 72.5
-
-
-# ---------------------------------------------------------------------------
-# POST /api/draft/evaluate
-# ---------------------------------------------------------------------------
-
-class TestEvaluateDraft:
-    def _five_card_payload(self, names: list[str]) -> dict:
-        return {
-            "slots": [
-                {"player_name": n, "card_boost": 0.0}
-                for n in names
-            ]
-        }
-
-    def test_wrong_count_returns_400(self, client):
-        c, _ = client
-        payload = {"slots": [{"player_name": "A", "card_boost": 0.0}]}
-        r = c.post("/api/draft/evaluate", json=payload)
-        assert r.status_code == 400
-
-    def test_missing_player_returns_404_with_name(self, client):
-        c, Session = client
-        with Session() as db:
-            _add_player(db, name="Aaron Judge", team="NYY", position="OF")
-
-        payload = self._five_card_payload(
-            ["Aaron Judge", "Ghost Player", "Aaron Judge", "Aaron Judge", "Aaron Judge"]
-        )
-        r = c.post("/api/draft/evaluate", json=payload)
-        assert r.status_code == 404
-        assert "Ghost Player" in r.json()["detail"]
-
-    def test_valid_five_cards_returns_200(self, client):
-        c, Session = client
-        names = [f"Player {i}" for i in range(5)]
-        with Session() as db:
-            for name in names:
-                _add_player(db, name=name, team="NYY")
-
-        with patch("app.routers.draft.score_player") as mock_score, \
-             patch("app.routers.draft.optimize_lineup") as mock_opt, \
-             patch("app.routers.draft.evaluate_lineup") as mock_eval:
-
-            def _fake_score(db, player):
-                m = MagicMock()
-                m.player_name = player.name
-                m.team = player.team
-                m.position = player.position
-                m.total_score = 60.0
-                m.traits = []
-                return m
-
-            mock_score.side_effect = _fake_score
-
-            fake_lineup = MagicMock()
-            fake_lineup.total_expected_value = 120.0
-            fake_lineup.slots = []
-            mock_eval.return_value = fake_lineup
-            mock_opt.return_value = fake_lineup
-
-            payload = self._five_card_payload(names)
-            r = c.post("/api/draft/evaluate", json=payload)
-
-        assert r.status_code == 200
-        assert r.json()["total_expected_value"] == 120.0
 
 
 # ---------------------------------------------------------------------------

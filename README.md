@@ -39,14 +39,14 @@ See CLAUDE.md § "T-65 Sniper Architecture" for complete timing details.
 
 1. **Collect** (`app/services/data_collection.py`) — Fetch fresh MLB schedule, player stats, game context, Vegas lines, and **RotoWire expected lineups** for batting-order enrichment (see V10.3 below)
 2. **Score** (`app/services/scoring_engine.py`) — Rate each player 0-100 via trait-based profiling (pitchers: 5 traits, batters: 7 traits)
-3. **Filter** (`app/services/filter_strategy.py`) — Apply V10.8 strategy: exclude FADE batters (FADE pitchers stay with a soft 15% EV haircut), score env/trait EV with Statcast kinematics + Statcast xStats (xwOBA / xERA) + opp-K/9 batter penalty + opp-arsenal-effectiveness signal + small ±5% catcher-framing scaling on pitcher k_rate + opp-back-to-back bonus, enforce composition rules with two-path stacking. Pitcher env is capped 20% tighter than batter env (V10.6) so dominant favorite-team starters don't auto-stuff the top-10. V10.7 removed three INVERTED signals (team L10 momentum, series lead, heavy-favorite pitcher ML) that were pushing the model in the wrong direction.
-4. **Optimize** (`app/routers/filter_strategy.py` → `run_dual_filter_strategy`) — Produce Starting 5 + Moonshot lineups (each independently chooses 1P+4B or 0P+5B by total EV), freeze in cache
+3. **Filter** (`app/services/filter_strategy.py`) — Apply V11.0 strategy: score env/trait EV (Statcast kinematics + xStats + opp-K/9 batter penalty + opp-arsenal-effectiveness + ±5% catcher-framing scaling on pitcher k_rate + opp-back-to-back bonus), enforce composition rules with two-path stacking. Pitcher env capped 20% tighter than batter env so favorite-team starters don't auto-stuff the top-10. **V11.0 removed popularity scraping entirely** — no more FADE/TARGET/NEUTRAL gating, no Moonshot, no sharp_score. Pure env + trait ranking.
+4. **Optimize** (`app/routers/filter_strategy.py` → `run_filter_strategy`) — Produce a single lineup (1P+4B or 0P+5B chosen by total EV), freeze in cache
 
 The primary optimization path is `filter_strategy`. The `/api/pipeline/*` manual endpoints exist for post-slate testing only and are gated to prevent mid-slate interference.
 
 ### Philosophy
 
-It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor). High-media-attention batters (FADE) are excluded; high-media-attention pitchers stay in the pool with a soft 15% EV haircut (V10.5 — pitcher outcomes are one-player-dependent, the crowd is less wrong about them). V10.6 added two structural fixes — pitchers cap at a tighter env ceiling (1.20× vs batter 1.30×) so confirmed favorite-team starters don't auto-saturate the top-10, and opposing-starter K/9 was added as a Group A signal so high-K aces correctly suppress the contact-floor of the batters they're facing. V10.7 ran a fresh-eyes feature audit on the 33-slate corpus and removed three INVERTED signals — pitcher heavy-favorite ML (peak is at mild fav, not heavy), team L10 momentum (cold teams produce more individual HV than hot teams), and series lead (trailing teams produce more than leading) — all of which were actively pushing the model in the wrong direction. **Historical stats are reference data only — they never feed the live scoring pipeline directly.**
+It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor). V11.0 removed all popularity-based gating: don't favor popular players, don't fade unpopular ones either. Just predict high-value performers from env + trait. V10.6 capped pitcher env tighter than batter env (1.20× vs 1.30×) so favorite-team starters don't auto-saturate the top-10; opposing-starter K/9 is a Group A signal so high-K aces correctly suppress opposing-batter contact floors. V10.7 removed three INVERTED signals — heavy-favorite pitcher ML, team L10 momentum, and series lead — that were pushing the model in the wrong direction. **Historical stats are reference data only — they never feed the live scoring pipeline directly. card_boost and drafts are revealed during the draft and never reach the optimizer.**
 
 Stacking (multiple batters from the same team) is powerful but correlated. V10.2 unlocks a **mini-stack** (cap 2 per team, cap 2 per game) via two paths:
 - **PATH 1** — `moneyline ≤ -200` AND `vegas_total ≥ 9.0` (favored side only, earns +20% STACK_BONUS)
@@ -86,7 +86,7 @@ See `app/core/rotowire.py` for the parser and `app/services/data_collection.py::
 
 The scoring engine outputs a **0-100 ranking signal**, not an RS prediction.
 
-**Statcast kinematics** (exit velocity, barrel %, hard-hit %, FB velocity, induced vertical break, extension, whiff %, chase %) — plus **V10.8 expected stats** (xwOBA, xBA, xSLG for batters; xERA, xwOBA-against for pitchers) and **V10.8 team catcher framing** — are populated by `scripts/refresh_statcast.py`. It fires automatically inside the slate monitor's Phase 2 as a detached background task — the monitor enters its T-65 sleep, and the refresh bulk-loads Baseball Savant's season leaderboards (kinematics + xStats + framing) in parallel. On a typical day Phase 2 has hours of runway before T-65, so the refresh finishes long before the lock. The T-65 pipeline then reads the columns straight from the DB with zero Savant calls. No fixed cron, no Railway UI config — merge and deploy, the next slate fires the refresh on its own. When no Savant row exists yet (new call-ups pre-50 BBE), the engine transparently falls back to the non-Statcast path; true zero-data rookies (MLB debuts) receive the UNKNOWN_SCORE_RATIO baseline so env + popularity + park can still promote them (strategy doc §"Rookie Variance Void").
+**Statcast kinematics** (exit velocity, barrel %, hard-hit %, FB velocity, induced vertical break, extension, whiff %, chase %) — plus **V10.8 expected stats** (xwOBA, xBA, xSLG for batters; xERA, xwOBA-against for pitchers) and **V10.8 team catcher framing** — are populated by `scripts/refresh_statcast.py`. The slate monitor awaits this script BLOCKING inside Phase 2 (before the T-65 sleep) so the pipeline never reads pre-refresh PlayerStats with NULL kinematics. Failure raises and the monitor crashes — `/optimize` returns 503 instead of serving lineups built on stale Statcast data. The T-65 pipeline then reads the columns straight from the DB with zero Savant calls. No fixed cron, no Railway UI config — merge and deploy, the next slate fires the refresh on its own. When no Savant row exists yet (new call-ups pre-50 BBE), the engine transparently falls back to the non-Statcast path; true zero-data rookies (MLB debuts) receive the UNKNOWN_SCORE_RATIO baseline so env + park can still promote them (strategy doc §"Rookie Variance Void").
 
 ### Fail-loud T-65 data fetch (V10.8 audit)
 
@@ -106,40 +106,15 @@ Every live-data fetch path used by the T-65 pipeline either succeeds and produce
 
 **Important:** `card_boost` is revealed during/after the draft and is **structurally absent from `FilteredCandidate`** — the optimizer cannot read it even by accident. League-average defaults (ERA, WHIP, OPS, K%) and all scaling thresholds are centralized in `app/core/constants.py`. Env-score functions use shared `graduated_scale()` helpers in `app/core/utils.py`.
 
-## Popularity Signal Aggregator (Pre-Game Signals Only)
+## Popularity (V11.0: REMOVED)
 
-The optimizer automatically fades over-hyped players and targets under-the-radar picks using **pre-game public signals only**:
+V11.0 removed all popularity scraping (Google Trends, ESPN/MLB RSS, Reddit, FanGraphs) and the FADE/TARGET/NEUTRAL gating system. The previous version excluded high-media-attention batters and applied a soft penalty to high-attention pitchers; both are gone. The optimizer is now **popularity-agnostic** — it doesn't favor popular players, doesn't fade unpopular ones either. The scoring rule is "predict high-value performers from env + trait alone".
 
-| Source | Weight | What It Measures |
-|---|---|---|
-| Social trending | 45% | Google Trends — is the casual public talking about this player? |
-| Sports news | 25% | ESPN/MLB.com RSS — is this player in headlines? |
-| Search volume | 30% | Google autocomplete — casual search interest |
+Why: web-scraped popularity proved to be a noisy proxy for "what the crowd thinks", and the FADE gate was actively distorting ranking toward contrarian picks even when env + trait disagreed (e.g., excluding Ohtani / Yamamoto / Fried because they were trending on Google). The crowd-avoidance edge does not survive contact with the data once you remove the stale-feature confound.
 
-**Intentionally excluded:** RotoGrinders/NumberFire platform ownership — this is only visible during the draft and violates the pre-game signals constraint.
+## Optimizer (V11.0)
 
-**Classification:** FADE, TARGET, or NEUTRAL. **V10.5: bifurcated by position.** FADE *batters* are excluded from the candidate pool before EV runs (Target batters average RS 3.57 / 73.6% HV vs Fade batters RS 0.98 / 9.6% HV — a 3.6× differential). FADE *pitchers* stay in the pool and pay `PITCHER_FADE_PENALTY = 0.85` in `_compute_base_ev` — a 15% haircut, not a hard exclusion, because pitcher outcomes are one-player-dependent and the crowd correctly piles onto confirmed probable starters of heavy ML favorites (Ohtani, Yamamoto, Fried). TARGET and NEUTRAL players pass without penalty. See CLAUDE.md § "V10.5 EV-Driven Composition + Bifurcated FADE" for the rationale.
-
-### Sharp Signal (Underground)
-
-A fifth signal source used exclusively by the Moonshot lineup:
-
-| Source | What It Scrapes |
-|---|---|
-| r/fantasybaseball, r/baseball | Reddit JSON API — niche community buzz |
-| FanGraphs community blogs | RSS feed — deep-dive analyst chatter |
-| Prospects Live | RSS feed — prospect/breakout coverage |
-
-If small, smart accounts are on a player but ESPN isn't — that's a Moonshot BUY. Sharp score (0-100) gives up to +35% EV boost in Moonshot only.
-
-## Dual-Lineup Optimizer (V10.8)
-
-The optimizer produces **two lineups** from the same ranked candidate pool. Each lineup independently chooses its shape — **1 SP + 4 batters** (anchored) or **0 SP + 5 batters** (pure-batter shootout) — based on slot-weighted total EV (V10.5/V10.6):
-
-| Lineup | Possible shapes | Strategy | Popularity handling | Edge |
-|---|---|---|---|---|
-| **Starting 5** | 1P+4B or 0P+5B | Best env+trait EV per variant; chooser picks the higher total | FADE batters excluded; FADE pitchers kept w/ 15% EV haircut | Primary win probability |
-| **Moonshot** | 1P+4B or 0P+5B | env+trait EV + sharp/explosive bonuses; chooser picks the higher total | Same as Starting 5 | Anti-crowd, sharp signal, HR power |
+The optimizer produces a **single lineup** from the ranked candidate pool. The lineup chooses its shape — **1 SP + 4 batters** (anchored) or **0 SP + 5 batters** (pure-batter shootout) — based on slot-weighted total EV.
 
 When a lineup goes 1P+4B, the anchor pitcher is the highest-EV pitcher in the pool, pinned to Slot 1 (2.0× multiplier). The anchor's `game_id` blocks opposing-batter selection — no negative correlation between the pitcher and the rest of the lineup. Anchor's teammates ARE allowed (within stack-eligibility caps). When a lineup goes 0P+5B, the highest-EV batter takes Slot 1, no anchor restrictions apply, and the same per-team / per-game caps still hold. Tiebreak goes to the pitcher variant — conservative default keeps the V5.0 anchor identity unless 5B truly dominates.
 
@@ -153,21 +128,19 @@ base_ev = env_factor × volatility_amplifier × trait_factor × stack_bonus × d
 |---|---|---|
 | env_factor (batters) | 0.70–1.30 | Primary — game conditions (Vegas O/U, opp ERA, opp WHIP, opp K/9, bullpen, park, weather, batting order, ML, series context, recent form) |
 | env_factor (pitchers) | 0.70–1.20 | V10.6 — tighter ceiling than batters; prevents favorite-team SP saturation from stuffing top-10 |
-| volatility_amplifier | 0.8–1.2 (batters only) | V10.6 env-CONDITIONAL boom-or-bust amplifier — high-CV hitters get +20% in good env, −20% in bad env. Pre-V10.6 was unconditional +20%, which over-loved Muncy/Judge/Yordan-class profiles regardless of matchup |
+| volatility_amplifier | 0.8–1.2 (batters only) | V10.6 env-CONDITIONAL boom-or-bust amplifier — high-CV hitters get +20% in good env, −20% in bad env |
 | trait_factor | 0.85–1.15 | Secondary — Statcast pitch physics (SP) or exit-velocity kinematics (batters), 0-100 scale |
 | stack_bonus | 1.0 or 1.20 | PATH 1 blowout-favorite bonus (gated) |
-| dnp_adj | 0.70 / 0.93 / 1.00 | Confirmed-bad / unknown / known batting order. V10.6 lifted UNKNOWN from 0.85 → 0.93 because RotoWire (V10.4) covers ~90% of teams at T-65, so the missing-batting-order state is now mostly "RotoWire missed this team", not "this batter isn't starting" |
-| pitcher_pop_penalty | 0.85 (FADE pitcher) / 1.00 | Soft 15% haircut for FADE-classified pitchers (V10.5). FADE batters are excluded entirely upstream of EV |
+| dnp_adj | 0.70 / 0.93 / 1.00 | Confirmed-bad / unknown / known batting order. RotoWire (V10.4) covers ~90% of teams at T-65, so unknown is mostly "RotoWire missed this team", not "this batter isn't starting" |
 
 **Key optimizer behaviors:**
-- **EV-driven shape (V10.5)**: each lineup builds both a 1P+4B and a 0P+5B variant and returns the higher slot-weighted total EV. Tiebreak → pitcher variant.
-- **Pitcher anchor (when present)**: highest-EV pitcher pinned to Slot 1 (2.0×). FADE pitchers stay in the pool with a 15% EV haircut. V10.6 caps pitcher env at 1.20× so the saturation no longer crowds out batter slots.
+- **EV-driven shape (V10.5)**: builds both a 1P+4B and a 0P+5B variant and returns the higher slot-weighted total EV. Tiebreak → pitcher variant.
+- **Pitcher anchor (when present)**: highest-EV pitcher pinned to Slot 1 (2.0×). V10.6 caps pitcher env at 1.20× so the saturation no longer crowds out batter slots.
 - **Pitcher-batter parity (V10.6)**: opposing-starter K/9 added to batter env Group A — high-K aces (≥10 K/9) zero out the contact-floor of the batters they face. Anti-aligned with the pitcher's own scoring path: the same K/9 number that earns the pitcher full env credit penalises every opposing batter.
-- **Volatility amplifier env-conditional (V10.6)**: high-CV boom-or-bust batters get amplified in good env but penalised in bad env. Boom-bust profiles in tough K-pitcher matchups now correctly de-rank.
+- **Volatility amplifier env-conditional (V10.6)**: high-CV boom-or-bust batters get amplified in good env but penalised in bad env. Boom-bust profiles in tough K-pitcher matchups correctly de-rank.
 - **Stack eligibility**: PATH 1 (ML ≤ -200 AND O/U ≥ 9.0) gives the favored side mini-stack rights + STACK_BONUS. PATH 2 (O/U ≥ 10.5) gives both sides mini-stack rights without the bonus.
 - **Per-team cap**: 2 batters from a stack-eligible team, 1 from every other team.
 - **Per-game cap**: 2 batters per game (always — prevents mixed-side clumps in a single game).
-- Moonshot uses the same FADE-batter-excluded pool but adds sharp signal (+35% max from Reddit/FanGraphs/Prospects Live) and explosive bonus (+20% from power_profile or k_rate). Player overlap with Starting 5 is allowed; the formula divergence naturally re-orders picks.
 
 ## Strategy Insights — what 33 slates of data tell us
 
@@ -222,20 +195,9 @@ All endpoints are under `/api/`.
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/filter-strategy/status` | T-65 countdown, cache state, first-pitch time |
-| GET | `/api/filter-strategy/optimize` | Serve frozen Starting 5 + Moonshot picks |
+| GET | `/api/filter-strategy/optimize` | Serve the frozen single lineup (V11.0) |
 | POST | `/api/filter-strategy/classify-slate` | Classify a slate without running the optimizer |
 | GET | `/api/filter-strategy/diagnostics` | Pipeline health dashboard |
-
-### Draft
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/draft/evaluate` | Evaluate a proposed lineup |
-
-### Popularity
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/popularity/player` | Check popularity signals for a player |
-| POST | `/api/popularity/slate/{date}` | Popularity analysis for entire slate |
 
 ### Weights
 | Method | Path | Description |
@@ -289,12 +251,10 @@ app/
 ├── routers/                # API route handlers
 └── services/
     ├── scoring_engine.py   # Trait-based scorer (0-100)
-    ├── filter_strategy.py  # THE HEART — EV pipeline + dual-lineup optimizer (Starting 5 + Moonshot)
+    ├── filter_strategy.py  # THE HEART — EV pipeline + single-lineup optimizer (V11.0)
     ├── candidate_resolver.py  # Builds FilteredCandidate pool from DB (batched lookups)
-    ├── draft_optimizer.py  # User-proposed-lineup evaluator (/api/draft/evaluate only)
     ├── lineup_cache.py     # Frozen-cache invariants (Redis + SQLite persistence)
     ├── slate_monitor.py    # T-65 event loop
-    ├── popularity.py       # Web-scraping popularity signal aggregator
     ├── data_collection.py  # MLB API + RotoWire data fetching
     └── pipeline.py         # Fetch → Score → Rank orchestrator
 data/

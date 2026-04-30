@@ -248,22 +248,6 @@ TRAIT_MODIFIER_CEILING = 1.15
 BATTER_FORM_VOLATILITY_MAX = 0.20
 
 # ---------------------------------------------------------------------------
-# Moonshot constants (dual-lineup optimizer)
-# ---------------------------------------------------------------------------
-
-# Sharp signal bonus: underground analyst buzz (Reddit, FanGraphs, Prospects Live)
-# → up to +35% EV.  Primary Moonshot differentiator from Starting 5.
-MOONSHOT_SHARP_BONUS_MAX = 0.35
-
-# Explosive bonus: power_profile (batters) or k_rate (pitchers) → up to +20% EV.
-# Moonshot favors boom-or-bust profiles over balanced steady producers.
-MOONSHOT_EXPLOSIVE_BONUS_MAX = 0.20
-
-# V10.0: MOONSHOT_SAME_TEAM_PENALTY removed.  Artificially punishing stacks
-# contradicts the correlation-driven strategy; Moonshot naturally diverges
-# from Starting 5 via sharp_bonus × explosive_bonus re-ranking.
-
-# ---------------------------------------------------------------------------
 # Lineup structure validation
 # ---------------------------------------------------------------------------
 # MAX_PLAYERS_PER_TEAM replaced by MAX_PLAYERS_PER_TEAM_BATTERS above.
@@ -709,37 +693,6 @@ SCORING_CHASE_PCT_CEILING = 38.0     # % — elite o-swing generator
 # cases outside the season window — MLB scheduling guarantees regular
 # season starts after the spring-forward transition and ends before fall-back.
 ET_TO_UTC_OFFSET_HOURS = 4
-
-# Popularity classification thresholds (popularity.py::classify_player).
-# Composite popularity score 0–100 (weighted blend of Google Trends, ESPN,
-# search volume).  Player performance score is the 0–100 trait total from
-# scoring_engine.
-POPULARITY_HIGH_THRESHOLD = 50.0      # >= this = high media attention
-POPULARITY_MID_THRESHOLD = 25.0       # [mid, high) = moderate buzz
-POPULARITY_HIGH_PERF_THRESHOLD = 60.0 # >= this = strong performance signal
-POPULARITY_MID_PERF_THRESHOLD = 25.0  # [mid, high) = decent performance
-
-# V10.5 (April 28): bifurcate the FADE gate by position.
-#
-# Pre-V10.5, FADE was a hard exclusion for everyone.  Empirically this kept
-# eliminating confirmed probable starters of heavy moneyline favorites
-# (Ohtani, Yamamoto, Fried) — the crowd is correctly on these arms because
-# pitcher outcomes are one-player-dependent and Vegas already prices them in.
-# CLAUDE.md V8.0 strategy doc explicitly notes the pitcher TARGET-vs-FADE
-# differential is 1.4× (vs the batter 3.0× swing).
-#
-# New rule:
-#   - FADE batters → still excluded from the candidate pool (data shows the
-#     crowd is ~3× wrong about batter ownership).
-#   - FADE pitchers → kept in the pool, pay PITCHER_FADE_PENALTY in EV.
-#     A genuinely strong pitcher (good env + good traits) can still beat a
-#     FADE-untouched competitor; a weak pitcher cannot paper over the haircut.
-#
-# 0.85 = 15% haircut.  Inverse (1/0.85 ≈ 1.18) means a FADE pitcher needs
-# ~18% more env+trait juice to displace a TARGET/NEUTRAL pitcher of equal
-# raw ability — meaningful, not prohibitive.
-PITCHER_FADE_PENALTY = 0.85
-
 
 # ---------------------------------------------------------------------------
 # Startup self-check: validate that all scoring constants are in sensible ranges.

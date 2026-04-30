@@ -4,13 +4,13 @@ These tests exist to catch regressions that ruff and the static
 `audit_live_isolation.py` cannot. Unlike unit tests that verify a specific
 output, each test here pins down a *property* the system must always have:
 
-1. Signal isolation — mutating `card_boost` or `drafts` on a candidate MUST
-   NOT change its EV (CLAUDE.md § "Signal Isolation: ABSOLUTE RULE").
+1. Signal isolation — `card_boost`, `drafts`, and `popularity` must NEVER
+   appear on FilteredCandidate (CLAUDE.md § "Signal Isolation: ABSOLUTE
+   RULE").  Banned at the dataclass-signature level so EV logic is
+   structurally incapable of reading them.
 2. Schema contract — FilteredCandidate must not declare any of the banned
-   historical-outcome fields as dataclass attributes.
-3. FADE-gate idempotence — applying the popularity gate twice is the same
-   as applying it once.
-4. Constant-perturbation rank stability — perturbing each env/trait
+   historical-outcome OR in-draft dynamic fields.
+3. Constant-perturbation rank stability — perturbing each env/trait
    threshold in `app/core/constants.py` by ±10% on a synthetic pool must not
    catastrophically reorder the ranking. Catches brittle cliff-thresholds.
    Note: the fixture is fully synthetic — no historical outcome is read, so
@@ -27,9 +27,7 @@ import pytest
 from app.services.filter_strategy import (
     FilteredCandidate,
     _compute_base_ev,
-    _exclude_fade_players,
 )
-from app.services.popularity import PopularityClass
 
 
 # ---------------------------------------------------------------------------
@@ -42,12 +40,12 @@ BANNED_OUTCOME_FIELDS = {
     "is_highest_value",
     "is_most_popular",
     "is_most_drafted_3x",
-    # V10.0: card_boost and drafts are also banned from FilteredCandidate.
-    # They are in-draft dynamic signals and must not appear on the dataclass
-    # the optimizer consumes.  Display-only fields live on the request-side
-    # FilterCard and are joined into the response by the router.
+    # In-draft dynamic signals — unknowable pre-game.
     "card_boost",
     "drafts",
+    # V11.0: popularity removed from the optimizer entirely.
+    "popularity",
+    "sharp_score",
 }
 
 
@@ -60,8 +58,6 @@ def _make_candidate(
     env_score: float = 0.6,
     batting_order: int | None = 3,
     env_unknown_count: int = 0,
-    sharp_score: float = 0.0,
-    popularity: PopularityClass = PopularityClass.NEUTRAL,
     game_id: int | str | None = 1,
 ) -> FilteredCandidate:
     return FilteredCandidate(
@@ -71,10 +67,8 @@ def _make_candidate(
         total_score=total_score,
         env_score=env_score,
         env_unknown_count=env_unknown_count,
-        popularity=popularity,
         game_id=game_id,
         is_pitcher=is_pitcher,
-        sharp_score=sharp_score,
         batting_order=batting_order if not is_pitcher else None,
     )
 
@@ -104,17 +98,14 @@ def _kendall_tau(a: list[str], b: list[str]) -> float:
 
 
 # ---------------------------------------------------------------------------
-# 1. Signal isolation — card_boost and drafts must never affect EV
+# 1. Signal isolation — banned fields must never accept a value
 # ---------------------------------------------------------------------------
 
 class TestSignalIsolation:
-    """V10.0: card_boost and drafts no longer exist on FilteredCandidate at all.
-
-    This is a STRONGER guarantee than the V9.0 runtime-invariance test —
-    passing `card_boost=X` to the dataclass constructor raises TypeError,
-    making it structurally impossible for EV logic to read them.  The schema
-    contract test in TestSchemaContract asserts the field absence; these
-    constructor checks guard the dataclass signature.
+    """V11.0: card_boost, drafts, popularity, sharp_score do not exist on
+    FilteredCandidate at all.  Passing any of these to the dataclass
+    constructor raises TypeError, making it structurally impossible for EV
+    logic to read them.
     """
 
     def test_constructor_rejects_card_boost(self):
@@ -129,6 +120,20 @@ class TestSignalIsolation:
             FilteredCandidate(
                 player_name="x", team="NYY", position="OF",
                 total_score=50.0, env_score=0.5, drafts=500,  # type: ignore[call-arg]
+            )
+
+    def test_constructor_rejects_popularity(self):
+        with pytest.raises(TypeError):
+            FilteredCandidate(
+                player_name="x", team="NYY", position="OF",
+                total_score=50.0, env_score=0.5, popularity="FADE",  # type: ignore[call-arg]
+            )
+
+    def test_constructor_rejects_sharp_score(self):
+        with pytest.raises(TypeError):
+            FilteredCandidate(
+                player_name="x", team="NYY", position="OF",
+                total_score=50.0, env_score=0.5, sharp_score=80.0,  # type: ignore[call-arg]
             )
 
 
@@ -146,44 +151,20 @@ class TestSchemaContract:
         fields = {f.name for f in dataclasses.fields(FilteredCandidate)}
         leaked = fields & BANNED_OUTCOME_FIELDS
         assert not leaked, (
-            f"FilteredCandidate declares banned outcome fields: {leaked}. "
-            "Historical outcome data and in-draft dynamic signals "
-            "(card_boost, drafts) are never allowed in the live EV path."
+            f"FilteredCandidate declares banned fields: {leaked}. "
+            "Historical outcome data, in-draft dynamic signals "
+            "(card_boost, drafts), and popularity (V11.0) are never "
+            "allowed in the live EV path."
         )
 
 
 # ---------------------------------------------------------------------------
-# 3. FADE-gate idempotence
-# ---------------------------------------------------------------------------
-
-class TestFadeGateIdempotence:
-    def test_double_application_is_identical_to_single(self):
-        pool = [
-            _make_candidate(name="P1", is_pitcher=True, popularity=PopularityClass.TARGET),
-            _make_candidate(name="P2", is_pitcher=True, popularity=PopularityClass.FADE),
-            _make_candidate(name="B1", popularity=PopularityClass.NEUTRAL),
-            _make_candidate(name="B2", popularity=PopularityClass.FADE),
-            _make_candidate(name="B3", popularity=PopularityClass.TARGET),
-        ]
-        once = _exclude_fade_players(pool)
-        twice = _exclude_fade_players(once)
-        assert [c.player_name for c in once] == [c.player_name for c in twice]
-        # V10.5: FADE batters excluded; FADE pitchers preserved (soft EV penalty
-        # applied later in _compute_base_ev).  Idempotence still holds because
-        # both sets of rules are stable under repeated application.
-        assert all(
-            c.popularity != PopularityClass.FADE or c.is_pitcher
-            for c in once
-        )
-
-
-# ---------------------------------------------------------------------------
-# 4. Constant-perturbation rank stability
+# 3. Constant-perturbation rank stability
 # ---------------------------------------------------------------------------
 
 class TestConstantRankStability:
     """Perturb each constant in the filter_strategy namespace by ±10% on a
-    synthetic 20-candidate pool and assert Kendall-tau ≥ 0.80 vs baseline.
+    synthetic 20-candidate pool and assert Kendall-tau ≥ 0.78 vs baseline.
 
     What this catches: a cliff-threshold whose small move causes a large
     fraction of the pool to flip ranks — a sign that the constant is brittle
@@ -201,24 +182,12 @@ class TestConstantRankStability:
         # Trait modifier bounds — SECONDARY signal
         "TRAIT_MODIFIER_FLOOR",
         "TRAIT_MODIFIER_CEILING",
-        # Moonshot bonuses
-        "MOONSHOT_SHARP_BONUS_MAX",
-        "MOONSHOT_EXPLOSIVE_BONUS_MAX",
         # Context multipliers
         "STACK_BONUS",
         "DNP_RISK_PENALTY",
         "DNP_UNKNOWN_PENALTY",
     ]
 
-    # Kendall-tau floor.  V10.6 (April 28-29 evaluation) lowered this from
-    # 0.80 to 0.78.  The DNP_UNKNOWN_PENALTY shift (0.85 → 0.93) and the
-    # asymmetric pitcher env ceiling deliberately make pitcher/batter EVs
-    # more competitive, which moves a handful of close pairs across the
-    # boundary when TRAIT_MODIFIER_CEILING is perturbed by -10%.  The
-    # observed minimum across the 18 (constant × ±10%) cells is 0.789;
-    # anything under 0.78 would still indicate a genuine cliff worth fixing.
-    # The eval harness validates the ranking quality on the 33-slate corpus
-    # — that's the primary correctness signal, not synthetic perturbation.
     TAU_FLOOR = 0.78
 
     @staticmethod
@@ -235,7 +204,6 @@ class TestConstantRankStability:
                     env_score=rng.uniform(0.2, 0.95),
                     batting_order=rng.choice([None, 1, 3, 5, 7, 9]),
                     env_unknown_count=rng.choice([0, 1, 3, 5]),
-                    sharp_score=rng.uniform(0.0, 80.0),
                 )
             )
         return pool
@@ -272,7 +240,7 @@ class TestConstantRankStability:
 
 
 # ---------------------------------------------------------------------------
-# 5. Kendall-tau helper self-test (keeps the helper honest)
+# 4. Kendall-tau helper self-test (keeps the helper honest)
 # ---------------------------------------------------------------------------
 
 def test_kendall_tau_self_test():

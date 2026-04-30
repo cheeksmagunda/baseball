@@ -26,11 +26,10 @@ from app.schemas.filter_strategy import (
 )
 from app.services.filter_strategy import (
     classify_slate,
-    run_dual_filter_strategy,
+    run_filter_strategy,
 )
 from app.services.candidate_resolver import resolve_candidates
 from app.services.lineup_cache import lineup_cache
-from app.services.popularity import PopularityClass
 
 logger = logging.getLogger(__name__)
 
@@ -143,15 +142,18 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
         # Skip players from games that have already started
         if sp.game_id is not None and sp.game_id not in remaining_game_ids:
             continue
+        # display-only fields (card_boost, drafts) are read from SlatePlayer
+        # and carried on the FilterCard for response payload rendering.
+        # They never reach FilteredCandidate or any EV computation.
         cards.append(FilterCard(
             player_name=player.name,
             team=player.team,
             position=player.position,
-            card_boost=sp.card_boost,
+            card_boost=sp.card_boost,    # display only — see _build_display_map
             game_id=sp.game_id,
             batting_order=sp.batting_order,
             platoon_advantage=bool(sp.platoon_advantage),
-            drafts=sp.drafts,
+            drafts=sp.drafts,            # display only — see _build_display_map
         ))
 
     return cards, games
@@ -172,7 +174,7 @@ def _build_display_map(cards: list[FilterCard]) -> dict[tuple[str, str], tuple[f
     flow through EV.
     """
     return {
-        (c.player_name, c.team.upper()): (c.card_boost, c.drafts)
+        (c.player_name, c.team.upper()): (c.card_boost, c.drafts)  # display only
         for c in cards
     }
 
@@ -193,7 +195,6 @@ def _build_lineup_out(result, display_map: dict) -> FilterLineupOut:
             total_score=s.candidate.total_score,
             env_score=round(s.candidate.env_score, 3),
             env_factors=s.candidate.env_factors,
-            popularity=s.candidate.popularity.value,
             is_two_way_pitcher=s.candidate.is_two_way_pitcher,
             filter_ev=round(s.candidate.filter_ev, 2),
             expected_slot_value=s.expected_slot_value,
@@ -210,8 +211,8 @@ def _build_lineup_out(result, display_map: dict) -> FilterLineupOut:
     )
 
 
-def _build_response(dual, candidates, display_map: dict) -> FilterOptimizeResponse:
-    """Assemble the FilterOptimizeResponse from a dual-lineup result + candidate list."""
+def _build_response(lineup_result, candidates, display_map: dict) -> FilterOptimizeResponse:
+    """Assemble the FilterOptimizeResponse from a lineup result + candidate list."""
     all_candidates_out = []
     for c in candidates:
         boost, drafts = display_map.get(
@@ -225,14 +226,13 @@ def _build_response(dual, candidates, display_map: dict) -> FilterOptimizeRespon
             total_score=c.total_score,
             env_score=round(c.env_score, 3),
             env_factors=c.env_factors,
-            popularity=c.popularity.value,
             is_two_way_pitcher=c.is_two_way_pitcher,
             filter_ev=round(c.filter_ev, 2),
             game_id=c.game_id,
             drafts=drafts,
             breakdowns=_traits_to_breakdowns(c.traits),
         ))
-    sc = dual.starting_5.slate_classification
+    sc = lineup_result.slate_classification
     stackable_out = [
         StackableGameOut(
             game_id=sg.game_id,
@@ -253,17 +253,16 @@ def _build_response(dual, candidates, display_map: dict) -> FilterOptimizeRespon
             stackable_games=stackable_out,
             reason=sc.reason,
         ),
-        starting_5=_build_lineup_out(dual.starting_5, display_map),
-        moonshot=_build_lineup_out(dual.moonshot, display_map),
+        lineup=_build_lineup_out(lineup_result, display_map),
         all_candidates=sorted(all_candidates_out, key=lambda c: c.filter_ev, reverse=True),
     )
 
 
 async def build_and_cache_lineups(db: Session, slate_date: date | None = None) -> FilterOptimizeResponse | None:
     """
-    Pre-compute today's dual-lineup result and store it in the in-process cache.
+    Pre-compute today's lineup and store it in the in-process cache.
 
-    Called by the startup pipeline so the first frontend request is instant.
+    Called by the T-65 monitor so the first frontend request is instant.
     Returns the response object, or None if no slate data is available.
 
     Args:
@@ -285,17 +284,10 @@ async def build_and_cache_lineups(db: Session, slate_date: date | None = None) -
         logger.warning("build_and_cache_lineups: no matching players found, skipping cache warm")
         return None
 
-    dual = run_dual_filter_strategy(candidates, slate_class)
-
-    # run_dual_filter_strategy overwrites filter_ev on shared candidate objects
-    # with moonshot EVs during Phase 2.  Re-compute S5 EVs so all_candidates
-    # in the response reflects the Starting 5 ranking (what users see first).
-    from app.services.filter_strategy import _compute_filter_ev
-    for c in candidates:
-        c.filter_ev = _compute_filter_ev(c)
+    lineup_result = run_filter_strategy(candidates, slate_class)
 
     display_map = _build_display_map(cards)
-    response = _build_response(dual, candidates, display_map)
+    response = _build_response(lineup_result, candidates, display_map)
     lineup_cache.store(response, slate_date=active_date)
     logger.info(
         "Lineup cache warmed: %d candidates, slate=%s",
@@ -479,7 +471,7 @@ def classify_slate_endpoint(games: list[GameEnvironment] = []):
 @router.get("/diagnostics")
 async def diagnostics(db: Session = Depends(get_db)):
     """
-    Pipeline health dashboard — popularity distribution, pool metrics, top EVs.
+    Pipeline health dashboard — pool metrics and top EVs.
 
     Returns the current cached lineup's diagnostics without re-running the
     optimizer.  If no cache exists, loads slate data and computes a snapshot.
@@ -487,21 +479,15 @@ async def diagnostics(db: Session = Depends(get_db)):
     cached = lineup_cache.get()
     if cached is not None:
         candidates = cached.all_candidates
-        fade = sum(1 for c in candidates if c.popularity == "FADE")
-        target = sum(1 for c in candidates if c.popularity == "TARGET")
-        neutral = sum(1 for c in candidates if c.popularity == "NEUTRAL")
         top_evs = [
-            {"player": c.player_name, "team": c.team, "ev": c.filter_ev, "popularity": c.popularity}
+            {"player": c.player_name, "team": c.team, "ev": c.filter_ev}
             for c in candidates[:10]
         ]
         return {
             "source": "cache",
             "candidate_count": len(candidates),
-            "popularity_distribution": {"FADE": fade, "TARGET": target, "NEUTRAL": neutral},
-            "popularity_healthy": not (neutral == len(candidates) and len(candidates) >= 10),
             "top_10_ev": top_evs,
-            "starting_5": [s.player_name for s in cached.starting_5.lineup],
-            "moonshot": [s.player_name for s in cached.moonshot.lineup],
+            "lineup": [s.player_name for s in cached.lineup.lineup],
         }
 
     # No cache — build a snapshot from the DB
@@ -512,20 +498,13 @@ async def diagnostics(db: Session = Depends(get_db)):
             "source": "live",
             "error": f"No slate data for {active_date}",
             "candidate_count": 0,
-            "popularity_distribution": {"FADE": 0, "TARGET": 0, "NEUTRAL": 0},
-            "popularity_healthy": False,
             "top_10_ev": [],
-            "starting_5": [],
-            "moonshot": [],
+            "lineup": [],
         }
 
     game_dicts = [g.model_dump() for g in games]
     slate_class = classify_slate(len(games), game_dicts)
     candidates = await resolve_candidates(cards, games, db)
-
-    fade = sum(1 for c in candidates if c.popularity == PopularityClass.FADE)
-    target = sum(1 for c in candidates if c.popularity == PopularityClass.TARGET)
-    neutral = sum(1 for c in candidates if c.popularity == PopularityClass.NEUTRAL)
 
     # Quick EV computation for diagnostics (without full optimization)
     from app.services.filter_strategy import _compute_filter_ev
@@ -534,7 +513,7 @@ async def diagnostics(db: Session = Depends(get_db)):
     candidates.sort(key=lambda c: c.filter_ev, reverse=True)
 
     top_evs = [
-        {"player": c.player_name, "team": c.team, "ev": round(c.filter_ev, 2), "popularity": c.popularity.value}
+        {"player": c.player_name, "team": c.team, "ev": round(c.filter_ev, 2)}
         for c in candidates[:10]
     ]
 
@@ -543,9 +522,6 @@ async def diagnostics(db: Session = Depends(get_db)):
         "slate_date": str(active_date),
         "slate_type": slate_class.slate_type.value,
         "candidate_count": len(candidates),
-        "popularity_distribution": {"FADE": fade, "TARGET": target, "NEUTRAL": neutral},
-        "popularity_healthy": not (neutral == len(candidates) and len(candidates) >= 10),
         "top_10_ev": top_evs,
-        "starting_5": [],
-        "moonshot": [],
+        "lineup": [],
     }

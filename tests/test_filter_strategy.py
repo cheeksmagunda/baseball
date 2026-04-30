@@ -2,8 +2,10 @@
 Tests for the active filter_strategy pipeline.
 
 Covers: env score computation, slate classification, base EV computation,
-FADE exclusion gate, composition enforcement, dual optimizer, and
-popularity classification.
+composition enforcement, slot assignment, and the single-lineup optimizer.
+
+V11.0: popularity (FADE/TARGET/NEUTRAL) and Moonshot have been removed
+from the pipeline entirely; tests covering those are deleted.
 """
 
 import pytest
@@ -19,14 +21,10 @@ from app.services.filter_strategy import (
     _compute_dnp_adjustment,
     _compute_base_ev,
     _compute_filter_ev,
-    _compute_moonshot_filter_ev,
-    _exclude_fade_players,
     _enforce_composition,
     _smart_slot_assignment,
     run_filter_strategy,
-    run_dual_filter_strategy,
 )
-from app.services.popularity import PopularityClass, classify_player
 from app.core.constants import (
     REQUIRED_PITCHERS_IN_LINEUP,
     MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT,
@@ -51,12 +49,10 @@ def _make_candidate(
     is_pitcher: bool = False,
     total_score: float = 50.0,
     env_score: float = 0.6,
-    popularity: PopularityClass = PopularityClass.TARGET,
     game_id: int | str | None = 1,
     batting_order: int | None = 3,
     env_unknown_count: int = 0,
     is_in_blowout_game: bool = False,
-    sharp_score: float = 0.0,
     traits: list | None = None,
 ) -> FilteredCandidate:
     return FilteredCandidate(
@@ -66,10 +62,8 @@ def _make_candidate(
         total_score=total_score,
         env_score=env_score,
         env_unknown_count=env_unknown_count,
-        popularity=popularity,
         game_id=game_id,
         is_pitcher=is_pitcher,
-        sharp_score=sharp_score,
         traits=traits or [],
         batting_order=batting_order if not is_pitcher else None,
         is_in_blowout_game=is_in_blowout_game,
@@ -508,105 +502,7 @@ class TestBatterEnvScore:
 
 
 # ===================================================================
-# 4. FADE Exclusion Gate (V9.0)
-# ===================================================================
-
-class TestFADEGate:
-    def test_fade_players_excluded(self):
-        pool = [
-            _make_candidate("P1", is_pitcher=True, popularity=PopularityClass.TARGET),
-            _make_candidate("B1", popularity=PopularityClass.FADE),
-            _make_candidate("B2", popularity=PopularityClass.TARGET),
-            _make_candidate("B3", popularity=PopularityClass.NEUTRAL),
-        ]
-        result = _exclude_fade_players(pool)
-        names = [c.player_name for c in result]
-        assert "B1" not in names
-        assert len(result) == 3
-
-    def test_no_fade_players_unchanged(self):
-        pool = [
-            _make_candidate("P1", is_pitcher=True, popularity=PopularityClass.TARGET),
-            _make_candidate("B1", popularity=PopularityClass.TARGET),
-        ]
-        assert len(_exclude_fade_players(pool)) == 2
-
-    def test_all_pitchers_fade_kept(self):
-        """V10.5: FADE pitchers stay in the pool — they pay a soft EV penalty,
-        not a hard exclusion.  Only an empty *pitcher pool overall* still raises.
-        """
-        pool = [
-            _make_candidate("P1", is_pitcher=True, popularity=PopularityClass.FADE),
-            _make_candidate("P2", is_pitcher=True, popularity=PopularityClass.FADE),
-            _make_candidate("B1", popularity=PopularityClass.TARGET),
-        ]
-        result = _exclude_fade_players(pool)
-        names = {c.player_name for c in result}
-        assert "P1" in names and "P2" in names, "FADE pitchers must survive the gate"
-        assert "B1" in names
-
-    def test_no_pitchers_at_all_raises(self):
-        pool = [_make_candidate("B1", popularity=PopularityClass.TARGET)]
-        with pytest.raises(ValueError, match="[Pp]itcher"):
-            _exclude_fade_players(pool)
-
-    def test_fade_pitcher_pays_ev_penalty(self):
-        """A FADE pitcher's filter_ev should be lower than a NEUTRAL pitcher's
-        with otherwise identical inputs — by exactly PITCHER_FADE_PENALTY."""
-        from app.core.constants import PITCHER_FADE_PENALTY
-        from app.services.filter_strategy import _compute_filter_ev
-        target = _make_candidate(
-            "P_target", is_pitcher=True, popularity=PopularityClass.NEUTRAL,
-            env_score=0.7, total_score=70,
-        )
-        fade = _make_candidate(
-            "P_fade", is_pitcher=True, popularity=PopularityClass.FADE,
-            env_score=0.7, total_score=70,
-        )
-        target_ev = _compute_filter_ev(target)
-        fade_ev = _compute_filter_ev(fade)
-        assert fade_ev == pytest.approx(target_ev * PITCHER_FADE_PENALTY, rel=1e-6)
-
-
-# ===================================================================
-# 5. Popularity Classification (BUG 1 fix)
-# ===================================================================
-
-class TestPopularityClassification:
-    def test_high_pop_high_perf_is_fade(self):
-        cls, _ = classify_player(60.0, 70.0)
-        assert cls == PopularityClass.FADE
-
-    def test_high_pop_low_perf_is_fade(self):
-        cls, _ = classify_player(60.0, 10.0)
-        assert cls == PopularityClass.FADE
-
-    def test_low_pop_high_perf_is_target(self):
-        cls, _ = classify_player(10.0, 70.0)
-        assert cls == PopularityClass.TARGET
-
-    def test_low_pop_mid_perf_is_target(self):
-        """BUG 1 fix: score 30 with low pop should be TARGET (threshold lowered to 25)."""
-        cls, _ = classify_player(10.0, 30.0)
-        assert cls == PopularityClass.TARGET
-
-    def test_ghost_score_25_is_target(self):
-        """Ghost player at score boundary (25) should be TARGET, not NEUTRAL."""
-        cls, _ = classify_player(0.0, 25.0)
-        assert cls == PopularityClass.TARGET
-
-    def test_ghost_score_24_is_neutral(self):
-        """Ghost player below threshold (24) stays NEUTRAL."""
-        cls, _ = classify_player(0.0, 24.0)
-        assert cls == PopularityClass.NEUTRAL
-
-    def test_zero_pop_zero_perf_is_neutral(self):
-        cls, _ = classify_player(0.0, 0.0)
-        assert cls == PopularityClass.NEUTRAL
-
-
-# ===================================================================
-# 6. DNP Adjustment
+# 4. DNP Adjustment
 # ===================================================================
 
 class TestDNPAdjustment:
@@ -651,34 +547,19 @@ class TestBaseEV:
         ev_high = _compute_base_ev(high_env)
         assert ev_high > ev_low
 
-    def test_popularity_not_in_base_ev(self):
-        """V9.0: popularity is a gate only — TARGET and FADE get same base EV."""
-        target_c = _make_candidate(popularity=PopularityClass.TARGET)
-        neutral_c = _make_candidate(popularity=PopularityClass.NEUTRAL)
-        assert _compute_base_ev(target_c) == pytest.approx(_compute_base_ev(neutral_c), rel=0.01)
-
-
 # ===================================================================
-# 8. Filter EV (Starting 5 vs Moonshot)
+# 6. Filter EV
 # ===================================================================
 
 class TestFilterEV:
     def test_filter_ev_positive(self):
-        c = _make_candidate(popularity=PopularityClass.TARGET)
+        c = _make_candidate()
         assert _compute_filter_ev(c) > 0
 
-    def test_moonshot_sharp_score_raises_ev(self):
-        no_sharp = _make_candidate(sharp_score=0)
-        with_sharp = _make_candidate(sharp_score=100)
-        ev_base = _compute_moonshot_filter_ev(no_sharp)
-        ev_sharp = _compute_moonshot_filter_ev(with_sharp)
-        assert ev_sharp > ev_base
-
-    def test_moonshot_ev_above_s5_with_sharp(self):
-        target = _make_candidate(popularity=PopularityClass.TARGET, sharp_score=50)
-        ev_s5 = _compute_filter_ev(target)
-        ev_moon = _compute_moonshot_filter_ev(target)
-        assert ev_moon > ev_s5
+    def test_filter_ev_matches_base_ev(self):
+        """V11.0: filter EV is the base EV.  No popularity bonus or penalty."""
+        c = _make_candidate(env_score=0.7, total_score=65)
+        assert _compute_filter_ev(c) == pytest.approx(_compute_base_ev(c), rel=1e-9)
 
 
 # ===================================================================
@@ -951,91 +832,3 @@ class TestRunFilterStrategy:
         assert result.total_expected_value == 0.0
 
 
-# ===================================================================
-# 12. Dual Optimizer: Starting 5 + Moonshot
-# ===================================================================
-
-class TestDualOptimizer:
-    def _big_pool(self) -> list[FilteredCandidate]:
-        """Pool large enough for two full lineups (10+ unique teams/games).
-
-        Pitcher env_score=0.85 (typical favored-team confirmed starter).  Below
-        ~0.80 is borderline; the V10.6 EV chooser will flip to 0P+5B if the
-        batter pool genuinely dominates, which would make these dual-optimizer
-        tests of the 1P-shared-anchor invariant unreliable.
-        """
-        teams = ["NYY", "BOS", "LAD", "HOU", "ATL", "CHC", "SF", "SEA",
-                 "MIN", "TB", "SD", "CLE", "PHI", "MIL"]
-        pool = []
-        for i in range(3):
-            pool.append(_make_candidate(
-                name=f"SP_{i}", team=teams[i], is_pitcher=True,
-                game_id=200 + i, total_score=60 + i * 5, env_score=0.85,
-            ))
-        for i in range(12):
-            pool.append(_make_candidate(
-                name=f"BAT_{i}", team=teams[3 + (i % 11)],
-                game_id=300 + i, total_score=40 + i * 2, env_score=0.55 + i * 0.02,
-            ))
-        return pool
-
-    def test_batters_never_overlap(self):
-        """Both lineups share the pitcher but have 4 distinct batters each."""
-        pool = self._big_pool()
-        result = run_dual_filter_strategy(pool, _default_slate())
-        s5_pitcher = next(s.candidate for s in result.starting_5.slots if s.candidate.is_pitcher)
-        moon_pitcher = next(s.candidate for s in result.moonshot.slots if s.candidate.is_pitcher)
-        # Shared pitcher anchor
-        assert s5_pitcher.player_name == moon_pitcher.player_name
-        # Zero batter overlap
-        s5_batters = {s.candidate.player_name for s in result.starting_5.slots if not s.candidate.is_pitcher}
-        moon_batters = {s.candidate.player_name for s in result.moonshot.slots if not s.candidate.is_pitcher}
-        assert s5_batters.isdisjoint(moon_batters), f"Batter overlap: {s5_batters & moon_batters}"
-
-    def test_both_lineups_have_5(self):
-        pool = self._big_pool()
-        result = run_dual_filter_strategy(pool, _default_slate())
-        assert len(result.starting_5.slots) == 5
-        assert len(result.moonshot.slots) == 5
-
-    def test_both_lineups_have_1_pitcher(self):
-        pool = self._big_pool()
-        result = run_dual_filter_strategy(pool, _default_slate())
-        assert result.starting_5.composition["pitchers"] == 1
-        assert result.moonshot.composition["pitchers"] == 1
-
-    def test_moonshot_strategy_label(self):
-        pool = self._big_pool()
-        result = run_dual_filter_strategy(pool, _default_slate())
-        assert result.moonshot.strategy == "moonshot"
-        assert result.starting_5.strategy == "filter_not_forecast"
-
-    def test_minimal_pool_raises_on_insufficient_batters(self):
-        """A pool with only 4 batters can't fill two non-overlapping lineups."""
-        teams = ["NYY", "BOS", "LAD", "HOU", "ATL"]
-        pool = [
-            _make_candidate(name="SP_0", team=teams[0], is_pitcher=True, game_id=1),
-        ] + [
-            _make_candidate(name=f"B_{i}", team=teams[i + 1], game_id=10 + i)
-            for i in range(4)
-        ]
-        with pytest.raises(ValueError, match="Insufficient non-overlapping batters"):
-            run_dual_filter_strategy(pool, _default_slate())
-
-    def test_minimal_pool_with_8_batters_succeeds(self):
-        """A pool with a clearly-dominant pitcher + 8 batters across unique
-        teams fills both lineups via the shared pitcher anchor.  Pitcher
-        env=0.85 ensures the V10.6 EV chooser picks 1P+4B for both lineups
-        — under 0P+5B the 5-batter Starting 5 would leave only 3 unique
-        non-overlapping batters for Moonshot."""
-        teams = ["NYY", "BOS", "LAD", "HOU", "ATL", "CHC", "SF", "SEA", "MIN"]
-        pool = [
-            _make_candidate(name="SP_0", team=teams[0], is_pitcher=True,
-                            game_id=1, env_score=0.85),
-        ] + [
-            _make_candidate(name=f"B_{i}", team=teams[i + 1], game_id=10 + i)
-            for i in range(8)
-        ]
-        result = run_dual_filter_strategy(pool, _default_slate())
-        assert len(result.starting_5.slots) == 5
-        assert len(result.moonshot.slots) == 5

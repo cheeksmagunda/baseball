@@ -10,7 +10,7 @@ Four phases per slate day:
                    /optimize returns HTTP 425 "come back later" with countdown.
 
   3. LOCKED      — At T-65 the monitor fires the final pipeline run, builds the
-                   Starting 5 + Moonshot, then calls lineup_cache.freeze().
+                   lineup, then calls lineup_cache.freeze().
                    From this point the API serves a static payload — zero compute
                    per request, zero risk of dirty mid-run data.
 

@@ -1,10 +1,10 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.core.utils import find_player_by_name, compute_total_value
+from app.core.utils import find_player_by_name
 from app.models.slate import Slate, SlatePlayer
 from app.models.scoring import PlayerScore
 from app.schemas.scoring import PlayerScoreOut, SlateRankingsOut, TraitBreakdown
@@ -18,25 +18,28 @@ router = APIRouter()
 def score_single_player(
     player_name: str,
     team: str | None = None,
-    card_boost: float = Query(default=0.0, ge=0.0, le=3.0, description="Card boost multiplier (0.0–3.0)"),
     db: Session = Depends(get_db),
 ):
-    """Score a single player on demand."""
+    """Score a single player on demand.
+
+    V11.0: card_boost is no longer accepted as a request parameter.  It's
+    revealed only during the draft, so any pre-draft scoring endpoint that
+    accepted it was leaking an outcome signal into the rank.  The endpoint
+    now returns the intrinsic player score; downstream display can apply
+    boost math when the user actually reveals their cards.
+    """
     player = find_player_by_name(db, player_name, team)
 
     if not player:
         raise HTTPException(404, f"Player not found: {player_name}")
 
     result = score_player(db, player)
-    ev = compute_total_value(result.total_score, card_boost) if card_boost else None
 
     return PlayerScoreOut(
         player_name=result.player_name,
         team=result.team,
         position=result.position,
         total_score=result.total_score,
-        card_boost=card_boost,
-        expected_value=round(ev, 2) if ev else None,
         breakdowns=[
             TraitBreakdown(
                 trait_name=t.name,
@@ -51,35 +54,22 @@ def score_single_player(
 
 @router.post("/slate/{slate_date}", response_model=SlateRankingsOut)
 def score_slate(slate_date: date, db: Session = Depends(get_db)):
-    """Score all players for a slate. Stores results and returns rankings."""
+    """Score all players for a slate. Stores results and returns rankings.
+
+    V11.0: rankings are intrinsic player scores only.  No card_boost or
+    EV math — those are post-draft (or post-slate, for stored values)
+    concerns and don't belong in a pre-game scoring endpoint.
+    """
     results = run_score_slate(db, slate_date)
     if not results:
         raise HTTPException(404, "No slate or players found for this date")
 
-    # Look up boosts from slate_players
-    slate = (
-        db.query(Slate)
-        .options(selectinload(Slate.players).joinedload(SlatePlayer.player))
-        .filter_by(date=slate_date)
-        .first()
-    )
-    boost_map = {}
-    if slate:
-        for sp in slate.players:
-            if sp.player:
-                boost_map[sp.player.name] = sp.card_boost
-
-    rankings = []
-    for r in results:
-        boost = boost_map.get(r.player_name, 0.0)
-        ev = compute_total_value(r.total_score, boost)
-        rankings.append(PlayerScoreOut(
+    rankings = [
+        PlayerScoreOut(
             player_name=r.player_name,
             team=r.team,
             position=r.position,
             total_score=r.total_score,
-            card_boost=boost,
-            expected_value=round(ev, 2),
             breakdowns=[
                 TraitBreakdown(
                     trait_name=t.name,
@@ -89,7 +79,9 @@ def score_slate(slate_date: date, db: Session = Depends(get_db)):
                 )
                 for t in r.traits
             ],
-        ))
+        )
+        for r in results
+    ]
 
     return SlateRankingsOut(
         date=slate_date.isoformat(),
@@ -100,7 +92,13 @@ def score_slate(slate_date: date, db: Session = Depends(get_db)):
 
 @router.get("/{slate_date}/rankings", response_model=SlateRankingsOut)
 def get_cached_rankings(slate_date: date, db: Session = Depends(get_db)):
-    """Get previously computed rankings for a slate."""
+    """Get previously computed rankings for a slate.
+
+    V11.0: returns intrinsic player scores only.  Historical card_boost
+    values live on SlatePlayer for ingest / leaderboard reconstruction
+    (app/seed.py uses them to compute total_value for `historical_players.csv`),
+    but they are not surfaced through the live scoring API.
+    """
     slate = (
         db.query(Slate)
         .options(
@@ -127,16 +125,11 @@ def get_cached_rankings(slate_date: date, db: Session = Depends(get_db)):
         if not ps:
             continue
 
-        breakdowns = ps.breakdowns
-        ev = compute_total_value(ps.total_score, sp.card_boost)
-
         rankings.append(PlayerScoreOut(
             player_name=player.name,
             team=player.team,
             position=player.position,
             total_score=ps.total_score,
-            card_boost=sp.card_boost,
-            expected_value=round(ev, 2),
             breakdowns=[
                 TraitBreakdown(
                     trait_name=b.trait_name,
@@ -144,7 +137,7 @@ def get_cached_rankings(slate_date: date, db: Session = Depends(get_db)):
                     max_score=b.trait_max,
                     raw_value=b.raw_value,
                 )
-                for b in breakdowns
+                for b in ps.breakdowns
             ],
         ))
 

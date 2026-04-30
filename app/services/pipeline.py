@@ -539,7 +539,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
     # carry it on FilteredCandidate.  Build a display-only lookup keyed by
     # (player_name, team) so the response payload can surface it.
     boost_lookup = {
-        (sp.player.name, sp.player.team): sp.card_boost
+        (sp.player.name, sp.player.team): sp.card_boost  # display only
         for sp in slate_players
         if sp.player is not None
     }
@@ -564,7 +564,6 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 "score": s.candidate.total_score,
                 "env_score": round(s.candidate.env_score, 3),
                 "env_factors": s.candidate.env_factors,
-                "popularity": s.candidate.popularity.value,
                 "filter_ev": round(s.candidate.filter_ev, 2),
                 "slot_value": s.expected_slot_value,
             }

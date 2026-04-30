@@ -1,19 +1,20 @@
 """Candidate resolver — converts FilterCards + game environments into
-FilteredCandidates ready for the dual-filter optimizer.
+FilteredCandidates ready for the optimizer.
 
 Stages:
   1. Stage 0: map each card's (player_name, team) to a Player row in one
      batched SQL query (see find_players_by_name_team_batch).
-  2. Stage 1: synchronous work — score traits, compute env score (Filter 2),
-     detect two-way pitchers, capture series context.
-  3. Stage 2: parallel popularity fetch (Filter 3).
-  4. Stage 3: assemble FilteredCandidate instances + emit health-check logs.
+  2. Stage 1: synchronous work — score traits, compute env score, detect
+     two-way pitchers, capture series context.
+  3. Stage 2: assemble FilteredCandidate instances + emit health-check logs.
+
+V11.0: popularity scraping removed — the optimizer ranks purely on env +
+trait + context.  No FADE/TARGET/NEUTRAL classification, no sharp_score.
 
 Moved out of app/routers/filter_strategy.py so the router stays thin and
 this logic is independently testable.
 """
 
-import asyncio
 import logging
 
 from sqlalchemy.orm import Session
@@ -33,11 +34,6 @@ from app.services.filter_strategy import (
     FilteredCandidate,
     compute_batter_env_score,
     compute_pitcher_env_score,
-)
-from app.services.popularity import (
-    PopularityClass,
-    get_popularity_profile,
-    reset_url_cache,
 )
 from app.services.scoring_engine import score_player
 
@@ -160,13 +156,8 @@ async def resolve_candidates(
 ) -> list[FilteredCandidate]:
     """Resolve cards into FilteredCandidates ready for the optimizer.
 
-    See module docstring for the 4-stage flow.
+    See module docstring for the 3-stage flow.
     """
-    # Popularity fetchers hit several player-invariant URLs (RSS feeds, daily
-    # trends). Reset the slate-wide URL cache so we deduplicate onto a handful
-    # of HTTP requests — and avoid serving stale bodies from a previous run.
-    reset_url_cache()
-
     game_by_id, team_to_game = _build_game_lookup(games)
 
     # Drop cards without a player_name. Draft counts are ingested post-slate,
@@ -374,36 +365,11 @@ async def resolve_candidates(
             "team_l10_wins": team_l10,
         })
 
-    # Stage 2: fetch popularity for all players in parallel (Filter 3).
-    popularity_results = await asyncio.gather(
-        *[
-            get_popularity_profile(
-                p["card"].player_name,
-                p["card"].team,
-                p["score_result"].total_score,
-                include_sharp=True,
-            )
-            for p in pre_candidates
-        ],
-        return_exceptions=True,
-    )
-
-    # Stage 3: assemble FilteredCandidates.
+    # Stage 2: assemble FilteredCandidates.
     candidates: list[FilteredCandidate] = []
-    for pre, pop_result in zip(pre_candidates, popularity_results):
+    for pre in pre_candidates:
         card = pre["card"]
         score_result = pre["score_result"]
-
-        if isinstance(pop_result, Exception):
-            logger.warning(
-                "Popularity fetch failed for %s — defaulting to NEUTRAL: %s",
-                card.player_name, pop_result,
-            )
-            pop_class = PopularityClass.NEUTRAL
-            sharp_score = 0.0
-        else:
-            pop_class = pop_result.classification
-            sharp_score = pop_result.sharp_score
 
         candidates.append(FilteredCandidate(
             player_name=card.player_name,
@@ -413,11 +379,9 @@ async def resolve_candidates(
             env_score=pre["env_score"],
             env_factors=pre["env_factors"],
             env_unknown_count=pre.get("env_unknown_count", 0),
-            popularity=pop_class,
             game_id=pre["game_id"],
             is_pitcher=pre["is_pitcher"],
             is_two_way_pitcher=pre["is_two_way_pitcher"],
-            sharp_score=sharp_score,
             traits=score_result.traits,
             batting_order=card.batting_order,
             series_team_wins=pre.get("series_team_wins"),
@@ -428,14 +392,6 @@ async def resolve_candidates(
     logger.info(
         "Candidate pool: %d cards in → %d candidates out (dropped: %d)",
         len(cards), len(candidates), len(cards) - len(candidates),
-    )
-
-    fade_count = sum(1 for c in candidates if c.popularity == PopularityClass.FADE)
-    target_count = sum(1 for c in candidates if c.popularity == PopularityClass.TARGET)
-    neutral_count = sum(1 for c in candidates if c.popularity == PopularityClass.NEUTRAL)
-    logger.info(
-        "Popularity distribution: FADE=%d, TARGET=%d, NEUTRAL=%d",
-        fade_count, target_count, neutral_count,
     )
 
     return candidates

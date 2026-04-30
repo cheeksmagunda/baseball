@@ -1,12 +1,22 @@
-"""Static audit: the T-65 live pipeline must not read historical outcome fields.
+"""Static audit: the T-65 live pipeline must not leak banned signals.
 
 The live pipeline (app/services/*, app/routers/*, app/core/*) is architecturally
-forbidden from reading post-slate outcome data: `real_score`, `total_value`,
-`is_highest_value`, `is_most_popular`, `is_most_drafted_3x`.  Only seed.py and
-scripts/ may read these fields.
+forbidden from reading three categories of signal:
 
-This script greps the runtime code paths for any such reference.  Run it before
-deploying or as a CI gate.
+  1. Historical outcomes (post-slate truth): `real_score`, `total_value`,
+     `is_highest_value`, `is_most_popular`, `is_most_drafted_3x`.
+  2. In-draft dynamic signals (revealed only during the draft): `card_boost`,
+     `drafts` — except in router display-map blocks that pull them from the
+     source FilterCard for response payloads.
+  3. Popularity (V11.0 removed entirely): `PopularityClass`, `popularity` /
+     `sharp_score` attribute reads.  Any reintroduction is a regression.
+
+Only seed.py and scripts/ may read historical-outcome fields.  Display-map
+blocks may read `card_boost` / `drafts` — they're flagged here and require
+an explicit allowed-context hint on the line.
+
+This script greps the runtime code paths for any such reference.  Run it
+before deploying or as a CI gate.
 
 Exit codes:
     0 — clean tree, no leaks.
@@ -22,36 +32,37 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Runtime scopes that must never read historical outcomes.
+# Runtime scopes that must never read banned signals.
 RUNTIME_DIRS = [
     REPO_ROOT / "app" / "services",
     REPO_ROOT / "app" / "routers",
     REPO_ROOT / "app" / "core",
 ]
 
-# Known-exempt files within the runtime scopes.  The audit is targeted at the
-# T-65 PREDICTION pipeline (slate_monitor → pipeline → candidate_resolver →
-# filter_strategy → scoring_engine → data_collection).  Non-prediction code
-# paths are exempt:
-#   - draft_optimizer.py is dead code used only by the `evaluate_lineup`
-#     endpoint (user-facing lineup evaluator for already-submitted lineups).
-#     It reads card_boost to recompute historical value, not the T-65 path.
+# Known-exempt files within the runtime scopes.
 #   - routers/slates.py is a CRUD/admin router: GET returns stored slate data
 #     for display, PUT ingests post-game results.  Neither is on the T-65 path.
 EXEMPT_FILES = {
-    REPO_ROOT / "app" / "services" / "draft_optimizer.py",
     REPO_ROOT / "app" / "routers" / "slates.py",
 }
 
-# Banned attribute reads: any `.field` access on a SlatePlayer-typed object.
-# Using a conservative text match: `.real_score` etc.  The auditor checks for
-# the literal attribute access; comments and docstrings are excluded.
+# Banned attribute reads: any `.field` access.  The auditor checks for the
+# literal attribute access; comments, docstrings, and lines with an explicit
+# "display only" hint are excluded.
 BANNED_FIELDS = [
+    # Historical outcomes (post-slate truth)
     "real_score",
     "total_value",
     "is_highest_value",
     "is_most_popular",
     "is_most_drafted_3x",
+    # In-draft dynamic signals — display-map blocks must mark these as
+    # display-only via an inline comment hint.
+    "card_boost",
+    "drafts",
+    # V11.0 — popularity removed entirely.  Any read is a regression.
+    "popularity",
+    "sharp_score",
 ]
 
 # Phrases that indicate the match is a legitimate non-read reference
@@ -65,8 +76,8 @@ ALLOWED_CONTEXT_HINTS = (
     "forbidden",
     "retrospective",
     "display only",
-    "DISPLAY-ONLY",
     "display-only",
+    "DISPLAY-ONLY",
     "not as an RS",
 )
 

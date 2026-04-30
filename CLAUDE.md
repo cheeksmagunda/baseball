@@ -170,13 +170,13 @@ The calibration loop: join game context conditions (game objects in historical_s
 
 ### Active Pipeline
 
-The active optimization path is `filter_strategy` — **not** `draft_optimizer.py` (which only powers the `/api/draft/evaluate` user-proposed-lineup endpoint).
+The active (and only) optimization path is `filter_strategy`.
 
 **Four-Stage Pipeline:**
 1. **Collect** (`app/services/data_collection.py`) — Fetch MLB schedule + boxscores + player stats
 2. **Score** (`app/services/scoring_engine.py`) — Rate players 0-100 via trait profiles
-3. **Filter** (`app/services/filter_strategy.py`) — Apply five sequential filters (§4 strategy)
-4. **Optimize** (`app/routers/filter_strategy.py` → `run_dual_filter_strategy`) — Produce Starting 5 + Moonshot
+3. **Filter** (`app/services/filter_strategy.py`) — Score env (Vegas O/U, opp ERA/WHIP/K9, bullpen, park, weather, platoon, batting order, ML, series, L10, opp rest days)
+4. **Optimize** (`app/routers/filter_strategy.py` → `run_filter_strategy`) — Produce a single lineup (1P+4B or 0P+5B chosen by total EV)
 
 ### Philosophy
 Rule-based scoring + external-variables filtering (NOT ML). The goal is to **win drafts**, not predict Real Score. RS is opaque — we estimate via player profiling and filter on pre-game conditions.
@@ -209,7 +209,7 @@ The app uses an event-driven timing model that triggers the ONLY full pipeline r
      - Fetch season stats for all players
      - Enrich game environment (Vegas lines, series context, bullpen ERA)
      - Score all players (0-100 trait profiles)
-     - Run dual-filter strategy (Starting 5 + Moonshot)
+     - Run filter strategy (single lineup, V11.0)
    - **No fallbacks.** If any stage fails (except Phase 1 RotoWire), the monitor crashes so `/optimize` returns HTTP 503.
    - Freeze cache with `lineup_cache.freeze()` — picks are now immutable
 
@@ -657,30 +657,31 @@ The env-score functions use shared helpers instead of duplicated inline patterns
 - `graduated_scale(value, floor, ceiling)` → 0.0–1.0 (works for ascending and descending ranges)
 - `graduated_scale_moneyline(moneyline, ml_floor, ml_ceiling)` → 0.0–1.0 (negative-number-aware)
 
-## Popularity Signal Aggregator (`app/services/popularity.py`)
+## Popularity (V11.0: REMOVED)
 
-Web-scraping signal aggregator that estimates crowd media attention. This is NOT rule-based — it's dynamic, fetching real-time public signals from sources knowable before the draft begins.
+V11.0 removed the popularity scraping module entirely.  The optimizer is
+**popularity-agnostic**: don't favor popular players, don't fade unpopular
+ones either.  Predict high-value performers from env + trait alone.  See
+the V11.0 changelog entry below for the full rationale and the list of
+deleted modules.
 
-**Signal sources (weighted) — pre-game public signals only:**
-- Social trending (45%): Google Trends autocomplete + daily trends
-- Sports news (25%): ESPN and MLB.com RSS feeds
-- Search volume (30%): Google autocomplete context terms
+## Optimizer (`app/services/filter_strategy.py`)
 
-**Intentionally excluded:** DFS platform ownership data (RotoGrinders, NumberFire). Platform ownership is only visible during the draft — using it would violate the pre-game signals constraint.
+**Strategy Version: V11.0 "Popularity Removed — Single Lineup, Pure Env+Trait"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs and do not exist on `FilteredCandidate`**. **Popularity (FADE/TARGET/NEUTRAL) and the Moonshot lineup are gone.** The optimizer ranks the candidate pool purely on `env_factor × volatility_amplifier × trait_factor × stack_bonus × dnp_adj`, then assembles a single lineup (1 SP + 4 batters, OR 0 SP + 5 batters chosen by slot-weighted total EV). The dual-lineup architecture, FADE gate, sharp_score scraping, and explosive_bonus all retired. Pitchers cap at env_factor 1.20 (vs batter 1.30). **Stacking is still capped at 2 batters per team AND 2 per game, and only fires on overwhelmingly clear game scripts.**
 
-**Classification logic:**
-- High media attention + any performance level → **FADE** (crowd is already here)
-- High performance + low attention → **TARGET** (under the radar)
-- Low attention + mid performance → **TARGET** (value pick)
-- Otherwise → **NEUTRAL**
+### V11.0 Popularity Removed + Single Lineup + No /api/draft/evaluate (April 30)
 
-**V9.0 integration:** Popularity is a **candidate pool gate**. FADE players (high pre-game media attention) are excluded from the candidate pool before EV computation begins. TARGET and NEUTRAL players pass the gate and are scored identically — no popularity multiplier in EV. The EV formula is driven purely by env (game conditions) and trait (season stats). DFS platform ownership was never pre-game knowable and is fully excluded.
+V11.0 is a structural cleanup:
 
-**Sharp signal (underground):** A 4th source scraped from Reddit (r/fantasybaseball, r/baseball), FanGraphs community blogs, and Prospects Live. Used exclusively by the Moonshot lineup. `sharp_score` is 0-100, separate from the composite score.
+1. **Popularity scraping removed.** `app/services/popularity.py` (Google Trends + ESPN/MLB RSS + Reddit/FanGraphs sharp scrape), `app/routers/popularity.py`, `app/schemas/popularity.py`, the `PopularityClass` enum, the FADE-batter exclusion gate (`_exclude_fade_players`), the FADE-pitcher soft penalty (`PITCHER_FADE_PENALTY`), and the `popularity` / `sharp_score` fields on `FilteredCandidate` are all deleted. The optimizer no longer asks "what does the crowd think" anywhere — it predicts high-value performers from env + trait alone. The crowd-avoidance signals were noisy web-scrape proxies that distorted ranking toward contrarian picks even when env + trait disagreed.
 
-## Dual-Lineup Optimizer (`app/services/filter_strategy.py`)
+2. **Moonshot retired.** The dual-lineup architecture existed solely to differentiate via popularity (Starting 5 = chalk-tolerant, Moonshot = anti-crowd via sharp + explosive bonuses). With popularity gone, there is no principled second axis — Moonshot would be either identical to Starting 5 or differentiated by an arbitrary axis. `run_dual_filter_strategy`, `_compute_moonshot_filter_ev`, `DualFilterOptimizedResult`, `MOONSHOT_SHARP_BONUS_MAX`, `MOONSHOT_EXPLOSIVE_BONUS_MAX` deleted. Response schema collapsed: `FilterOptimizeResponse.lineup` (single) replaces `starting_5` + `moonshot`.
 
-**Strategy Version: V10.8 "Sustainable Signal Expansion — xStats + Catcher Framing + Opp Rest Days"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs and do not exist on `FilteredCandidate`**. FADE batters are excluded from the candidate pool; FADE pitchers stay with a soft 15% EV haircut. Each lineup independently chooses 0 or 1 pitcher based on slot-weighted total EV. Pitchers now cap at env_factor 1.20 (vs batter 1.30) so dominant favorite-team starters no longer auto-win the top-10. Opposing-starter K/9 is a new Group A signal in batter env. Volatility amplifier is now env-conditional — boom/bust hitters get amplified only when the matchup justifies it, not by default. DNP_UNKNOWN_PENALTY raised from 0.85 → 0.93 reflecting RotoWire coverage at T-65. **Stacking is still capped at 2 batters per team AND 2 per game, and only fires on overwhelmingly clear game scripts.**
+3. **/api/draft/evaluate + draft_optimizer.py deleted.** The endpoint accepted `card_boost` from the user as a request field and fed it through `compute_expected_value()` → `compute_total_value()` → slot-value math. card_boost is **never knowable pre-draft** (revealed during the draft), so the endpoint was structurally leaking an outcome signal into the rank. Deleted outright: `app/routers/draft.py`, `app/schemas/draft.py`, `app/services/draft_optimizer.py`, `tests/test_draft_optimizer.py`.
+
+4. **Audit script extended.** `scripts/audit_live_isolation.py` now also flags `card_boost` and `drafts` reads in the runtime tree (with router display-map lines explicitly exempt). Plus `popularity` / `sharp_score` / `PopularityClass` to catch any reintroduction.
+
+V11.0 explicitly **does not** change: env scoring (Vegas O/U, opp ERA / WHIP / K/9, bullpen, park, weather, platoon, batting order, ML, series, L10), trait scoring (Statcast kinematics, xStats, framing, opp rest days), the V10.x stacking gates and per-team / per-game caps, the EV-driven 1P+4B vs 0P+5B chooser, V10.8 catcher framing / xStats / opp-rest-days additions, the no-fallbacks rule, or the no-historical-outcome rule. Pure surgical removal of the popularity surface area + the card_boost leak path.
 
 ### V10.8 Sustainable Signal Expansion (April 29)
 
@@ -981,20 +982,16 @@ Each lineup is either **1 SP + 4 batters** or **0 SP + 5 batters** — the EV-dr
 - `get_batter_kinematics(mlb_id, season)` — avg/max exit velocity, hard-hit %, barrel % from Baseball Savant
 - `get_pitcher_kinematics(mlb_id, season)` — FB velocity, induced vertical break, extension, whiff %, chase % from Baseball Savant
 
-**Scope note:** `app/services/draft_optimizer.py` is used only by `/api/draft/evaluate` to score a user-proposed lineup and warn on suboptimal slot assignment. All automated lineup construction lives in `filter_strategy`.
-
-## API Structure (8 routers under `/api/`)
+## API Structure (6 routers under `/api/`)
 
 | Router | Prefix | Purpose |
 |---|---|---|
-| filter-strategy | `/api/filter-strategy` | PRIMARY: Dual-lineup optimization (Starting 5 + Moonshot) |
+| filter-strategy | `/api/filter-strategy` | PRIMARY: single-lineup optimization (V11.0) |
 | players | `/api/players` | Player CRUD + search |
 | slates | `/api/slates` | Slate management + draft cards + results |
-| scoring | `/api/score` | On-demand scoring + rankings |
-| draft | `/api/draft` | Lineup evaluation only (no optimize endpoint) |
+| scoring | `/api/score` | On-demand scoring + rankings (intrinsic scores only — no card_boost) |
 | calibration | `/api/calibration` | Scoring weight configuration |
 | pipeline | `/api/pipeline` | Orchestrated fetch → score → rank |
-| popularity | `/api/popularity` | Player/slate popularity analysis |
 
 ## Core Rules & Business Logic
 
