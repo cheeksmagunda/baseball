@@ -45,6 +45,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 
 from app.core.constants import (
@@ -423,7 +424,7 @@ def compute_pitcher_env_score(
 # means adding the kwarg here once, and both pipelines pick it up.
 # ---------------------------------------------------------------------------
 
-def build_pitcher_env_kwargs(game, is_home: bool) -> dict:
+def build_pitcher_env_kwargs(game: Any, is_home: bool) -> dict[str, Any]:
     """Resolve every (home_X / away_X) pair on a SlateGame for the pitcher's
     side and return the kwargs for compute_pitcher_env_score(**...)."""
     other = "away" if is_home else "home"
@@ -441,12 +442,12 @@ def build_pitcher_env_kwargs(game, is_home: bool) -> dict:
 
 
 def build_batter_env_kwargs(
-    game,
+    game: Any,
     is_home: bool,
     *,
     platoon_advantage: bool,
     batting_order: int | None,
-) -> dict:
+) -> dict[str, Any]:
     """Resolve every (home_X / away_X) pair on a SlateGame for the batter's
     side and return the kwargs for compute_batter_env_score(**...).
     The two per-batter inputs (platoon_advantage + batting_order) come from
