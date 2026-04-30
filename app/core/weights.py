@@ -11,11 +11,19 @@ from app.models.calibration import WeightHistory
 
 @dataclass
 class PitcherWeights:
-    ace_status: float = 25.0
-    k_rate: float = 25.0
-    matchup_quality: float = 20.0
-    recent_form: float = 15.0
-    era_whip: float = 15.0
+    """V12.2: trait weights rebalanced to remove env double-counting.
+
+    matchup_quality (opp OPS / K%) was 20 pts — but env_factor ALSO uses
+    opp OPS in compute_pitcher_env_score.  Multiplying env × trait both
+    weighted on the same signal amplified noise.  Zeroed and the points
+    redistributed to ace_status / k_rate / recent_form / era_whip
+    (independent intrinsic-talent signals).
+    """
+    ace_status: float = 30.0           # was 25.0 (+5 from matchup)
+    k_rate: float = 35.0               # was 25.0 (+10 from matchup) — Statcast kinematics
+    matchup_quality: float = 0.0       # was 20.0 — DOUBLE-COUNTED with env
+    recent_form: float = 20.0          # was 15.0 (+5 from matchup)
+    era_whip: float = 15.0             # unchanged
 
     @property
     def total_max(self) -> float:
@@ -24,13 +32,27 @@ class PitcherWeights:
 
 @dataclass
 class BatterWeights:
-    power_profile: float = 25.0
-    matchup_quality: float = 20.0
-    lineup_position: float = 15.0
-    recent_form: float = 15.0
-    ballpark_factor: float = 10.0
-    hot_streak: float = 10.0
-    speed_component: float = 5.0
+    """V12.2: trait weights rebalanced to remove env double-counting.
+
+    Three batter traits double-counted with env scoring:
+      * matchup_quality (opp ERA / WHIP / K9 / hand-split / xwOBA-against)
+        — env_factor uses opp ERA + WHIP, plus the hand-split signal was
+        marginal in the audit (RHP HV=49.9% vs LHP HV=45.0%, only 5pp).
+      * lineup_position (batting order) — env also uses batting_order.
+      * ballpark_factor (park HR + wind + temp) — env captures all three.
+
+    Zeroed and points redistributed to power_profile (Statcast exit-velo,
+    barrel%, hard-hit%, xwOBA — intrinsic talent), recent_form (last 7
+    games — intrinsic), hot_streak (intrinsic), speed_component (intrinsic).
+    These are the only signals truly INDEPENDENT of env.
+    """
+    power_profile: float = 40.0        # was 25.0 (+15 from matchup/park)
+    matchup_quality: float = 0.0       # was 20.0 — DOUBLE-COUNTED
+    lineup_position: float = 0.0       # was 15.0 — DOUBLE-COUNTED
+    recent_form: float = 25.0          # was 15.0 (+10 from matchup/park)
+    ballpark_factor: float = 0.0       # was 10.0 — DOUBLE-COUNTED
+    hot_streak: float = 25.0           # was 10.0 (+15 from lineup/matchup)
+    speed_component: float = 10.0      # was 5.0 (+5)
 
     @property
     def total_max(self) -> float:

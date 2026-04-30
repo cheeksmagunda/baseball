@@ -927,141 +927,87 @@ V10.1 preserves all V10.0 structural fixes:
 7. **`run_filter_strategy_from_slate` call site fixed** (V10.1 patch) — `pipeline.py` no longer passes `card_boost=` to the `FilteredCandidate` constructor; the display join uses a `(name, team) → card_boost` lookup built from `SlatePlayer`.
 8. **Rookie Arbitrage baseline** (V10.1 patch) — `score_power_profile` and `score_pitcher_k_rate` now return `UNKNOWN_SCORE_RATIO × max_pts` (neutral baseline) when the player has zero MLB stats AND no Statcast row. Previously both returned 0, which mathematically benched MLB-debut rookies regardless of matchup. Strategy doc §"Rookie Variance Void" — the crowd fades rookies, so we let env/popularity/park decide.
 
-### V10.0 Core Architecture (Popularity Gate + Env/Trait EV + Statcast + Stacking)
+### V10.0 Core Architecture (HISTORICAL — see V12 active behavior section above)
 
-**Popularity gate (applied first, before any EV):**
+V10.0 introduced the popularity-gate + env/trait modifier-band architecture
+that V12 inherits and rebuilt.  Key surviving concepts: env_factor and
+trait_factor as multiplicative EV terms; volatility_amplifier; stack_bonus.
+**The popularity gate, FADE/TARGET classes, sharp_score, Moonshot, and
+all V10.x asymmetric env ceilings have been REMOVED** — see V11.0 and
+V12.x changelog entries for the deletions.
+
+### Pre-V12 history (condensed)
+
+The pre-V12 changelog (V2.2 → V11.0) is preserved in the version-specific
+section headers above for context.  None of those sections describe
+**current** behavior — V12.x supersedes everything.  Highlights:
+
+- **V2-V8** explored graduated penalties, Bayesian dead-capital floors,
+  ownership tiers, dynamic pitcher caps, sharp/popularity scrapers, and
+  Moonshot dual-lineup architecture.  All retired.
+- **V9.0** retired `pop_factor` as an EV multiplier.
+- **V10.x** introduced env/trait modifier bands, Statcast kinematics
+  + xStats, two-path stacking, EV-driven 0P+5B chooser, three rounds
+  of audit-driven calibration (V10.6 / V10.7 / V10.8).
+- **V11.0** removed popularity scraping + Moonshot + draft_optimizer
+  (the `/api/draft/evaluate` endpoint was leaking `card_boost` into
+  pre-draft ranking).
+- **V12 / V12.1 / V12.2** rebuilt env scoring from a 35-slate audit,
+  added 0P-5P multi-pitcher variants, slot-1 = highest-EV-player,
+  rebalanced trait weights to remove env double-counting.  Documented
+  in the V12.x section at the top of this file.
+
+### Active behavior summary (V12.2 — read this, not the changelog)
+
+EV formula (`_compute_base_ev` in `app/services/filter_strategy.py`):
 ```
-candidates = [c for c in candidates if c.popularity != FADE]
-```
-FADE players never reach EV scoring. TARGET and NEUTRAL players pass the gate and are scored identically — no popularity bonus or penalty in EV.
+filter_ev = env_factor × volatility_amplifier × trait_factor
+          × stack_bonus × dnp_adj × 100
 
-**The EV formula:**
-```
-base_ev = env_factor × volatility_amplifier × trait_factor × context × 100
-```
-
-| Signal | Source | Range | Role |
-|---|---|---|---|
-| env_factor (batters) | Pre-game conditions (Vegas O/U, opp ERA, opp WHIP, **opp K/9 V10.6**, bullpen ERA, park, weather, platoon, batting order, moneyline, series context) | 0.70–1.30 | **Primary** — 1.86× swing |
-| env_factor (pitchers) | Same env scoring path (own K/9, opp OPS, opp K%, ML, park, home) | 0.70–1.20 | **V10.6 asymmetric ceiling** — pitcher 1-player dependence + Group A non-soft-cap saturation made 1.30 over-reward favorite-team SP |
-| volatility_amplifier | Coefficient of variation of recent at-bat production (`recent_form_cv` from scoring engine, batters only — pitchers default 1.0) | 0.8–1.2 (`BATTER_FORM_VOLATILITY_MAX = 0.20`) | **V10.6 env-CONDITIONAL boom-or-bust amplifier** — boost in good env, penalty in bad env |
-| trait_factor | Scoring engine (FB velo/IVB/extension/whiff%/chase% for SP; avg EV/hard-hit%/barrel%/max EV for batters; 0-100) | 0.85–1.15 | **Secondary** — 1.35× swing |
-| context | stack_bonus × dnp_adj × pitcher_pop_penalty | varies | Situational modifiers (V10.6 dnp_adj: 0.70 / 0.93 / 1.0; V10.5 pitcher_pop_penalty: 0.85 if FADE pitcher, else 1.0) |
-
-The volatility amplifier (V10.6) is `1 + cv × BATTER_FORM_VOLATILITY_MAX × (env_score − 0.5) × 2`. `recent_form_cv` is read from the `recent_form` trait metadata (set in `scoring_engine.py` as `std/mean` of recent per-game production). Pitchers default to 1.0 since CV doesn't apply. Rationale: a hitter with steady singles output has low CV → no amplification; a hitter with multi-HR games sandwiched between 0-fers has high CV → env signals get amplified BOTH WAYS — they're rewarded when env is genuinely strong but penalised when env is weak. Pre-V10.6 the amplifier was unconditional `1 + cv × 0.20`, which over-loved Muncy/Judge/Yordan-class profiles even on slates where their actual env was poor.
-
-**Moonshot differentiation** — same candidate pool as Starting 5, but a different formula:
-```
-moonshot_ev = base_ev × sharp_bonus × explosive_bonus
-```
-- `sharp_bonus`: up to +35% from underground analyst buzz (Reddit, FanGraphs, Prospects Live)
-- `explosive_bonus`: up to +20% from power_profile (batters) or k_rate (pitchers)
-- Player overlap with Starting 5 is allowed; formula divergence naturally reorders picks. No same-team penalty.
-
-### V10.1 Lineup Composition: 1P + 4B with Mini-Stack Only
-
-Exactly 1 pitcher + 4 batters. The pitcher anchors Slot 1 (2.0×).
-
-**Dual cap system** (both must be satisfied):
-
-| Cap | Value | When |
-|---|---|---|
-| `MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE` | 2 | team is in a stack-eligible game |
-| `MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT` | 1 | every other team |
-| `MAX_PLAYERS_PER_GAME_BATTERS` | 2 | always — per-game hard cap |
-
-Structural constraints:
-- `REQUIRED_PITCHERS_IN_LINEUP = 1` (exactly 1 pitcher per lineup)
-- **Stacking gate**: see `is_stack_eligible_game()` in `app/core/constants.py`
-- **Never an opposing batter in the anchor's game** — pitcher ↔ hitter negative correlation
-- Slot 1 = pitcher anchor, Slots 2-5 = batters by filter_ev descending
-
-The active optimizer produces **two lineups** from the same FADE-excluded pool via `run_dual_filter_strategy`.
-
-### EV Formula (V10.6 — env/trait + V10.6 multipliers, single source: `_compute_base_ev()`)
-```
-filter_ev = env_factor                           # PRIMARY: pitchers 0.70–1.20, batters 0.70–1.30 (V10.6 asymmetric)
-  × volatility_amplifier                         # 1 + cv × 0.20 × (env − 0.5) × 2 — V10.6 env-conditional, batters only
-  × trait_factor                                 # SECONDARY: 0.85–1.15 (1.35× swing)
-  × stack_bonus (1.20 if PATH 1 blowout favorite team, else 1.0)
-  × dnp_adj (V10.6: unknown=0.93, confirmed_bad=0.70, known_order=1.0)
-  × pitcher_pop_penalty (V10.5: 0.85 if pitcher AND FADE, else 1.0)
-  × 100
+env_factor:        floor 0.20, pitcher ceiling 1.40, batter ceiling 1.30
+volatility_amplifier: 1 + cv × 0.20 × (env − 0.5) × 2  (batters only)
+trait_factor:      floor 0.85, ceiling 1.15
+stack_bonus:       1.0 / 1.20 (PATH 1 blowout-fav teams only)
+dnp_adj:           0.70 (confirmed-bad) / 0.93 (unknown) / 1.0 (known order)
 ```
 
-**What each term uses (pre-game data only):**
-- `env_factor` (batter): Vegas O/U, opposing starter ERA, opposing starter WHIP, **opposing starter K/9 (V10.6)**, bullpen ERA, platoon advantage, batting order (graduated 1-9, top-of-order = premium), park factor, weather (wind/temp), moneyline, series context, L10 form. Caps at 1.30.
-- `env_factor` (pitcher): own K/9, opposing OPS, opposing K%, park, ML favorite, home field. Caps at 1.20 (V10.6 — pitcher 1-player dependence makes the saturation case dominate batters at 1.30).
-- `trait_factor` (pitcher): FB velocity, induced vertical break, extension, whiff %, chase % (Statcast kinematics — 70% weight); K/9 (30% weight). Falls back to K/9-only when Savant has no row yet (new call-ups).
-- `trait_factor` (batter): avg exit velocity (8 pts), hard-hit % (7), barrel % (6), max EV (2), HR/PA (2) — normalised over the POWER_PROFILE_DENOM of 25. Missing sub-signals drop out of both numerator and denominator so rookies with partial Savant coverage aren't penalised.
-- `volatility_amplifier`: V10.6 amplifies env signal in good matchups, penalises in bad. Pitchers always 1.0 (no recent_form_cv).
-- `pitcher_pop_penalty`: V10.5 — FADE-classified pitchers pay 15%; FADE batters never reach EV (excluded by `_exclude_fade_players`).
+Composition (`_enforce_composition`):
+- Build variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B.
+- For each: top-N pitchers by EV + top-(5-N) batters by EV under
+  per-team cap (1 default, 2 stack-eligible) AND anti-correlation
+  guard (no opposing batter to any drafted pitcher unless they are
+  that pitcher's teammate) AND per-game cap (2).
+- Slot-weight each variant: sort all 5 by EV desc, assign multipliers
+  2.0, 1.8, 1.6, 1.4, 1.2.  Return the highest-total variant.
+- Tiebreak: higher pitcher count wins.
 
-card_boost and draft counts **are not present on `FilteredCandidate` at all**. The optimizer is structurally incapable of reading them. The router joins them onto the response from the source `FilterCard` for display only.
+Slot 1 = highest-EV PLAYER regardless of position (rearrangement
+inequality).  Pitcher count is unconstrained (0..5 are all legal).
 
-Post-EV composition (applied in `_enforce_composition`):
-- **Phase 0:** compute `stack_eligible_teams` from `slate_class.stackable_games` (favored team in a game that cleared BOTH the moneyline AND Vegas-total gates).
-- **Pitcher anchor (Phase 1):** highest-EV pitcher selected, pinned to Slot 1. Only opposing batters in his game are blocked from batter picks.
-- **Batter fill (Phase 2):** top-4 batters by filter_ev. Teams in `stack_eligible_teams` may contribute up to 2 batters (mini-stack); every other team is capped at 1. Independent per-game cap of 2 prevents mixed-side clumps. Stacking therefore fires only on overwhelmingly clear game scripts AND is size-limited to mini-stacks.
+Trait scoring (`scoring_engine.py`) — V12.2 weights remove env
+double-counting:
+- Pitcher: ace_status 30, k_rate 35, recent_form 20, era_whip 15,
+  matchup_quality 0 (was 20 — env handles opp OPS / K%)
+- Batter: power_profile 40, recent_form 25, hot_streak 25,
+  speed_component 10, matchup_quality 0 / lineup_position 0 /
+  ballpark_factor 0 (env handles all three)
 
-### Pre-V10 Strategy Evolution (V2.2–V9.0, condensed)
+Card_boost / drafts / popularity / sharp_score: NEVER on
+`FilteredCandidate`, NEVER inputs to env or trait scoring.  Banned at
+the dataclass level; enforced by `scripts/audit_live_isolation.py`.
 
-Earlier versions are superseded by the V10.x architecture above; the changelog narrative is preserved here in compact form for future-Claude context. **Active semantics live in code + constants.py + V10.x sections; nothing below is load-bearing.**
+Key functions:
+- `run_filter_strategy(candidates, slate_class) → FilterOptimizedLineup`
+- `_compute_base_ev(candidate) → float` — single source of EV truth
+- `_enforce_composition(candidates, slate_class) → list` — V12 variant chooser
+- `_build_variant(n_pitchers, sorted_pitchers, sorted_batters, ...)` — single shape
+- `_lineup_total_ev(lineup) → float` — slot-weighted total for variant comparison
+- `_smart_slot_assignment(lineup) → slots` — sort-by-EV, assign multipliers desc
+- `_team_batter_cap(team, eligible) → int` — 2 for stack-eligible, 1 otherwise
 
-- **V2.2–V3.4 (Apr 6–12):** explored graduated penalties, Bayesian DEAD_CAPITAL floors, percentile ownership tiers, dynamic pitcher cap (1/2/3 based on boosted-pool richness), three-tier lineup construction, correlation bonuses, draft-scarcity tiebreakers, and pitcher-specific FADE moderation. April 11 post-mortem (Suarez/Sheehan/Bassitt chalk+3x sweeping ghost+max_boost) showed the dynamic pitcher cap was insufficient — the boost-tier × pitcher-pool × spot-bias interaction needed structural redesign.
-- **V5.0 (Apr 13 — pitcher-anchor):** locked composition at 1 SP + 4 batters with pitcher pinned to Slot 1 (2.0×). Retired `compute_dynamic_pitcher_cap()` and the Slot 1 Differentiator contrarian swap. Constants `REQUIRED_PITCHERS_IN_LINEUP = 1` and `PITCHER_ANCHOR_SLOT = 1` come from here.
-- **V8.0 (Apr 14 — signal hierarchy):** introduced env/trait/popularity modifier bands. `ENV_MODIFIER 0.70–1.30`, `TRAIT_MODIFIER 0.85–1.15` (still active). Pitcher moneyline added to env. Batter env restructured into Groups A (run env, capped) / B (situation) / C (venue). Batting order replaced top-5 cliff with graduated scale (still active).
-- **V8.1 (Apr 15 — environment enrichment + production hardening):** added bullpen ERA via new `get_team_pitching_stats`; series/H2H context (Group D ±0.8); Vegas lines as a *required* enrichment (later promoted to fatal-on-failure under "Vegas Lines: Required, Never Optional"). Cache restart guard so post-T-65 dyno restarts call `lineup_cache.restore_and_refreeze()` instead of regenerating. Module-level loggers + `NON_PLAYING_GAME_STATUSES` extracted to constants.
-- **V9.0 (Apr 16 — FADE gate replaces popularity multiplier):** retired `pop_factor` as an EV multiplier. FADE players are now *excluded* from the candidate pool before EV is computed (`_exclude_fade_players`); TARGET and NEUTRAL flow through identically. Removed `RS_CONDITION_MATRIX` and `condition_classifier`'s outcome-observation logic.
-
-The V10 sections above describe the current architecture in full.
-
-### Lineup Construction (V10.5 — EV-Driven Composition + Game-Script-Gated Mini-Stack)
-Each lineup is either **1 SP + 4 batters** or **0 SP + 5 batters** — the EV-driven chooser in `_enforce_composition` (and `_build_best_variant` inside `run_dual_filter_strategy`) builds both variants and returns the higher slot-weighted total. Tiebreak goes to the pitcher variant (conservative default; preserves V5.0 pitcher-anchor identity unless 5B truly dominates). Stacking gates and per-team / per-game caps apply identically to both variants.
-
-1. **Stack-eligibility (Phase 0)**: compute the set of teams whose game satisfies both gates, from `slate_class.stackable_games`.
-2. **Pitcher anchor (Phase 1, anchored variant only)**: pick the highest-EV pitcher (by pre-game EV: Statcast FB velo/IVB/extension/whiff/chase + opponent K%/OPS + park + home + moneyline). Pin to Slot 1 (`PITCHER_ANCHOR_SLOT = 1`, 2.0× multiplier). Block **only opposing batters in his game** (pitcher ↔ hitter negative correlation). Teammates of the anchor are allowed (within caps).
-3. **Fill batter slots (Phase 2)**: anchored variant fills 4 batter slots; pure-batter variant fills 5. Both sort by filter_ev descending; per-team batter cap is `MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE` (2) for stack-eligible teams, `MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT` (1) for all others; independent per-game cap is `MAX_PLAYERS_PER_GAME_BATTERS` (2).
-4. **EV chooser (Phase 3)**: `_lineup_total_ev` computes slot-weighted total for each variant; the higher one is returned. If neither variant assembles 5 candidates (degenerate pool), `_enforce_composition` raises `ValueError` — no fallback.
-
-### Lineup Validation (V10.5)
-- **Per-team batter cap varies** — 2 for stack-eligible teams, 1 for all others
-- **Per-game batter cap always 2** — prevents mixed-side 4-batter clumps
-- **No opposing batter in the anchor's game** — anti-correlation guard (only applies in anchored variant; pure-batter variant has no such restriction)
-- **At most 1 pitcher** (`REQUIRED_PITCHERS_IN_LINEUP = 1` is now interpreted as the *upper bound*) — `_validate_lineup_structure` warns if `pitcher_count > 1`. 0 (pure-batter) and 1 (anchored) are both legal.
-
-### Slate Classification (informational only — does NOT force composition)
-- Classification exists for blowout detection and display only
-- **No slate type forces pitcher/hitter counts.**
-
-**Moonshot** — V10.1: draws from the same FADE-excluded pool as Starting 5. Player overlap is allowed.
-- Same structural shape: **1 SP anchor in Slot 1 + 4 batters in Slots 2–5** with the same conditional stacking gate
-- Only the anchor's opposing game-side is blocked from batter picks
-- **No contrarian multipliers** — FADE players excluded at the gate, not penalised in EV
-- Sharp signal bonus: up to +35% EV from underground analyst buzz (Reddit, FanGraphs, Prospects Live)
-- Explosive bonus: up to +20% EV from power_profile (batters) or k_rate (pitchers)
-- Natural formula divergence (sharp × explosive re-ranks candidates differently from env × trait alone)
-
-**Key functions (filter_strategy.py):**
-- `run_filter_strategy()` — Starting 5 (V10.1: env/trait EV, pitcher-anchor, gated stacking)
-- `run_dual_filter_strategy()` — One call, two lineups from same FADE-excluded pool
-- `_exclude_fade_players()` — Hard gate: removes FADE candidates before EV, raises ValueError if no pitchers remain
-- `_compute_base_ev()` — Shared formula: env × trait × context × 100
-- `_compute_filter_ev()` — Starting 5 EV (delegates to `_compute_base_ev`)
-- `_compute_moonshot_filter_ev()` — Moonshot EV (delegates to `_compute_base_ev` + sharp/explosive bonuses)
-- `_compute_dnp_adjustment()` — Bifurcated DNP risk (V10.6: unknown=0.93, confirmed_bad=0.70)
-- `_compute_stack_eligible_teams()` — Returns the set of team abbreviations whose game clears the moneyline AND Vegas-total stacking gate
-- `_team_batter_cap()` — Returns the per-team batter cap (4 for stack-eligible, 1 otherwise)
-- `_enforce_composition()` — Phase 1 picks highest-EV pitcher; Phase 2 fills 4 batters with conditional per-team caps. Raises `ValueError` if pool has no pitcher.
-- `_validate_lineup_structure()` — Enforces per-team batter cap using `stack_eligible_teams`; blocks opposing batters in anchor's game; final pitcher-count assertion.
-- `_smart_slot_assignment()` — Pitcher → Slot 1; batters → Slots 2-5 by filter_ev descending.
-
-**Key functions (services/candidate_resolver.py):**
-- `resolve_candidates()` — Builds candidate pool from DB, scores env + traits (Statcast when available), fetches web-scraped popularity (no platform ownership sources)
-
-**Key functions (core/statcast.py):**
-- `get_batter_kinematics(mlb_id, season)` — avg/max exit velocity, hard-hit %, barrel % from Baseball Savant
-- `get_pitcher_kinematics(mlb_id, season)` — FB velocity, induced vertical break, extension, whiff %, chase % from Baseball Savant
+Statcast helpers (`app/core/statcast.py`):
+- `get_batter_kinematics(mlb_id, season)` — exit velo, hard-hit%, barrel%
+- `get_pitcher_kinematics(mlb_id, season)` — FB velo, IVB, whiff%, chase%
 
 ## API Structure (6 routers under `/api/`)
 
@@ -1086,56 +1032,70 @@ Each lineup is either **1 SP + 4 batters** or **0 SP + 5 batters** — the EV-dr
 8. **is_highest_value / is_most_popular flags are retrospective labels.** Never use them as inputs to prediction or optimization — that is a data leak. They reflect post-hoc outcomes only.
 9. **No guessing MLB IDs.** If a player name search returns no exact team match, return `None` — never assign the first result as a fallback. Wrong MLB IDs corrupt all downstream stats.
 
-## Strategy: V2 "Anchor, Differentiate, Stack" (Master Strategy Document)
+## Strategy (V12.2)
 
-Full document (V2) is the authoritative reference. Key mechanics for any AI working on this codebase:
-
-### The Formula is Additive (Proven)
+### The scoring formula
 ```
 Player Slot Value = RS × (slot_multiplier + card_boost)
 ```
-Not multiplicative. Proven from historical data. This means:
-- Unboosted player: Slot 1 → Slot 5 = **67% value loss** (2.0x → 1.2x)
-- 3.0x boosted player: Slot 1 → Slot 5 = **16% value loss** (5.0x → 4.2x)
-- Implication (V5.0): Slot 1 is reserved for the anchor pitcher. Among batters in Slots 2–5, unboosted batters take the highest available slot (Slot 2 first) and boosted batters tail into the lower slots since they are more slot-flexible.
+Additive (proven from historical data).  Slot multipliers are 2.0, 1.8, 1.6,
+1.4, 1.2.  Boost (0.0 - 3.0) is revealed only at draft time and is NEVER
+a model input.
 
-### The Five Filters (Sequential)
+### What the model ranks on (env signals — audit-validated)
 
-**Filter 1 — Slate Classification** (informational only — does NOT force composition)
-- Tiny (1-3 games): candidate for blowout stacking (if detected)
-- Pitcher Day (4+ quality SP matchups): indicates pitcher environmental advantage
-- Hitter Day (5+ games with O/U ≥ 9.0): indicates hitter environmental advantage
-- Standard (10+ games, mixed): no special classification
-- Classification is used for blowout detection and display only. Pure EV ranking determines actual composition. `SLATE_COMPOSITION` was removed in V2.1.
+**Batter env** (compute_batter_env_score):
+- Opposing starter ERA — STRONGEST signal (+23pp HV swing across quartiles)
+- Opposing starter WHIP (independent of ERA in the corners)
+- Wind speed ≥10 mph + OUT direction
+- Park HR factor (modest for batters)
+- Underdog ML premium (ML +100+ produces MORE HV than heavy favorites)
+- Batting order (top-of-order PA volume premium)
+- Temperature ≥75°F
+- Platoon advantage
 
-**Filter 2 — Popularity / Crowd-Avoidance (PRIMARY EV SIGNAL — V8.0)**
-- **This is the dominant filter.** The crowd is structurally wrong about batters.
-- FADE = high media attention → **PRIMARY penalty (3.0× swing in V8.0)**. FADE batters average RS 0.98, HV rate 9.6%. Raw matrix factor 0.275 → scaled to 0.50× in EV.
-- TARGET = low media attention → **PRIMARY bonus**. TARGET batters average RS 3.57, HV rate 73.6%. Raw matrix factor 1.00 → scaled to 1.50× in EV.
-- NEUTRAL = moderate buzz → interpolated at 0.65 raw → ~1.0× in EV.
-- Pitcher differential is smaller (1.4×): TARGET pitcher RS 4.36 vs FADE pitcher RS 3.09. Crowd is less wrong about pitchers because pitcher outcomes are one-player-dependent.
-- Source: Google Trends, ESPN RSS, Reddit — **NOT** DFS platform ownership (during-draft only).
-- draft counts and card boosts are NOT available pre-game and are NOT EV inputs.
-- **Key principle: no amount of environmental advantage rescues a FADE batter from RS ~1.0.**
+Removed dead/inverted signals: Vegas O/U, opp K/9, bullpen ERA, heavy-fav
+ML positive bonus, L10 momentum, series leading/trailing, opp rest days,
+compound park × temp.
 
-**Filter 3 — Environmental Advantage (SECONDARY — pre-game data only)**
-- Pitchers: weak opponent OPS (graduated 0.780→0, 0.650→1.0), high opponent K% (graduated 0.20→0, 0.26→1.0), high K/9 (graduated 6.0→0, 10.0→1.0), pitcher-friendly park (graduated 1.05→0, 0.90→1.0), **moneyline favorite (graduated -110→0, -250→1.0 — Win bonus probability)**, home field (+0.5)
-- Batters: correlated run-environment signals (O/U, opposing ERA, moneyline, bullpen ERA) are **grouped and capped at 2.0** to prevent redundancy inflation. Independent signals: platoon advantage, batting order (graduated 1-9 with neutral baseline for unknowns), park + weather.
-- All thresholds are graduated (linear interpolation) — no hard cliffs on April sample sizes.
-- env_score > 0.5 = passes. Stored on SlatePlayer. If a field is NULL, scoring defaults to neutral — not fabricated.
+**Pitcher env** (compute_pitcher_env_score):
+- Moneyline PEAK at mild fav (-180 to -120 — HV 37.5% vs heavy fav 14.5%)
+- Vegas O/U INVERSE (low total = pitcher game)
+- Park HR factor (pitcher-friendly)
+- K/9 talent (modest bonus)
+- ERA tail (small lever, not primary — small sample noise)
+- Opp team OPS tail
 
-**Filter 4 — Individual Explosive Traits (TERTIARY, V10.0 Statcast-driven)**
-- Batter power upside: avg exit velocity ≥ 92 mph, hard-hit % ≥ 50%, barrel % ≥ 15%, max EV ≥ 112 mph → elevated `power_profile` score (strategy doc §"Offensive Engine" — distance multiplier).
-- Pitcher K upside: FB velocity ≥ 97 mph, induced vertical break ≥ 17 in, extension ≥ 6.5 ft, whiff % ≥ 32%, chase % ≥ 35% → elevated `k_rate` score (strategy doc §"Induced Vertical Break").
-- Speed upside: SB pace ≥ 30/season → elevated `speed_component` score.
-- These flow through the trait_factor (secondary signal, 0.85–1.15) — they break ties within the same pop+env tier.
+Removed: opp team K%, heavy-favorite monotonic ML reward, home-field flat
++0.5 (no audit separation).
 
-**Filter 5 — Slot Sequencing (V10.5 EV-driven shape + gated mini-stack)**
-- **Slot 1 (2.0×) is the highest-EV candidate** — the pitcher in the anchored variant, the highest-EV batter in the pure-batter variant.
-- Remaining slots are batters, ordered by filter_ev descending. Per-team cap is 2 for stack-eligible teams (moneyline ≤ −200 AND O/U ≥ 9.0), otherwise 1. Per-game cap is always 2.
+### What the model ranks on (trait signals)
 
-### EV-Driven Composition (V10.5): 0P+5B or 1P+4B, Mini-Stacks Only When Overwhelmingly Clear
-Each lineup is either 1 pitcher + 4 batters or 0 pitcher + 5 batters — `_enforce_composition` builds both variants and returns the higher slot-weighted total EV. The pitcher (when present) is the best-condition pre-game SP. Batters are the highest-EV picks honouring the dual caps — at most 2 from any one team (only on stack-eligible game scripts), at most 2 from any one game, 1 per team otherwise. Opposing batters in the anchor's game are never drafted (anchored variant only).
+V12.2 trait weights remove env double-counting.  Active weights:
+- Pitcher: ace_status 30 + k_rate 35 + recent_form 20 + era_whip 15
+- Batter: power_profile 40 + recent_form 25 + hot_streak 25 + speed 10
+
+Zero-weighted (because env captures them): pitcher matchup_quality, batter
+matchup_quality / lineup_position / ballpark_factor.
+
+### Composition (V12 multi-pitcher variants)
+
+Builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B.  For each:
+top-N pitchers + top-(5-N) batters by EV under per-team cap (1 default,
+2 stack-eligible) AND anti-correlation guard (no opposing batter to
+any drafted pitcher unless teammate) AND per-game cap (2).  Slot-weights
+each variant by sorting all 5 by EV descending and assigning slot
+multipliers 2.0 → 1.2.  Returns the highest-total variant.
+
+### Stack eligibility (`is_stack_eligible_game`)
+
+PATH 1 (favored side only, earns +20% STACK_BONUS): moneyline ≤ -200 AND
+O/U ≥ 9.0.  PATH 2 (both sides eligible, no bonus): O/U ≥ 10.5.  Every
+other team is capped at 1 batter.
+
+### Slot sequencing
+Slot 1 (2.0×) → highest-EV PLAYER (pitcher or batter).  Slots 2-5 by EV
+descending.  Rearrangement inequality: best player in best slot.
 
 ## Deployment
 

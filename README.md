@@ -39,14 +39,14 @@ See CLAUDE.md § "T-65 Sniper Architecture" for complete timing details.
 
 1. **Collect** (`app/services/data_collection.py`) — Fetch fresh MLB schedule, player stats, game context, Vegas lines, and **RotoWire expected lineups** for batting-order enrichment (see V10.3 below)
 2. **Score** (`app/services/scoring_engine.py`) — Rate each player 0-100 via trait-based profiling (pitchers: 5 traits, batters: 7 traits)
-3. **Filter** (`app/services/filter_strategy.py`) — Apply V11.0 strategy: score env/trait EV (Statcast kinematics + xStats + opp-K/9 batter penalty + opp-arsenal-effectiveness + ±5% catcher-framing scaling on pitcher k_rate + opp-back-to-back bonus), enforce composition rules with two-path stacking. Pitcher env capped 20% tighter than batter env so favorite-team starters don't auto-stuff the top-10. **V11.0 removed popularity scraping entirely** — no more FADE/TARGET/NEUTRAL gating, no Moonshot, no sharp_score. Pure env + trait ranking.
-4. **Optimize** (`app/routers/filter_strategy.py` → `run_filter_strategy`) — Produce a single lineup (1P+4B or 0P+5B chosen by total EV), freeze in cache
+3. **Filter** (`app/services/filter_strategy.py`) — Apply V12.2 strategy: env scoring rebuilt from a 35-slate quartile audit against actual HV outcomes; only audit-validated signals are scored (opp ERA, opp WHIP, wind speed, park HR, ML mild-fav peak for pitchers, ML underdog premium for batters, etc.). Trait scoring rebalanced to remove env double-counting. Pitcher env ceiling 1.40, batter ceiling 1.30, env floor 0.20 for signal discrimination.
+4. **Optimize** (`app/routers/filter_strategy.py` → `run_filter_strategy`) — Build variants 0P+5B / 1P+4B / 2P+3B / 3P+2B / 4P+1B / 5P+0B, return the highest slot-weighted EV. Slot 1 (2.0×) goes to highest-EV player regardless of position. Freeze in cache.
 
 The primary optimization path is `filter_strategy`. The `/api/pipeline/*` manual endpoints exist for post-slate testing only and are gated to prevent mid-slate interference.
 
 ### Philosophy
 
-It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor). V11.0 removed all popularity-based gating: don't favor popular players, don't fade unpopular ones either. Just predict high-value performers from env + trait. V10.6 capped pitcher env tighter than batter env (1.20× vs 1.30×) so favorite-team starters don't auto-saturate the top-10; opposing-starter K/9 is a Group A signal so high-K aces correctly suppress opposing-batter contact floors. V10.7 removed three INVERTED signals — heavy-favorite pitcher ML, team L10 momentum, and series lead — that were pushing the model in the wrong direction. **Historical stats are reference data only — they never feed the live scoring pipeline directly. card_boost and drafts are revealed during the draft and never reach the optimizer.**
+It's not a machine learning model — it's a **rule-based scoring engine** backed by live API data. The goal is to **win drafts**, not predict Real Score. RS is opaque — the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor). V12 rebuilt env scoring from a 35-slate audit against actual HV outcomes — every dead or inverted signal got deleted, only audit-validated signals are scored. The model is popularity-agnostic: don't favor popular players, don't fade unpopular ones either. Multi-pitcher variants (0P-5P) replaced the V11 0P/1P-only constraint that was structurally barring 57% of empirical winning shapes. Slot 1 goes to the highest-EV player regardless of position. **Historical stats are reference data only — they never feed the live scoring pipeline directly. card_boost and drafts are revealed during the draft and never reach the optimizer.**
 
 Stacking (multiple batters from the same team) is powerful but correlated. V10.2 unlocks a **mini-stack** (cap 2 per team, cap 2 per game) via two paths:
 - **PATH 1** — `moneyline ≤ -200` AND `vegas_total ≥ 9.0` (favored side only, earns +20% STACK_BONUS)
@@ -64,25 +64,25 @@ See `app/core/rotowire.py` for the parser and `app/services/data_collection.py::
 
 ## Scoring Engine
 
-### Pitcher Traits (5 traits, 0-100 total)
-| Trait | Default Weight | What It Measures |
+### Pitcher Traits (V12.2 — env double-counters zeroed; weights sum to 100)
+| Trait | Weight | What It Measures |
 |---|---|---|
-| ace_status | 25 | ERA-based rotation rank proxy |
-| k_rate | 25 | **Statcast (FB velo / IVB / extension / whiff% / chase% — 70% weight) + K/9 (30%)**. V10.8 applies a small ±5% scaling based on the pitcher's team catcher-framing aggregate (TruMedia: 3.9% K-rate per framing run; capped conservatively for 2026 ABS era). |
-| matchup_quality | 20 | Opponent offensive weakness |
-| recent_form | 15 | Last 3 starts quality |
-| era_whip | 15 | **V10.8: live ERA (45%) + WHIP (30%) + xERA (25%)** — xERA flags regression candidates when live ERA disagrees with Statcast expected ERA |
+| ace_status | 30 | ERA-based rotation rank proxy |
+| k_rate | 35 | **Statcast (FB velo / IVB / extension / whiff% / chase% — 70%) + K/9 (30%)**. ±5% catcher-framing scaling (TruMedia: 3.9% K-rate per framing run; conservative for 2026 ABS era). |
+| matchup_quality | 0 | (V12.2 zeroed — env_factor handles opp OPS / K%, double-count) |
+| recent_form | 20 | Last 3 starts quality |
+| era_whip | 15 | live ERA (45%) + WHIP (30%) + xERA (25%) |
 
-### Batter Traits (7 traits, 0-100 total)
-| Trait | Default Weight | What It Measures |
+### Batter Traits (V12.2 — env double-counters zeroed; weights sum to 100)
+| Trait | Weight | What It Measures |
 |---|---|---|
-| power_profile | 25 | **avg EV (7 pts) / hard-hit% (7) / barrel% (6) / V10.8 xwOBA (4) / max EV (1)** — xwOBA is Statcast expected wOBA, the contact-quality leading indicator |
-| matchup_quality | 20 | Opposing pitcher weakness — opp ERA (30%), opp WHIP (18%), hand-split OPS (27%), V10.6 K-vulnerability (15%, batter K% × opp K/9 cross-penalty for the 0-for-4-with-3K floor), **V10.8 arsenal effectiveness (10%, opp xwOBA-against — captures how well the pitcher's overall arsenal suppresses contact regardless of BABIP/sequencing luck)**. Sub-signals fall through cleanly when missing (rookie batter no PA, opp pitcher no Savant row). |
-| lineup_position | 15 | Batting order (slots 1-4 = equal max) |
-| recent_form | 15 | Last 7 games production |
-| ballpark_factor | 10 | Home park HR factor |
-| hot_streak | 10 | Multi-hit games in last 3 |
-| speed_component | 5 | Stolen base pace |
+| power_profile | 40 | avg EV (7) / hard-hit% (7) / barrel% (6) / xwOBA (4) / max EV (1) — boosted from 25 to absorb deleted matchup/park weight |
+| matchup_quality | 0 | (V12.2 zeroed — env_factor handles opp ERA / WHIP, double-count) |
+| lineup_position | 0 | (V12.2 zeroed — env_factor handles batting_order, double-count) |
+| recent_form | 25 | Last 7 games production |
+| ballpark_factor | 0 | (V12.2 zeroed — env_factor handles park HR / wind / temp, double-count) |
+| hot_streak | 25 | Multi-hit games in last 3 |
+| speed_component | 10 | Stolen base pace |
 
 The scoring engine outputs a **0-100 ranking signal**, not an RS prediction.
 
@@ -106,41 +106,30 @@ Every live-data fetch path used by the T-65 pipeline either succeeds and produce
 
 **Important:** `card_boost` is revealed during/after the draft and is **structurally absent from `FilteredCandidate`** — the optimizer cannot read it even by accident. League-average defaults (ERA, WHIP, OPS, K%) and all scaling thresholds are centralized in `app/core/constants.py`. Env-score functions use shared `graduated_scale()` helpers in `app/core/utils.py`.
 
-## Popularity (V11.0: REMOVED)
+## Optimizer (V12.2)
 
-V11.0 removed all popularity scraping (Google Trends, ESPN/MLB RSS, Reddit, FanGraphs) and the FADE/TARGET/NEUTRAL gating system. The previous version excluded high-media-attention batters and applied a soft penalty to high-attention pitchers; both are gone. The optimizer is now **popularity-agnostic** — it doesn't favor popular players, doesn't fade unpopular ones either. The scoring rule is "predict high-value performers from env + trait alone".
-
-Why: web-scraped popularity proved to be a noisy proxy for "what the crowd thinks", and the FADE gate was actively distorting ranking toward contrarian picks even when env + trait disagreed (e.g., excluding Ohtani / Yamamoto / Fried because they were trending on Google). The crowd-avoidance edge does not survive contact with the data once you remove the stale-feature confound.
-
-## Optimizer (V11.0)
-
-The optimizer produces a **single lineup** from the ranked candidate pool. The lineup chooses its shape — **1 SP + 4 batters** (anchored) or **0 SP + 5 batters** (pure-batter shootout) — based on slot-weighted total EV.
-
-When a lineup goes 1P+4B, the anchor pitcher is the highest-EV pitcher in the pool, pinned to Slot 1 (2.0× multiplier). The anchor's `game_id` blocks opposing-batter selection — no negative correlation between the pitcher and the rest of the lineup. Anchor's teammates ARE allowed (within stack-eligibility caps). When a lineup goes 0P+5B, the highest-EV batter takes Slot 1, no anchor restrictions apply, and the same per-team / per-game caps still hold. Tiebreak goes to the pitcher variant — conservative default keeps the V5.0 anchor identity unless 5B truly dominates.
+Single lineup, multi-pitcher variants (0P-5P), audit-validated env signals.
+Slot 1 (2.0×) goes to the highest-EV PLAYER regardless of position.
 
 **EV formula:**
 
 ```
-base_ev = env_factor × volatility_amplifier × trait_factor × stack_bonus × dnp_adj × 100
+filter_ev = env_factor × volatility_amplifier × trait_factor × stack_bonus × dnp_adj × 100
 ```
 
 | Signal | Range | Role |
 |---|---|---|
-| env_factor (batters) | 0.70–1.30 | Primary — game conditions (Vegas O/U, opp ERA, opp WHIP, opp K/9, bullpen, park, weather, batting order, ML, series context, recent form) |
-| env_factor (pitchers) | 0.70–1.20 | V10.6 — tighter ceiling than batters; prevents favorite-team SP saturation from stuffing top-10 |
-| volatility_amplifier | 0.8–1.2 (batters only) | V10.6 env-CONDITIONAL boom-or-bust amplifier — high-CV hitters get +20% in good env, −20% in bad env |
-| trait_factor | 0.85–1.15 | Secondary — Statcast pitch physics (SP) or exit-velocity kinematics (batters), 0-100 scale |
+| env_factor (pitchers) | 0.20–1.40 | Primary — ML mild-fav peak, Vegas O/U inverse, park HR, K/9, ERA tail, opp OPS |
+| env_factor (batters) | 0.20–1.30 | Primary — opp ERA (strongest), opp WHIP, wind speed, park, ML underdog premium, batting order, temp, platoon |
+| volatility_amplifier | 0.8–1.2 (batters only) | env-CONDITIONAL: high-CV hitters get +20% in good env, −20% in bad env |
+| trait_factor | 0.85–1.15 | Secondary — intrinsic player talent (Statcast power_profile / k_rate), independent of env |
 | stack_bonus | 1.0 or 1.20 | PATH 1 blowout-favorite bonus (gated) |
-| dnp_adj | 0.70 / 0.93 / 1.00 | Confirmed-bad / unknown / known batting order. RotoWire (V10.4) covers ~90% of teams at T-65, so unknown is mostly "RotoWire missed this team", not "this batter isn't starting" |
+| dnp_adj | 0.70 / 0.93 / 1.00 | Confirmed-bad / unknown / known batting order |
 
-**Key optimizer behaviors:**
-- **EV-driven shape (V10.5)**: builds both a 1P+4B and a 0P+5B variant and returns the higher slot-weighted total EV. Tiebreak → pitcher variant.
-- **Pitcher anchor (when present)**: highest-EV pitcher pinned to Slot 1 (2.0×). V10.6 caps pitcher env at 1.20× so the saturation no longer crowds out batter slots.
-- **Pitcher-batter parity (V10.6)**: opposing-starter K/9 added to batter env Group A — high-K aces (≥10 K/9) zero out the contact-floor of the batters they face. Anti-aligned with the pitcher's own scoring path: the same K/9 number that earns the pitcher full env credit penalises every opposing batter.
-- **Volatility amplifier env-conditional (V10.6)**: high-CV boom-or-bust batters get amplified in good env but penalised in bad env. Boom-bust profiles in tough K-pitcher matchups correctly de-rank.
-- **Stack eligibility**: PATH 1 (ML ≤ -200 AND O/U ≥ 9.0) gives the favored side mini-stack rights + STACK_BONUS. PATH 2 (O/U ≥ 10.5) gives both sides mini-stack rights without the bonus.
-- **Per-team cap**: 2 batters from a stack-eligible team, 1 from every other team.
-- **Per-game cap**: 2 batters per game (always — prevents mixed-side clumps in a single game).
+**Composition** (multi-pitcher variant chooser):
+For each pitcher count 0..5: pick top-N pitchers + top-(5-N) batters by EV, slot-weight them all by sorting EV-descending and assigning multipliers 2.0 → 1.2. Return the variant with the highest slot-weighted total. Tiebreak: higher pitcher count wins.
+
+**Anti-correlation guard:** A batter is blocked from any game where one of our drafted pitchers plays UNLESS the batter is that pitcher's teammate. Per-team batter cap (1 default, 2 stack-eligible) and per-game cap (2) still apply.
 
 ## Strategy Insights — what 33 slates of data tell us
 
