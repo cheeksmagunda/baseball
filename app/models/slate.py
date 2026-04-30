@@ -129,13 +129,6 @@ class SlatePlayer(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     slate_id: Mapped[int] = mapped_column(Integer, ForeignKey("slates.id"), nullable=False, index=True)
     player_id: Mapped[int] = mapped_column(Integer, ForeignKey("players.id"), nullable=False, index=True)
-    card_boost: Mapped[float] = mapped_column(Float, default=0.0)
-    drafts: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    real_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    total_value: Mapped[float | None] = mapped_column(Float, nullable=True)
-    is_highest_value: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_most_popular: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_most_drafted_3x: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Pre-game filter fields (§4.2 Filters 2-4, §5.2)
     batting_order: Mapped[int | None] = mapped_column(Integer, nullable=True)

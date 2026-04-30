@@ -57,12 +57,3 @@ class SlateOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class PlayerResultIn(BaseModel):
-    """A single player's post-game result."""
-    player_name: str
-    real_score: float
-
-
-class SlateResultsIn(BaseModel):
-    """Post-game: upload actual RS values."""
-    results: list[PlayerResultIn]

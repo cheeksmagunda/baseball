@@ -7,7 +7,7 @@ from app.database import get_db
 from app.core.utils import find_player_by_name
 from app.models.player import Player, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
-from app.schemas.slate import SlateOut, SlatePlayerIn, SlatePlayerOut, SlateResultsIn
+from app.schemas.slate import SlateOut, SlatePlayerIn, SlatePlayerOut
 
 router = APIRouter()
 
@@ -133,34 +133,3 @@ def add_slate_players(
 
     db.commit()
     return results
-
-
-@router.put("/{slate_date}/results")
-def update_slate_results(
-    slate_date: date,
-    body: SlateResultsIn,
-    db: Session = Depends(get_db),
-):
-    """Post-game: upload actual RS values for a completed slate."""
-    slate = db.query(Slate).filter_by(date=slate_date).first()
-    if not slate:
-        raise HTTPException(404, "Slate not found")
-
-    updated = 0
-    for result in body.results:
-        player = find_player_by_name(db, result.player_name)
-        if not player:
-            continue
-
-        sp = (
-            db.query(SlatePlayer)
-            .filter_by(slate_id=slate.id, player_id=player.id)
-            .first()
-        )
-        if sp:
-            sp.real_score = result.real_score
-            updated += 1
-
-    slate.status = "completed"
-    db.commit()
-    return {"updated": updated}
