@@ -584,19 +584,16 @@ class FilteredCandidate:
 
     ========================================================================
     STRUCTURAL ISOLATION: card_boost, drafts, and popularity are NEVER
-    present on this dataclass.  card_boost / drafts are unknowable
-    pre-draft; popularity was removed in V11.0.  Removing them entirely
-    (instead of marking them "display only") makes the "no ownership /
-    boost / popularity signals in pre-game prediction" rule enforceable
-    by static grep.  The router layer reads card_boost and drafts straight
-    from the source FilterCard for display purposes.
+    present on this dataclass.  Trying to construct a FilteredCandidate
+    with any of those kwargs raises TypeError — enforced by
+    tests/test_invariants.py and scripts/audit_live_isolation.py.  None
+    of those signals is knowable pre-draft, so none belongs in the
+    pre-draft EV path.
     ========================================================================
 
     EV is computed from pre-game signals only:
       env_score   — Vegas O/U, opposing ERA/bullpen, park, weather, platoon, batting order
       total_score — season-level trait quality (K/9, ISO, barrel%, speed, recent form)
-
-    See CLAUDE.md § "Signal Isolation: ABSOLUTE RULE" for full rationale.
     """
     player_name: str
     team: str

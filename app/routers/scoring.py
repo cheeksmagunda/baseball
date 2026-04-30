@@ -20,14 +20,7 @@ def score_single_player(
     team: str | None = None,
     db: Session = Depends(get_db),
 ):
-    """Score a single player on demand.
-
-    V11.0: card_boost is no longer accepted as a request parameter.  It's
-    revealed only during the draft, so any pre-draft scoring endpoint that
-    accepted it was leaking an outcome signal into the rank.  The endpoint
-    now returns the intrinsic player score; downstream display can apply
-    boost math when the user actually reveals their cards.
-    """
+    """Score a single player on demand.  Returns the intrinsic 0-100 trait score."""
     player = find_player_by_name(db, player_name, team)
 
     if not player:
@@ -54,12 +47,7 @@ def score_single_player(
 
 @router.post("/slate/{slate_date}", response_model=SlateRankingsOut)
 def score_slate(slate_date: date, db: Session = Depends(get_db)):
-    """Score all players for a slate. Stores results and returns rankings.
-
-    V11.0: rankings are intrinsic player scores only.  No card_boost or
-    EV math — those are post-draft (or post-slate, for stored values)
-    concerns and don't belong in a pre-game scoring endpoint.
-    """
+    """Score all players for a slate.  Stores results and returns intrinsic rankings."""
     results = run_score_slate(db, slate_date)
     if not results:
         raise HTTPException(404, "No slate or players found for this date")
@@ -92,13 +80,7 @@ def score_slate(slate_date: date, db: Session = Depends(get_db)):
 
 @router.get("/{slate_date}/rankings", response_model=SlateRankingsOut)
 def get_cached_rankings(slate_date: date, db: Session = Depends(get_db)):
-    """Get previously computed rankings for a slate.
-
-    V11.0: returns intrinsic player scores only.  Historical card_boost
-    values live on SlatePlayer for ingest / leaderboard reconstruction
-    (app/seed.py uses them to compute total_value for `historical_players.csv`),
-    but they are not surfaced through the live scoring API.
-    """
+    """Get previously computed rankings for a slate.  Intrinsic scores only."""
     slate = (
         db.query(Slate)
         .options(

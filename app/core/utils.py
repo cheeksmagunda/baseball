@@ -6,18 +6,8 @@ from app.models.player import Player, PlayerGameLog, normalize_name
 from app.models.scoring import PlayerScore
 
 
-# ---------------------------------------------------------------------------
-# Total Value calculation — THE core formula for Real Sports DFS
-# total_value = real_score × (2 + card_boost)
-# This is NOT traditional DFS. The base multiplier is always 2.
-# ---------------------------------------------------------------------------
-
+# Slot-1 multiplier (used to normalise slot-weighted EV inside the optimizer).
 BASE_MULTIPLIER = 2.0
-
-
-def compute_total_value(real_score: float, card_boost: float) -> float:
-    """Compute total_value = real_score * (2 + card_boost)."""
-    return real_score * (BASE_MULTIPLIER + card_boost)
 
 
 # ---------------------------------------------------------------------------
