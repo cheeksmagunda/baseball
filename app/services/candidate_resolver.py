@@ -32,6 +32,8 @@ from app.models.player import Player, PlayerStats, TeamSeasonStats
 from app.schemas.filter_strategy import FilterCard, GameEnvironment
 from app.services.filter_strategy import (
     FilteredCandidate,
+    build_batter_env_kwargs,
+    build_pitcher_env_kwargs,
     compute_batter_env_score,
     compute_pitcher_env_score,
 )
@@ -295,60 +297,29 @@ async def resolve_candidates(
                 if card_name not in prob_name and prob_name not in card_name:
                     continue
 
-            opp_ops = game.away_team_ops if is_home else game.home_team_ops
-            opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
-            park_team = game.home_team.upper()
-
-            pitcher_k9 = game.home_starter_k_per_9 if is_home else game.away_starter_k_per_9
-            own_era = game.home_starter_era if is_home else game.away_starter_era
-            team_ml = game.home_moneyline if is_home else game.away_moneyline
-
             env_score, env_factors = compute_pitcher_env_score(
-                opp_team_ops=opp_ops,
-                opp_team_k_pct=opp_k_pct,
-                pitcher_k_per_9=pitcher_k9,
-                park_team=park_team,
-                is_home=is_home,
-                team_moneyline=team_ml,
-                vegas_total=game.vegas_total,
-                own_starter_era=own_era,
+                **build_pitcher_env_kwargs(game, is_home)
             )
             env_unknown_count = 0  # confirmed starters; env data is reliable
+
+            # The post-resolve append needs these for downstream display.
+            series_team_w = game.series_home_wins if is_home else game.series_away_wins
+            series_opp_w = game.series_away_wins if is_home else game.series_home_wins
+            team_l10 = game.home_team_l10_wins if is_home else game.away_team_l10_wins
         else:
             is_home = game.home_team.upper() == card.team.upper()
-            opp_era = game.away_starter_era if is_home else game.home_starter_era
-            opp_whip = game.away_starter_whip if is_home else game.home_starter_whip
-            opp_k9 = game.away_starter_k_per_9 if is_home else game.home_starter_k_per_9
-            park_team = game.home_team.upper()
-            team_ml = game.home_moneyline if is_home else game.away_moneyline
-            opp_bp_era = game.away_bullpen_era if is_home else game.home_bullpen_era
+            env_score, env_factors, env_unknown_count = compute_batter_env_score(
+                **build_batter_env_kwargs(
+                    game,
+                    is_home,
+                    platoon_advantage=card.platoon_advantage,
+                    batting_order=card.batting_order,
+                )
+            )
 
             series_team_w = game.series_home_wins if is_home else game.series_away_wins
             series_opp_w = game.series_away_wins if is_home else game.series_home_wins
             team_l10 = game.home_team_l10_wins if is_home else game.away_team_l10_wins
-
-            opp_rest = (
-                game.away_team_rest_days if is_home else game.home_team_rest_days
-            )
-
-            env_score, env_factors, env_unknown_count = compute_batter_env_score(
-                vegas_total=game.vegas_total,
-                opp_pitcher_era=opp_era,
-                platoon_advantage=card.platoon_advantage,
-                batting_order=card.batting_order,
-                park_team=park_team,
-                wind_speed_mph=game.wind_speed_mph,
-                wind_direction=game.wind_direction,
-                temperature_f=game.temperature_f,
-                team_moneyline=team_ml,
-                opp_bullpen_era=opp_bp_era,
-                series_team_wins=series_team_w,
-                series_opp_wins=series_opp_w,
-                team_l10_wins=team_l10,
-                opp_starter_whip=opp_whip,
-                opp_starter_k_per_9=opp_k9,
-                opp_team_rest_days=opp_rest,
-            )
 
         game_id = card.game_id or game.game_id
 

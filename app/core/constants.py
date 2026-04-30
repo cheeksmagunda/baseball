@@ -528,9 +528,16 @@ def _validate_constants() -> None:
         f"SCORING_FB_IVB: floor ({SCORING_FB_IVB_FLOOR}) must be < ceiling ({SCORING_FB_IVB_CEILING})"
     )
 
-    # Slot multipliers must sum to a positive total
+    # Slot multipliers must sum to a positive total and Slot 1 must equal
+    # BASE_MULTIPLIER (the formula's slot-1 anchor — used by
+    # _lineup_total_ev to slot-weight variants).  Drift here would break
+    # the EV math silently.
+    from app.core.utils import BASE_MULTIPLIER
     assert sum(SLOT_MULTIPLIERS.values()) > 0, "SLOT_MULTIPLIERS must have positive values"
     assert SLOT_MULTIPLIERS[1] > SLOT_MULTIPLIERS[5], "Slot 1 must have the highest multiplier"
+    assert SLOT_MULTIPLIERS[1] == BASE_MULTIPLIER, (
+        f"SLOT_MULTIPLIERS[1]={SLOT_MULTIPLIERS[1]} must equal BASE_MULTIPLIER={BASE_MULTIPLIER}"
+    )
 
     # Park factors: must have at least one entry; COL should be the highest
     assert len(PARK_HR_FACTORS) >= 30, "PARK_HR_FACTORS missing teams"

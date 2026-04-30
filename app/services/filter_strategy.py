@@ -414,6 +414,65 @@ def compute_pitcher_env_score(
     return env_score, factors
 
 
+# ---------------------------------------------------------------------------
+# Env-score input builders — single source of truth for what signals each
+# env function consumes from a SlateGame.  Both candidate_resolver.py (the
+# T-65 live path) and pipeline.py:run_filter_strategy_from_slate (the manual
+# post-slate analysis path) call these — DO NOT inline the home/away
+# resolution at the call site.  Adding a new signal to compute_*_env_score
+# means adding the kwarg here once, and both pipelines pick it up.
+# ---------------------------------------------------------------------------
+
+def build_pitcher_env_kwargs(game, is_home: bool) -> dict:
+    """Resolve every (home_X / away_X) pair on a SlateGame for the pitcher's
+    side and return the kwargs for compute_pitcher_env_score(**...)."""
+    other = "away" if is_home else "home"
+    side = "home" if is_home else "away"
+    return {
+        "opp_team_ops": getattr(game, f"{other}_team_ops"),
+        "opp_team_k_pct": getattr(game, f"{other}_team_k_pct"),
+        "pitcher_k_per_9": getattr(game, f"{side}_starter_k_per_9"),
+        "park_team": (game.home_team or "").upper(),
+        "is_home": is_home,
+        "team_moneyline": getattr(game, f"{side}_moneyline"),
+        "vegas_total": game.vegas_total,
+        "own_starter_era": getattr(game, f"{side}_starter_era"),
+    }
+
+
+def build_batter_env_kwargs(
+    game,
+    is_home: bool,
+    *,
+    platoon_advantage: bool,
+    batting_order: int | None,
+) -> dict:
+    """Resolve every (home_X / away_X) pair on a SlateGame for the batter's
+    side and return the kwargs for compute_batter_env_score(**...).
+    The two per-batter inputs (platoon_advantage + batting_order) come from
+    the caller because they're player-specific, not game-symmetric."""
+    other = "away" if is_home else "home"
+    side = "home" if is_home else "away"
+    return {
+        "vegas_total": game.vegas_total,
+        "opp_pitcher_era": getattr(game, f"{other}_starter_era"),
+        "platoon_advantage": platoon_advantage,
+        "batting_order": batting_order,
+        "park_team": (game.home_team or "").upper(),
+        "wind_speed_mph": game.wind_speed_mph,
+        "wind_direction": game.wind_direction,
+        "temperature_f": game.temperature_f,
+        "team_moneyline": getattr(game, f"{side}_moneyline"),
+        "opp_bullpen_era": getattr(game, f"{other}_bullpen_era"),
+        "series_team_wins": getattr(game, f"series_{side}_wins"),
+        "series_opp_wins": getattr(game, f"series_{other}_wins"),
+        "team_l10_wins": getattr(game, f"{side}_team_l10_wins"),
+        "opp_starter_whip": getattr(game, f"{other}_starter_whip"),
+        "opp_starter_k_per_9": getattr(game, f"{other}_starter_k_per_9"),
+        "opp_team_rest_days": getattr(game, f"{other}_team_rest_days"),
+    }
+
+
 def compute_batter_env_score(
     vegas_total: float | None = None,             # V12: ignored — Q1 50%/Q4 47% HV, dead signal
     opp_pitcher_era: float | None = None,

@@ -101,6 +101,34 @@ def _kendall_tau(a: list[str], b: list[str]) -> float:
 # 1. Signal isolation — banned fields must never accept a value
 # ---------------------------------------------------------------------------
 
+
+def test_banned_field_lists_consistent():
+    """The banned-field set is enforced by two complementary tools:
+
+      * tests/test_invariants.py (BANNED_OUTCOME_FIELDS) — runtime structural
+        guard: FilteredCandidate's dataclass rejects these as constructor
+        args, so they cannot enter EV.
+      * scripts/audit_live_isolation.py (BANNED_FIELDS) — static grep guard:
+        scans app/services + app/routers + app/core for any literal `.field`
+        access on these names.
+
+    If the two lists drift, one tool may green while the other catches
+    a real regression — or worse, both go silent on a new banned signal.
+    Assert they cover the same set.
+    """
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+    from scripts.audit_live_isolation import BANNED_FIELDS as audit_banned
+
+    assert set(audit_banned) == BANNED_OUTCOME_FIELDS, (
+        f"banned-field lists drifted:\n"
+        f"  only in test_invariants: {BANNED_OUTCOME_FIELDS - set(audit_banned)}\n"
+        f"  only in audit script:    {set(audit_banned) - BANNED_OUTCOME_FIELDS}"
+    )
+
+
 class TestSignalIsolation:
     """V11.0: card_boost, drafts, popularity, sharp_score do not exist on
     FilteredCandidate at all.  Passing any of these to the dataclass
