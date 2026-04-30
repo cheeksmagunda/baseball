@@ -216,12 +216,16 @@ ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data
 # Env modifier bounds — PRIMARY EV signal.
 # Range: 0.70–1.30 (1.86x swing) — game conditions (Vegas O/U, ERA, bullpen,
 # park, weather, platoon, batting order, moneyline).
-ENV_MODIFIER_FLOOR = 0.40   # V12: lowered from 0.70.  Old floor compressed
-                             # the EV signal — env=0 vs env=1 was only 1.86x,
-                             # but empirical RS distribution shows top-bottom
-                             # ratio ~5x.  Lower floor lets the EV ranking
-                             # actually discriminate strong from weak matchups
-                             # so the variant chooser picks correctly.
+ENV_MODIFIER_FLOOR = 0.20   # V12.1: lowered from 0.40 (which was already cut
+                             # from V11 0.70).  Tuning sweep across 35-slate
+                             # backtest showed lower floors improve mean
+                             # slot-weighted RS without hurting beat-winner
+                             # rate (steady at 51.4% from floor 0.10-0.40).
+                             # 0.20 is the sweet spot: meaningful EV signal
+                             # spread (env=0 → 0.20 multiplier, env=1 → 1.30/1.40),
+                             # yet still floors a "no info" candidate with a
+                             # base value (so the variant chooser doesn't try
+                             # to fill slots with zero-EV stragglers).
 ENV_MODIFIER_CEILING = 1.30
 
 # V10.6 (April 28-29 evaluation): pitcher-specific env ceiling, asymmetric.
