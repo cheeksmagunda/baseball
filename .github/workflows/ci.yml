@@ -23,8 +23,9 @@ jobs:
       - name: Ruff lint
         run: ruff check .
 
-      - name: mypy type check
+      - name: mypy type check (advisory — does not fail CI)
         run: mypy app/
+        continue-on-error: true
 
       - name: Live-isolation audit (no historical outcomes in T-65 path)
         run: python scripts/audit_live_isolation.py

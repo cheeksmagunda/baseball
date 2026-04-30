@@ -453,9 +453,11 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
         game_id = sp.game_id or game.id
 
         # Compute environmental score
+        is_home = game.home_team == player.team
+        series_team_w: int | None = None
+        series_opp_w: int | None = None
+        team_l10: int | None = None
         if is_pitcher:
-            is_home = game.home_team == player.team
-
             # Only include the confirmed probable starter — same guard as the router.
             starter_mlb_id = game.home_starter_mlb_id if is_home else game.away_starter_mlb_id
             starter_name = game.home_starter if is_home else game.away_starter
@@ -471,11 +473,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             env_score, env_factors = compute_pitcher_env_score(
                 **build_pitcher_env_kwargs(game, is_home)
             )
-            series_team_w: int | None = None
-            series_opp_w: int | None = None
-            team_l10: int | None = None
         else:
-            is_home = game.home_team == player.team
             env_score, env_factors, _unknown = compute_batter_env_score(
                 **build_batter_env_kwargs(
                     game,
@@ -484,9 +482,9 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                     batting_order=sp.batting_order,
                 )
             )
-            series_team_w: int | None = game.series_home_wins if is_home else game.series_away_wins
-            series_opp_w: int | None = game.series_away_wins if is_home else game.series_home_wins
-            team_l10: int | None = game.home_team_l10_wins if is_home else game.away_team_l10_wins
+            series_team_w = game.series_home_wins if is_home else game.series_away_wins
+            series_opp_w = game.series_away_wins if is_home else game.series_home_wins
+            team_l10 = game.home_team_l10_wins if is_home else game.away_team_l10_wins
 
         # Store env_score on slate player for reference
         sp.env_score = env_score
