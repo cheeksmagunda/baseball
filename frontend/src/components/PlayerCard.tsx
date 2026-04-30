@@ -6,12 +6,9 @@ import type { FilterSlotOut } from "@/lib/types";
 import { useTeamColors } from "@/hooks/useTeamColors";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { SlotBadge } from "./SlotBadge";
-
-import { PopularityBadge } from "./PopularityBadge";
 import { EnvFactorChip } from "./EnvFactorChip";
 import { NumberTicker } from "./NumberTicker";
 import { TraitBreakdown } from "./TraitBreakdown";
-import { BoostIndicator } from "./BoostIndicator";
 import { formatScore, formatEV } from "@/lib/formatters";
 
 function StatBlock({ label, children }: { label: string; children: React.ReactNode }) {
@@ -26,10 +23,9 @@ function StatBlock({ label, children }: { label: string; children: React.ReactNo
 interface PlayerCardProps {
   slot: FilterSlotOut;
   index: number;
-  isMoonshot?: boolean;
 }
 
-export function PlayerCard({ slot, index, isMoonshot = false }: PlayerCardProps) {
+export function PlayerCard({ slot, index }: PlayerCardProps) {
   const { primary, glowShadow, gradientBg, borderColor } = useTeamColors(slot.team);
   const reduced = useReducedMotion();
 
@@ -55,14 +51,9 @@ export function PlayerCard({ slot, index, isMoonshot = false }: PlayerCardProps)
       />
 
       <div className="relative p-4 pl-5">
-        {/* Top row: slot badge + moonshot indicator */}
+        {/* Top row: slot badge */}
         <div className="flex items-center gap-2">
           <SlotBadge slotIndex={slot.slot_index} slotMult={slot.slot_mult} />
-          {isMoonshot && (
-            <span className="rounded-md bg-brand-moonshot/15 px-1.5 py-0.5 text-fluid-xs font-bold text-brand-moonshot">
-              MOONSHOT
-            </span>
-          )}
         </div>
 
         {/* Player info */}
@@ -75,7 +66,11 @@ export function PlayerCard({ slot, index, isMoonshot = false }: PlayerCardProps)
             {slot.team}
           </span>
           <span className="text-fluid-xs text-text-muted">{slot.position}</span>
-          {slot.card_boost > 0 && <BoostIndicator boost={slot.card_boost} />}
+          {slot.is_two_way_pitcher && (
+            <span className="rounded-md bg-brand-accent/15 px-1.5 py-0.5 text-fluid-xs font-bold text-brand-accent">
+              2-WAY SP
+            </span>
+          )}
         </div>
 
         {/* Score row */}
@@ -99,9 +94,8 @@ export function PlayerCard({ slot, index, isMoonshot = false }: PlayerCardProps)
           </StatBlock>
         </div>
 
-        {/* Env factors + popularity */}
+        {/* Env factors */}
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <PopularityBadge popularity={slot.popularity} />
           {slot.env_factors.slice(0, 3).map((factor, i) => (
             <EnvFactorChip key={i} factor={factor} />
           ))}

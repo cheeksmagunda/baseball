@@ -11,15 +11,13 @@ export interface FilterSlotOut {
   player_name: string;
   team: string;
   position: string;
-  card_boost: number;
   total_score: number;
   env_score: number;
   env_factors: string[];
-  popularity: "FADE" | "TARGET" | "NEUTRAL";
   filter_ev: number;
   expected_slot_value: number;
   game_id?: number | string | null;
-  drafts?: number | null;
+  is_two_way_pitcher?: boolean;
   breakdowns: TraitBreakdown[];
 }
 
@@ -41,12 +39,9 @@ export interface SlateClassificationOut {
 
 export interface FilterOptimizeResponse {
   slate_classification: SlateClassificationOut;
-  starting_5: FilterLineupOut;
-  moonshot: FilterLineupOut;
+  lineup: FilterLineupOut;
   all_candidates: unknown[];
 }
-
-export type LineupTab = "starting5" | "moonshot";
 
 export interface WaitInfo {
   phase: "before_lock" | "generating" | "initializing";

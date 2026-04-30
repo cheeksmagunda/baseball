@@ -27,7 +27,6 @@
   --color-accent: #f59e0b;
   --color-success: #10b981;
   --color-danger: #ef4444;
-  --color-moonshot: #a855f7;
 
   /* Spacing */
   --spacing-xs: 0.25rem;
@@ -83,7 +82,6 @@
   --color-brand-accent: var(--color-accent);
   --color-brand-success: var(--color-success);
   --color-brand-danger: var(--color-danger);
-  --color-brand-moonshot: var(--color-moonshot);
 
   --font-body: var(--font-body);
   --font-mono: var(--font-mono);
