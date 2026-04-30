@@ -188,12 +188,6 @@ All endpoints are under `/api/`.
 | POST | `/api/filter-strategy/classify-slate` | Classify a slate without running the optimizer |
 | GET | `/api/filter-strategy/diagnostics` | Pipeline health dashboard |
 
-### Weights
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/calibration/weights` | Get current scoring weights |
-| PUT | `/api/calibration/weights` | Update scoring weights |
-
 ### Pipeline
 | Method | Path | Description |
 |---|---|---|
@@ -235,7 +229,6 @@ app/
 │   ├── slate.py            # Slate, SlateGame, SlatePlayer
 │   ├── scoring.py          # PlayerScore, ScoreBreakdown
 │   ├── draft.py            # DraftLineup, DraftSlot
-│   └── calibration.py      # WeightHistory
 ├── schemas/                # Pydantic request/response models
 ├── routers/                # API route handlers
 └── services/

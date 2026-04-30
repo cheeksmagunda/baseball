@@ -164,7 +164,7 @@ The historical data captures outcomes of those same conditions:
 - `historical_slate_results.json` (game objects, including env fields once populated) — what the game context actually looked like. Ground truth on game conditions.
 - `historical_players.csv` — real_score and HV/MP/3X flags. Outcome labels to measure prediction quality against.
 
-The calibration loop: join game context conditions (game objects in historical_slate_results.json, enriched by `export_slate_conditions.py`) with player outcomes (real_score, HV flags from historical_players.csv) on (date, team) → see how outcomes distribute across each scoring threshold → tune `app/core/constants.py`. `scripts/calibrate_env_scoring.py` automates this join and analysis.
+The calibration loop is **manual**: Claude reads `historical_players.csv` and `historical_slate_results.json` directly, joins on (date, team), reasons about whether the live pipeline's signals would have rated each condition favorably and whether players in those conditions actually scored well, and edits `app/core/constants.py` directly when a threshold is clearly miscalibrated.  No script ever reads outcome columns (`real_score`, HV flags, `drafts`, `total_value`).
 
 ## Architecture Overview
 
@@ -584,7 +584,7 @@ python -m app.seed
 
 `matchup_quality` (V10.6) is a four-sub-signal blend: opp ERA (35%), opp WHIP (20%), batter-vs-handedness OPS split (30%), and a K-vulnerability cross-penalty (15%). The K-vuln signal multiplies a normalised batter K% (`so/pa`, floor 18% / ceiling 30%) by a normalised opp K/9 (floor 7.5 / ceiling 11.0); only the (high × high) corner fires the full penalty. This is the trait-layer answer to "0-for-4 with 3K" risk: a contact-oriented hitter is fine vs an elite K-arm because their bat-to-ball floor protects them, and a high-K hitter is fine vs a contact pitcher because the pitcher won't generate the whiffs to bury him — only the cross is dangerous. Anti-aligned with env Group A6 (opp K/9 alone): env scores the OPPORTUNITY for runs, trait scores the FLOOR for an individual batter. When sub-signals are absent (rookie batter no PA, missing K/9), the blend re-normalises across the available terms.
 
-Weights are configurable via the weights API (`GET/PUT /api/calibration/weights`).
+Weights are constants — change them in `app/core/weights.py` directly.  No runtime API, no DB persistence, no save/load: calibration is manual.
 
 **card_boost must NEVER appear in the scoring engine.** The scoring engine runs pre-game; card_boost is only revealed during/after the draft. `compute_total_value()` in `app/core/utils.py` is the only place that uses card_boost — for computing historical total_value from CSV data, not for prediction or scoring.
 
@@ -1009,7 +1009,7 @@ Statcast helpers (`app/core/statcast.py`):
 - `get_batter_kinematics(mlb_id, season)` — exit velo, hard-hit%, barrel%
 - `get_pitcher_kinematics(mlb_id, season)` — FB velo, IVB, whiff%, chase%
 
-## API Structure (6 routers under `/api/`)
+## API Structure (5 routers under `/api/`)
 
 | Router | Prefix | Purpose |
 |---|---|---|
@@ -1017,7 +1017,6 @@ Statcast helpers (`app/core/statcast.py`):
 | players | `/api/players` | Player CRUD + search |
 | slates | `/api/slates` | Slate management + draft cards + results |
 | scoring | `/api/score` | On-demand scoring + rankings (intrinsic scores only — no card_boost) |
-| calibration | `/api/calibration` | Scoring weight configuration |
 | pipeline | `/api/pipeline` | Orchestrated fetch → score → rank |
 
 ## Core Rules & Business Logic

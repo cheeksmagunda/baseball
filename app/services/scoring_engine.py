@@ -66,7 +66,7 @@ from app.core.constants import (
     UNKNOWN_SCORE_RATIO,
 )
 from app.core.utils import get_recent_games, scale_score
-from app.core.weights import ScoringWeights, get_current_weights
+from app.core.weights import ScoringWeights
 from app.models.player import Player, PlayerGameLog, PlayerStats
 
 logger = logging.getLogger(__name__)
@@ -909,7 +909,7 @@ def score_player(
     """
     from app.config import settings
 
-    weights = get_current_weights(db)
+    weights = ScoringWeights()
     stats = (
         db.query(PlayerStats)
         .filter_by(player_id=player.id, season=settings.current_season)

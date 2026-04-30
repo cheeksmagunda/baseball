@@ -11,7 +11,6 @@ from app.database import SessionLocal, init_db
 from app.models.player import Player, PlayerGameLog, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.models.draft import DraftLineup, DraftSlot
-from app.core.weights import ScoringWeights, save_weights
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
@@ -226,17 +225,8 @@ def seed_hv_game_stats(db: Session):
     db.commit()
 
 
-def seed_default_weights(db: Session):
-    """Initialize default scoring weights if none exist."""
-    from app.models.calibration import WeightHistory
-
-    existing = db.query(WeightHistory).first()
-    if not existing:
-        save_weights(db, ScoringWeights(), notes="Initial defaults from HV trait analysis")
-
-
 def run_seed(db: Session = None):
-    """Seed reference data and default configuration.
+    """Seed reference data from CSV/JSON files.
 
     Player records are NOT seeded from CSV. They are created organically by
     populate_slate_players() during the T-65 pipeline run from live MLB API
@@ -246,7 +236,7 @@ def run_seed(db: Session = None):
     PlayerGameLog records are NOT seeded from CSV. Game logs come exclusively
     from fetch_player_season_stats() via the live MLB API (source='mlb_api').
 
-    Re-ingestion workflow: the idempotency guard (WeightHistory count == 0)
+    Re-ingestion workflow: the idempotency guard (DraftLineup count == 0)
     prevents double-seeding on normal restarts. To pick up freshly-appended
     CSV rows after a new slate is ingested, delete the database first:
         rm db/ben_oracle.db && python -m app.seed
@@ -259,12 +249,10 @@ def run_seed(db: Session = None):
         close_session = True
 
     try:
-        from app.models.calibration import WeightHistory
-        if db.query(WeightHistory).count() == 0:
-            print("Seeding database (reference data + default weights)...")
+        if db.query(DraftLineup).count() == 0:
+            print("Seeding database from /data/ CSVs + JSON ...")
             seed_winning_drafts(db)
             seed_slate_results(db)
-            seed_default_weights(db)
             print("  Seed complete.")
         else:
             print("Database already seeded.")

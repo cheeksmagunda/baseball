@@ -10,7 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import settings
 from app.core.logging_config import JsonFormatter, request_id_var
 from app.database import init_db
-from app.routers import players, slates, scoring, calibration, pipeline, filter_strategy
+from app.routers import players, slates, scoring, pipeline, filter_strategy
 from app.services import app_state as _app_state
 
 
@@ -285,7 +285,6 @@ app.add_middleware(
 app.include_router(players.router, prefix="/api/players", tags=["players"])
 app.include_router(slates.router, prefix="/api/slates", tags=["slates"])
 app.include_router(scoring.router, prefix="/api/score", tags=["scoring"])
-app.include_router(calibration.router, prefix="/api/calibration", tags=["calibration"])
 app.include_router(pipeline.router, prefix="/api/pipeline", tags=["pipeline"])
 app.include_router(filter_strategy.router, prefix="/api/filter-strategy", tags=["filter-strategy"])
 
