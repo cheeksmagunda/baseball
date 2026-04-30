@@ -75,7 +75,6 @@ async def lifespan(app: FastAPI):
     from pathlib import Path
     from app.database import SessionLocal
     from app.services.slate_monitor import targeted_slate_monitor
-    from app.seed import run_seed
 
     logger = logging.getLogger(__name__)
 
@@ -199,10 +198,6 @@ async def lifespan(app: FastAPI):
                 f"CRITICAL: Redis unreachable after 5 startup attempts. "
                 f"Redis is required for cache layer — no fallback. Last error: {_redis_error}"
             )
-
-        logger.info("STARTUP STEP: running seed")
-        with SessionLocal() as db:
-            run_seed(db)
 
         logger.info("STARTUP STEP: initializing lineup cache")
         _restored = False

@@ -228,7 +228,6 @@ app/
 │   ├── player.py           # Player, PlayerStats, PlayerGameLog, TeamSeasonStats (V10.8)
 │   ├── slate.py            # Slate, SlateGame, SlatePlayer
 │   ├── scoring.py          # PlayerScore, ScoreBreakdown
-│   ├── draft.py            # DraftLineup, DraftSlot
 ├── schemas/                # Pydantic request/response models
 ├── routers/                # API route handlers
 └── services/
@@ -257,10 +256,7 @@ pip install -e ".[dev]"
 # Set environment variables (or copy .env.example → .env)
 export BO_DATABASE_URL=sqlite:///db/ben_oracle.db
 
-# Seed historical data
-python -m app.seed
-
-# Run the server
+# Run the server (DB schema is created via Alembic on startup)
 uvicorn app.main:app --reload
 
 # Run tests
@@ -281,12 +277,14 @@ New slates are added **manually** — there is no automated collector. After a s
 2. Append winning-lineup rows to `historical_winning_drafts.csv` (5 rows per lineup, target top-20 ranks).
 3. Append one slate envelope object to `historical_slate_results.json`.
 4. Append HV box-score rows to `hv_player_game_stats.csv`.
-5. Verify `total_value = real_score × (2 + card_boost)` for each player row. (Note: `card_boost` is used only for computing historical total_value — never as a scoring/prediction input.)
-6. Reload the DB: `rm db/ben_oracle.db && python -m app.seed` (the seeder is idempotency-guarded on an empty DB — there is no incremental mode).
+5. Verify `total_value = real_score × (2 + card_boost)` for each player row in the CSV (consistency check — these columns are archive metadata, never scoring inputs).
+6. Run `python scripts/validate_ingest.py --date YYYY-MM-DD` — confirms all four files are in lockstep.
+
+The DB does **not** store historical data; appending to the four files in `/data/` is the entire ingest.
 
 ## Deployment (Railway)
 
-The app includes a `Dockerfile` and `Procfile` for Railway deployment. Set `BO_DATABASE_URL` and `PORT` as environment variables. The database is seeded automatically on first startup via the lifespan hook.
+The app includes a `Dockerfile` and `Procfile` for Railway deployment. Set `BO_DATABASE_URL` and `PORT` as environment variables. The database schema is created via Alembic on first startup; only current-cycle live state is persisted.
 
 ## License
 

@@ -11,9 +11,8 @@ forbidden from reading three categories of signal:
   3. Popularity (V11.0 removed entirely): `PopularityClass`, `popularity` /
      `sharp_score` attribute reads.  Any reintroduction is a regression.
 
-Only seed.py and scripts/ may read historical-outcome fields.  Display-map
-blocks may read `card_boost` / `drafts` — they're flagged here and require
-an explicit allowed-context hint on the line.
+Only scripts/ may read historical-outcome fields.  No live runtime code
+should reference any of these symbols.
 
 This script greps the runtime code paths for any such reference.  Run it
 before deploying or as a CI gate.
@@ -131,7 +130,7 @@ def main() -> int:
         rel = path.relative_to(REPO_ROOT)
         print(f"  {rel}:{lineno}  [{field}]  {line}")
     print()
-    print("Historical outcome fields must only be read from app/seed.py or scripts/.")
+    print("Historical outcome fields must only be read from scripts/.")
     print("If this is a false positive, add an explicit allowed-context hint in")
     print("the docstring or comment on that line, or add the file to EXEMPT_FILES.")
     return 2

@@ -120,7 +120,7 @@ echo "==> Installing Ben Oracle (editable) + dev extras..."
 
 # ── 8. Smoke-test backend imports ──────────────────────────────────────────
 echo "==> Verifying app.* modules import..."
-"$PYTHON" -c "import app; import app.main; import app.seed; import app.services.filter_strategy; import app.services.scoring_engine"
+"$PYTHON" -c "import app; import app.main; import app.services.filter_strategy; import app.services.scoring_engine"
 
 # ── 9. Install frontend dependencies (reproducible via package-lock.json) ──
 echo "==> Installing frontend dependencies (npm ci)..."
@@ -189,7 +189,7 @@ echo "  pytest                         # run test suite"
 echo "  ruff check .                   # lint"
 echo ""
 echo "Data ingest (manual):"
-echo "  rm db/ben_oracle.db && python -m app.seed    # re-seed from data/ CSVs"
+echo "  python scripts/scrape_realsports_daily.py --date YYYY-MM-DD  # append to data/"
 echo "  See CLAUDE.md → 'Ingesting New Slate Data' for full workflow."
 echo ""
 echo "Prod parity: Dockerfile uses Python 3.12 + runtime deps only."
