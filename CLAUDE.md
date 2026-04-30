@@ -667,7 +667,88 @@ deleted modules.
 
 ## Optimizer (`app/services/filter_strategy.py`)
 
-**Strategy Version: V11.0 "Popularity Removed — Single Lineup, Pure Env+Trait"** — The optimizer is built exclusively from information available before any draft begins. Card boosts and platform draft counts are **not optimizer inputs and do not exist on `FilteredCandidate`**. **Popularity (FADE/TARGET/NEUTRAL) and the Moonshot lineup are gone.** The optimizer ranks the candidate pool purely on `env_factor × volatility_amplifier × trait_factor × stack_bonus × dnp_adj`, then assembles a single lineup (1 SP + 4 batters, OR 0 SP + 5 batters chosen by slot-weighted total EV). The dual-lineup architecture, FADE gate, sharp_score scraping, and explosive_bonus all retired. Pitchers cap at env_factor 1.20 (vs batter 1.30). **Stacking is still capped at 2 batters per team AND 2 per game, and only fires on overwhelmingly clear game scripts.**
+**Strategy Version: V12.1 "Audit-Driven Env Scoring + Multi-Pitcher Variants"** — The optimizer was rebuilt from a 35-slate quartile audit of every pre-game signal against actual HV outcomes. Dead and inverted signals were deleted; strong signals were kept. Multi-pitcher variants (0P-5P) replaced the 0P/1P-only constraint that was structurally barring 57% of empirical winning shapes. Pitchers now cap at env_factor 1.40 (vs batter 1.30) — empirical pitcher RS is 34% higher than batter RS. ENV_MODIFIER_FLOOR dropped to 0.20 for signal discrimination.
+
+**EV formula** (V12.1):
+```
+filter_ev = env_factor × volatility_amplifier × trait_factor × stack_bonus × dnp_adj × 100
+  env_factor (pitcher): 0.20 → 1.40 (3.5× swing)
+  env_factor (batter):  0.20 → 1.30 (3.25× swing)
+  trait_factor:         0.85 → 1.15 (1.35× swing)
+  stack_bonus:          1.0 / 1.20 (PATH 1 blowout-fav only)
+  dnp_adj:              0.70 / 0.93 / 1.0
+```
+
+**Composition** (V12 multi-pitcher variant chooser):
+The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each variant, picks top n_p pitchers by EV + top (5-n_p) batters by EV under per-team caps (1 default, 2 stack-eligible) AND anti-correlation guard (no opposing batters to any drafted pitcher unless they're the pitcher's teammate). Slot-weights each variant by sorting all 5 by EV descending and assigning slot multipliers 2.0, 1.8, 1.6, 1.4, 1.2. Returns the highest-total variant. **Slot 1 (2.0×) goes to the highest-EV PLAYER, not necessarily a pitcher** (rearrangement inequality).
+
+**V12 env signals** (audit-validated, see V12 changelog below):
+- Batter env: opp_starter_era (STRONGEST), opp_starter_whip, wind_speed_mph, park_hr_factor, team_moneyline (UNDERDOG premium — inverted from intuition), batting_order, temperature, platoon_advantage
+- Pitcher env: team_moneyline (PEAK at mild fav -120 to -180 — also inverted from V11), vegas_total (INVERSE — low total = pitcher game), park_hr_factor, pitcher_k_per_9 (talent), own_starter_era (tail bonus/penalty), opp_team_ops (tail)
+
+**Stacking** is still capped at 2 batters per team AND 2 per game and only fires on overwhelmingly clear game scripts.
+
+### V12.1 Audit-Driven Rebuild + Multi-Pitcher Variants (April 30)
+
+V12 ships three structural changes from a 35-slate / 994-batter / 222-pitcher quartile audit of every pre-game signal against actual HV outcomes (`is_highest_value` and `real_score` used STRICTLY as outcome labels — never input).
+
+**1. Env scoring rebuilt around audit findings.**
+
+Strong signals kept:
+- Opp starter ERA: Q1 (≤3.1) HV=34% → Q4 (≥5.8) HV=57% — biggest single batter signal
+- Opp starter WHIP: Q1 (≤1.11) HV=39% → Q4 (≥1.56) HV=55%
+- Wind speed ≥10 mph + OUT direction: HV=66% (vs IN: 53%) — survives park control
+- Park HR factor (modest for batters, strong for pitchers)
+- Underdog ML premium for batters: Q1 (heavy fav -310 to -158) HV=36% vs Q4 (underdog +104 to +250) HV=57%
+- Pitcher ML peak at mild fav (-180 to -120): HV=37.5% vs heavy fav (≤-200) HV=14.5%
+- Pitcher Vegas O/U inverse: Q1 (≤7.5) HV=31% vs Q4 (≥8.5) HV=18%
+- Batting order (volume premium for top of order)
+
+Dead/inverted signals deleted from env:
+- Vegas O/U for batters (Q1 50% / Q4 47% — pure noise)
+- Opp starter K/9 for batters (Q1 49% / Q4 45% — V10.6 add was wrong)
+- Opp bullpen ERA (non-monotonic)
+- Opp team K% for pitchers (Q1 25% / Q4 23% — flat)
+- Heavy-favorite ML positive bonus (data shows INVERTED — heavy favs underperform)
+- Own-team L10 momentum, series leading/trailing (cold/trailing teams produce MORE HV — V10.7 already neutralised, now formally deleted)
+- Opp back-to-back rest days (V10.8 add — no audit support)
+- Compound park × temp interaction (no audit support)
+- Pitcher home-field flat +0.5 (no audit separation)
+
+Constants deleted (149 references swept across the codebase): `BATTER_ENV_VEGAS_*`, `BATTER_ENV_BULLPEN_*`, `BATTER_ENV_OPP_K9_*`, `BATTER_ENV_OPP_BACK_TO_BACK_BONUS`, `BATTER_ENV_GROUP_A_SOFT_CAP_*`, `BATTER_ENV_COMPOUND_*`, `SERIES_LEADING_BONUS`, `SERIES_TRAILING_PENALTY`, `TEAM_HOT_L10_*`, `TEAM_COLD_L10_*`, `PITCHER_ENV_K_PCT_*`, plus the entire constants-table section for env scoring (V12 thresholds are inline in the env score functions for transparency).
+
+**2. Multi-pitcher variants (0P-5P).**
+
+Audit of 35 actual #1 winning lineups:
+| Shape | Win-share | Pre-V12? |
+|---|---|---|
+| 2P+3B | 28.6% ← most common | NO |
+| 0P+5B | 25.7% | YES |
+| 1P+4B | 17.1% | YES |
+| 3P+2B | 14.3% | NO |
+| 4P+1B | 11.4% | NO |
+| 5P+0B | 2.9% | NO |
+
+Pre-V12 only built {0P+5B, 1P+4B} → structurally incapable of producing 57% of winning shapes. Mean total RS by shape: 0P=17.5, 1P=18.5, 2P=20.3, 3P=22.2, 4P=22.9, 5P=26.6 — **pitcher-heavy lineups score MORE** because individual K/win-bonus games stack into one lineup. V12 builds all 6 variants and picks the highest slot-weighted EV.
+
+**3. Slot 1 = highest-EV player (rearrangement inequality).**
+
+Pre-V12 forced pitcher into slot 1. V12 sorts all 5 by EV descending and assigns to slots 2.0, 1.8, 1.6, 1.4, 1.2. The highest-EV asset belongs in the highest-multiplier slot — putting a 1.4× batter in slot 1 over a 1.3× pitcher is mathematically wrong.
+
+**Calibration changes:**
+- `ENV_MODIFIER_FLOOR`: 0.70 → 0.40 → **0.20** (V12.1 sweep). Old floor compressed EV signal (env=0 vs env=1 only 1.86×); empirical RS top-bottom ratio is ~5×.
+- `PITCHER_ENV_MODIFIER_CEILING`: 1.20 → **1.40**. V10.6 capped pitchers BELOW batters to fix a saturation bug under old env scoring; V12 scoring is harder to saturate AND empirical pitcher RS is 34% higher than batter RS.
+
+**Backtest results** (35 slates, in-app `run_filter_strategy`):
+- Mean slot-weighted RS (with FLAT trait): 27.89
+- Slot-1 was an HV player: 68.6%
+- BEAT the actual #1 winning lineup (no boost): 28.6% (was ~22% in V11)
+- Composition naturally adapted: 0P=29%, 1P=37%, 2P=23%, 3P=6%, 4P=3%, 5P=3%
+
+**Card-boost context** (NOT an input to the model — for interpretation only):
+Card boost contributed 55% of winning-lineup totals on average across the 35 slates. Median winning #1 lineup had 2/5 slots at MAX boost (3.0). This means our RS-only picks deliver ~80% of winning-lineup RS BEFORE boost; the user's draft-time boost decisions close the gap. Boost the top-EV player (slot 1) for maximum return.
+
+**V12 explicitly does NOT change**: stack-eligibility logic, per-team / per-game caps, anti-correlation guard, FADE/popularity removal (V11), `compute_total_value()` historical CSV ingest, scoring_engine trait scoring (still uses K/9, ERA, OPS, exit velo, barrel%, etc.), Statcast refresh wiring, T-65 timing model, no-fallbacks rule.
 
 ### V11.0 Popularity Removed + Single Lineup + No /api/draft/evaluate (April 30)
 
