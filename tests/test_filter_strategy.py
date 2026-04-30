@@ -709,4 +709,45 @@ class TestRunFilterStrategy:
         assert result.slots == []
         assert result.total_expected_value == 0.0
 
+    def test_pitcher_only_pool_yields_5p_lineup(self):
+        """V12: when only pitchers are available, the chooser picks the 5P+0B variant."""
+        pool = []
+        for i in range(6):
+            c = _make_candidate(name=f"P{i}", team=f"T{i}", is_pitcher=True,
+                                game_id=i, env_score=0.85, total_score=70)
+            pool.append(c)
+        result = run_filter_strategy(pool, _default_slate())
+        assert result.composition["pitchers"] == 5
+        assert result.composition["hitters"] == 0
+
+    def test_anti_correlation_guard_blocks_opposing_batter(self):
+        """V12: a high-EV opposing batter must NOT be drafted alongside our pitcher."""
+        pool = [
+            _make_candidate(name="ACE", team="NYY", is_pitcher=True,
+                            game_id=1, env_score=1.0, total_score=95),
+            _make_candidate(name="OPP_BAT", team="BOS", is_pitcher=False,
+                            game_id=1, env_score=0.99, total_score=95, batting_order=1),
+            _make_candidate(name="TEAMMATE", team="NYY", is_pitcher=False,
+                            game_id=1, env_score=0.85, total_score=80, batting_order=2),
+        ]
+        for i in range(5):
+            pool.append(_make_candidate(
+                name=f"OTHER_{i}", team=f"T{10+i}", game_id=10+i,
+                env_score=0.6, total_score=55, batting_order=4,
+            ))
+        # Pre-set filter_ev so ACE wins (forces 1P+4B variant)
+        for c in pool:
+            c.filter_ev = (200.0 if c.player_name == "ACE"
+                           else 150.0 if c.player_name == "OPP_BAT"
+                           else 130.0 if c.player_name == "TEAMMATE"
+                           else 80.0)
+        result = run_filter_strategy(pool, _default_slate())
+        names = {s.candidate.player_name for s in result.slots}
+        # Our pitcher should be in (highest EV by design)
+        assert "ACE" in names
+        # Opposing batter MUST be blocked even though their EV (150) beats every "other"
+        assert "OPP_BAT" not in names, "Anti-correlation guard failed"
+        # Teammate is allowed
+        assert "TEAMMATE" in names
+
 
