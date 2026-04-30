@@ -165,8 +165,11 @@ def check_winning_drafts(target_date: str) -> None:
             if pos in ("P", "SP"):
                 pitcher_count += 1
 
-        if pitcher_count != 1:
-            warn(f"Rank {rank}: expected 1 pitcher, found {pitcher_count} (may use 'P' position code)")
+        # V12: pitcher count is unconstrained (0..5 are all legal winning shapes
+        # per the 35-slate audit: 25.7% are 0P+5B, 28.6% are 2P+3B, 14.3% are
+        # 3P+2B, 11.4% are 4P+1B, etc.).  Only flag the impossible.
+        if pitcher_count > 5:
+            err(f"Rank {rank}: {pitcher_count} pitchers — impossible (max 5)")
 
 
 # ---------------------------------------------------------------------------
