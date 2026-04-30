@@ -9,6 +9,7 @@ dist/
 build/
 .ruff_cache/
 .pytest_cache/
+.claude/
 output/*.json
 .venv-scraper/
 scratch/
