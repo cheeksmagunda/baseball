@@ -10,8 +10,8 @@ the DB with zero extra network calls.
 Production invocation
 ---------------------
 
-The slate monitor fires this script automatically at the start of each
-Phase 2 (T-65 sleep window) via `_refresh_statcast_background` in
+The slate monitor awaits this script BLOCKING inside Phase 2 (before the
+T-65 sleep) via `_refresh_statcast_blocking` in
 `app/services/slate_monitor.py`.  No Railway cron, no crontab — merge the
 code and the next slate cycle triggers the refresh before T-65 fires.
 
@@ -55,6 +55,7 @@ from app.core.statcast import (
     _pitcher_expected_stats_table,
     _pitcher_movement_table,
     _pitcher_percentile_table,
+    _pitcher_swing_take_table,
     _team_catcher_framing_table,
     _col,
 )
@@ -103,7 +104,8 @@ def refresh_batter_kinematics(db: Session, season: int) -> int:
         raise RuntimeError(
             f"Batter leaderboard missing expected id column (columns: {list(df.columns)[:10]})"
         )
-    updated = 0
+    rows_processed = 0
+    n_avg_ev = n_max_ev = n_hh = n_brl = 0
     for _, row in df.iterrows():
         mlb_id = row[id_col]
         if pd.isna(mlb_id):
@@ -121,26 +123,75 @@ def refresh_batter_kinematics(db: Session, season: int) -> int:
         ps.hard_hit_pct = hh_pct
         if brl_pct is not None:
             ps.barrel_pct = brl_pct
-        updated += 1
+
+        rows_processed += 1
+        if avg_ev is not None:
+            n_avg_ev += 1
+        if max_ev is not None:
+            n_max_ev += 1
+        if hh_pct is not None:
+            n_hh += 1
+        if brl_pct is not None:
+            n_brl += 1
     db.commit()
-    return updated
+
+    logger.info(
+        "Statcast batter kinematics populated: rows=%d avg_ev=%d max_ev=%d hard_hit=%d barrel=%d",
+        rows_processed, n_avg_ev, n_max_ev, n_hh, n_brl,
+    )
+    # Schema-drift guards — every kinematic column has multiple alias names
+    # in the loaders above, but a complete pybaseball column rename would
+    # zero out the trait surface for every batter.
+    if n_avg_ev == 0:
+        raise RuntimeError(
+            f"Batter kinematics: zero rows populated for avg_exit_velocity — "
+            f"schema drift.  Sample columns: {list(df.columns)[:15]}"
+        )
+    if n_hh == 0:
+        raise RuntimeError(
+            f"Batter kinematics: zero rows populated for hard_hit_pct — "
+            f"schema drift.  Sample columns: {list(df.columns)[:15]}"
+        )
+    if n_brl == 0:
+        raise RuntimeError(
+            f"Batter kinematics: zero rows populated for barrel_pct — "
+            f"schema drift.  Sample columns: {list(df.columns)[:15]}"
+        )
+    return rows_processed
 
 
 def refresh_pitcher_kinematics(db: Session, season: int) -> int:
-    """Pull the pitcher percentile-ranks + arsenal-velocity + pitch-movement tables and upsert.
+    """Pull the pitcher leaderboards and upsert kinematic columns.
 
-    Apr 27 2026 audit: Savant's percentile-ranks endpoint no longer exposes
-    `ff_avg_break_z_induced` (IVB) or `avg_extension`.  IVB is recoverable from
-    the public `pitch-movement` leaderboard (column `pitcher_break_z_induced`,
-    pitch_type=FF), which `_pitcher_movement_table()` fetches via direct CSV.
-    Extension is no longer in any standard leaderboard endpoint — staying NULL
-    until either Savant restores it or we add a raw `statcast_pitcher`
-    aggregator.  The scoring engine routes through 4-of-5 kinematic signals
-    in the meantime (still hits the ≥3 kinematic-path threshold).
+    Sources (one per scoring sub-signal):
+      - `fb_velocity`     ← arsenal-velocity leaderboard (`ff_avg_speed`, raw mph)
+      - `fb_ivb`          ← pitch-movement CSV (`pitcher_break_z_induced`, raw inches)
+      - `whiff_pct`       ← swing-take custom CSV (`whiff_percent`, RAW rate %)
+      - `chase_pct`       ← swing-take custom CSV (`oz_swing_percent`, RAW rate %)
+      - `fb_extension`    ← (Savant deprecated; stays NULL — scoring still hits
+                              the ≥3-of-5 kinematic threshold via the other 4)
+
+    Critical: whiff% and chase% MUST come from the swing-take CSV, NOT from
+    `statcast_pitcher_percentile_ranks`.  The percentile-ranks endpoint returns
+    *percentile values* 0–100 in misleadingly-named columns (`whiff_percent`,
+    `chase_percent`).  Using those would silently saturate the scoring engine
+    (which expects raw rates in the 20–35 % band) — every pitcher above the
+    35th percentile would max out the sub-signal.
+
+    The percentile-ranks table is iterated as the canonical pitcher pool only
+    (it lists every qualifying SP and RP); all per-pitcher values are looked
+    up from the dedicated raw-rate sources.
+
+    Per-field populated counts are logged.  If any of velo / IVB / whiff /
+    chase produced zero non-NULL rows across the whole pool, raise
+    RuntimeError — schema drift is the only way that happens, and silent
+    NULLs are exactly the failure mode the rest of this script is built to
+    avoid.
     """
     perc = _pitcher_percentile_table(season)
     vel = _pitcher_arsenal_velocity_table(season)
     mov = _pitcher_movement_table(season)
+    swing = _pitcher_swing_take_table(season)
 
     perc_id = _col(perc, "player_id", "pitcher", "mlb_id")
     if perc_id is None:
@@ -181,31 +232,103 @@ def refresh_pitcher_kinematics(db: Session, season: int) -> int:
                 except (TypeError, ValueError):
                     continue
 
-    updated = 0
+    # Whiff / chase from raw-rate swing-take CSV.  Schema-drift guard: the
+    # CSV must expose these column names — if Savant renames them, raise so
+    # the next deploy fixes the source instead of silently zeroing the trait.
+    swing_id = _col(swing, "player_id", "pitcher", "mlb_id")
+    if swing_id is None:
+        raise RuntimeError(
+            f"Swing-take leaderboard missing id column (columns: {list(swing.columns)[:10]})"
+        )
+    if "whiff_percent" not in swing.columns or "oz_swing_percent" not in swing.columns:
+        raise RuntimeError(
+            "Swing-take leaderboard missing whiff_percent / oz_swing_percent — "
+            f"Savant schema drift.  Columns: {list(swing.columns)[:15]}"
+        )
+    whiff_lookup: dict[int, float] = {}
+    chase_lookup: dict[int, float] = {}
+    for _, row in swing.iterrows():
+        pid = row.get(swing_id)
+        if pid in (None, "") or pd.isna(pid):
+            continue
+        try:
+            pid_int = int(pid)
+        except (TypeError, ValueError):
+            continue
+        w = _safe_float(row.get("whiff_percent"))
+        c = _safe_float(row.get("oz_swing_percent"))
+        if w is not None:
+            whiff_lookup[pid_int] = w
+        if c is not None:
+            chase_lookup[pid_int] = c
+
+    rows_processed = 0
+    n_velo = n_ivb = n_whiff = n_chase = 0
     for _, row in perc.iterrows():
         mlb_id = row[perc_id]
         if pd.isna(mlb_id):
             continue
-        ps = _upsert_stats_row(db, int(mlb_id), season)
+        mlb_id = int(mlb_id)
+        ps = _upsert_stats_row(db, mlb_id, season)
         if ps is None:
             continue
 
-        ps.fb_velocity = vel_lookup.get(int(mlb_id))
+        ps.fb_velocity = vel_lookup.get(mlb_id)
         # IVB now sourced from the pitch-movement leaderboard; fall back to the
         # legacy column names in case Savant restores them in percentile_ranks.
         ps.fb_ivb = (
-            ivb_lookup.get(int(mlb_id))
+            ivb_lookup.get(mlb_id)
             or _safe_float(row.get("ff_avg_break_z_induced"))
             or _safe_float(row.get("fb_ivb"))
         )
         # Extension: no current leaderboard exposes this season-aggregated.
         # Left for a future raw-statcast aggregator.  Will be NULL until then.
         ps.fb_extension = _safe_float(row.get("avg_extension")) or _safe_float(row.get("release_extension"))
-        ps.whiff_pct = _safe_float(row.get("whiff_percent"))
-        ps.chase_pct = _safe_float(row.get("oz_swing_percent")) or _safe_float(row.get("chase_percent"))
-        updated += 1
+        ps.whiff_pct = whiff_lookup.get(mlb_id)
+        ps.chase_pct = chase_lookup.get(mlb_id)
+
+        rows_processed += 1
+        if ps.fb_velocity is not None:
+            n_velo += 1
+        if ps.fb_ivb is not None:
+            n_ivb += 1
+        if ps.whiff_pct is not None:
+            n_whiff += 1
+        if ps.chase_pct is not None:
+            n_chase += 1
+
     db.commit()
-    return updated
+
+    logger.info(
+        "Statcast pitcher kinematics populated: rows=%d velo=%d ivb=%d whiff=%d chase=%d",
+        rows_processed, n_velo, n_ivb, n_whiff, n_chase,
+    )
+    # Schema-drift / source-failure guard: each of the four live signals must
+    # populate SOMETHING across the pool.  A single zeroed signal means the
+    # column we read drifted and every pitcher silently lost ~25 % of the
+    # k_rate trait surface.  Fail loud so the deploy is rolled back or the
+    # source is fixed before the next T-65.
+    if n_velo == 0:
+        raise RuntimeError(
+            f"Pitcher kinematics: zero rows populated for fb_velocity — arsenal-velocity "
+            f"leaderboard schema drift.  Sample columns: {list(vel.columns)[:15]}"
+        )
+    if n_ivb == 0:
+        raise RuntimeError(
+            f"Pitcher kinematics: zero rows populated for fb_ivb — pitch-movement CSV "
+            f"schema drift.  Sample columns: {list(mov.columns)[:15]}"
+        )
+    if n_whiff == 0:
+        raise RuntimeError(
+            f"Pitcher kinematics: zero rows populated for whiff_pct — swing-take CSV "
+            f"schema drift.  Sample columns: {list(swing.columns)[:15]}"
+        )
+    if n_chase == 0:
+        raise RuntimeError(
+            f"Pitcher kinematics: zero rows populated for chase_pct — swing-take CSV "
+            f"schema drift.  Sample columns: {list(swing.columns)[:15]}"
+        )
+    return rows_processed
 
 
 def refresh_batter_expected_stats(db: Session, season: int) -> int:

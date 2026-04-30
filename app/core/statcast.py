@@ -19,6 +19,7 @@ repeated downloads during the cron invocation).
 
 from __future__ import annotations
 
+import io
 import logging
 from functools import lru_cache
 
@@ -103,6 +104,42 @@ def _pitcher_movement_table(season: int) -> pd.DataFrame:
     logger.info(
         "Statcast pitcher movement (IVB): %d rows for season=%d (pitch_type=FF)",
         len(df), season,
+    )
+    return df
+
+
+@lru_cache(maxsize=4)
+def _pitcher_swing_take_table(season: int) -> pd.DataFrame:
+    """Fetch raw whiff% and out-of-zone swing% (chase%) per pitcher.
+
+    pybaseball's `statcast_pitcher_percentile_ranks` returns *percentile ranks*
+    (0–100), not raw rates — the column names (`whiff_percent`, `chase_percent`)
+    are misleading.  The scoring engine's `SCORING_WHIFF_PCT_*` /
+    `SCORING_CHASE_PCT_*` constants are calibrated for raw rates (~20–35%),
+    so storing percentiles in those fields silently inflates every pitcher's
+    K-rate sub-signal toward the ceiling.
+
+    Savant's public custom-leaderboard CSV exposes both metrics as raw
+    rates:
+      - `whiff_percent`  — whiffs / swings (overall, all pitch types)
+      - `oz_swing_percent` — out-of-zone swings / out-of-zone pitches (chase)
+
+    Caller joins to the percentile-ranks table by `player_id`.  Raises on
+    non-200 / parse error so the caller fails loudly.
+    """
+    import requests
+
+    url = (
+        "https://baseballsavant.mlb.com/leaderboard/custom"
+        f"?year={season}&type=pitcher&filter=&min=0"
+        "&selections=pitches,whiff_percent,oz_swing_percent"
+        "&chart=false&csv=true"
+    )
+    resp = requests.get(url, timeout=20)
+    resp.raise_for_status()
+    df = pd.read_csv(io.StringIO(resp.text))
+    logger.info(
+        "Statcast pitcher swing-take: %d rows for season=%d", len(df), season
     )
     return df
 
@@ -197,6 +234,7 @@ def clear_statcast_cache() -> None:
     _pitcher_percentile_table.cache_clear()
     _pitcher_arsenal_velocity_table.cache_clear()
     _pitcher_movement_table.cache_clear()
+    _pitcher_swing_take_table.cache_clear()
     _batter_expected_stats_table.cache_clear()
     _pitcher_expected_stats_table.cache_clear()
     _team_catcher_framing_table.cache_clear()

@@ -130,39 +130,35 @@ async def _sleep_until(target: datetime) -> None:
 # Pre-T-65 Statcast refresh (fires inside Phase 2 as a background task)
 # ---------------------------------------------------------------------------
 
-async def _refresh_statcast_background() -> None:
+async def _refresh_statcast_blocking() -> None:
     """Bulk-load Baseball Savant leaderboards into PlayerStats.
 
-    Fires as a detached asyncio task unconditionally on every slate cycle.
+    Awaited synchronously inside Phase 2 *before* the T-65 pipeline runs.
     Savant is fully public and always live — failure is a hard stop, not a
-    graceful degradation.  On any failure the cache is marked failed so
-    /optimize returns 503 instead of serving lineups built on stale kinematics.
+    graceful degradation.  Any failure raises; the slate-monitor task crashes
+    so `/optimize` returns 503 instead of serving lineups built on stale
+    kinematics.
+
+    Why blocking instead of fire-and-forget: the previous fire-and-forget
+    `create_task` pattern raced the T-65 pipeline.  On a normal day the
+    Phase-2 sleep gave the ~60 s refresh time to finish, but on cold starts
+    where `now >= lock_time_utc` (sleep skipped), the pipeline read
+    pre-refresh PlayerStats with NULL kinematics — and froze a lineup with
+    `K/9 N (no Statcast)` for the rest of the slate.  Blocking guarantees
+    the refresh either succeeds OR the slate fails hard before any lineup
+    is built.
     """
-    from app.services.lineup_cache import lineup_cache
+    from scripts.refresh_statcast import main as refresh_main
 
-    try:
-        from scripts.refresh_statcast import main as refresh_main
-
-        logger.info("Statcast refresh: starting bulk load from Baseball Savant")
-        exit_code = await asyncio.to_thread(refresh_main)
-        if exit_code != 0:
-            logger.critical(
-                "Statcast refresh exited with code=%d — marking pipeline failed. "
-                "Savant is public and always live; a non-zero exit means a real "
-                "connectivity or schema problem that must be fixed.",
-                exit_code,
-            )
-            lineup_cache.mark_failed()
-        else:
-            logger.info("Statcast refresh complete (exit=0)")
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.critical(
-            "Statcast refresh raised — marking pipeline failed.",
-            exc_info=True,
+    logger.info("Statcast refresh: starting bulk load from Baseball Savant")
+    exit_code = await asyncio.to_thread(refresh_main)
+    if exit_code != 0:
+        raise RuntimeError(
+            f"Statcast refresh exited with code={exit_code} — Savant is public and "
+            "always live; a non-zero exit means a real connectivity or schema "
+            "problem that must be fixed."
         )
-        lineup_cache.mark_failed()
+    logger.info("Statcast refresh complete (exit=0)")
 
 
 # ---------------------------------------------------------------------------
@@ -385,17 +381,15 @@ async def targeted_slate_monitor(
         # ---------------------------------------------------------------
         # Phase 2: Pre-lock Statcast refresh + sleep until T-65
         # ---------------------------------------------------------------
-        # Kick the Statcast refresh BEFORE the sleep guard so a cold start
-        # that completes at or past T-65 still loads fresh Savant data.
-        # If startup was slow (Redis retries, migrations) and T-65 already
-        # passed by the time the monitor reaches here, `now < lock_time_utc`
-        # would be False — skipping the entire block — and the refresh would
-        # never fire.  Hoisting it out of the conditional fixes that: the
-        # background task races the T-65 pipeline and the pipeline reads
-        # whatever has been persisted when it fires (NULL → non-Statcast
-        # fallback path if the ~60 s bulk-load isn't done yet).
-        # Always unconditional — Savant is fully public and always live.
-        asyncio.create_task(_refresh_statcast_background())
+        # The Statcast refresh runs BLOCKING before Phase 3 — never as a
+        # fire-and-forget background task.  Earlier `create_task` versions
+        # raced the T-65 pipeline on cold starts (sleep skipped because
+        # `now >= lock_time_utc`), causing the pipeline to read pre-refresh
+        # PlayerStats with NULL kinematics and freeze a "no Statcast" lineup
+        # for the rest of the slate.  Blocking here guarantees the refresh
+        # either succeeds OR the slate-monitor task crashes loudly so
+        # /optimize returns 503 — no lineup is ever built on stale data.
+        await _refresh_statcast_blocking()
 
         now = datetime.now(timezone.utc)
         if now < lock_time_utc:
