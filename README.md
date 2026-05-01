@@ -2,7 +2,7 @@
 
 I built this to answer one question: **can we predict the 5 best MLB players to pick on any given day?**
 
-Not a gambling model. Not a betting tool. This is a daily prediction engine built around a specific question that turns out to be genuinely hard: given everything we know before the games start (matchups, park conditions, weather, Vegas lines, Statcast physics), which 5 players are most likely to have big days?
+Not a gambling model/betting tool but rather  a daily engine built around a specific question that turns out to be genuinely hard: given everything we know before the games start (matchups, park conditions, weather, Vegas lines, Statcast physics), which 5 players are most likely to have big days (and subsequently end up on the Real Sports daily top performers list)? This is not traditional DFS weighting but rather a model that learns from historical Real Sports app player results and identifies what cindituons produce high value performers without directly trying to guess Real Sports player scoring model. 
 
 The platform this is built for is **Real Sports**, a mobile DFS app with a format that's different from traditional salary-cap DFS. There's no budget to manage. You draft 5 players into 5 fixed multiplier slots (2.0x, 1.8x, 1.6x, 1.4x, 1.2x) and each player card has a boost value (0 to +3.0x) that gets revealed during the draft. Your score is:
 
