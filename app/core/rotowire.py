@@ -13,13 +13,11 @@ Why scrape:
     — there is no free first-party JSON API.
 
 No-fallbacks compliance:
-    A network or parse failure raises RuntimeError.  The caller in
-    app/services/data_collection.py treats RotoWire enrichment as best-effort
-    (warns + continues with NULL batting_order, which routes through the
-    existing DNP_UNKNOWN_PENALTY 0.85 multiplier).  This is *not* a fallback
-    in the forbidden sense — no fake data is substituted, the system just
-    operates with less info.  See CLAUDE.md "No Fallbacks. Ever." for the
-    distinction between corruption and graceful degradation.
+    A network error, non-200 response, or zero parseable games raises
+    RuntimeError.  The caller in app/services/data_collection.py re-raises,
+    crashing the T-65 pipeline so /optimize returns 503.  RotoWire is the
+    only source of batting order data at T-65 and is treated as required
+    infrastructure, identical to the Odds API.
 """
 from __future__ import annotations
 
