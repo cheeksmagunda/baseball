@@ -227,9 +227,10 @@ class TestRotoWirePipelineIntegration:
         db_session.commit()
         return slate
 
-    def test_rotowire_failure_logs_and_returns_zero(self, db_session, monkeypatch):
-        """A network error must NOT crash the pipeline — RotoWire is best-effort."""
+    def test_rotowire_failure_raises(self, db_session, monkeypatch):
+        """A network error must crash the pipeline — RotoWire is required infrastructure."""
         import asyncio
+        import pytest
         from app.services.data_collection import _enrich_batting_order_from_rotowire
         import logging
 
@@ -239,10 +240,10 @@ class TestRotoWirePipelineIntegration:
             raise RuntimeError("RotoWire fetch failed: connection reset")
 
         monkeypatch.setattr("app.core.rotowire.fetch_expected_lineups", boom)
-        result = asyncio.run(_enrich_batting_order_from_rotowire(
-            db_session, slate, logging.getLogger("test")
-        ))
-        assert result == 0
+        with pytest.raises(RuntimeError, match="RotoWire fetch failed"):
+            asyncio.run(_enrich_batting_order_from_rotowire(
+                db_session, slate, logging.getLogger("test")
+            ))
 
     def test_rotowire_success_populates_batting_order_and_source(
         self, db_session, monkeypatch
