@@ -277,12 +277,9 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict[str, int]:
 
     db.commit()
 
-    # Enrich with batting order from boxscores (if lineups have been posted)
-    # Phase 1: RotoWire expected lineups (best-effort).  Available up to 4 hours
-    # before first pitch, covering ~90% of teams at T-65.  Failures log loudly
-    # but do not abort the pipeline — the existing DNP_UNKNOWN_PENALTY (0.85)
-    # absorbs missing batting orders.  Per CLAUDE.md, this is graceful
-    # degradation (no fake data substituted), not a forbidden fallback.
+    # Phase 1: RotoWire expected lineups.  Available up to 4 hours before first
+    # pitch, covering ~90% of teams at T-65.  Raises on failure — batting order
+    # data is required pipeline input, not optional enrichment.
     rw_enriched = await _enrich_batting_order_from_rotowire(db, slate, logger)
 
     # Phase 2: MLB Stats API boxscore (ground truth — overrides RotoWire when
@@ -305,11 +302,9 @@ async def _enrich_batting_order_from_rotowire(db: Session, slate: Slate, logger)
     pitch — much earlier than MLB's official card serialisation.  At T-65 it
     typically covers ~90% of teams in some form (Confirmed or Expected).
 
-    This function is **best-effort**: a failed fetch or parse logs at error
-    level and returns 0 enriched.  Downstream MLB API boxscore enrichment
-    (Phase 2) will still try to populate batting_order from official cards,
-    and any player whose order remains NULL falls into DNP_UNKNOWN_PENALTY
-    in the EV formula.
+    Raises RuntimeError on network failure, non-200 response, or zero
+    parseable games. RotoWire is required infrastructure at T-65 — it is the
+    only source of batting order data before the official MLB card drops.
 
     Sets `batting_order_source` to "rotowire_confirmed" or "rotowire_expected"
     so the official-card phase can detect-and-override, and so post-slate
@@ -318,24 +313,13 @@ async def _enrich_batting_order_from_rotowire(db: Session, slate: Slate, logger)
     from app.core.rotowire import LineupStatus, fetch_expected_lineups
     from app.models.player import Player, normalize_name
 
-    try:
-        games = await fetch_expected_lineups()
-    except Exception as exc:
-        # No raise — graceful degradation. Loud warning so this is visible
-        # in production logs.  Empty enrichment count surfaces in the
-        # populate_slate_players() info line.
-        logger.error(
-            "RotoWire expected-lineup fetch failed: %s. SlatePlayer.batting_order "
-            "will be NULL for batters whose official card hasn't dropped yet. "
-            "DNP_UNKNOWN_PENALTY (0.85) will absorb the missing signal, but EV "
-            "ranking for these players is degraded. Investigate if this persists.",
-            exc,
-        )
-        return 0
+    games = await fetch_expected_lineups()
 
     if not games:
-        logger.warning("RotoWire returned 0 parseable games — markup may have changed")
-        return 0
+        raise RuntimeError(
+            "RotoWire returned 0 parseable games — site markup may have changed. "
+            "Batting order data is unavailable and the pipeline cannot proceed."
+        )
 
     # Build lookup: (team_uppercase, normalized_full_name) -> (order, source)
     lookup: dict[tuple[str, str], tuple[int, str]] = {}

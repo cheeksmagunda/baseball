@@ -400,6 +400,21 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
     # Pre-cache opposing starter ERA/WHIP so batter matchup trait is populated.
     starter_stats_cache = _build_starter_stats_cache(db, games, game_date.year)
 
+    # Build team framing-runs lookup for the pitcher k_rate catcher-framing adjustment.
+    # Mirrors the same block in run_score_slate so scoring is consistent between
+    # the T-65 path and this manual post-slate endpoint.
+    from app.models.player import TeamSeasonStats as _TSS
+    teams_in_slate = {g.home_team.upper() for g in games} | {g.away_team.upper() for g in games}
+    team_framing_lookup: dict[str, float] = {}
+    if teams_in_slate:
+        for row in (
+            db.query(_TSS)
+            .filter(_TSS.team.in_(teams_in_slate), _TSS.season == game_date.year)
+            .all()
+        ):
+            if row.framing_runs is not None:
+                team_framing_lookup[row.team.upper()] = row.framing_runs
+
     # Build candidates from slate players
     slate_players = (
         db.query(SlatePlayer)
@@ -438,7 +453,18 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
         is_home_p = game.home_team == player.team
         park_team = game.home_team
         opp_pitcher_stats = None
-        if not is_pitcher:
+        opp_team = None
+        opp_team_stats = None
+        if is_pitcher:
+            opp_team = game.away_team if is_home_p else game.home_team
+            opp_ops = game.away_team_ops if is_home_p else game.home_team_ops
+            opp_k_pct = game.away_team_k_pct if is_home_p else game.home_team_k_pct
+            if opp_ops is not None or opp_k_pct is not None:
+                opp_team_stats = {
+                    "ops": opp_ops if opp_ops is not None else DEFAULT_OPP_OPS,
+                    "k_pct": opp_k_pct if opp_k_pct is not None else DEFAULT_OPP_K_PCT,
+                }
+        else:
             opp_starter_name = game.away_starter if is_home_p else game.home_starter
             if opp_starter_name:
                 opp_pitcher_stats = starter_stats_cache.get(opp_starter_name)
@@ -446,9 +472,15 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
         result = score_player(
             db, player,
             game_date=game_date,
+            opp_team=opp_team,
+            opp_team_stats=opp_team_stats,
             opp_pitcher_stats=opp_pitcher_stats,
             batting_order=sp.batting_order,
             park_team=park_team,
+            wind_speed_mph=game.wind_speed_mph,
+            wind_direction=game.wind_direction,
+            temperature_f=game.temperature_f,
+            team_framing_runs=team_framing_lookup.get(player.team.upper()),
         )
         game_id = sp.game_id or game.id
 
