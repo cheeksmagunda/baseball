@@ -16,7 +16,6 @@ dependencies = [
     "scikit-learn>=1.5",
     "joblib>=1.4",
     "tenacity>=8.2",
-    "alembic>=1.13",
     "pybaseball>=2.2",
     "beautifulsoup4>=4.12",
 ]

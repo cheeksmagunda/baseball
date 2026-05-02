@@ -33,25 +33,15 @@ def get_db() -> Session:
         db.close()
 
 
-def init_db():
-    """Bring the schema up to date via Alembic.
+def init_db() -> None:
+    """Create all tables from SQLAlchemy models.
 
-    Pre-Alembic DBs (tables present but no alembic_version) are stamped to
-    the baseline first, then upgraded — this avoids "table already exists"
-    errors on existing deployments.
+    The DB is ephemeral by design — it stores only current-cycle live state
+    (today's slate, players, scores, frozen picks). Every container restart
+    on Railway wipes the SQLite file. There is no schema to evolve, so
+    migrations are the wrong tool. The models are the single source of
+    truth for the schema.
     """
-    from pathlib import Path
-    from alembic import command
-    from alembic.config import Config
-    from sqlalchemy import inspect
+    import app.models  # noqa: F401 — registers all models on Base.metadata
 
-    ini_path = Path(__file__).resolve().parent.parent / "alembic.ini"
-    cfg = Config(str(ini_path))
-    cfg.set_main_option("sqlalchemy.url", settings.database_url)
-
-    inspector = inspect(engine)
-    tables = set(inspector.get_table_names())
-    if tables and "alembic_version" not in tables:
-        # Existing pre-Alembic DB — adopt it at the baseline revision.
-        command.stamp(cfg, "792e0bd8996d")
-    command.upgrade(cfg, "head")
+    Base.metadata.create_all(engine)

@@ -101,7 +101,7 @@ async def lifespan(app: FastAPI):
     # Railway's container runtime requires the process to bind $PORT within a
     # short grace window (empirically <10s). FastAPI's lifespan blocks uvicorn
     # from binding until yield is reached, so all I/O-heavy startup work
-    # (alembic migrations, Redis ping, seed, cache restore) is moved to a
+    # (schema create_all, Redis ping, cache restore) is moved to a
     # background task that runs AFTER yield. This lets /api/health respond
     # immediately for the Railway healthcheck while readiness for the pipeline
     # endpoints stays gated on startup_done_event.
@@ -138,41 +138,15 @@ async def lifespan(app: FastAPI):
         import redis as redis_lib
         import time as _time
 
-        logger.info("STARTUP STEP: calling init_db() (alembic migrations)")
+        _t0 = _time.monotonic()
+
+        logger.info("STARTUP STEP 1/3: create_all() — building schema from models")
         init_db()
-        logger.info("STARTUP STEP: init_db() completed successfully")
-
-        # V10.8 — schema-drift smoke check.  After migrations run, verify the
-        # V10.8 columns/tables actually exist.  If they don't, alembic missed
-        # a step and the rest of startup will silently produce corrupted
-        # lineups.  Fail loud here so the operator sees the issue immediately.
-        logger.info("STARTUP STEP: validating V10.8 schema present")
-        import sqlalchemy as _sa_check
-        from app.database import engine as _engine_check
-        _inspector = _sa_check.inspect(_engine_check)
-        _ps_cols = {c["name"] for c in _inspector.get_columns("player_stats")}
-        _sg_cols = {c["name"] for c in _inspector.get_columns("slate_games")}
-        _missing_ps = (
-            {"x_woba", "x_ba", "x_slg", "x_era", "x_woba_against"} - _ps_cols
+        logger.info(
+            "STARTUP STEP 1/3 complete (%.2fs elapsed)", _time.monotonic() - _t0
         )
-        _missing_sg = (
-            {"home_team_rest_days", "away_team_rest_days"} - _sg_cols
-        )
-        if _missing_ps or _missing_sg:
-            raise RuntimeError(
-                f"CRITICAL: V10.8 schema drift — alembic upgrade did not apply "
-                f"the c3d4e5f6a7b8 migration cleanly.  Missing PlayerStats "
-                f"columns: {sorted(_missing_ps)}.  Missing SlateGame columns: "
-                f"{sorted(_missing_sg)}.  Inspect alembic_version and re-run."
-            )
-        if "team_season_stats" not in _inspector.get_table_names():
-            raise RuntimeError(
-                "CRITICAL: V10.8 schema drift — `team_season_stats` table "
-                "missing.  Catcher framing adjustment cannot fire.  Inspect "
-                "alembic_version and re-run."
-            )
 
-        logger.info("STARTUP STEP: validating Redis connectivity")
+        logger.info("STARTUP STEP 2/3: validating Redis connectivity")
         _redis_error: Exception | None = None
         for _attempt in range(1, 6):
             try:
@@ -198,8 +172,11 @@ async def lifespan(app: FastAPI):
                 f"CRITICAL: Redis unreachable after 5 startup attempts. "
                 f"Redis is required for cache layer — no fallback. Last error: {_redis_error}"
             )
+        logger.info(
+            "STARTUP STEP 2/3 complete (%.2fs elapsed)", _time.monotonic() - _t0
+        )
 
-        logger.info("STARTUP STEP: initializing lineup cache")
+        logger.info("STARTUP STEP 3/3: initializing lineup cache")
         _restored = False
         with SessionLocal() as _check_db:
             _today_slate = _check_db.query(_Slate).filter_by(date=date.today()).first()
@@ -225,6 +202,9 @@ async def lifespan(app: FastAPI):
                     # and runs a fresh cold pipeline immediately (lock_time is already past).
         if not _restored:
             lineup_cache.purge()
+        logger.info(
+            "STARTUP STEP 3/3 complete (%.2fs elapsed)", _time.monotonic() - _t0
+        )
 
     async def _startup_init():
         try:

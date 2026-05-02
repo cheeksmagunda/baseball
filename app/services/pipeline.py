@@ -112,6 +112,27 @@ def _build_starter_stats_cache(
     return cache
 
 
+async def _refresh_statcast() -> None:
+    """Bulk-load Baseball Savant leaderboards into PlayerStats.
+
+    Runs synchronously inside run_full_pipeline between stats fetch and
+    scoring. Savant is fully public and always live — failure is a hard
+    stop, not graceful degradation. Any non-zero exit raises so the slate
+    monitor's top-level handler converts it to HTTP 503.
+    """
+    from scripts.refresh_statcast import main as refresh_main
+
+    logger.info("Statcast refresh: starting bulk load from Baseball Savant")
+    exit_code = await asyncio.to_thread(refresh_main)
+    if exit_code != 0:
+        raise RuntimeError(
+            f"Statcast refresh exited with code={exit_code} — Savant is "
+            "public and always live; a non-zero exit means a real "
+            "connectivity or schema problem that must be fixed."
+        )
+    logger.info("Statcast refresh complete (exit=0)")
+
+
 async def run_fetch(db: Session, game_date: date) -> dict:
     """Stage 1: Fetch today's schedule and create slate."""
     logger.info("Pipeline stage 1: fetching schedule for %s", game_date)
@@ -625,6 +646,14 @@ async def run_full_pipeline(db: Session, game_date: date) -> dict:
         # Raises RuntimeError if any game's weather cannot be fetched.
         from app.services.data_collection import enrich_slate_game_weather
         await enrich_slate_game_weather(db, slate)
+
+    # Statcast bulk-load from Baseball Savant. Upserts kinematics + xStats
+    # onto PlayerStats by mlb_id, so it must run AFTER populate_slate_players
+    # + run_fetch_player_stats (which create the Player rows it keys on) and
+    # BEFORE run_score_slate (which reads the columns it populates).
+    # Raises RuntimeError on any failure — Savant is public + always live, so
+    # a non-zero exit is a real connectivity / schema problem, not flakiness.
+    await _refresh_statcast()
 
     scores = run_score_slate(db, game_date)
     logger.info("Full pipeline COMPLETE for %s — %d players scored", game_date, len(scores))

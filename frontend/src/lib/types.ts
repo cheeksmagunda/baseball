@@ -49,3 +49,11 @@ export interface WaitInfo {
   lock_time_utc: string | null;
   minutes_until_lock: number | null;
 }
+
+export interface OptimizeStatus {
+  ready: boolean;
+  phase: "no_slate" | "before_lock" | "generating" | "ready";
+  first_pitch_utc: string | null;
+  lock_time_utc: string | null;
+  minutes_until_lock: number | null;
+}
