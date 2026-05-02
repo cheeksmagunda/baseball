@@ -10,7 +10,7 @@ The platform this is built for is **Real Sports**, a mobile DFS app with a forma
 lineup_score = sum of: real_score x (slot_multiplier + card_boost)
 ```
 
-Real Score (RS) is Real Sports' proprietary per-game performance metric. We can't predict it directly because it's platform-specific and opaque. What we can do is rank players by the pre-game conditions that actually correlate with high RS: is this batter facing a starter with a 5.2 ERA and 1.55 WHIP? Is this pitcher's team a mild favorite in a low-total game? Does the Statcast exit velocity profile on this hitter suggest real power or just surface-level stats?
+Real Score (RS) is Real Sports' proprietary per-game performance metric. RS is a **latent target variable** — the formula is opaque and proprietary. We can observe outcomes (which players land on the HV/Most Popular leaderboards, what their RS was) but we cannot observe the scoring function itself. This means we can't optimize for RS directly. Instead, the system takes a **proxy modeling approach**: use observable pre-game conditions to predict the *relative ordering* of players, calibrate against historical leaderboard outcomes, and treat high EV as a proxy for RS upside. What we can rank on: is this batter facing a starter with a 5.2 ERA and 1.55 WHIP? Is this pitcher's team a mild favorite in a low-total game? Does the Statcast exit velocity profile on this hitter suggest real power or just surface-level stats?
 
 Ben Oracle does exactly that. It pulls live data from six sources at T-65 (65 minutes before first pitch), scores every player on the slate using a rule-based signal model, and outputs one optimized 5-player lineup. The model has been calibrated against 33 real slates of outcome data manually ingested from the Real Sports platform, so every signal in the model has been validated against actual results rather than assumed.
 
@@ -71,11 +71,13 @@ See CLAUDE.md "T-65 Sniper Architecture" for complete timing details.
 
 ### Philosophy
 
-This is not a machine learning model. It's a rule-based scoring engine backed by live API data. The goal is to win drafts, not predict Real Score directly. RS is opaque, so the optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor).
+**The core problem is a latent target variable.** RS is proprietary and opaque — you can observe who ends up on the leaderboard but not the formula that got them there. You cannot optimize directly for RS. The system treats this as a proxy modeling problem: build a rule-based ranking over observable pre-game conditions, validate thresholds against historical leaderboard outcomes (HV/MP membership, real_score), and treat "high EV" as a proxy for "RS upside."
 
-V12 rebuilt the env scoring from scratch using a 35-slate audit against actual HV outcomes. Every dead or inverted signal was deleted. Only audit-validated signals survived. The model is popularity-agnostic: it doesn't favor popular players and doesn't fade unpopular ones. Multi-pitcher variants (0P through 5P) replaced the V11 constraint that could only build 0P or 1P lineups.
+This is not a machine learning model — that's a deliberate choice. A fitted statistical model would optimize toward historical RS outcomes, creating the feedback loop the no-historical-bleed architecture is designed to prevent. Instead, calibration is manual: read historical data, check whether pre-game signals correlate with actual HV outcomes in the right direction, edit constants directly. Interpretable by design, and structurally prevented from leaking outcome data into prediction.
 
-Historical stats are reference data only. They are never fed into the live scoring pipeline.
+The optimizer ranks players by pre-game conditions (env_factor) and Statcast-driven traits (trait_factor). V12 rebuilt env scoring from scratch using a 35-slate quartile audit against actual HV outcomes. Every dead or inverted signal was deleted. Only audit-validated signals survived. The model is popularity-agnostic: it doesn't favor popular players and doesn't fade unpopular ones. Multi-pitcher variants (0P through 5P) replaced the V11 constraint that could only build 0P or 1P lineups.
+
+Historical data is calibration ground truth only. It is never fed into the live scoring pipeline.
 
 ### Stacking
 

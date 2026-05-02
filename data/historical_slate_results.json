@@ -26408,5 +26408,285 @@
     "source": "realsports_scraper",
     "saved_at": "2026-04-30T17:40:44.815258+00:00",
     "notes": "Scraped via realsports.io on 2026-04-30 17:40:44Z"
+  },
+  {
+    "date": "2026-04-30",
+    "game_count": 11,
+    "games": [
+      {
+        "home": "ATL",
+        "away": "DET",
+        "home_score": 2,
+        "away_score": 5,
+        "winner": "DET",
+        "loser": "ATL",
+        "winner_score": 5,
+        "loser_score": 2
+      },
+      {
+        "home": "PIT",
+        "away": "STL",
+        "home_score": 5,
+        "away_score": 10,
+        "winner": "STL",
+        "loser": "PIT",
+        "winner_score": 10,
+        "loser_score": 5
+      },
+      {
+        "home": "BAL",
+        "away": "HOU",
+        "home_score": 10,
+        "away_score": 3,
+        "winner": "BAL",
+        "loser": "HOU",
+        "winner_score": 10,
+        "loser_score": 3
+      },
+      {
+        "home": "PHI",
+        "away": "SF",
+        "home_score": 3,
+        "away_score": 2,
+        "winner": "PHI",
+        "loser": "SF",
+        "winner_score": 3,
+        "loser_score": 2
+      },
+      {
+        "home": "BAL",
+        "away": "HOU",
+        "home_score": 5,
+        "away_score": 11,
+        "winner": "HOU",
+        "loser": "BAL",
+        "winner_score": 11,
+        "loser_score": 5
+      },
+      {
+        "home": "CIN",
+        "away": "COL",
+        "home_score": 6,
+        "away_score": 4,
+        "winner": "CIN",
+        "loser": "COL",
+        "winner_score": 6,
+        "loser_score": 4
+      },
+      {
+        "home": "NYM",
+        "away": "WSH",
+        "home_score": 4,
+        "away_score": 5,
+        "winner": "WSH",
+        "loser": "NYM",
+        "winner_score": 5,
+        "loser_score": 4
+      },
+      {
+        "home": "MIL",
+        "away": "ARI",
+        "home_score": 13,
+        "away_score": 1,
+        "winner": "MIL",
+        "loser": "ARI",
+        "winner_score": 13,
+        "loser_score": 1
+      },
+      {
+        "home": "ATH",
+        "away": "KC",
+        "home_score": 6,
+        "away_score": 3,
+        "winner": "ATH",
+        "loser": "KC",
+        "winner_score": 6,
+        "loser_score": 3
+      },
+      {
+        "home": "PHI",
+        "away": "SF",
+        "home_score": 6,
+        "away_score": 5,
+        "winner": "PHI",
+        "loser": "SF",
+        "winner_score": 6,
+        "loser_score": 5
+      },
+      {
+        "home": "MIN",
+        "away": "TOR",
+        "home_score": 7,
+        "away_score": 1,
+        "winner": "MIN",
+        "loser": "TOR",
+        "winner_score": 7,
+        "loser_score": 1
+      }
+    ],
+    "season_stage": "regular-season",
+    "source": "realsports_scraper",
+    "saved_at": "2026-05-02T12:02:11.904407+00:00",
+    "notes": "Scraped via realsports.io on 2026-05-02 12:02:11Z"
+  },
+  {
+    "date": "2026-05-01",
+    "game_count": 15,
+    "games": [
+      {
+        "home": "CHC",
+        "away": "ARI",
+        "home_score": 6,
+        "away_score": 5,
+        "winner": "CHC",
+        "loser": "ARI",
+        "winner_score": 6,
+        "loser_score": 5
+      },
+      {
+        "home": "DET",
+        "away": "TEX",
+        "home_score": 4,
+        "away_score": 5,
+        "winner": "TEX",
+        "loser": "DET",
+        "winner_score": 5,
+        "loser_score": 4
+      },
+      {
+        "home": "WSH",
+        "away": "MIL",
+        "home_score": 1,
+        "away_score": 6,
+        "winner": "MIL",
+        "loser": "WSH",
+        "winner_score": 6,
+        "loser_score": 1
+      },
+      {
+        "home": "PIT",
+        "away": "CIN",
+        "home_score": 9,
+        "away_score": 1,
+        "winner": "PIT",
+        "loser": "CIN",
+        "winner_score": 9,
+        "loser_score": 1
+      },
+      {
+        "home": "NYY",
+        "away": "BAL",
+        "home_score": 7,
+        "away_score": 2,
+        "winner": "NYY",
+        "loser": "BAL",
+        "winner_score": 7,
+        "loser_score": 2
+      },
+      {
+        "home": "BOS",
+        "away": "HOU",
+        "home_score": 3,
+        "away_score": 1,
+        "winner": "BOS",
+        "loser": "HOU",
+        "winner_score": 3,
+        "loser_score": 1
+      },
+      {
+        "home": "TB",
+        "away": "SF",
+        "home_score": 3,
+        "away_score": 0,
+        "winner": "TB",
+        "loser": "SF",
+        "winner_score": 3,
+        "loser_score": 0
+      },
+      {
+        "home": "MIA",
+        "away": "PHI",
+        "home_score": 5,
+        "away_score": 6,
+        "winner": "PHI",
+        "loser": "MIA",
+        "winner_score": 6,
+        "loser_score": 5
+      },
+      {
+        "home": "MIN",
+        "away": "TOR",
+        "home_score": 3,
+        "away_score": 7,
+        "winner": "TOR",
+        "loser": "MIN",
+        "winner_score": 7,
+        "loser_score": 3
+      },
+      {
+        "home": "STL",
+        "away": "LAD",
+        "home_score": 7,
+        "away_score": 2,
+        "winner": "STL",
+        "loser": "LAD",
+        "winner_score": 7,
+        "loser_score": 2
+      },
+      {
+        "home": "COL",
+        "away": "ATL",
+        "home_score": 6,
+        "away_score": 8,
+        "winner": "ATL",
+        "loser": "COL",
+        "winner_score": 8,
+        "loser_score": 6
+      },
+      {
+        "home": "LAA",
+        "away": "NYM",
+        "home_score": 3,
+        "away_score": 4,
+        "winner": "NYM",
+        "loser": "LAA",
+        "winner_score": 4,
+        "loser_score": 3
+      },
+      {
+        "home": "SD",
+        "away": "CWS",
+        "home_score": 2,
+        "away_score": 8,
+        "winner": "CWS",
+        "loser": "SD",
+        "winner_score": 8,
+        "loser_score": 2
+      },
+      {
+        "home": "ATH",
+        "away": "CLE",
+        "home_score": 5,
+        "away_score": 8,
+        "winner": "CLE",
+        "loser": "ATH",
+        "winner_score": 8,
+        "loser_score": 5
+      },
+      {
+        "home": "SEA",
+        "away": "KC",
+        "home_score": 6,
+        "away_score": 7,
+        "winner": "KC",
+        "loser": "SEA",
+        "winner_score": 7,
+        "loser_score": 6
+      }
+    ],
+    "season_stage": "regular-season",
+    "source": "realsports_scraper",
+    "saved_at": "2026-05-02T12:02:47.724167+00:00",
+    "notes": "Scraped via realsports.io on 2026-05-02 12:02:47Z"
   }
 ]

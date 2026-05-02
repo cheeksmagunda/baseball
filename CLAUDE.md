@@ -179,7 +179,9 @@ The active (and only) optimization path is `filter_strategy`.
 4. **Optimize** (`app/routers/filter_strategy.py` → `run_filter_strategy`) — Produce a single lineup (1P+4B or 0P+5B chosen by total EV)
 
 ### Philosophy
-Rule-based scoring + external-variables filtering (NOT ML). The goal is to **win drafts**, not predict Real Score. RS is opaque — we estimate via player profiling and filter on pre-game conditions.
+**RS is a latent target variable.** The Real Sports scoring formula is proprietary and opaque — we can observe leaderboard outcomes (HV, MP, 3X flags, real_score) but not the formula that generated them. This forces a **proxy modeling approach**: rank players by observable pre-game conditions that correlate with HV outcomes, and treat high EV as a proxy for RS upside.
+
+Rule-based scoring + external-variables filtering (NOT ML). The rule-based architecture is deliberate: a fitted statistical model would optimize toward historical RS, creating the data-leakage feedback loop the no-historical-bleed rule prevents. Calibration is manual — Claude reads historical data and edits `app/core/constants.py` directly. Interpretable by design, structurally prevented from leaking outcome data into prediction.
 
 ### T-65 Sniper Architecture (Event-Driven Timing)
 

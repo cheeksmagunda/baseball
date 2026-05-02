@@ -1,7 +1,7 @@
 """Static audit: the T-65 live pipeline must not leak banned signals.
 
 The live pipeline (app/services/*, app/routers/*, app/core/*) is architecturally
-forbidden from reading three categories of signal:
+forbidden from reading four categories of signal:
 
   1. Historical outcomes (post-slate truth): `real_score`, `total_value`,
      `is_highest_value`, `is_most_popular`, `is_most_drafted_3x`.
@@ -10,9 +10,12 @@ forbidden from reading three categories of signal:
      source FilterCard for response payloads.
   3. Popularity (V11.0 removed entirely): `PopularityClass`, `popularity` /
      `sharp_score` attribute reads.  Any reintroduction is a regression.
+  4. Historical data file paths: the four /data/ files (historical_players,
+     historical_winning_drafts, hv_player_game_stats, historical_slate_results)
+     must never be opened or referenced in live runtime code.
 
-Only scripts/ may read historical-outcome fields.  No live runtime code
-should reference any of these symbols.
+Only scripts/ may read historical-outcome fields or the /data/ files.  No live
+runtime code should reference any of these symbols or file paths.
 
 This script greps the runtime code paths for any such reference.  Run it
 before deploying or as a CI gate.
@@ -64,6 +67,16 @@ BANNED_FIELDS = [
     "sharp_score",
 ]
 
+# Filename stems of the four historical /data/ files.  Any occurrence of these
+# strings in non-comment runtime code is a violation — the live pipeline must
+# never open or reference these files.
+BANNED_DATA_FILES = [
+    "historical_players",
+    "historical_winning_drafts",
+    "hv_player_game_stats",
+    "historical_slate_results",
+]
+
 # Phrases that indicate the match is a legitimate non-read reference
 # (docstring, comment, string literal describing the rule).
 ALLOWED_CONTEXT_HINTS = (
@@ -79,6 +92,25 @@ ALLOWED_CONTEXT_HINTS = (
     "DISPLAY-ONLY",
     "not as an RS",
 )
+
+
+def scan_file_for_data_refs(path: Path) -> list[tuple[int, str, str]]:
+    """Return (line_no, stem, line) for each historical-file path reference."""
+    violations: list[tuple[int, str, str]] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return violations
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        for stem in BANNED_DATA_FILES:
+            if stem in stripped:
+                if any(hint in stripped for hint in ALLOWED_CONTEXT_HINTS):
+                    continue
+                violations.append((lineno, stem, stripped))
+    return violations
 
 
 def scan_file(path: Path) -> list[tuple[int, str, str]]:
@@ -114,6 +146,8 @@ def main() -> int:
             files_scanned += 1
             for lineno, field, line in scan_file(py_file):
                 total_violations.append((py_file, lineno, field, line))
+            for lineno, stem, line in scan_file_for_data_refs(py_file):
+                total_violations.append((py_file, lineno, stem, line))
 
     print(f"Scanned {files_scanned} runtime files under:")
     for d in RUNTIME_DIRS:
@@ -122,7 +156,7 @@ def main() -> int:
     print()
 
     if not total_violations:
-        print("OK — no historical outcome fields read in the live pipeline.")
+        print("OK — no historical outcome fields or data file references in the live pipeline.")
         return 0
 
     print(f"FAIL — {len(total_violations)} suspicious reference(s) detected:")
@@ -130,7 +164,7 @@ def main() -> int:
         rel = path.relative_to(REPO_ROOT)
         print(f"  {rel}:{lineno}  [{field}]  {line}")
     print()
-    print("Historical outcome fields must only be read from scripts/.")
+    print("Historical outcome fields and /data/ file references must only appear in scripts/.")
     print("If this is a false positive, add an explicit allowed-context hint in")
     print("the docstring or comment on that line, or add the file to EXEMPT_FILES.")
     return 2

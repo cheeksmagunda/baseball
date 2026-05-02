@@ -1014,11 +1014,6 @@ date,winner_rank,slot_index,player_name,team,position,real_score,slot_mult,card_
 2026-04-22,6,3,Shohei Ohtani,LAD,OF,4.8,1.6,1.8
 2026-04-22,6,4,Munetaka Murakami,CWS,OF,3.7,1.4,2.4
 2026-04-22,6,5,Michael Harris II,ATL,OF,5.0,1.2,3.0
-2026-04-22,6,1,Max Fried,NYY,P,7.9,2.0,0.0
-2026-04-22,6,2,Casey Mize,DET,P,4.8,1.8,0.0
-2026-04-22,6,3,Shohei Ohtani,LAD,OF,4.8,1.6,1.8
-2026-04-22,6,4,Munetaka Murakami,CWS,OF,3.7,1.4,2.4
-2026-04-22,6,5,Michael Harris II,ATL,OF,5.0,1.2,3.0
 2026-04-22,8,1,Shohei Ohtani,LAD,OF,4.8,2.0,1.8
 2026-04-22,8,2,Max Fried,NYY,P,7.9,1.8,0.0
 2026-04-22,8,3,Corbin Carroll,ARI,OF,4.5,1.6,1.9
@@ -1213,71 +1208,6 @@ date,winner_rank,slot_index,player_name,team,position,real_score,slot_mult,card_
 2026-04-24,6,3,Yordan Alvarez,HOU,OF,0.8,1.6,1.6
 2026-04-24,6,4,Ben Rice,NYY,OF,3.6,1.4,2.0
 2026-04-24,6,5,Jazz Chisholm Jr.,NYY,OF,5.4,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
-2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
-2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
-2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
-2026-04-24,7,4,Michael Harris II,ATL,OF,3.4,1.4,2.4
-2026-04-24,7,5,Junior Caminero,TB,OF,5.0,1.2,3.0
 2026-04-24,7,1,Michael Lorenzen,COL,P,5.5,2.0,1.7
 2026-04-24,7,2,Yordan Alvarez,HOU,OF,0.8,1.8,1.6
 2026-04-24,7,3,Munetaka Murakami,CWS,OF,2.0,1.6,2.3
@@ -1522,11 +1452,6 @@ date,winner_rank,slot_index,player_name,team,position,real_score,slot_mult,card_
 2026-04-27,8,3,Shohei Ohtani,LAD,OF,3.4,1.6,1.7
 2026-04-27,8,4,Munetaka Murakami,CWS,OF,4.9,1.4,2.5
 2026-04-27,8,5,Ben Rice,NYY,OF,2.9,1.2,1.9
-2026-04-27,8,1,Max Fried,NYY,P,5.2,2.0,0.0
-2026-04-27,8,2,Aaron Judge,NYY,OF,3.9,1.8,2.3
-2026-04-27,8,3,Shohei Ohtani,LAD,OF,3.4,1.6,1.7
-2026-04-27,8,4,Munetaka Murakami,CWS,OF,4.9,1.4,2.5
-2026-04-27,8,5,Ben Rice,NYY,OF,2.9,1.2,1.9
 2026-04-27,10,1,Shohei Ohtani,LAD,OF,3.4,2.0,1.7
 2026-04-27,10,2,Mike Trout,LAA,OF,1.6,1.8,2.1
 2026-04-27,10,3,Munetaka Murakami,CWS,OF,4.9,1.6,2.5
@@ -1572,11 +1497,6 @@ date,winner_rank,slot_index,player_name,team,position,real_score,slot_mult,card_
 2026-04-27,18,3,Cal Raleigh,SEA,OF,2.4,1.6,3.0
 2026-04-27,18,4,Munetaka Murakami,CWS,OF,4.9,1.4,2.5
 2026-04-27,18,5,Mike Trout,LAA,OF,1.6,1.2,2.1
-2026-04-27,19,1,Aaron Judge,NYY,OF,3.9,2.0,2.3
-2026-04-27,19,2,Liam Hicks,MIA,OF,4.2,1.8,2.4
-2026-04-27,19,3,Ben Rice,NYY,OF,2.9,1.6,1.9
-2026-04-27,19,4,Munetaka Murakami,CWS,OF,4.9,1.4,2.5
-2026-04-27,19,5,Jose Ramirez,CLE,OF,0.1,1.2,2.7
 2026-04-27,19,1,Aaron Judge,NYY,OF,3.9,2.0,2.3
 2026-04-27,19,2,Liam Hicks,MIA,OF,4.2,1.8,2.4
 2026-04-27,19,3,Ben Rice,NYY,OF,2.9,1.6,1.9
@@ -1777,3 +1697,188 @@ date,winner_rank,slot_index,player_name,team,position,real_score,slot_mult,card_
 2026-04-29,20,3,JJ Wetherholt,STL,OF,2.2,1.6,2.6
 2026-04-29,20,4,Ozzie Albies,ATL,OF,3.7,1.4,2.6
 2026-04-29,20,5,Corbin Carroll,ARI,OF,2.2,1.2,2.0
+2026-04-30,1,1,Kyle Schwarber,PHI,OF,6.2,2.0,2.6
+2026-04-30,1,2,Christian Walker,HOU,OF,0.9,1.8,2.2
+2026-04-30,1,3,TJ Friedl,CIN,OF,3.4,1.6,3.0
+2026-04-30,1,4,Brandon Marsh,PHI,OF,1.3,1.4,2.7
+2026-04-30,1,5,William Contreras,MIL,OF,7.2,1.2,3.0
+2026-04-30,2,1,Nick Kurtz,ATH,OF,2.5,2.0,2.6
+2026-04-30,2,2,Kyle Schwarber,PHI,OF,6.2,1.8,2.6
+2026-04-30,2,3,Jordan Walker,STL,OF,3.5,1.6,2.3
+2026-04-30,2,4,CJ Abrams,WSH,OF,5.5,1.4,2.3
+2026-04-30,2,5,Yordan Alvarez,HOU,OF,3.1,1.2,1.7
+2026-04-30,3,1,Alec Burleson,STL,OF,3.9,2.0,2.4
+2026-04-30,3,2,Shea Langeliers,ATH,OF,4.0,1.8,2.4
+2026-04-30,3,3,Jordan Walker,STL,OF,3.5,1.6,2.3
+2026-04-30,3,4,CJ Abrams,WSH,OF,5.5,1.4,2.3
+2026-04-30,3,5,Yordan Alvarez,HOU,OF,3.1,1.2,1.7
+2026-04-30,4,1,Shea Langeliers,ATH,OF,4.0,2.0,2.4
+2026-04-30,4,2,Ozzie Albies,ATL,OF,1.3,1.8,2.4
+2026-04-30,4,3,Jake Bauers,MIL,OF,1.2,1.6,2.6
+2026-04-30,4,4,Jeremiah Jackson,BAL,OF,5.5,1.4,2.7
+2026-04-30,4,5,Kyle Schwarber,PHI,OF,6.2,1.2,2.6
+2026-04-30,5,1,Yordan Alvarez,HOU,OF,3.1,2.0,1.7
+2026-04-30,5,2,Brandon Lowe,PIT,OF,2.4,1.8,2.4
+2026-04-30,5,3,Shea Langeliers,ATH,OF,4.0,1.6,2.4
+2026-04-30,5,4,Nick Kurtz,ATH,OF,2.5,1.4,2.6
+2026-04-30,5,5,Kyle Schwarber,PHI,OF,6.2,1.2,2.6
+2026-04-30,6,1,CJ Abrams,WSH,OF,5.5,2.0,2.3
+2026-04-30,6,2,Shea Langeliers,ATH,OF,4.0,1.8,2.4
+2026-04-30,6,3,Alec Burleson,STL,OF,3.9,1.6,2.4
+2026-04-30,6,4,Gunnar Henderson,BAL,OF,0.9,1.4,2.3
+2026-04-30,6,5,Jordan Walker,STL,OF,3.5,1.2,2.3
+2026-04-30,7,1,Kyle Schwarber,PHI,OF,6.2,2.0,2.6
+2026-04-30,7,2,Trea Turner,PHI,OF,2.5,1.8,3.0
+2026-04-30,7,3,Jung Hoo Lee,SF,OF,2.3,1.6,3.0
+2026-04-30,7,4,Luis Arraez,SF,OF,2.2,1.4,3.0
+2026-04-30,7,5,Adolis Garcia,PHI,OF,2.3,1.2,3.0
+2026-04-30,8,1,Alec Burleson,STL,OF,3.9,2.0,2.4
+2026-04-30,8,2,Jordan Walker,STL,OF,3.5,1.8,2.3
+2026-04-30,8,3,Corbin Carroll,ARI,OF,1.1,1.6,2.0
+2026-04-30,8,4,CJ Abrams,WSH,OF,5.5,1.4,2.3
+2026-04-30,8,5,Shea Langeliers,ATH,OF,4.0,1.2,2.4
+2026-04-30,11,1,JJ Wetherholt,STL,OF,2.9,2.0,2.5
+2026-04-30,11,2,Jordan Walker,STL,OF,3.5,1.8,2.3
+2026-04-30,11,3,Alec Burleson,STL,OF,3.9,1.6,2.4
+2026-04-30,11,4,Ivan Herrera,STL,OF,0.8,1.4,3.0
+2026-04-30,11,5,Kyle Schwarber,PHI,OF,6.2,1.2,2.6
+2026-04-30,12,1,Nick Kurtz,ATH,OF,2.5,2.0,2.6
+2026-04-30,12,2,Kyle Schwarber,PHI,OF,6.2,1.8,2.6
+2026-04-30,12,3,CJ Abrams,WSH,OF,5.5,1.6,2.3
+2026-04-30,12,4,Ildemaro Vargas,ARI,OF,0.6,1.4,1.7
+2026-04-30,12,5,Brice Turang,MIL,OF,2.3,1.2,2.0
+2026-04-30,13,1,Yordan Alvarez,HOU,OF,3.1,2.0,1.7
+2026-04-30,13,2,Gunnar Henderson,BAL,OF,0.9,1.8,2.3
+2026-04-30,13,3,Kyle Schwarber,PHI,OF,6.2,1.6,2.6
+2026-04-30,13,4,Jeremiah Jackson,BAL,OF,5.5,1.4,2.7
+2026-04-30,13,5,Rafael Devers,SF,OF,1.1,1.2,3.0
+2026-04-30,14,1,CJ Abrams,WSH,OF,5.5,2.0,2.3
+2026-04-30,14,2,Brice Turang,MIL,OF,2.3,1.8,2.0
+2026-04-30,14,3,JJ Wetherholt,STL,OF,2.9,1.6,2.5
+2026-04-30,14,4,Yordan Alvarez,HOU,OF,3.1,1.4,1.7
+2026-04-30,14,5,Shea Langeliers,ATH,OF,4.0,1.2,2.4
+2026-04-30,15,1,Kyle Schwarber,PHI,OF,6.2,2.0,2.6
+2026-04-30,15,2,Juan Soto,NYM,OF,2.2,1.8,2.9
+2026-04-30,15,3,Brice Turang,MIL,OF,2.3,1.6,2.0
+2026-04-30,15,4,Shea Langeliers,ATH,OF,4.0,1.4,2.4
+2026-04-30,15,5,Cristopher Sanchez,PHI,P,4.9,1.2,0.0
+2026-04-30,16,1,Alec Burleson,STL,OF,3.9,2.0,2.4
+2026-04-30,16,2,CJ Abrams,WSH,OF,5.5,1.8,2.3
+2026-04-30,16,3,Shea Langeliers,ATH,OF,4.0,1.6,2.4
+2026-04-30,16,4,Ozzie Albies,ATL,OF,1.3,1.4,2.4
+2026-04-30,16,5,Brice Turang,MIL,OF,2.3,1.2,2.0
+2026-04-30,18,1,Kevin McGonigle,DET,OF,0.2,2.0,2.7
+2026-04-30,18,2,Brandon Lowe,PIT,OF,2.4,1.8,2.4
+2026-04-30,18,3,Matt Chapman,SF,OF,1.3,1.6,3.0
+2026-04-30,18,4,CJ Abrams,WSH,OF,5.5,1.4,2.3
+2026-04-30,18,5,William Contreras,MIL,OF,7.2,1.2,3.0
+2026-04-30,19,1,Cristopher Sanchez,PHI,P,4.9,2.0,0.0
+2026-04-30,19,2,Kyle Schwarber,PHI,OF,6.2,1.8,2.6
+2026-04-30,19,3,Shea Langeliers,ATH,OF,4.0,1.6,2.4
+2026-04-30,19,4,Trea Turner,PHI,OF,2.5,1.4,3.0
+2026-04-30,19,5,Gunnar Henderson,BAL,OF,0.9,1.2,2.3
+2026-04-30,20,1,CJ Abrams,WSH,OF,5.5,2.0,2.3
+2026-04-30,20,2,Alec Burleson,STL,OF,3.9,1.8,2.4
+2026-04-30,20,3,Gunnar Henderson,BAL,OF,0.9,1.6,2.3
+2026-04-30,20,4,Jordan Walker,STL,OF,3.5,1.4,2.3
+2026-04-30,20,5,JJ Wetherholt,STL,OF,2.9,1.2,2.5
+2026-05-01,1,1,Jordan Walker,STL,OF,5.7,2.0,2.2
+2026-05-01,1,2,Ben Rice,NYY,OF,3.9,1.8,1.9
+2026-05-01,1,3,Aaron Judge,NYY,OF,2.5,1.6,2.2
+2026-05-01,1,4,Munetaka Murakami,CWS,OF,3.5,1.4,2.4
+2026-05-01,1,5,Ildemaro Vargas,ARI,OF,3.4,1.2,1.8
+2026-05-01,2,1,Munetaka Murakami,CWS,OF,3.5,2.0,2.4
+2026-05-01,2,2,Mickey Moniak,COL,OF,2.1,1.8,2.3
+2026-05-01,2,3,Josh Jung,TEX,OF,2.2,1.6,2.5
+2026-05-01,2,4,Kazuma Okamoto,TOR,OF,5.7,1.4,3.0
+2026-05-01,2,5,Edmundo Sosa,PHI,OF,2.3,1.2,3.0
+2026-05-01,3,1,Jorge Soler,LAA,OF,2.9,2.0,2.7
+2026-05-01,3,2,Fernando Tatis Jr.,SD,OF,2.6,1.8,3.0
+2026-05-01,3,3,Julio Rodriguez,SEA,OF,6.0,1.6,3.0
+2026-05-01,3,4,Munetaka Murakami,CWS,OF,3.5,1.4,2.4
+2026-05-01,3,5,Bryan Woo,SEA,P,0.4,1.2,0.0
+2026-05-01,4,1,Jacob Misiorowski,MIL,P,6.2,2.0,0.0
+2026-05-01,4,2,Michael Harris II,ATL,OF,3.9,1.8,2.6
+2026-05-01,4,3,Munetaka Murakami,CWS,OF,3.5,1.6,2.4
+2026-05-01,4,4,Geraldo Perdomo,ARI,OF,3.9,1.4,3.0
+2026-05-01,4,5,Riley Greene,DET,OF,1.8,1.2,2.7
+2026-05-01,5,1,Will Warren,NYY,P,5.7,2.0,0.0
+2026-05-01,5,2,Cody Bellinger,NYY,OF,2.3,1.8,3.0
+2026-05-01,5,3,Jazz Chisholm Jr.,NYY,OF,0.3,1.6,3.0
+2026-05-01,5,4,Bryson Stott,PHI,OF,4.6,1.4,3.0
+2026-05-01,5,5,Jarren Duran,BOS,OF,4.4,1.2,3.0
+2026-05-01,6,1,Will Warren,NYY,P,5.7,2.0,0.0
+2026-05-01,6,2,Ben Rice,NYY,OF,3.9,1.8,1.9
+2026-05-01,6,3,Jordan Walker,STL,OF,5.7,1.6,2.2
+2026-05-01,6,4,Munetaka Murakami,CWS,OF,3.5,1.4,2.4
+2026-05-01,6,5,Oneil Cruz,PIT,OF,0.2,1.2,2.0
+2026-05-01,7,1,Mike Trout,LAA,OF,0.4,2.0,2.1
+2026-05-01,7,2,Ben Rice,NYY,OF,3.9,1.8,1.9
+2026-05-01,7,3,Jordan Walker,STL,OF,5.7,1.6,2.2
+2026-05-01,7,4,Aaron Judge,NYY,OF,2.5,1.4,2.2
+2026-05-01,7,5,Munetaka Murakami,CWS,OF,3.5,1.2,2.4
+2026-05-01,8,1,Will Warren,NYY,P,5.7,2.0,0.0
+2026-05-01,8,2,Jacob Misiorowski,MIL,P,6.2,1.8,0.0
+2026-05-01,8,3,Munetaka Murakami,CWS,OF,3.5,1.6,2.4
+2026-05-01,8,4,Ben Rice,NYY,OF,3.9,1.4,1.9
+2026-05-01,8,5,Ildemaro Vargas,ARI,OF,3.4,1.2,1.8
+2026-05-01,9,1,MacKenzie Gore,TEX,P,0.8,2.0,0.0
+2026-05-01,9,2,Marcell Ozuna,PIT,OF,2.4,1.8,3.0
+2026-05-01,9,3,Ben Rice,NYY,OF,3.9,1.6,1.9
+2026-05-01,9,4,Julio Rodriguez,SEA,OF,6.0,1.4,3.0
+2026-05-01,9,5,Max Muncy,LAD,OF,1.4,1.2,2.6
+2026-05-01,10,1,Eury Perez,MIA,P,3.2,2.0,0.4
+2026-05-01,10,2,Jacob Misiorowski,MIL,P,6.2,1.8,0.0
+2026-05-01,10,3,Kazuma Okamoto,TOR,OF,5.7,1.6,3.0
+2026-05-01,10,4,Max Muncy,LAD,OF,1.4,1.4,2.6
+2026-05-01,10,5,Colson Montgomery,CWS,OF,1.9,1.2,2.6
+2026-05-01,11,1,Jordan Walker,STL,OF,5.7,2.0,2.2
+2026-05-01,11,2,Munetaka Murakami,CWS,OF,3.5,1.8,2.4
+2026-05-01,11,3,Vladimir Guerrero Jr.,TOR,OF,0.0,1.6,2.5
+2026-05-01,11,4,William Contreras,MIL,OF,5.0,1.4,2.5
+2026-05-01,11,5,Kevin McGonigle,DET,OF,-0.6,1.2,2.8
+2026-05-01,12,1,Aaron Judge,NYY,OF,2.5,2.0,2.2
+2026-05-01,12,2,Will Warren,NYY,P,5.7,1.8,0.0
+2026-05-01,12,3,Amed Rosario,NYY,OF,0.9,1.6,2.9
+2026-05-01,12,4,Ben Rice,NYY,OF,3.9,1.4,1.9
+2026-05-01,12,5,Jordan Walker,STL,OF,5.7,1.2,2.2
+2026-05-01,13,1,Jordan Walker,STL,OF,5.7,2.0,2.2
+2026-05-01,13,2,Matt Olson,ATL,OF,2.0,1.8,1.9
+2026-05-01,13,3,Munetaka Murakami,CWS,OF,3.5,1.6,2.4
+2026-05-01,13,4,Fernando Tatis Jr.,SD,OF,2.6,1.4,3.0
+2026-05-01,13,5,Vladimir Guerrero Jr.,TOR,OF,0.0,1.2,2.5
+2026-05-01,14,1,Jacob Misiorowski,MIL,P,6.2,2.0,0.0
+2026-05-01,14,2,Munetaka Murakami,CWS,OF,3.5,1.8,2.4
+2026-05-01,14,3,Aaron Judge,NYY,OF,2.5,1.6,2.2
+2026-05-01,14,4,Jordan Walker,STL,OF,5.7,1.4,2.2
+2026-05-01,14,5,Sal Stewart,CIN,OF,-0.4,1.2,2.0
+2026-05-01,15,1,Elly De La Cruz,CIN,OF,0.1,2.0,2.1
+2026-05-01,15,2,Ozzie Albies,ATL,OF,0.5,1.8,2.4
+2026-05-01,15,3,William Contreras,MIL,OF,5.0,1.6,2.5
+2026-05-01,15,4,Byron Buxton,MIN,OF,3.6,1.4,3.0
+2026-05-01,15,5,Brent Rooker,ATH,OF,4.1,1.2,3.0
+2026-05-01,16,1,Zack Wheeler,PHI,P,5.1,2.0,0.0
+2026-05-01,16,2,Jacob Misiorowski,MIL,P,6.2,1.8,0.0
+2026-05-01,16,3,Aaron Judge,NYY,OF,2.5,1.6,2.2
+2026-05-01,16,4,Yandy Diaz,TB,OF,2.2,1.4,2.3
+2026-05-01,16,5,Bryan Reynolds,PIT,OF,4.4,1.2,2.7
+2026-05-01,17,1,Ben Rice,NYY,OF,3.9,2.0,1.9
+2026-05-01,17,2,Aaron Judge,NYY,OF,2.5,1.8,2.2
+2026-05-01,17,3,Matt Olson,ATL,OF,2.0,1.6,1.9
+2026-05-01,17,4,Jordan Walker,STL,OF,5.7,1.4,2.2
+2026-05-01,17,5,Nico Hoerner,CHC,OF,1.0,1.2,2.2
+2026-05-01,18,1,Matt Olson,ATL,OF,2.0,2.0,1.9
+2026-05-01,18,2,Ben Rice,NYY,OF,3.9,1.8,1.9
+2026-05-01,18,3,Jordan Walker,STL,OF,5.7,1.6,2.2
+2026-05-01,18,4,Nico Hoerner,CHC,OF,1.0,1.4,2.2
+2026-05-01,18,5,Aaron Judge,NYY,OF,2.5,1.2,2.2
+2026-05-01,19,1,Jacob Misiorowski,MIL,P,6.2,2.0,0.0
+2026-05-01,19,2,Matt Olson,ATL,OF,2.0,1.8,1.9
+2026-05-01,19,3,Aaron Judge,NYY,OF,2.5,1.6,2.2
+2026-05-01,19,4,William Contreras,MIL,OF,5.0,1.4,2.5
+2026-05-01,19,5,Ronald Acuna Jr.,ATL,OF,1.7,1.2,3.0
+2026-05-01,20,1,Jacob Misiorowski,MIL,P,6.2,2.0,0.0
+2026-05-01,20,2,Jordan Walker,STL,OF,5.7,1.8,2.2
+2026-05-01,20,3,Kyle Schwarber,PHI,OF,-0.6,1.6,2.2
+2026-05-01,20,4,Ben Rice,NYY,OF,3.9,1.4,1.9
+2026-05-01,20,5,Aaron Judge,NYY,OF,2.5,1.2,2.2
