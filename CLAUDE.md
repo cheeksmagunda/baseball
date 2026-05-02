@@ -687,6 +687,60 @@ The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each
 
 **Stacking** is still capped at 2 batters per team AND 2 per game and only fires on overwhelmingly clear game scripts.
 
+### V13.0 Pipeline Audit Pass — ML Curves Inverted, Asymmetric Ceiling Widened, Wind Direction Refined, Framing Bumped (May 2)
+
+V13.0 ships five calibration changes from a fresh 38-slate / 1140-batter / 244-pitcher audit of every active signal against `is_highest_value` and `real_score` outcomes.  No structural changes (composition, stack rules, slot logic, anti-correlation, no-fallbacks all unchanged from V12.2).  This was a pipeline-strengthening pass triggered by an external data-scientist writeup; most of the writeup's claims either (a) validated V12.2, (b) contradicted our 38-slate audit (Vegas O/U for batters re-confirmed flat: 54%/51%/47%/46%/48% across the full quartile range incl. 10.5+ shootouts), or (c) relied on forbidden inputs (`card_boost`, popularity).  Five items were genuine miscalibrations:
+
+**1. Pitcher moneyline curve INVERTED — underdog peak, not mild-fav peak.**
+
+V12.1 documented "mild fav (-120 to -180) HV=37.5%, heavy fav HV=14.5%" on 33 slates.  The 38-slate re-audit refines the curve significantly — underdog pitchers now show the highest HV-rate, not mild favorites:
+
+| ML bucket | n | HV-rate | mean RS |
+|---|---|---|---|
+| Underdog (≥+100) | 69 | **37.7%** ← peak | 3.09 |
+| Mild fav (-180 to -111) | 94 | 29.8% | 3.68 |
+| Pickem (-110 to +99) | 27 | 18.5% | 3.21 |
+| Clear fav (-250 to -181) | 36 | 16.7% | 3.64 |
+| Heavy fav (≤-251) | 6 | **0.0%** ← tank | 2.35 |
+
+Mechanism: underdog pitchers stay in tight games and accumulate K's / pitch deeper while their team scrambles for runs; heavy-favorite teams generate blowouts and pull the starter early before win-bonus and K total stack.  The pre-V13 curve gave underdog +0.2 (tiny bonus, far below mild-fav +1.0); V13 flips this to give underdog the peak +1.0, mild fav +0.8, clear fav +0.2, pickem +0.3, heavy fav -0.2.  Implemented inline in `compute_pitcher_env_score()` ([app/services/filter_strategy.py](app/services/filter_strategy.py)).  The earlier "ML peak at mild fav" claim is preserved in the V12.1 changelog as historical context, but the active behavior is now the V13 curve.
+
+**2. Batter moneyline curve refined — strong underdog premium, fade noise band, deepen heavy-fav penalty.**
+
+V12 captured the underdog premium (+0.3 for ≥+100, -0.2 for ≤-200, +0.2 for "mild fav" -180 to -110) on 35 slates.  V13 38-slate audit shows three calibration misses:
+
+- The +100 flat bonus under-rewarded TRUE underdogs (≥+150).  V13 splits: ≥+150 → +0.5, +100 to +149 → +0.3.
+- The -180 to -110 mild-fav band sits in pure noise (Q2 51.6% / Q3 48.4% HV-rate).  V13 zeroes this band.
+- The -200 heavy-fav penalty under-penalized vs the audit signal.  V13 splits: ≤-250 → -0.5, -200 to -250 → -0.3.
+
+**3. Wind direction split refined — high-wind IN is volatility-positive, mild-wind IN is suppressive.**
+
+V10.3 added a flat wind-IN penalty.  V13 38-slate audit shows the relationship is non-linear:
+
+| Wind | n | HV-rate |
+|---|---|---|
+| 10+ OUT | 71 | 64.8% |
+| 10+ cross | 154 | 51.9% |
+| **10+ IN** | 38 | **52.6%** ← similar to cross |
+| 6-9 OUT | 97 | 51.5% |
+| 6-9 cross | 340 | 47.9% |
+| **6-9 IN** | 56 | **37.5%** ← real penalty zone |
+| calm <6 | 309 | 44.7% |
+
+At ≥10 mph, ANY direction lifts HV via volatility (wind disrupts pitch movement, fielder reads, etc.).  But at 6-9 mph IN, there's not enough volatility to compensate for fly-ball suppression.  V13 bumps 10+ IN from +0.1 to +0.3 (matches cross) and adds a -0.2 penalty for 6-9 IN.
+
+**4. Asymmetric env ceiling widened — 1.40 → 1.55 for pitchers.**
+
+V12 documented "pitcher mean RS 34% higher than batter mean RS" justifying the 1.40 vs 1.30 ceiling asymmetry (7.7%).  V13 38-slate audit shows pitcher mean RS is 1.38× batter mean RS (3.42 vs 2.48) — empirical asymmetry is 38%, ceiling asymmetry was 7.7%.  Pitchers were systematically under-rewarded.  V12 backtest also showed our optimizer produced too few multi-pitcher lineups (1P+4B = 37% of output vs 17% of winners; 2P+3B = 23% of output vs 28.6% of winners).  Bumping `PITCHER_ENV_MODIFIER_CEILING` from 1.40 → 1.55 (asymmetry 7.7% → 19%) pushes marginal cases toward the 2P+ shapes that the audit shows actually win more often.
+
+**5. Catcher framing K-rate adjustment magnitude tripled — ±5% → ±12%.**
+
+V10.8 added a ±5% adjustment to the pitcher k_rate trait based on team framing_runs.  V13 audit of own-team framing_runs vs pitcher HV-rate shows Q4 (top framers, ≥+1.06) HV=40.0% vs Q1 (bottom framers, ≤-0.83) HV=21.2% — a +18.8pp swing.  The ±5% trait adjustment translated to ~0.5% EV change after passing through k_rate (35/100 trait weight) → trait_factor (0.85-1.15 narrow band) — structurally too small for an 18.8pp HV signal.  V13 bumps `SCORING_FRAMING_K_RATE_MAX_ADJ` from 0.05 → 0.12.  Stays conservative against the 2026 ABS Challenge System's compression of per-pitch framing effects (2% of pitches are challenged, 98% still human-called).
+
+**V13 explicitly does NOT change:** lineup composition (still V12 multi-pitcher 0P-5P chooser), per-team / per-game caps, anti-correlation guard, stack-eligibility two-path rule, FADE/popularity removal (V11), `compute_total_value()` historical CSV ingest, scoring_engine trait weights (V12.2 zeroing of matchup_quality / lineup_position / ballpark_factor stays — those are env signals), Statcast refresh wiring, T-65 timing model, no-fallbacks rule, no-historical-bleed rule.  Pure calibration improvements from a fresh-eyes audit.
+
+**Eval delta:** None published yet — V13 calibration ships ahead of backtest (the eval harness lives in `/tmp/baseball_eval/`, V12 V13 comparison would be re-run there).  Direction of impact: all five changes correct quantitative miscalibrations against the 38-slate audit, so the live HV-rate over the next ~30 slates should be at-or-above V12.2.  The pitcher ML curve flip is the biggest single change — expect more underdog-pitcher selections (Wheeler in -110 game, Ryan in +120 game) and fewer heavy-favorite-pitcher selections in lineups where the ML-driven pitcher EV used to dominate.
+
 ### V12.1 Audit-Driven Rebuild + Multi-Pitcher Variants (April 30)
 
 V12 ships three structural changes from a 35-slate / 994-batter / 222-pitcher quartile audit of every pre-game signal against actual HV outcomes (`is_highest_value` and `real_score` used STRICTLY as outcome labels — never input).
@@ -956,19 +1010,32 @@ section headers above for context.  None of those sections describe
   rebalanced trait weights to remove env double-counting.  Documented
   in the V12.x section at the top of this file.
 
-### Active behavior summary (V12.2 — read this, not the changelog)
+### Active behavior summary (V13.0 — read this, not the changelog)
 
 EV formula (`_compute_base_ev` in `app/services/filter_strategy.py`):
 ```
 filter_ev = env_factor × volatility_amplifier × trait_factor
           × stack_bonus × dnp_adj × 100
 
-env_factor:        floor 0.20, pitcher ceiling 1.40, batter ceiling 1.30
+env_factor:        floor 0.20, pitcher ceiling 1.55, batter ceiling 1.30  (V13)
 volatility_amplifier: 1 + cv × 0.20 × (env − 0.5) × 2  (batters only)
 trait_factor:      floor 0.85, ceiling 1.15
 stack_bonus:       1.0 / 1.20 (PATH 1 blowout-fav teams only)
 dnp_adj:           0.70 (confirmed-bad) / 0.93 (unknown) / 1.0 (known order)
 ```
+
+Pitcher env ML curve (V13 — inverted from V12's "mild fav peak"):
+- Underdog (≥+100):    +1.0  ← peak (HV 37.7%)
+- Mild fav (-180..-111): +0.8
+- Pickem / clear fav:  +0.2..+0.3 (weak)
+- Heavy fav (≤-251):   -0.2 (HV 0%)
+
+Batter env ML curve (V13):
+- Strong underdog (≥+150): +0.5
+- Underdog (+100..+149):   +0.3
+- Mild fav / pickem:       0.0  (V13 deleted noise band)
+- Heavy fav (≤-200):       -0.3
+- Very heavy fav (≤-250):  -0.5
 
 Composition (`_enforce_composition`):
 - Build variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B.

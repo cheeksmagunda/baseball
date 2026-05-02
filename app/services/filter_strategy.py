@@ -313,31 +313,37 @@ def compute_pitcher_env_score(
     own_starter_era: float | None = None,
 ) -> tuple[float, list[str]]:
     """
-    V12 pitcher env score (0-1.0) — calibrated against 35-slate / 222-pitcher
-    historical audit.  Built ONLY from signals the data showed actually
-    separate HV outcomes:
+    V13 pitcher env score (0-1.0) — recalibrated on the 38-slate / 244-pitcher
+    audit (April 30 → May 2 corpus).  V12's "mild-fav peak" claim only held
+    on 33 slates; the full 38-slate audit shows underdog pitchers actually
+    produce the HIGHEST HV-rate, with mild fav second:
 
-      1. Moneyline (PEAK at mild fav -120 to -180):
-            heavy fav (≤-200) wins HV only 14.5%, mild fav wins HV 37.5%
-            (across 33 slates).  This is THE pitcher predictor.
-      2. Vegas O/U INVERSE (low total = pitcher game):
-            Q1 (6.5-7.5) HV=31%, Q4 (8.5+) HV=18%
+      Underdog (ML ≥+100):       HV 37.7% (n=69)  ← peak
+      Mild fav (-180 to -111):   HV 29.8% (n=94)
+      Pickem (-110 to +99):      HV 18.5% (n=27)  ← weak
+      Clear fav (-250 to -181):  HV 16.7% (n=36)
+      Heavy fav (≤-251):         HV 0.0%  (n=6)   ← tank
+
+    Mechanism: underdog pitchers stay in tight games and accumulate K's /
+    pitch deeper; heavy-favorite teams generate blowouts and pull starters
+    early before win-bonus / K total stack.  This INVERTS V11's prior
+    intuition AND extends V12's mild-fav-peak finding.
+
+      1. Moneyline (recalibrated V13): underdog peak, mild fav strong, fade
+         pickem/clear fav, penalize heavy fav.
+      2. Vegas O/U INVERSE (V12-validated, holds on 38 slates):
+            Q1 (≤7.5) HV=31.5%, Q4 (≥8.5) HV=15.8%
       3. Park HR factor (pitcher-friendly):
-            Q1 (≤0.95) HV=35%, Q4 (≥1.04) HV=23%
-      4. K/9 talent (mild bonus only — tail not separation):
-            Q1 27% / Q4 29% HV — minor upside lever
-      5. ERA tail (extreme floor + ceiling only — small effect):
-            Q1 (≤2.5) RS=4.23, Q4 (≥5.3) RS=1.80 — solid for mean RS, but
-            HV-rate is FLAT/inverted (talent in noisy ERA outperforms),
-            so we apply a small trim only
+            Q1 (≤0.95) HV=32.5%, Q4 (≥1.04) HV=25.9%
+      4. K/9 talent (mild bonus only — minor lever)
+      5. ERA tail (extreme floor + ceiling — small effect)
+      6. Opp team OPS (small contribution)
 
     Signals deliberately REMOVED from V12 vs V11.0:
       - opp_team_k_pct (DEAD — Q1 25% vs Q4 23% HV, no separation)
       - opp_team_ops as primary (Q1 31% vs Q4 25% HV, weak monotonic, kept
         as small contribution rather than primary)
       - K/9 as primary (Q1 27% vs Q4 29% — basically flat on HV)
-      - Heavy-favorite ML reward (was monotonic-positive; data shows PEAK
-        not monotonic — heavy favs underperform, mild favs win)
       - Home-field flat +0.5 (no audit separation; ML / O/U / park already
         capture the meaningful asymmetry)
     """
@@ -345,24 +351,25 @@ def compute_pitcher_env_score(
     factors = []
     max_score = 4.0  # tuned so the strongest realistic combination saturates near 1.0
 
-    # 1. Moneyline — PEAK at mild fav.  Most discriminating single signal.
+    # 1. Moneyline — V13 recalibration: underdog peak, mild fav strong,
+    #    pickem/clear fav weak, heavy fav penalty.
     if team_moneyline is not None:
         ml = team_moneyline
-        if -180 <= ml <= -120:
+        if ml >= 100:
             score += 1.0
-            factors.append(f"Mild favorite (ML={ml}) — peak pitcher win zone")
-        elif -210 <= ml < -180 or -120 < ml <= -110:
-            score += 0.7
-            factors.append(f"Strong favorite (ML={ml})")
-        elif ml < -210:
-            score += 0.3
-            factors.append(f"Heavy favorite (ML={ml}) — historical HV underperform")
-        elif -109 <= ml <= 109:
-            score += 0.4
-            factors.append(f"Toss-up (ML={ml})")
-        else:
+            factors.append(f"Underdog (ML=+{ml}) — peak pitcher HV zone (37.7% historical)")
+        elif -180 <= ml <= -111:
+            score += 0.8
+            factors.append(f"Mild favorite (ML={ml}) — strong pitcher zone (29.8% HV)")
+        elif -250 <= ml <= -181:
             score += 0.2
-            factors.append(f"Underdog (ML={ml})")
+            factors.append(f"Clear favorite (ML={ml}) — weak HV signal")
+        elif -110 <= ml <= 99:
+            score += 0.3
+            factors.append(f"Toss-up (ML={ml}) — weak HV signal")
+        else:  # ml <= -251
+            score -= 0.2
+            factors.append(f"Heavy favorite (ML={ml}) — historical HV tanks (0%)")
 
     # 2. Vegas O/U INVERSE — low totals = pitcher games
     if vegas_total is not None:
@@ -564,7 +571,14 @@ def compute_batter_env_score(
     else:
         unknown_count += 1
 
-    # 3. Wind speed — REAL signal (survived park-control test in audit)
+    # 3. Wind speed × direction — V13 38-slate audit:
+    #    10+ OUT: HV 64.8% (n=71), 10+ cross: 51.9% (n=154), 10+ IN: 52.6% (n=38)
+    #    6-9 OUT: HV 51.5% (n=97),  6-9 cross: 47.9% (n=340), 6-9 IN: 37.5% (n=56)
+    #    calm <6: HV 44.7% (n=309)
+    #    Key V13 corrections vs V12: (a) 10+ IN is NOT bad — it's similar to
+    #    cross (volatility from any high wind helps batters), so bump from
+    #    +0.1 to +0.3.  (b) 6-9 IN is a real penalty zone (37.5% vs baseline
+    #    ~48%), so split 6-9 mph by direction instead of flat +0.1.
     if wind_speed_mph is not None and wind_direction:
         d = wind_direction.upper()
         if wind_speed_mph >= 10:
@@ -572,13 +586,20 @@ def compute_batter_env_score(
                 score += 0.6
                 factors.append(f"Wind out {wind_speed_mph:.0f} mph")
             elif any(i in d for i in BATTER_ENV_WIND_IN_DIRECTIONS):
-                score += 0.1
-                factors.append(f"Wind in {wind_speed_mph:.0f} mph (mild)")
+                score += 0.3
+                factors.append(f"Wind in {wind_speed_mph:.0f} mph (volatile)")
             else:
                 score += 0.4
                 factors.append(f"Wind {wind_speed_mph:.0f} mph cross")
         elif wind_speed_mph >= 6:
-            score += 0.1
+            if any(o in d for o in BATTER_ENV_WIND_OUT_DIRECTIONS):
+                score += 0.2
+                factors.append(f"Mild wind out {wind_speed_mph:.0f} mph")
+            elif any(i in d for i in BATTER_ENV_WIND_IN_DIRECTIONS):
+                score -= 0.2
+                factors.append(f"Mild wind in {wind_speed_mph:.0f} mph (suppressive)")
+            else:
+                score += 0.1
 
     # 4. Park HR factor — modest contribution for batters
     if park_team:
@@ -589,17 +610,27 @@ def compute_batter_env_score(
         elif pf >= 1.0:
             score += 0.1
 
-    # 5. Moneyline — INVERTED from intuition.  Underdog batters produce MORE HV.
+    # 5. Moneyline — V13 recalibration.  V12 audit confirmed monotonic underdog
+    #    premium (Q1 heavy fav HV 36.5% / Q4 underdog HV 58.3%).  V13 38-slate
+    #    re-audit refined three things:
+    #      (a) the +100→+0.3 flat curve under-rewarded TRUE underdogs (+150+);
+    #      (b) the -180→-110 mild-fav band sat in pure noise (Q2 51.6% / Q3 48.4%);
+    #      (c) the -200 penalty under-penalized vs the actual heavy-fav HV tank.
     if team_moneyline is not None:
-        if team_moneyline >= 100:
+        ml = team_moneyline
+        if ml >= 150:
+            score += 0.5
+            factors.append(f"Strong underdog (ML=+{ml}) — peak HV zone")
+        elif ml >= 100:
             score += 0.3
-            factors.append(f"Underdog premium (ML=+{team_moneyline}, HV+21pp historical)")
-        elif -180 <= team_moneyline <= -110:
-            score += 0.2
-            factors.append(f"Mild fav (ML={team_moneyline})")
-        elif team_moneyline <= -200:
-            score -= 0.2
-            factors.append(f"Heavy favorite penalty (ML={team_moneyline}, HV-21pp historical)")
+            factors.append(f"Underdog premium (ML=+{ml})")
+        elif ml <= -250:
+            score -= 0.5
+            factors.append(f"Very heavy favorite (ML={ml}) — HV tank")
+        elif ml <= -200:
+            score -= 0.3
+            factors.append(f"Heavy favorite (ML={ml})")
+        # Mild-fav / pickem range (-199 to +99) gets nothing — Q2/Q3 noise band
 
     # 6. Batting order — premium for top of order (PA volume)
     if batting_order is not None:

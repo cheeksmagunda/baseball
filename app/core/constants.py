@@ -241,7 +241,14 @@ ENV_MODIFIER_CEILING = 1.30
 # shows 1.40 produces a healthier composition mix (closer to the empirical
 # winning shapes: 2P+3B 28.6%, 0P+5B 25.7%, 1P+4B 17.1%) instead of the
 # nearly-monoculture 0P+5B that 1.20 produced.
-PITCHER_ENV_MODIFIER_CEILING = 1.40
+#
+# V13 update: 38-slate audit shows pitcher mean RS is 1.38x batter mean RS
+# (3.42 vs 2.48), and the V12 backtest under 1.40 ceiling produced too-few
+# multi-pitcher lineups (1P+4B = 37% of optimizer output vs 17% of winners,
+# 2P+3B = 23% of output vs 28.6% of winners).  Bumping ceiling to 1.55
+# (~19% asymmetry vs 7.7% prior) should push the marginal cases toward
+# 2P+ shapes that the audit shows actually win more often.
+PITCHER_ENV_MODIFIER_CEILING = 1.55
 
 # Trait modifier bounds — SECONDARY EV signal.
 # Range: 0.85–1.15 (1.35x swing) — season stats (K/9, ISO, barrel%, ERA, WHIP,
@@ -402,15 +409,23 @@ SCORING_OPP_X_WOBA_AGAINST_CEILING = 0.265    # at or below → full contributio
 # Under the 2026 ABS Challenge System, catcher framing's predictive value is
 # REDUCED — challenges fix the worst calls — but the system still calls
 # ~98% of pitches via human umpires (per ESPN/MLB ABS announcement, only
-# 2 challenges per team per game).  So we apply a CONSERVATIVE adjustment:
-# at most ±5% on the k_rate trait, scaled linearly by team framing runs.
+# 2 challenges per team per game).
+#
+# V13 update: 38-slate audit of own-team framing_runs vs pitcher HV-rate
+# shows Q4 (top framers, framing_runs ≥ +1.06) HV=40.0% vs Q1 (bottom
+# framers, ≤-0.83) HV=21.2% — a +18.8pp swing.  V10.8 capped the trait
+# adjustment at ±5%, which translated to ~0.5% EV change after passing
+# through k_rate (35/100 trait weight) → trait_factor (0.85-1.15).  That
+# was structurally too small for an 18.8pp HV signal.  Bumping to ±12%
+# triples the effective EV impact while staying conservative against the
+# ABS-era reduction in framing's pitch-by-pitch effect.
 #
 # `framing_runs_floor` / `_ceiling`: the team-level framing_runs values
-# that map to ±max adjustment.  A team at +12 runs/season gets +5% on k_rate;
-# a team at -12 runs/season gets -5%.  Mid-pack teams (~0 runs) → no change.
+# that map to ±max adjustment.  A team at +12 runs/season gets +12% on k_rate;
+# a team at -12 runs/season gets -12%.  Mid-pack teams (~0 runs) → no change.
 SCORING_FRAMING_RUNS_CEILING = 12.0           # at or above → +max k_rate adjustment
 SCORING_FRAMING_RUNS_FLOOR = -12.0            # at or below → -max k_rate adjustment
-SCORING_FRAMING_K_RATE_MAX_ADJ = 0.05         # ±5% scale factor on k_rate
+SCORING_FRAMING_K_RATE_MAX_ADJ = 0.12         # V13: ±12% (was ±5%)
                                               # (deliberately conservative for ABS era)
 
 # Scoring engine — park factor range boundaries (LAD floor, COL ceiling)

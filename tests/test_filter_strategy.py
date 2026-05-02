@@ -198,20 +198,21 @@ class TestSlateClassification:
 # ===================================================================
 
 class TestPitcherEnvScore:
-    """V12 pitcher env tests — calibrated against 222-pitcher historical audit.
+    """V13 pitcher env tests — recalibrated against 244-pitcher 38-slate audit.
 
-    Key behaviors:
-      * ML peak at -120 to -180 (mild fav) — beats heavy fav and underdog
+    Key behaviors (V13):
+      * ML PEAK at underdog (≥+100) — was V12's "mild fav peak", inverted by
+        38-slate audit (underdog HV 37.7% vs mild fav 29.8%)
+      * Mild fav (-180 to -111) is second-strongest
+      * Heavy fav (≤-251) is now a penalty (HV 0% on n=6)
       * Vegas O/U inverse — low total = pitcher game
       * Park HR factor — pitcher-friendly = bonus
-      * K/9 talent — modest only
-      * ERA tail — small lever
     """
 
     def test_perfect_env(self):
-        # Every strong V12 signal lit: mild fav, low O/U, pitcher park, elite K/9, elite ERA.
+        # V13: underdog now beats mild fav.  Use underdog ML for the perfect case.
         score, factors = compute_pitcher_env_score(
-            team_moneyline=-150,           # mild fav peak → +1.0
+            team_moneyline=+150,           # underdog peak → +1.0
             vegas_total=7.0,               # low total → +1.0
             park_team="LAD",               # pitcher-ish park → ≤0.95 → +0.6
             pitcher_k_per_9=11.0,          # elite → +0.4
@@ -220,22 +221,24 @@ class TestPitcherEnvScore:
         )
         # Expected total ≈ 3.6 / 4.0 ≈ 0.90 (saturates if more signals stack)
         assert score >= 0.85
-        assert any("Mild favorite" in f for f in factors)
+        assert any("Underdog" in f for f in factors)
 
     def test_empty_env(self):
         score, factors = compute_pitcher_env_score()
         assert score == pytest.approx(0.0, abs=0.01)
         assert factors == []
 
-    def test_ml_peak_at_mild_fav(self):
-        """V12: data shows mild fav (-180 to -120) wins HV 37.5%, heavy fav 14.5%."""
-        score_mild, _ = compute_pitcher_env_score(team_moneyline=-150)
-        score_heavy, _ = compute_pitcher_env_score(team_moneyline=-250)
+    def test_ml_peak_at_underdog(self):
+        """V13: 38-slate audit shows underdog (≥+100) HV 37.7% beats mild fav 29.8%
+        beats clear fav 16.7% beats heavy fav 0%. Curve must reflect this."""
         score_underdog, _ = compute_pitcher_env_score(team_moneyline=+150)
-        assert score_mild > score_heavy, "mild fav must score higher than heavy fav (V12 audit)"
-        assert score_mild > score_underdog
-        # Heavy fav explicitly penalised vs underdog tossup (heavy fav 0.3 vs underdog 0.2)
-        assert score_heavy > score_underdog or score_heavy >= score_underdog
+        score_mild, _ = compute_pitcher_env_score(team_moneyline=-150)
+        score_clear, _ = compute_pitcher_env_score(team_moneyline=-220)
+        score_heavy, _ = compute_pitcher_env_score(team_moneyline=-280)
+        assert score_underdog > score_mild, "V13: underdog must score higher than mild fav"
+        assert score_mild > score_clear, "V13: mild fav must beat clear fav"
+        assert score_clear > score_heavy, "V13: heavy fav must be penalized"
+        assert score_heavy < score_underdog, "V13: heavy fav must be the worst ML bucket"
 
     def test_vegas_total_inverse(self):
         """V12: low O/U is a pitcher game; high O/U penalises pitcher EV."""
