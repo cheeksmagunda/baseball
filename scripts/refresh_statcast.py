@@ -449,7 +449,7 @@ def main() -> int:
         default=None,
         help="Season year (default: settings.current_season).",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(args=[])
 
     season = args.season or settings.current_season
     started = datetime.now(timezone.utc).isoformat()

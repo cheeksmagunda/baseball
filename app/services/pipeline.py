@@ -145,7 +145,7 @@ async def _refresh_statcast() -> None:
             )
             return
         logger.info("Statcast refresh complete (exit=0)")
-    except Exception as exc:
+    except BaseException as exc:
         # Plain-text stderr dump so the traceback is visible in Railway's
         # log UI regardless of how the JSON formatter handles exc_info.
         _sys.stderr.write(
