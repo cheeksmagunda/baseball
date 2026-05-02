@@ -16,9 +16,15 @@ const STATUS_POLL_INTERVAL_MS = 5_000;
 
 function statusToWaitInfo(status: OptimizeStatus): WaitInfo {
   // Map backend phases onto the frontend's WaitInfo shape. The "no_slate"
-  // backend phase shares the "initializing" UI state.
-  const phase: WaitInfo["phase"] =
-    status.phase === "no_slate" ? "initializing" : status.phase;
+  // backend phase shares the "initializing" UI state. The "ready" phase
+  // never reaches this function — callers gate on status.ready first — but
+  // we map it defensively to "generating" to satisfy the type checker.
+  let phase: WaitInfo["phase"];
+  if (status.phase === "before_lock" || status.phase === "generating") {
+    phase = status.phase;
+  } else {
+    phase = "initializing";
+  }
   return {
     phase,
     first_pitch_utc: status.first_pitch_utc,
