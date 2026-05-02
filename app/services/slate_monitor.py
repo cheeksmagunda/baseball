@@ -481,7 +481,22 @@ async def targeted_slate_monitor(
                             "available. /optimize will return 503.",
                             LOCK_MINUTES_BEFORE_PITCH,
                         )
-                except Exception:
+                except Exception as exc:
+                    # Plain-text stderr dump so the traceback is visible in
+                    # Railway's log UI — the JSON formatter embeds exc_info
+                    # as an `exc` field that the UI doesn't surface, so
+                    # failures previously appeared as just "PIPELINE FAILED"
+                    # with no diagnostic content.
+                    import sys as _sys
+                    import traceback as _traceback
+                    _sys.stderr.write(
+                        f"\n=== T-{LOCK_MINUTES_BEFORE_PITCH} PIPELINE FAILED ===\n"
+                    )
+                    _sys.stderr.write(f"Exception type: {type(exc).__name__}\n")
+                    _sys.stderr.write(f"Exception: {exc}\n")
+                    _traceback.print_exc(file=_sys.stderr)
+                    _sys.stderr.write("=== END PIPELINE FAILURE ===\n\n")
+                    _sys.stderr.flush()
                     logger.exception(
                         "T-%d PIPELINE FAILED — see traceback below. "
                         "No fallback; /optimize will return 503.",
