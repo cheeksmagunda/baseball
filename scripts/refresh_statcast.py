@@ -10,10 +10,10 @@ the DB with zero extra network calls.
 Production invocation
 ---------------------
 
-The slate monitor awaits this script BLOCKING inside Phase 2 (before the
-T-65 sleep) via `_refresh_statcast_blocking` in
-`app/services/slate_monitor.py`.  No Railway cron, no crontab — merge the
-code and the next slate cycle triggers the refresh before T-65 fires.
+The T-65 pipeline awaits this script BLOCKING via `_refresh_statcast` in
+`app/services/pipeline.py::run_full_pipeline`, between player-stats fetch
+and scoring.  No Railway cron, no crontab — merge the code and the next
+slate cycle triggers the refresh as part of T-65 hydration.
 
 Manual / ad-hoc invocation
 --------------------------

@@ -1,4 +1,4 @@
-import type { FilterOptimizeResponse } from "./types";
+import type { FilterOptimizeResponse, OptimizeStatus } from "./types";
 
 class ApiError extends Error {
   public body: Record<string, unknown> | null;
@@ -26,6 +26,18 @@ export async function fetchLineups(signal?: AbortSignal): Promise<FilterOptimize
     throw new ApiError(res.status, message, body);
   }
 
+  return res.json();
+}
+
+export async function fetchStatus(signal?: AbortSignal): Promise<OptimizeStatus> {
+  const res = await fetch(`/api/filter-strategy/status`, {
+    method: "GET",
+    signal,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, `Status error: ${res.status}`);
+  }
   return res.json();
 }
 

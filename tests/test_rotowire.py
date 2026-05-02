@@ -228,7 +228,9 @@ class TestRotoWirePipelineIntegration:
         return slate
 
     def test_rotowire_failure_raises(self, db_session, monkeypatch):
-        """A network error must crash the pipeline — RotoWire is required infrastructure."""
+        """RotoWire is the single source of truth for batting orders at T-65.
+        A fetch failure must raise so the pipeline crashes and /optimize
+        returns HTTP 503 — no silent degradation under the no-fallbacks rule."""
         import asyncio
         import pytest
         from app.services.data_collection import _enrich_batting_order_from_rotowire
@@ -240,7 +242,26 @@ class TestRotoWirePipelineIntegration:
             raise RuntimeError("RotoWire fetch failed: connection reset")
 
         monkeypatch.setattr("app.core.rotowire.fetch_expected_lineups", boom)
-        with pytest.raises(RuntimeError, match="RotoWire fetch failed"):
+        with pytest.raises(RuntimeError, match="RotoWire expected-lineup fetch failed"):
+            asyncio.run(_enrich_batting_order_from_rotowire(
+                db_session, slate, logging.getLogger("test")
+            ))
+
+    def test_rotowire_empty_result_raises(self, db_session, monkeypatch):
+        """Zero parseable games means RotoWire's HTML markup changed — fail
+        loudly so the parser can be fixed, never silently lose lineup data."""
+        import asyncio
+        import pytest
+        from app.services.data_collection import _enrich_batting_order_from_rotowire
+        import logging
+
+        slate = self._setup_slate(db_session)
+
+        async def empty():
+            return []
+
+        monkeypatch.setattr("app.core.rotowire.fetch_expected_lineups", empty)
+        with pytest.raises(RuntimeError, match="RotoWire returned 0 parseable games"):
             asyncio.run(_enrich_batting_order_from_rotowire(
                 db_session, slate, logging.getLogger("test")
             ))
@@ -305,70 +326,3 @@ class TestRotoWirePipelineIntegration:
         assert by_name["Triston Casas"].batting_order == 4
         assert by_name["Triston Casas"].batting_order_source == "rotowire_expected"
 
-    def test_official_boxscore_overrides_rotowire(self, db_session, monkeypatch):
-        """Phase 2 (MLB API) must override Phase 1 (RotoWire) when official
-        cards are posted — official is ground truth."""
-        import asyncio
-        from app.models.slate import SlatePlayer
-        from app.services.data_collection import _enrich_batting_order
-        import logging
-
-        slate = self._setup_slate(db_session)
-
-        # Pre-populate one batter with a RotoWire-projected slot 5 to simulate
-        # the post-Phase-1 state.  Then call Phase 2 with an official card
-        # that puts him in slot 1.
-        sp = (
-            db_session.query(SlatePlayer)
-            .join(SlatePlayer.player)
-            .filter(SlatePlayer.slate_id == slate.id)
-            .filter_by()
-            .first()
-        )
-        target_player = sp.player  # whoever was first
-        sp.batting_order = 5
-        sp.batting_order_source = "rotowire_expected"
-        db_session.commit()
-
-        # Build a fake boxscore that puts the player in slot 1.
-        async def fake_boxscore(_pk):
-            return {
-                "teams": {
-                    "home" if target_player.team == "NYY" else "away": {
-                        "team": {"abbreviation": target_player.team},
-                        "players": {
-                            f"ID{target_player.mlb_id or 1}": {
-                                "battingOrder": "100",
-                                "person": {"id": target_player.mlb_id or 1},
-                            },
-                        },
-                    },
-                    "away" if target_player.team == "NYY" else "home": {
-                        "team": {"abbreviation":
-                                 "BOS" if target_player.team == "NYY" else "NYY"},
-                        "players": {},
-                    },
-                },
-            }
-
-        # Boxscore enrich requires player.mlb_id to match what's in the response.
-        target_player.mlb_id = 99999
-        db_session.commit()
-
-        async def patched_boxscore(pk):
-            return await fake_boxscore(pk)
-
-        monkeypatch.setattr(
-            "app.services.data_collection.get_game_boxscore", patched_boxscore
-        )
-
-        from app.models.slate import SlateGame
-        games = list(db_session.query(SlateGame).filter_by(slate_id=slate.id).all())
-        result = asyncio.run(_enrich_batting_order(
-            db_session, slate, games, logging.getLogger("test")
-        ))
-        assert result == 1
-
-        db_session.refresh(sp)
-        assert sp.batting_order == 1
-        assert sp.batting_order_source == "official"

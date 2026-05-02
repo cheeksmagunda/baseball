@@ -127,41 +127,6 @@ async def _sleep_until(target: datetime) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Pre-T-65 Statcast refresh (fires inside Phase 2 as a background task)
-# ---------------------------------------------------------------------------
-
-async def _refresh_statcast_blocking() -> None:
-    """Bulk-load Baseball Savant leaderboards into PlayerStats.
-
-    Awaited synchronously inside Phase 2 *before* the T-65 pipeline runs.
-    Savant is fully public and always live — failure is a hard stop, not a
-    graceful degradation.  Any failure raises; the slate-monitor task crashes
-    so `/optimize` returns 503 instead of serving lineups built on stale
-    kinematics.
-
-    Why blocking instead of fire-and-forget: the previous fire-and-forget
-    `create_task` pattern raced the T-65 pipeline.  On a normal day the
-    Phase-2 sleep gave the ~60 s refresh time to finish, but on cold starts
-    where `now >= lock_time_utc` (sleep skipped), the pipeline read
-    pre-refresh PlayerStats with NULL kinematics — and froze a lineup with
-    `K/9 N (no Statcast)` for the rest of the slate.  Blocking guarantees
-    the refresh either succeeds OR the slate fails hard before any lineup
-    is built.
-    """
-    from scripts.refresh_statcast import main as refresh_main
-
-    logger.info("Statcast refresh: starting bulk load from Baseball Savant")
-    exit_code = await asyncio.to_thread(refresh_main)
-    if exit_code != 0:
-        raise RuntimeError(
-            f"Statcast refresh exited with code={exit_code} — Savant is public and "
-            "always live; a non-zero exit means a real connectivity or schema "
-            "problem that must be fixed."
-        )
-    logger.info("Statcast refresh complete (exit=0)")
-
-
-# ---------------------------------------------------------------------------
 # Post-lock monitor (Phase 4)
 # ---------------------------------------------------------------------------
 
@@ -273,7 +238,20 @@ async def targeted_slate_monitor(
     # -----------------------------------------------------------------------
     if startup_done_event is not None:
         logger.info("T-65 monitor waiting for startup pipeline to complete…")
-        await startup_done_event.wait()
+        try:
+            await asyncio.wait_for(startup_done_event.wait(), timeout=300)
+        except asyncio.TimeoutError:
+            logger.critical(
+                "Startup did not complete within 5 minutes — marking pipeline "
+                "failed so /optimize returns 503 instead of spinning on 425. "
+                "Investigate the most recent STARTUP STEP log line to find "
+                "where init hung."
+            )
+            try:
+                lineup_cache.mark_failed()
+            except Exception:
+                logger.exception("mark_failed() itself raised — continuing anyway")
+            return
         logger.info("Startup pipeline done — T-65 monitor proceeding")
 
     # -----------------------------------------------------------------------
@@ -379,18 +357,12 @@ async def targeted_slate_monitor(
         )
 
         # ---------------------------------------------------------------
-        # Phase 2: Pre-lock Statcast refresh + sleep until T-65
+        # Phase 2: Sleep until T-65
         # ---------------------------------------------------------------
-        # The Statcast refresh runs BLOCKING before Phase 3 — never as a
-        # fire-and-forget background task.  Earlier `create_task` versions
-        # raced the T-65 pipeline on cold starts (sleep skipped because
-        # `now >= lock_time_utc`), causing the pipeline to read pre-refresh
-        # PlayerStats with NULL kinematics and freeze a "no Statcast" lineup
-        # for the rest of the slate.  Blocking here guarantees the refresh
-        # either succeeds OR the slate-monitor task crashes loudly so
-        # /optimize returns 503 — no lineup is ever built on stale data.
-        await _refresh_statcast_blocking()
-
+        # No external work happens here. All hydration (schedule, rosters,
+        # stats, Statcast, vegas, weather, series) runs as a single block
+        # inside run_full_pipeline at T-65 — one trigger, one failure
+        # surface. See CLAUDE.md § "T-65 Sniper Architecture".
         now = datetime.now(timezone.utc)
         if now < lock_time_utc:
             logger.info(

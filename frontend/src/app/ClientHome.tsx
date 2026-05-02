@@ -1,6 +1,6 @@
 "use client";
 
-import type { FilterOptimizeResponse } from "@/lib/types";
+import type { FilterOptimizeResponse, OptimizeStatus } from "@/lib/types";
 import { useLineupData } from "@/hooks/useLineupData";
 import { useSlatePolling } from "@/hooks/useSlatePolling";
 import { StickyHeader } from "@/components/StickyHeader";
@@ -12,10 +12,11 @@ import { WaitState } from "@/components/WaitState";
 
 interface ClientHomeProps {
   initialData: FilterOptimizeResponse | null;
+  initialStatus: OptimizeStatus | null;
 }
 
-export function ClientHome({ initialData }: ClientHomeProps) {
-  const { data, loading, error, waitInfo, refetch } = useLineupData(initialData);
+export function ClientHome({ initialData, initialStatus }: ClientHomeProps) {
+  const { data, loading, error, waitInfo, refetch } = useLineupData(initialData, initialStatus);
 
   useSlatePolling(refetch);
 

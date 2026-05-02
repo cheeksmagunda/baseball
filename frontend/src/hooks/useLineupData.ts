@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { FilterOptimizeResponse, WaitInfo } from "@/lib/types";
-import { fetchLineups, ApiError } from "@/lib/api";
+import type { FilterOptimizeResponse, OptimizeStatus, WaitInfo } from "@/lib/types";
+import { fetchLineups, fetchStatus, ApiError } from "@/lib/api";
 
 interface UseLineupDataReturn {
   data: FilterOptimizeResponse | null;
@@ -12,96 +12,126 @@ interface UseLineupDataReturn {
   refetch: () => void;
 }
 
-export function useLineupData(initialData: FilterOptimizeResponse | null = null): UseLineupDataReturn {
+const STATUS_POLL_INTERVAL_MS = 5_000;
+
+function statusToWaitInfo(status: OptimizeStatus): WaitInfo {
+  // Map backend phases onto the frontend's WaitInfo shape. The "no_slate"
+  // backend phase shares the "initializing" UI state.
+  const phase: WaitInfo["phase"] =
+    status.phase === "no_slate" ? "initializing" : status.phase;
+  return {
+    phase,
+    first_pitch_utc: status.first_pitch_utc,
+    lock_time_utc: status.lock_time_utc,
+    minutes_until_lock: status.minutes_until_lock,
+  };
+}
+
+export function useLineupData(
+  initialData: FilterOptimizeResponse | null = null,
+  initialStatus: OptimizeStatus | null = null,
+): UseLineupDataReturn {
   const [data, setData] = useState<FilterOptimizeResponse | null>(initialData);
-  const [loading, setLoading] = useState(!initialData);
+  const [loading, setLoading] = useState(!initialData && !initialStatus);
   const [error, setError] = useState<{ status: number; message: string } | null>(null);
-  const [waitInfo, setWaitInfo] = useState<WaitInfo | null>(null);
+  const [waitInfo, setWaitInfo] = useState<WaitInfo | null>(
+    initialStatus && !initialStatus.ready ? statusToWaitInfo(initialStatus) : null,
+  );
+
   const abortRef = useRef<AbortController | null>(null);
-  const autoRefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(async (isBackgroundRefresh = false) => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    if (!isBackgroundRefresh) setLoading(true);
-    setError(null);
-    setWaitInfo(null);
-
-    // Clear any pending auto-refetch
-    if (autoRefetchTimer.current) {
-      clearTimeout(autoRefetchTimer.current);
-      autoRefetchTimer.current = null;
+  const clearTimer = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
     }
+  }, []);
 
+  // Single-shot picks fetch — only called once /status reports ready: true.
+  const fetchPicks = useCallback(async (signal: AbortSignal) => {
     try {
-      const result = await fetchLineups(controller.signal);
-      if (!controller.signal.aborted) {
+      const result = await fetchLineups(signal);
+      if (!signal.aborted) {
         setData(result);
+        setWaitInfo(null);
+        setError(null);
+        setLoading(false);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       if (err instanceof ApiError) {
-        if (err.status === 425 && err.body) {
-          // Wait state — parse timing info
-          const info: WaitInfo = {
-            phase: (err.body.phase as WaitInfo["phase"]) ?? "initializing",
-            first_pitch_utc: (err.body.first_pitch_utc as string) ?? null,
-            lock_time_utc: (err.body.lock_time_utc as string) ?? null,
-            minutes_until_lock: (err.body.minutes_until_lock as number) ?? null,
-          };
-          if (!controller.signal.aborted) {
-            setWaitInfo(info);
-
-            // Schedule auto-refetch based on phase
-            if (info.phase === "generating") {
-              // Pipeline actively running — poll every 5 seconds
-              autoRefetchTimer.current = setTimeout(() => {
-                load(false);
-              }, 5_000);
-            } else if (info.lock_time_utc) {
-              // Before lock — refetch when lock time arrives (+ 10s buffer)
-              const lockMs = new Date(info.lock_time_utc).getTime();
-              const delayMs = Math.max(0, lockMs - Date.now()) + 10_000;
-              autoRefetchTimer.current = setTimeout(() => {
-                load(false);
-              }, delayMs);
-            } else {
-              // Initializing phase — retry in 15 seconds
-              autoRefetchTimer.current = setTimeout(() => {
-                load(false);
-              }, 15_000);
-            }
-          }
-        } else if (err.status === 404) {
-          setError({ status: 404, message: "No slate available for today. Check back later." });
-        } else {
-          setError({ status: err.status, message: err.message });
-        }
+        setError({ status: err.status, message: err.message });
       } else {
         setError({ status: 0, message: "Network error. Please try again." });
       }
-    } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    if (!initialData) {
-      load(false);
+  // Poll /status until ready — cheap, in-memory backend check, no compute.
+  // Once ready, fetch /optimize exactly once.
+  const pollStatus = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const status = await fetchStatus(controller.signal);
+      if (controller.signal.aborted) return;
+
+      if (status.ready) {
+        clearTimer();
+        await fetchPicks(controller.signal);
+        return;
+      }
+
+      // Not ready — render locked UI and schedule next poll.
+      setWaitInfo(statusToWaitInfo(status));
+      setLoading(false);
+      setError(null);
+      pollTimerRef.current = setTimeout(pollStatus, STATUS_POLL_INTERVAL_MS);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      if (err instanceof ApiError) {
+        setError({ status: err.status, message: err.message });
+      } else {
+        setError({ status: 0, message: "Network error. Please try again." });
+      }
+      setLoading(false);
+      // Retry on transient errors.
+      pollTimerRef.current = setTimeout(pollStatus, STATUS_POLL_INTERVAL_MS);
     }
+  }, [clearTimer, fetchPicks]);
+
+  // refetch: force re-check status (e.g. user-triggered or slate change). If
+  // already showing picks, this re-fetches /optimize directly.
+  const refetch = useCallback(() => {
+    clearTimer();
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    if (data) {
+      void fetchPicks(controller.signal);
+    } else {
+      void pollStatus();
+    }
+  }, [clearTimer, data, fetchPicks, pollStatus]);
+
+  useEffect(() => {
+    // SSR pre-loaded picks → nothing to do.
+    if (initialData) return;
+    // SSR pre-loaded status (not ready) → start polling immediately.
+    void pollStatus();
+
     return () => {
       abortRef.current?.abort();
-      if (autoRefetchTimer.current) {
-        clearTimeout(autoRefetchTimer.current);
-      }
+      clearTimer();
     };
-  }, [load, initialData]);
-
-  const refetch = useCallback(() => load(true), [load]);
+    // pollStatus is stable (only depends on stable refs); intentionally
+    // exclude from deps so this only fires on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData]);
 
   return { data, loading, error, waitInfo, refetch };
 }

@@ -277,19 +277,17 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict[str, int]:
 
     db.commit()
 
-    # Phase 1: RotoWire expected lineups.  Available up to 4 hours before first
-    # pitch, covering ~90% of teams at T-65.  Raises on failure — batting order
-    # data is required pipeline input, not optional enrichment.
+    # Enrich with batting order from RotoWire expected lineups. RotoWire is
+    # the single source of truth at T-65 — beat-reporter projections are
+    # published hours before MLB's official card (which only appears 30-60 min
+    # before each game's first pitch, i.e. usually AFTER T-65 for all but the
+    # earliest game on the slate). Hard dependency: failure raises, the entire
+    # T-65 pipeline crashes, and /optimize returns HTTP 503.
     rw_enriched = await _enrich_batting_order_from_rotowire(db, slate, logger)
 
-    # Phase 2: MLB Stats API boxscore (ground truth — overrides RotoWire when
-    # the official card has been posted, typically T-30 to T-60).
-    enriched = await _enrich_batting_order(db, slate, games, logger)
-
     logger.info(
-        "Populated %d slate players (%d skipped/existing, %d batting orders enriched: "
-        "%d from RotoWire, %d from MLB official)",
-        added, skipped, rw_enriched + enriched, rw_enriched, enriched,
+        "Populated %d slate players (%d skipped/existing, %d batting orders enriched from RotoWire)",
+        added, skipped, rw_enriched,
     )
     return {"added": added, "skipped": skipped}
 
@@ -298,27 +296,38 @@ async def _enrich_batting_order_from_rotowire(db: Session, slate: Slate, logger)
     """
     Pre-fill SlatePlayer.batting_order from RotoWire's expected lineups.
 
-    RotoWire publishes beat-reporter projections up to 4 hours before first
-    pitch — much earlier than MLB's official card serialisation.  At T-65 it
-    typically covers ~90% of teams in some form (Confirmed or Expected).
+    RotoWire publishes beat-reporter projections hours before first pitch —
+    much earlier than MLB's official card serialisation. They are the
+    de-facto industry source for expected lineups and the single source of
+    truth for batting order at T-65.
 
-    Raises RuntimeError on network failure, non-200 response, or zero
-    parseable games. RotoWire is required infrastructure at T-65 — it is the
-    only source of batting order data before the official MLB card drops.
+    Hard dependency under the no-fallbacks rule: a network failure, non-200
+    response, parse failure, or zero parseable games all raise RuntimeError.
+    The slate monitor's top-level handler converts the exception to HTTP 503
+    on /optimize so users see a clear error rather than a degraded lineup.
+    RotoWire is required infrastructure at T-65 — it is the only source of
+    batting order data before the official MLB card drops.
 
     Sets `batting_order_source` to "rotowire_confirmed" or "rotowire_expected"
-    so the official-card phase can detect-and-override, and so post-slate
-    calibration can compare RotoWire predictions vs official cards.
+    based on RotoWire's own status flag.
     """
     from app.core.rotowire import LineupStatus, fetch_expected_lineups
     from app.models.player import Player, normalize_name
 
-    games = await fetch_expected_lineups()
+    try:
+        games = await fetch_expected_lineups()
+    except Exception as exc:
+        raise RuntimeError(
+            f"RotoWire expected-lineup fetch failed: {exc}. RotoWire is the "
+            "single source of truth for batting orders at T-65 — no fallback. "
+            "Investigate immediately."
+        ) from exc
 
     if not games:
         raise RuntimeError(
-            "RotoWire returned 0 parseable games — site markup may have changed. "
-            "Batting order data is unavailable and the pipeline cannot proceed."
+            "RotoWire returned 0 parseable games — their HTML markup may have "
+            "changed. Cannot proceed without batting orders. Inspect "
+            "app/core/rotowire.py::parse_lineups_html and update the parser."
         )
 
     # Build lookup: (team_uppercase, normalized_full_name) -> (order, source)
@@ -356,85 +365,6 @@ async def _enrich_batting_order_from_rotowire(db: Session, slate: Slate, logger)
 
     if enriched:
         db.commit()
-    return enriched
-
-
-async def _enrich_batting_order(db: Session, slate: Slate, games: list, logger) -> int:
-    """
-    Enrich SlatePlayer batting_order from MLB Stats API boxscores when the
-    official lineup card has been posted (typically 30-60 min before first
-    pitch — i.e. usually AFTER T-65 for early-window games).
-
-    Best-effort: missing/late official cards leave any RotoWire-projected
-    batting_order in place.  When an official card IS available, this
-    function OVERWRITES the RotoWire value and stamps source="official"
-    because the MLB card is ground truth.
-    """
-    from app.models.player import Player
-
-    async def _fetch_boxscore(game):
-        if game.mlb_game_pk is None:
-            raise ValueError(
-                f"SlateGame {game.id} ({game.away_team} @ {game.home_team}) has no mlb_game_pk"
-            )
-        return game, await get_game_boxscore(game.mlb_game_pk)
-
-    game_boxscores = await asyncio.gather(*[_fetch_boxscore(g) for g in games], return_exceptions=True)
-    enriched = 0
-
-    for result in game_boxscores:
-        if isinstance(result, Exception):
-            logger.warning("Batting order enrichment: skipping game — %s", result)
-            continue
-        game, boxscore = result
-        if boxscore is None:
-            continue
-
-        teams_data = boxscore.get("teams", {})
-        for side in ("home", "away"):
-            side_data = teams_data.get(side, {})
-            team_abbr = canonicalize_team(
-                side_data.get("team", {}).get("abbreviation", "")
-            )
-            if not team_abbr:
-                continue
-
-            players_data = side_data.get("players", {})
-            for player_key, pdata in players_data.items():
-                batting_order_raw = pdata.get("battingOrder")
-                if batting_order_raw is None:
-                    continue
-
-                bo_int = int(str(batting_order_raw))
-                if not (bo_int <= 900 and str(batting_order_raw).endswith("00")):
-                    continue
-                batting_order = bo_int // 100
-
-                person = pdata.get("person", {})
-                mlb_id = person.get("id")
-                if not mlb_id:
-                    continue
-
-                player = db.query(Player).filter_by(mlb_id=mlb_id).first()
-                if not player:
-                    continue
-
-                sp = (
-                    db.query(SlatePlayer)
-                    .filter_by(slate_id=slate.id, player_id=player.id)
-                    .first()
-                )
-                if sp:
-                    # Official card is ground truth — overwrite any RotoWire
-                    # projection unconditionally.
-                    if sp.batting_order != batting_order or sp.batting_order_source != "official":
-                        sp.batting_order = batting_order
-                        sp.batting_order_source = "official"
-                        enriched += 1
-
-    if enriched:
-        db.commit()
-
     return enriched
 
 
