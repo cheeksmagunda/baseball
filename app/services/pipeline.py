@@ -116,53 +116,40 @@ async def _refresh_statcast() -> None:
     """Bulk-load Baseball Savant leaderboards into PlayerStats.
 
     Runs synchronously inside run_full_pipeline between stats fetch and
-    scoring. Statcast is **enrichment, not core data** — the scoring engine
-    routes through non-Statcast paths when columns are NULL (CLAUDE.md V10.1
-    "Rookie Arbitrage baseline"). When Savant is unreachable or pybaseball
-    breaks on a schema change, we log the failure loudly and continue: the
-    pipeline still produces a lineup from probable pitchers + RotoWire
-    lineups + MLB Stats API season stats.
+    scoring. Failure raises RuntimeError — per the no-fallbacks rule,
+    Statcast is a hard dependency and a failure must crash the pipeline
+    so /optimize returns HTTP 503 rather than silently serving a lineup
+    built without kinematics, xStats, or framing data.
 
-    Failures are written to stderr as plain text in addition to going
-    through the structured logger, because the JSON log formatter embeds
-    `record.exc_info` as an `exc` field that Railway's log UI doesn't
-    surface — making real failures invisible. Plain stderr bypasses that.
+    stderr output is written in addition to structured logging because
+    Railway's JSON log formatter buries exc_info in an `exc` field that
+    the log UI doesn't surface by default.
     """
     import sys as _sys
     import traceback as _traceback
 
-    try:
-        from scripts.refresh_statcast import main as refresh_main
-        from app.core.statcast import clear_statcast_cache
+    from scripts.refresh_statcast import main as refresh_main
+    from app.core.statcast import clear_statcast_cache
 
-        clear_statcast_cache()
-        logger.info("Statcast refresh: starting bulk load from Baseball Savant")
+    clear_statcast_cache()
+    logger.info("Statcast refresh: starting bulk load from Baseball Savant")
+    try:
         exit_code = await asyncio.to_thread(refresh_main)
-        if exit_code != 0:
-            logger.warning(
-                "Statcast refresh exited with code=%d — pipeline continues "
-                "without Statcast enrichment (NULL kinematic columns route "
-                "through scoring-engine fallback paths).",
-                exit_code,
-            )
-            return
-        logger.info("Statcast refresh complete (exit=0)")
     except BaseException as exc:
-        # Plain-text stderr dump so the traceback is visible in Railway's
-        # log UI regardless of how the JSON formatter handles exc_info.
-        _sys.stderr.write(
-            "\n=== STATCAST REFRESH FAILED — pipeline continues without "
-            "Statcast enrichment ===\n"
-        )
+        _sys.stderr.write("\n=== STATCAST REFRESH FAILED ===\n")
         _sys.stderr.write(f"Exception type: {type(exc).__name__}\n")
         _sys.stderr.write(f"Exception: {exc}\n")
         _traceback.print_exc(file=_sys.stderr)
         _sys.stderr.write("=== END STATCAST FAILURE ===\n\n")
         _sys.stderr.flush()
-        logger.exception(
-            "Statcast refresh failed — pipeline continues. Scoring engine "
-            "uses non-Statcast paths for NULL kinematic columns."
+        raise RuntimeError(f"Statcast refresh raised an exception: {exc}") from exc
+
+    if exit_code != 0:
+        raise RuntimeError(
+            f"Statcast refresh exited with code={exit_code} — inspect "
+            "Baseball Savant / pybaseball column names and Player.mlb_id coverage."
         )
+    logger.info("Statcast refresh complete (exit=0)")
 
 
 async def run_fetch(db: Session, game_date: date) -> dict:
