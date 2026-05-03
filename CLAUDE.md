@@ -281,7 +281,27 @@ If a Redis-frozen T-65 payload from earlier in the day exists, the `restore_and_
 
 This is the explicit knob to bust cache: push a commit (new SHA) or hit "Redeploy" in Railway (new deployment ID). Restoring after a crash on the same deploy keeps producing the same picks — no fallback, just the right semantics for both intents.
 
+**Restart restore extends to the full T-65 lock window (May 2026).** Earlier the startup-time restore guard only fired when `now >= first_pitch`. A same-deploy crash *between* lock and first pitch (e.g. 30 min after lock) was purging the cache and re-running the pipeline, which could churn picks despite the deploy_id being unchanged. The guard now restores whenever `now >= lock_time` — `restore_and_refreeze` returns False on cache miss (pre-lock crash) or new deploy_id (code push), and the caller still purges in those cases. Net effect: transient same-deploy crashes ANYWHERE post-lock leave picks frozen; new deploy_id ANYWHERE post-lock busts cache + recomputes on remaining games.
+
 One source of truth: `STARTED_GAME_STATUSES = frozenset({"Live", "Final"})` and `is_game_remaining(game_status)` live in `app/core/constants.py`.
+
+**Recent-stats fallback for probable starters with no current-season IP (May 2026).** The strict assertion at the end of stage 2 (`run_fetch_player_stats`) requires every announced starter to have ERA/WHIP/K9 — without those numbers, every batter's matchup env scoring crashes downstream. Three live edge cases routinely hit this: pitchers returning from the IL (Strider 2026-05-03), season-debut starters (Trey Gibson), or players acquired mid-day who haven't pitched yet for their new team. Their 2026 IP is 0, so `fetch_player_season_stats` previously left ERA/WHIP/K9 None.
+
+Per the user directive ("live data with full context and recent player performance"), `fetch_player_season_stats` now falls back to **prior-season pitching aggregates** for any pitcher with IP=0 in the current season. Strider's 2025 ERA is a real, factual signal — using it when his 2026 IP is 0 is "most recent actual performance", not a league-average default. The fallback is gated to position ∈ {P, SP, RP} and only fires when current-season IP is empty. True rookies with no prior-season IP either still trip the strict assertion (no fallback to defaults — pipeline crashes loud) so the gap is named in the log and a human can investigate, or the DNP filter excludes them on the batter side via `is_player_scoreable`. Not a "fallback default", which is forbidden — it's the player's own previous-season real data, used only when the current season is genuinely empty.
+
+**Post-lock state-aware monitoring (May 2026).** The post-lock loop previously polled `/schedule` every 60 seconds for the entire 4-5h slate window — ~250 wasted API calls per slate, since no game can be Final before its own first pitch. The loop is now bounded by the slate's known timing:
+
+1. `_get_last_first_pitch_utc()` returns the latest scheduled first pitch on the slate.
+2. The monitor sleeps until `last_first_pitch + MIN_GAME_DURATION_MINUTES` (150 min) before any polling — this is the earliest moment ANY game on the slate can plausibly be Final. Zero MLB API calls during this window.
+3. After that, polls `/schedule` every `POST_LOCK_CHECK_INTERVAL` (120 s) until every game has final scores or sits in NON_PLAYING_GAME_STATUSES.
+
+Net effect: a 15-game slate with first pitches spanning 17:35–22:05 ET produces ≤30 schedule fetches in the post-lock window (down from ~250). Picks stay frozen the entire time. The monitor re-emerges from Phase 4a with no compute cost.
+
+**The four runtime windows the monitor handles uniformly:**
+1. **Normal T-65 trigger (cold morning start)**: Phase 1 bootstrap → Phase 2 sleeps until T-65 → Phase 3 full pipeline → Phase 4 state-aware completion watch.
+2. **Restart in `now < lock_time`**: startup restore is a no-op (no cache yet); monitor runs the normal sleep-then-pipeline path.
+3. **Restart in `lock_time <= now < first_pitch` (T-65 window)**: same-deploy → `restore_and_refreeze` brings frozen picks back, monitor skips Phase 3 and proceeds to Phase 4. New deploy → cache busted, monitor runs cold pipeline (no games started yet, so all 15 are still in scope).
+4. **Restart in `first_pitch <= now < last_first_pitch + MIN_GAME_DURATION` (mid-slate)**: same-deploy restores; new deploy runs pipeline filtered to `is_game_remaining` games. Phase 4 sleeps as much as it can before polling.
 
 **Key Functions:**
 

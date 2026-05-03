@@ -697,6 +697,51 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
     # (new call-up with no Savant row yet), the scoring engine transparently
     # routes through the non-Statcast fallback path.
 
+    # Pitcher most-recent-actual fallback: if the pitcher has no IP in the
+    # current season (returning from IL, season-debut today, just acquired
+    # mid-day), the trait scorer needs ERA/WHIP/K9 to score the matchup. The
+    # ONLY real signal available is their prior-season aggregate — that's
+    # not a "league-average default", it's their own actual recent
+    # performance. Strider's 2025 ERA is a real, factual number; using it
+    # when 2026 IP=0 is "live data with full context", not a fallback.
+    # If they also have no prior-season IP (true rookie debut), leave
+    # ERA/WHIP/K9 None — the strict assertion in run_fetch_player_stats
+    # will surface them by name and the pipeline crashes loud per policy.
+    is_pitcher_record = (
+        (ps.ip is not None and ps.ip > 0) or ps.era is not None
+    )
+    if not is_pitcher_record and (player.position or "").upper() in ("P", "SP", "RP"):
+        prior_season = settings.current_season - 1
+        prior_data = await get_player_stats(mlb_id, prior_season)
+        prior_people = prior_data.get("people", [])
+        if prior_people:
+            for group in prior_people[0].get("stats", []):
+                if (
+                    group.get("type", {}).get("displayName") == "season"
+                    and group.get("group", {}).get("displayName") == "pitching"
+                ):
+                    splits = group.get("splits", [])
+                    if not splits:
+                        continue
+                    s = splits[0].get("stat", {})
+                    prior_ip = _safe_float(s.get("inningsPitched", "")) or 0.0
+                    if prior_ip <= 0:
+                        continue
+                    ps.ip = prior_ip
+                    ps.era = _safe_float(s.get("era", ""))
+                    ps.whip = _safe_float(s.get("whip", ""))
+                    so = s.get("strikeOuts", 0)
+                    ps.k_per_9 = round(so / prior_ip * 9, 2) if prior_ip > 0 else None
+                    if ps.games is None or ps.games == 0:
+                        ps.games = s.get("gamesPlayed", 0)
+                    logger.info(
+                        "Pitcher %s (mlb_id=%d): no %d IP yet, using %d aggregate "
+                        "ERA=%s WHIP=%s K/9=%s",
+                        player.name, mlb_id, settings.current_season,
+                        prior_season, ps.era, ps.whip, ps.k_per_9,
+                    )
+                    break
+
     db.commit()
     return ps
 

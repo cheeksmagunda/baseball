@@ -43,8 +43,21 @@ logger = logging.getLogger(__name__)
 # T-65: 60-min user draft window + 5-min final generation buffer
 LOCK_MINUTES_BEFORE_PITCH = 65
 
-# How often the post-lock loop checks for slate completion
-POST_LOCK_CHECK_INTERVAL = 60  # seconds
+# How often the post-lock loop checks for slate completion AFTER any game
+# could plausibly be final.  Before that point we sleep — no API calls.
+POST_LOCK_CHECK_INTERVAL = 120  # seconds
+
+# Earliest time a single MLB game can finish (no extras / no rain delay).
+# Used by the post-lock monitor to know how long to sleep AFTER first
+# pitch before it's worth polling for completion.  2.5 hours is below the
+# 9-inning floor (~2:35 average over the last decade) so we'd never miss
+# a finished game by sleeping this long.
+MIN_GAME_DURATION_MINUTES = 150  # 2.5 hours
+
+# Once a game has been live this long, even with extras + rain it should
+# be final.  Used as the polling cadence ceiling — we never sleep longer
+# than this between completion checks.
+MAX_GAME_DURATION_MINUTES = 270  # 4.5 hours
 
 _ET = ZoneInfo("America/New_York")
 
@@ -121,6 +134,33 @@ def _get_first_pitch_utc(db, game_date: date) -> datetime | None:
     return min(times) if times else None
 
 
+def _get_last_first_pitch_utc(db, game_date: date) -> datetime | None:
+    """Latest scheduled first pitch on the slate.
+
+    No game can be Final before its own first pitch.  The post-lock
+    monitor uses this to schedule its first completion check at
+    `last_first_pitch + MIN_GAME_DURATION_MINUTES` — earlier polls
+    are guaranteed to return "still live", so they'd be wasted MLB
+    API calls.
+    """
+    from app.models.slate import Slate, SlateGame
+
+    slate = db.query(Slate).filter_by(date=game_date).first()
+    if not slate:
+        return None
+
+    games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+    times = []
+    for g in games:
+        if not g.scheduled_game_time:
+            continue
+        parsed = _parse_game_time(g.scheduled_game_time, game_date)
+        if parsed:
+            times.append(parsed)
+
+    return max(times) if times else None
+
+
 async def _sleep_until(target: datetime) -> None:
     """
     Async sleep until a specific UTC datetime.
@@ -140,12 +180,23 @@ async def _sleep_until(target: datetime) -> None:
 # ---------------------------------------------------------------------------
 
 async def _post_lock_monitor(today: date) -> None:
-    """
-    Lightweight completion watcher after the cache is frozen.
+    """State-aware completion watcher after the cache is frozen.
 
-    Polls every POST_LOCK_CHECK_INTERVAL seconds. On slate completion
-    (all games final) it clears the frozen cache and pre-warms tomorrow's
-    pipeline. No lineup rebuilds — picks are locked.
+    The slate has known boundaries: it cannot END before
+    `last_first_pitch + MIN_GAME_DURATION_MINUTES`, and any single game
+    that has been live longer than `MAX_GAME_DURATION_MINUTES` should be
+    Final.  We use those bounds to keep MLB API calls minimal:
+
+    1. Sleep until `last_first_pitch + MIN_GAME_DURATION_MINUTES` —
+       no schedule fetches during this window.  No game can possibly
+       be Final yet, so polling is wasted traffic.
+
+    2. Then poll the schedule every `POST_LOCK_CHECK_INTERVAL` seconds
+       until every game has final scores or sits in a NON_PLAYING
+       status (Postponed, Cancelled, Suspended).  On all-final we
+       clear the frozen cache and pre-warm tomorrow's schedule.
+
+    Picks stay frozen; this loop never rebuilds the lineup.
     """
     from app.core.constants import NON_PLAYING_GAME_STATUSES
     from app.database import SessionLocal
@@ -153,7 +204,41 @@ async def _post_lock_monitor(today: date) -> None:
     from app.services.lineup_cache import lineup_cache
     from app.services.data_collection import fetch_schedule_for_date
 
-    logger.info("Post-lock monitor active — watching %s for completion", today)
+    # ------------------------------------------------------------------
+    # Phase 4a: Sleep until ANY game could plausibly be final.
+    # No API calls happen here.
+    # ------------------------------------------------------------------
+    db = SessionLocal()
+    try:
+        last_first_pitch = _get_last_first_pitch_utc(db, today)
+    finally:
+        db.close()
+
+    if last_first_pitch is not None:
+        earliest_completion = last_first_pitch + timedelta(
+            minutes=MIN_GAME_DURATION_MINUTES
+        )
+        now = datetime.now(timezone.utc)
+        if now < earliest_completion:
+            wait_min = (earliest_completion - now).total_seconds() / 60
+            logger.info(
+                "Post-lock monitor: sleeping until %s UTC (%.0f min) — "
+                "earliest possible all-final time (last_first_pitch=%s + "
+                "%d min)",
+                earliest_completion.strftime("%H:%M"),
+                wait_min,
+                last_first_pitch.strftime("%H:%M"),
+                MIN_GAME_DURATION_MINUTES,
+            )
+            await _sleep_until(earliest_completion)
+
+    # ------------------------------------------------------------------
+    # Phase 4b: Poll for completion at POST_LOCK_CHECK_INTERVAL cadence.
+    # ------------------------------------------------------------------
+    logger.info(
+        "Post-lock monitor active — watching %s for completion (every %ds)",
+        today, POST_LOCK_CHECK_INTERVAL,
+    )
 
     while True:
         try:

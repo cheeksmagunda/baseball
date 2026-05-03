@@ -131,7 +131,7 @@ async def lifespan(app: FastAPI):
 
     def _sync_startup_init() -> None:
         """Blocking startup work. Runs in a worker thread via asyncio.to_thread."""
-        from datetime import datetime as _dt, timezone as _tz
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
         from app.services.lineup_cache import lineup_cache
         from app.services.slate_monitor import _get_first_pitch_utc
         from app.models.slate import Slate as _Slate
@@ -183,23 +183,31 @@ async def lifespan(app: FastAPI):
             if _today_slate:
                 _first_pitch = _get_first_pitch_utc(_check_db, date.today())
                 if _first_pitch:
-                    if _dt.now(_tz.utc) >= _first_pitch:
-                        # Slate has started — restore frozen picks so the monitor
-                        # skips pipeline regeneration and picks remain unchanged.
+                    # Lock_time is the boundary at which the monitor freezes
+                    # picks. Once it has passed, a cache row may exist for
+                    # today's slate. Try to restore — restore_and_refreeze
+                    # checks the deploy_id internally:
+                    #   * same deploy_id (transient crash) → restore unchanged
+                    #   * different deploy_id (code push / manual redeploy) → False
+                    #     → purge() below busts cache → monitor runs fresh on
+                    #       remaining games.
+                    # Pre-lock: no cache exists yet, restore returns False,
+                    # purge() is a no-op.
+                    _lock_time = _first_pitch - _td(minutes=65)
+                    if _dt.now(_tz.utc) >= _lock_time:
                         _restored = lineup_cache.restore_and_refreeze(_first_pitch)
                         if _restored:
                             logger.info(
-                                "Post-first-pitch restart: restored frozen picks. "
-                                "Monitor will skip pipeline and proceed to post-lock monitoring."
+                                "Restart after lock: restored frozen picks (same "
+                                "deploy_id). Monitor will skip pipeline and "
+                                "proceed to post-lock monitoring."
                             )
                         else:
                             logger.warning(
-                                "Post-first-pitch restart: no cached picks to restore. "
-                                "Monitor will run mid-slate pipeline (remaining games only)."
+                                "Restart after lock: no cached picks restored "
+                                "(no cache row OR new deploy_id). Monitor will "
+                                "run pipeline on remaining games."
                             )
-                    # T-65 window (lock_time <= now < first_pitch): do NOT restore.
-                    # purge() below wipes the cache so the monitor sees is_frozen=False
-                    # and runs a fresh cold pipeline immediately (lock_time is already past).
         if not _restored:
             lineup_cache.purge()
         logger.info(
