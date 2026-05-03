@@ -244,6 +244,9 @@ def score_pitcher_matchup(
     opp_team: str | None, opp_stats: dict | None, max_pts: float
 ) -> TraitResult:
     """Score based on opponent offensive quality. Weaker opponent = higher score."""
+    if max_pts == 0:
+        return TraitResult("matchup_quality", 0.0, 0.0, "weight=0")
+
     if not opp_team or not opp_stats:
         raise RuntimeError(
             f"score_pitcher_matchup called with opp_team={opp_team!r}, opp_stats={opp_stats} "
@@ -462,6 +465,9 @@ def score_lineup_position(batting_order: int | None, max_pts: float) -> TraitRes
     probability of stepping to the plate in late-inning lead-change leverage).
     Slot 1 is NOT penalised — leadoff volume is the equal of the 2-4 RBI spots.
     """
+    if max_pts == 0:
+        return TraitResult("lineup_position", 0.0, 0.0, "weight=0")
+
     if batting_order is None:
         raise RuntimeError(
             "lineup_position called with batting_order=None — upstream DNP "
@@ -507,6 +513,12 @@ def score_batter_matchup(
     hitters (bat_side = "S") skip the hand-split — they don't carry a
     single split.
     """
+    # V12.2 zero-weighted in production (env handles opp ERA/WHIP).  When
+    # max_pts is 0 the trait contributes nothing to the total, so skip the
+    # data-presence check — there is no scoring to do.
+    if max_pts == 0:
+        return TraitResult("matchup_quality", 0.0, 0.0, "weight=0")
+
     if not opp_pitcher_stats:
         raise RuntimeError(
             "score_batter_matchup: opp_pitcher_stats is None — caller must "
@@ -755,6 +767,9 @@ def score_ballpark_factor(
       - Wind blowing out 15 mph → effective ~1.16
       - Wind blowing in 15 mph → effective ~0.96 (pitcher's park)
     """
+    if max_pts == 0:
+        return TraitResult("ballpark_factor", 0.0, 0.0, "weight=0")
+
     if not park_team:
         raise RuntimeError(
             "ballpark_factor called without park_team — every SlateGame has a "
