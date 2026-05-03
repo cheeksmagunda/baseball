@@ -133,7 +133,9 @@ async def _refresh_statcast() -> None:
 
     try:
         from scripts.refresh_statcast import main as refresh_main
+        from app.core.statcast import clear_statcast_cache
 
+        clear_statcast_cache()
         logger.info("Statcast refresh: starting bulk load from Baseball Savant")
         exit_code = await asyncio.to_thread(refresh_main)
         if exit_code != 0:
