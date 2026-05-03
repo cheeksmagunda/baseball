@@ -16,8 +16,6 @@ from app.core.constants import (
     DEFAULT_BATTER_OPS_VS_RHP,
     DEFAULT_OPP_K_PCT,
     DEFAULT_OPP_OPS,
-    DEFAULT_PITCHER_ERA,
-    DEFAULT_PITCHER_WHIP,
     PARK_HR_FACTOR_MAX,
     PARK_HR_FACTOR_MIN,
     PARK_HR_FACTORS,
@@ -101,7 +99,11 @@ def score_ace_status(stats: PlayerStats | None, max_pts: float) -> TraitResult:
         return TraitResult("ace_status", 0, max_pts, "no stats")
 
     # Use ERA as proxy: <2.5 = ace, <3.5 = solid, <4.5 = average, >4.5 = back-end
-    era = DEFAULT_PITCHER_ERA if stats.era is None else stats.era
+    if stats.era is None:
+        raise RuntimeError(
+            f"ERA is None for pitcher with {stats.ip:.1f} IP — data collection failure"
+        )
+    era = stats.era
     if era < 2.5:
         score = max_pts
     elif era < 3.0:
@@ -322,11 +324,15 @@ def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitRe
 
     Blend: ERA 60% + WHIP 40% (the pre-V10.8 blend, restored).
     """
-    if not stats:
+    if not stats or stats.ip == 0:
         return TraitResult("era_whip", 0, max_pts, "no stats")
 
-    era = DEFAULT_PITCHER_ERA if stats.era is None else stats.era
-    whip = DEFAULT_PITCHER_WHIP if stats.whip is None else stats.whip
+    if stats.era is None or stats.whip is None:
+        raise RuntimeError(
+            f"ERA or WHIP is None for pitcher with {stats.ip:.1f} IP — data collection failure"
+        )
+    era = stats.era
+    whip = stats.whip
 
     # ERA + WHIP both inverted (lower is better)
     era_score = scale_score(SCORING_ERA_CEILING - era, 0, SCORING_ERA_RANGE, 1.0)
