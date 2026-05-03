@@ -104,24 +104,46 @@ def scale_score(value: float, floor: float, ceiling: float, max_pts: float) -> f
 
 
 def is_player_scoreable(stats: PlayerStats | None, is_pitcher: bool) -> bool:
-    """Return True if the player has enough live data to score.
+    """Return True if the player has the full live data set the trait
+    scorers require.  Strict-mode (May 2026): no fallbacks anywhere — the
+    DNP filter must exclude any player who would force a trait scorer to
+    raise, so this gate is the SINGLE source of truth for "scoreable".
 
-    Mirrors the exclusion gate in `run_score_slate`: batters need at least one
-    plate appearance; pitchers need IP > 0 or at least one Statcast signal
-    (FB velocity, whiff%, chase%).  Players failing this check are not scored
-    AND must be excluded from the candidate pool — otherwise the resolver
-    re-scores them and `score_power_profile` / `score_pitcher_k_rate` raise.
+    Pitcher requires:
+      * stats row exists
+      * IP > 0   (you cannot be a probable starter without prior MLB innings)
+      * ERA, WHIP, K/9  all populated (MLB Stats API season feed)
+
+    Batter requires:
+      * stats row exists
+      * PA > 0
+      * at least one Statcast power signal: avg_ev / hard_hit / barrel /
+        x_woba / max_ev — `score_power_profile` raises if all five are None.
+
+    Anyone failing this gate is dropped from the pool entirely.
     """
+    if stats is None:
+        return False
     if is_pitcher:
-        if stats is None:
+        if not stats.ip or stats.ip <= 0:
             return False
-        if stats.ip and stats.ip > 0:
-            return True
-        return any(
-            v is not None
-            for v in (stats.fb_velocity, stats.whiff_pct, stats.chase_pct)
+        return (
+            stats.era is not None
+            and stats.whip is not None
+            and stats.k_per_9 is not None
         )
-    return stats is not None and stats.pa is not None and stats.pa > 0
+    if stats.pa is None or stats.pa <= 0:
+        return False
+    return any(
+        v is not None
+        for v in (
+            stats.avg_exit_velocity,
+            stats.hard_hit_pct,
+            stats.barrel_pct,
+            stats.x_woba,
+            stats.max_exit_velocity,
+        )
+    )
 
 
 def graduated_scale(value: float, floor: float, ceiling: float) -> float:

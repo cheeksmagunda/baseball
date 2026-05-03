@@ -7,7 +7,9 @@ import tenacity
 
 from app.config import settings
 
-TIMEOUT = 15.0
+# Split timeout — connect must succeed quickly (DNS / TCP), read can take
+# longer for large stat hydrations (player.stats season+gameLog).
+TIMEOUT = httpx.Timeout(connect=4.0, read=15.0, write=10.0, pool=4.0)
 
 # Cap concurrent MLB API connections to avoid overwhelming the server.
 # The T-65 pipeline fires ~260 requests (rosters, boxscores, player stats,
@@ -17,15 +19,22 @@ _API_SEM = asyncio.Semaphore(20)
 
 
 @tenacity.retry(
-    stop=tenacity.stop_after_attempt(3),
-    wait=tenacity.wait_exponential(multiplier=1, min=1, max=8),
+    # 4 attempts with full jitter (random exponential).  Without jitter,
+    # a thundering-herd of 260 concurrent T-65 requests all retry at the
+    # same exact second on a 502, multiplying the load and re-failing.
+    # `wait_random_exponential` is the AWS recommendation for retries.
+    stop=tenacity.stop_after_attempt(4),
+    wait=tenacity.wait_random_exponential(multiplier=1, max=8),
+    retry=tenacity.retry_if_exception_type(
+        (httpx.HTTPError, httpx.TimeoutException)
+    ),
     reraise=True,
 )
 async def _get(path: str, params: dict | None = None) -> dict:
     """Make a GET request to the MLB Stats API."""
     async with _API_SEM:
         url = f"{settings.mlb_api_base_url}{path}"
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             return resp.json()

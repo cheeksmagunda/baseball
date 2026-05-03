@@ -210,10 +210,8 @@ class TestConstantRankStability:
         # Trait modifier bounds — SECONDARY signal
         "TRAIT_MODIFIER_FLOOR",
         "TRAIT_MODIFIER_CEILING",
-        # Context multipliers
+        # Context multiplier (DNP penalties were removed in strict-mode pass)
         "STACK_BONUS",
-        "DNP_RISK_PENALTY",
-        "DNP_UNKNOWN_PENALTY",
     ]
 
     TAU_FLOOR = 0.78
@@ -230,8 +228,10 @@ class TestConstantRankStability:
                     is_pitcher=(i < size // 5),
                     total_score=rng.uniform(20.0, 90.0),
                     env_score=rng.uniform(0.2, 0.95),
-                    batting_order=rng.choice([None, 1, 3, 5, 7, 9]),
-                    env_unknown_count=rng.choice([0, 1, 3, 5]),
+                    # Strict-mode: every batter has a projected batting order
+                    # (DNP filter excludes None upstream).  No env_unknown_count
+                    # field anymore — every signal is required.
+                    batting_order=rng.choice([1, 3, 5, 7, 9]),
                 )
             )
         return pool

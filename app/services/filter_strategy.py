@@ -67,9 +67,6 @@ from app.core.constants import (
     is_stack_eligible_game,
     STACK_ELIGIBILITY_SHOOTOUT_TOTAL,
     STACK_BONUS,
-    DNP_RISK_PENALTY,
-    DNP_UNKNOWN_PENALTY,
-    ENV_UNKNOWN_COUNT_THRESHOLD,
     ENV_MODIFIER_FLOOR,
     ENV_MODIFIER_CEILING,
     TRAIT_MODIFIER_FLOOR,
@@ -347,6 +344,24 @@ def compute_pitcher_env_score(
       - Home-field flat +0.5 (no audit separation; ML / O/U / park already
         capture the meaningful asymmetry)
     """
+    # Strict-mode precondition (May 2026): every live pitcher env signal must
+    # be present.  Vegas (ML, O/U), park, season stats (K/9, ERA), and team
+    # OPS are all mandatory T-65 inputs.  A None here is a data-collection bug.
+    _required = {
+        "team_moneyline": team_moneyline,
+        "vegas_total": vegas_total,
+        "park_team": park_team,
+        "pitcher_k_per_9": pitcher_k_per_9,
+        "own_starter_era": own_starter_era,
+        "opp_team_ops": opp_team_ops,
+    }
+    _missing = [k for k, v in _required.items() if v is None]
+    if _missing:
+        raise RuntimeError(
+            f"compute_pitcher_env_score: missing required live signals "
+            f"{_missing} — every input must be populated by enrichment"
+        )
+
     score = 0.0
     factors = []
     max_score = 4.0  # tuned so the strongest realistic combination saturates near 1.0
@@ -383,15 +398,19 @@ def compute_pitcher_env_score(
         elif vegas_total <= 9.0:
             score += 0.2
 
-    # 3. Park HR factor — pitcher-friendly
-    if park_team:
-        pf = PARK_HR_FACTORS.get(park_team, 1.0)
-        if pf <= 0.95:
-            score += 0.6
-            factors.append(f"Pitcher park ({park_team}, factor={pf:.2f})")
-        elif pf <= 1.0:
-            score += 0.3
-        # > 1.0 contributes 0 (don't penalise, just don't reward)
+    # 3. Park HR factor — pitcher-friendly.  park_team is precondition-checked
+    # to be present and to exist in PARK_HR_FACTORS (raise on unknown team).
+    if park_team not in PARK_HR_FACTORS:
+        raise RuntimeError(
+            f"compute_pitcher_env_score: park_team={park_team!r} not in PARK_HR_FACTORS"
+        )
+    pf = PARK_HR_FACTORS[park_team]
+    if pf <= 0.95:
+        score += 0.6
+        factors.append(f"Pitcher park ({park_team}, factor={pf:.2f})")
+    elif pf <= 1.0:
+        score += 0.3
+    # > 1.0 contributes 0 (don't penalise, just don't reward)
 
     # 4. K/9 talent — modest bonus
     if pitcher_k_per_9 is not None:
@@ -440,7 +459,7 @@ def build_pitcher_env_kwargs(game: Any, is_home: bool) -> dict[str, Any]:
         "opp_team_ops": getattr(game, f"{other}_team_ops"),
         "opp_team_k_pct": getattr(game, f"{other}_team_k_pct"),
         "pitcher_k_per_9": getattr(game, f"{side}_starter_k_per_9"),
-        "park_team": (game.home_team or "").upper(),
+        "park_team": game.home_team.upper(),
         "is_home": is_home,
         "team_moneyline": getattr(game, f"{side}_moneyline"),
         "vegas_total": game.vegas_total,
@@ -466,7 +485,7 @@ def build_batter_env_kwargs(
         "opp_pitcher_era": getattr(game, f"{other}_starter_era"),
         "platoon_advantage": platoon_advantage,
         "batting_order": batting_order,
-        "park_team": (game.home_team or "").upper(),
+        "park_team": game.home_team.upper(),
         "wind_speed_mph": game.wind_speed_mph,
         "wind_direction": game.wind_direction,
         "temperature_f": game.temperature_f,
@@ -536,6 +555,27 @@ def compute_batter_env_score(
     by `_compute_dnp_adjustment` to distinguish "lineup not yet published"
     from "confirmed not starting".
     """
+    # Strict-mode precondition (May 2026): every live batter env signal must
+    # be present.  RotoWire DNP filter ensures batting_order; Vegas/MLB/weather
+    # enrichment provides the rest.  A None here means upstream filter or
+    # enrichment broke.  unknown_count is preserved at 0 for back-compat.
+    _required = {
+        "opp_pitcher_era": opp_pitcher_era,
+        "opp_starter_whip": opp_starter_whip,
+        "park_team": park_team,
+        "wind_speed_mph": wind_speed_mph,
+        "wind_direction": wind_direction,
+        "temperature_f": temperature_f,
+        "team_moneyline": team_moneyline,
+        "batting_order": batting_order,
+    }
+    _missing = [k for k, v in _required.items() if v is None]
+    if _missing:
+        raise RuntimeError(
+            f"compute_batter_env_score: missing required live signals "
+            f"{_missing} — every input must be populated by enrichment / DNP filter"
+        )
+
     factors: list[str] = []
     unknown_count = 0
     score = 0.0
@@ -601,14 +641,18 @@ def compute_batter_env_score(
             else:
                 score += 0.1
 
-    # 4. Park HR factor — modest contribution for batters
-    if park_team:
-        pf = PARK_HR_FACTORS.get(park_team, 1.0)
-        if pf >= 1.05:
-            score += 0.3
-            factors.append(f"Hitter park ({park_team}, factor={pf:.2f})")
-        elif pf >= 1.0:
-            score += 0.1
+    # 4. Park HR factor — modest contribution for batters.  park_team is
+    # precondition-checked to be present; raise on unknown team.
+    if park_team not in PARK_HR_FACTORS:
+        raise RuntimeError(
+            f"compute_batter_env_score: park_team={park_team!r} not in PARK_HR_FACTORS"
+        )
+    pf = PARK_HR_FACTORS[park_team]
+    if pf >= 1.05:
+        score += 0.3
+        factors.append(f"Hitter park ({park_team}, factor={pf:.2f})")
+    elif pf >= 1.0:
+        score += 0.1
 
     # 5. Moneyline — V13 recalibration.  V12 audit confirmed monotonic underdog
     #    premium (Q1 heavy fav HV 36.5% / Q4 underdog HV 58.3%).  V13 38-slate
@@ -739,20 +783,21 @@ class FilterOptimizedLineup:
 
 
 def _compute_dnp_adjustment(candidate: FilteredCandidate) -> float:
-    """Compute DNP risk adjustment for batters only.
+    """Strict-mode DNP adjustment.
 
-    Pitchers at this stage are already filtered to confirmed probable starters.
-    For batters: a known batting_order = posted lineup, full confidence.
-    Missing batting_order with many other env fields missing = slate data
-    not yet published (DNP-unknown, light penalty).  Missing batting_order
-    with a full env context = lineup posted without the player (DNP-confirmed,
-    heavier penalty).
+    The DNP filter (`is_player_scoreable` + the batting_order check in the
+    candidate loaders) excludes any batter without a projected lineup spot
+    and any pitcher without season stats.  Every candidate in the optimizer
+    pool has full live data, so this returns 1.0 unconditionally.  Kept as
+    a function so the EV formula reads cleanly and `_compute_base_ev` does
+    not have to track the policy change.
     """
     if candidate.is_pitcher or candidate.batting_order is not None:
         return 1.0
-    if candidate.env_unknown_count >= ENV_UNKNOWN_COUNT_THRESHOLD:
-        return DNP_UNKNOWN_PENALTY
-    return DNP_RISK_PENALTY
+    raise RuntimeError(
+        f"DNP adjustment: batter {candidate.player_name} ({candidate.team}) has "
+        "batting_order=None — should have been excluded by the DNP filter"
+    )
 
 
 def _compute_base_ev(candidate: FilteredCandidate) -> float:

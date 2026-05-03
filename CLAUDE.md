@@ -109,8 +109,36 @@ total_value = real_score × (2 + card_boost)
 - Silently swallow pipeline exceptions and serve old data
 - Guess MLB IDs when no exact team match exists
 - Substitute `card_boost` as a scoring input (it's during-draft only)
+- Return league-average / `0.5×max_pts` neutral baselines when a trait input is missing
+- Use `or 0`, `or 1`, `or ""`, `.get(key, default)` in scoring or env paths to paper over `None`
 
 The pipeline either works with real data or it fails loudly. Fallbacks mask bugs, corrupt optimization with wrong data, and violate the "Filter, Not Forecast" philosophy — you cannot filter on yesterday's environment.
+
+### Strict-mode enforcement (May 2026)
+
+The codebase was audited end-to-end for silent fallback paths and converted to fail-loud behavior. The five concrete enforcement layers:
+
+1. **DNP filter (`app/core/utils.py::is_player_scoreable`)** — single source of truth for "scoreable from live data". Pitchers need IP > 0 plus ERA, WHIP, and K/9; batters need PA > 0 plus at least one Statcast power signal (avg_ev / hard_hit / barrel / x_woba / max_ev). Applied identically in `app/services/pipeline.py::run_score_slate` and `app/routers/filter_strategy.py::_load_active_slate`. Both call sites also drop batters whose `SlatePlayer.batting_order` is `None` (not in the RotoWire-projected lineup).
+2. **Trait scorers (`app/services/scoring_engine.py`)** — every previously-silent fallback (`UNKNOWN_SCORE_RATIO × max_pts`, `return 0`, `return max_pts * 0.4`) raises `RuntimeError`. The DNP filter ensures these raises are unreachable in normal operation; if one fires, it is a real data-collection bug, not a missing-data event.
+3. **Env scorers (`app/services/filter_strategy.py::compute_pitcher_env_score`, `compute_batter_env_score`)** — top-of-function precondition checks raise on any `None` input. The previous `if x is not None: ...` skip-if-missing pattern is gone.
+4. **`PARK_HR_FACTORS` lookups** — replaced `.get(team, 1.0)` with direct `[team]` indexing so an unknown team raises rather than silently scoring as a neutral park.
+5. **Removed dead constants** — `DEFAULT_OPP_OPS`, `DEFAULT_OPP_K_PCT`, `DEFAULT_PITCHER_ERA`, `DEFAULT_PITCHER_WHIP`, `DEFAULT_BATTER_OPS_VS_LHP`, `DEFAULT_BATTER_OPS_VS_RHP`, `UNKNOWN_SCORE_RATIO`, `DNP_RISK_PENALTY`, `DNP_UNKNOWN_PENALTY`, `ENV_UNKNOWN_COUNT_THRESHOLD`. Don't reintroduce them.
+
+### Live data resiliency (May 2026)
+
+The strict raises stay theoretical only because the data layer fetches reliably. Every external client uses `httpx` + `tenacity` with full-jitter exponential backoff (AWS-recommended for thundering-herd-safe retries) and split connect/read/write/pool timeouts:
+
+| Client | File | Attempts | Backoff | Connect | Read |
+|---|---|---|---|---|---|
+| MLB Stats API | `app/core/mlb_api.py` | 4 | random_exponential, max=8s | 4s | 15s |
+| The Odds API | `app/core/odds_api.py` | 4 | random_exponential, max=8s | 4s | 15s |
+| Open-Meteo | `app/core/open_meteo.py` | 4 | random_exponential, max=6s | 4s | 10s |
+| RotoWire | `app/core/rotowire.py` | 5 | random_exponential, max=8s | 5s | 20s |
+| Baseball Savant | bulk via `pybaseball` (`scripts/refresh_statcast.py`) | n/a | n/a | n/a | n/a |
+
+Concurrency is capped at 20 simultaneous MLB API requests (`asyncio.Semaphore`) so the T-65 ~260-request burst doesn't trigger rate limits. RotoWire treats `200 OK` with zero parsed games as a transient CDN-warmup failure and retries (the only HTML scrape on the path; HTML can be partial without a status code change). Every client follows redirects (`follow_redirects=True`) so a vendor moving an endpoint behind a 301 doesn't crash the pipeline.
+
+If all retries exhaust, the client raises and the T-65 pipeline crashes loud — `/optimize` returns HTTP 503 with the underlying exception. There is no fallback layer. The fix is always to restore the upstream service or deploy a corrected client; never to add a default value.
 
 ## Vegas Lines: Required, Never Optional
 
@@ -587,7 +615,7 @@ Weights are constants — change them in `app/core/weights.py` directly.  No run
 
 **card_boost must NEVER appear in the scoring engine.** It's revealed only during/after the draft and is structurally absent from `FilteredCandidate` — enforced by `tests/test_invariants.py` and `scripts/audit_live_isolation.py`.
 
-**League-average defaults** for missing stats are centralized in `app/core/constants.py` (`DEFAULT_PITCHER_ERA`, `DEFAULT_PITCHER_WHIP`, `DEFAULT_OPP_OPS`, `DEFAULT_OPP_K_PCT`). Never hardcode these values inline.
+**No league-average defaults** (May 2026 strict pass). The `DEFAULT_*` constants and `UNKNOWN_SCORE_RATIO` were removed — the trait scorers raise on any missing input. The DNP filter (`is_player_scoreable` + the batting-order check) excludes any player who would otherwise force a fallback. See "Strict no-fallback policy" below.
 
 **Scaling thresholds** (K/9 floor/ceiling, ERA ranges, OPS ranges, etc.) are also centralized in `app/core/constants.py` (`SCORING_K9_FLOOR`, `SCORING_K9_CEILING`, etc.). The scoring engine uses `scale_score()` from `app/core/utils.py` for all linear scaling — never inline `max(0, min(...))`.
 
@@ -643,11 +671,10 @@ All shared formulas and lookups live here. **Always use these instead of reimple
 
 All magic numbers, thresholds, and league-average defaults are centralized here. **Never hardcode these inline:**
 
-- **League-average defaults:** `DEFAULT_OPP_OPS`, `DEFAULT_OPP_K_PCT`, `DEFAULT_PITCHER_ERA`, `DEFAULT_PITCHER_WHIP`
 - **Scoring thresholds:** `SCORING_K9_FLOOR/CEILING`, `SCORING_ERA_CEILING/RANGE`, `SCORING_PITCHER_OPS_CEILING/RANGE`, etc.
 - **Pitcher env thresholds:** `PITCHER_ENV_OPS_FLOOR/CEILING`, `PITCHER_ENV_K9_FLOOR/CEILING`, `PITCHER_ENV_ML_FLOOR/CEILING`, etc.
 - **Batter env thresholds:** `BATTER_ENV_VEGAS_FLOOR/CEILING`, `BATTER_ENV_ERA_FLOOR/CEILING`, `BATTER_ENV_WIND_OUT_DIRECTIONS`, etc.
-- **Unknown-data neutral:** `UNKNOWN_SCORE_RATIO = 0.5` — used when trait data is missing
+- **No `DEFAULT_*` / `UNKNOWN_SCORE_RATIO` / `DNP_*_PENALTY` constants** — removed in May 2026 strict pass. Missing live data raises; the DNP filter prevents that path.
 
 ## Graduated Scaling Helpers (`app/core/utils.py`)
 

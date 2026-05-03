@@ -172,39 +172,13 @@ PITCHER_ENV_MIN_K_PER_9 = 8.0         # min K/9 for "K upside"
 
 # ---------------------------------------------------------------------------
 # Bifurcated missing-data handling
-#
-# "Unknown environment" (missing data) ≠ "Bad environment" (confirmed bad).
-# In DFS with convex payouts, uncertainty widens variance without shifting
-# the mean.  A ghost player's missing batting order could be leadoff or DNP —
-# penalizing as if it's DNP is asymmetrically wrong for high-boost players
-# where any positive outcome crosses the threshold.
-#
-# Two tiers (see _compute_dnp_adjustment() in filter_strategy.py):
-#   CONFIRMED_BAD: batting_order=None AND the player's team's lineup is
-#                  published (so absence = genuinely not starting).
-#   UNKNOWN:       batting_order=None AND lineup not yet published.
-#                  Applies a lighter penalty reflecting true uncertainty.
+# Strict-mode (May 2026): the DNP penalty machinery (DNP_RISK_PENALTY,
+# DNP_UNKNOWN_PENALTY, ENV_UNKNOWN_COUNT_THRESHOLD) was removed.  The DNP
+# filter (`is_player_scoreable` + the batting_order check) excludes any
+# batter without a projected lineup spot or any pitcher without full season
+# stats.  Every candidate the optimizer sees has full data, so the DNP
+# adjustment factor is constant 1.0 and no penalty is needed.
 # ---------------------------------------------------------------------------
-DNP_RISK_PENALTY = 0.70               # CONFIRMED bad: 30% haircut (lineup published, player absent)
-DNP_UNKNOWN_PENALTY = 0.93            # UNKNOWN: 7% haircut.
-                                      # V10.6 (April 28-29 evaluation): lifted from
-                                      # 0.85 → 0.93.  When the constant was set,
-                                      # batting orders were rare at T-65 and the
-                                      # 15% haircut reflected genuine DNP uncertainty.
-                                      # V10.4 wired RotoWire expected-lineup scraping
-                                      # which covers ~90% of teams at T-65, so the
-                                      # batting_order=None state now correlates much
-                                      # more with "RotoWire missed this team" than
-                                      # with "this batter isn't starting".  The harness
-                                      # showed batters were systematically out-ranked
-                                      # by the dominant pitcher pool — every batter
-                                      # paid 0.85 even when env conditions were strong.
-                                      # Reducing the haircut to 7% lets confirmed-team
-                                      # batters in good env situations compete on EV
-                                      # with the favorite-team SP.  CONFIRMED_BAD
-                                      # (lineup published, player absent) remains
-                                      # at 0.70 — that's still a real signal.
-ENV_UNKNOWN_COUNT_THRESHOLD = 3       # >= this many unknown env factors = "data not published" (not "bad env")
 
 # Env modifier bounds — PRIMARY EV signal.
 # Range: 0.70–1.30 (1.86x swing) — game conditions (Vegas O/U, ERA, bullpen,
@@ -282,18 +256,12 @@ PITCHER_ANCHOR_SLOT = 1              # legacy constant — Slot 1 index, used in
 STACK_BONUS = 1.20  # 20% EV bonus for players on blowout-game teams
 
 # ---------------------------------------------------------------------------
-# League-average defaults for missing opponent / pitcher stats
-#
-# When a stat is None (not fetched or unavailable), scoring uses these
-# league-average baselines.  A single constant controls each value so
-# recalibrating for a new season only requires one change.
-# ---------------------------------------------------------------------------
-DEFAULT_OPP_OPS = 0.730               # 2026 league-average team OPS
-DEFAULT_OPP_K_PCT = 0.22              # 2026 league-average team K%
-DEFAULT_PITCHER_ERA = 5.0             # league-worst-tier ERA (conservative)
-DEFAULT_PITCHER_WHIP = 1.5            # league-worst-tier WHIP (conservative)
-DEFAULT_BATTER_OPS_VS_LHP = 0.720     # league-average batter OPS vs left-handed pitchers
-DEFAULT_BATTER_OPS_VS_RHP = 0.740     # league-average batter OPS vs right-handed pitchers
+# Strict-mode (May 2026): no league-average DEFAULT_* fallbacks.  The pipeline
+# crashes loud when any required live signal is missing.  Historical
+# DEFAULT_OPP_OPS / DEFAULT_OPP_K_PCT / DEFAULT_PITCHER_ERA / DEFAULT_PITCHER_WHIP
+# / DEFAULT_BATTER_OPS_VS_LHP / DEFAULT_BATTER_OPS_VS_RHP constants were
+# removed — they were dead code by V12 and accommodating them at all violated
+# the no-fallback policy.
 
 # ---------------------------------------------------------------------------
 # V12 env scoring constants
@@ -329,8 +297,9 @@ def is_game_remaining(game_status: str | None) -> bool:
 SCORING_K9_FLOOR = 6.0                # K/9 at or below → 0 pts
 SCORING_K9_CEILING = 12.0             # K/9 at or above → max pts
 
-# Unknown-data neutral score ratio (used when trait data is missing)
-UNKNOWN_SCORE_RATIO = 0.5             # default to mid-range when data unavailable
+# UNKNOWN_SCORE_RATIO removed in May-2026 strict pass.  Trait scorers now
+# raise RuntimeError instead of returning a "neutral" 0.5 × max_pts, since
+# the upstream DNP filter guarantees every scored player has full live data.
 
 # Scoring engine — pitcher matchup thresholds
 SCORING_PITCHER_OPS_CEILING = 0.800   # opponent OPS at or above → 0 score
@@ -558,11 +527,6 @@ def _validate_constants() -> None:
     assert len(PARK_HR_FACTORS) >= 30, "PARK_HR_FACTORS missing teams"
     assert PARK_HR_FACTOR_MIN < 1.0 < PARK_HR_FACTOR_MAX, (
         f"PARK_HR_FACTOR range must straddle 1.0: [{PARK_HR_FACTOR_MIN}, {PARK_HR_FACTOR_MAX}]"
-    )
-
-    # DNP penalty tiers
-    assert 0 < DNP_RISK_PENALTY < DNP_UNKNOWN_PENALTY < 1.0, (
-        f"DNP penalties must satisfy 0 < RISK ({DNP_RISK_PENALTY}) < UNKNOWN ({DNP_UNKNOWN_PENALTY}) < 1"
     )
 
     # Stacking thresholds: shootout total must be higher than the PATH 1 total

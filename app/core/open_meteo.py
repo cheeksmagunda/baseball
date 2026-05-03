@@ -15,17 +15,19 @@ is in STADIUM_WIND_OUT_FROM_DEG:
   "IN"  — wind blowing in from CF (±45° of the opposite bearing) → suppresses HR
   compass label — crosswind or park not in STADIUM_WIND_OUT_FROM_DEG
 """
-import asyncio
 import logging
 from datetime import date
 
 import httpx
+import tenacity
 
 logger = logging.getLogger(__name__)
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ARCHIVE_URL  = "https://archive-api.open-meteo.com/v1/archive"
-_TIMEOUT = 10.0
+# Connect / read / write / pool timeouts split out so a slow DNS doesn't
+# eat the whole budget intended for the read.
+_TIMEOUT = httpx.Timeout(connect=4.0, read=10.0, write=5.0, pool=4.0)
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +197,17 @@ def _extract_hour(data: dict, target_utc_hour: int) -> dict:
     }
 
 
+@tenacity.retry(
+    # Open-Meteo is unauthenticated and free, so they're more generous with
+    # rate limits than Odds API but slower under load.  4 attempts with full
+    # jitter; ~10s worst-case before raising to enrichment.
+    stop=tenacity.stop_after_attempt(4),
+    wait=tenacity.wait_random_exponential(multiplier=1, max=6),
+    retry=tenacity.retry_if_exception_type(
+        (httpx.HTTPError, httpx.TimeoutException)
+    ),
+    reraise=True,
+)
 async def _fetch(url: str, lat: float, lon: float, game_date: date) -> dict:
     params = {
         "latitude":         lat,
@@ -206,18 +219,10 @@ async def _fetch(url: str, lat: float, lon: float, game_date: date) -> dict:
         "start_date":       game_date.isoformat(),
         "end_date":         game_date.isoformat(),
     }
-    last_exc: Exception | None = None
-    for attempt in range(3):
-        try:
-            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-                resp = await client.get(url, params=params)
-                resp.raise_for_status()
-                return resp.json()
-        except Exception as exc:
-            last_exc = exc
-            if attempt < 2:
-                await asyncio.sleep(2 ** attempt)
-    raise last_exc  # type: ignore[misc]
+    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
+        resp = await client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
 
 
 async def get_game_weather(

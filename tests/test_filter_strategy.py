@@ -29,9 +29,6 @@ from app.core.constants import (
     PITCHER_ANCHOR_SLOT,
     SLOT_MULTIPLIERS,
     STACK_BONUS,
-    DNP_RISK_PENALTY,
-    DNP_UNKNOWN_PENALTY,
-    ENV_UNKNOWN_COUNT_THRESHOLD,
 )
 from app.services.filter_strategy import StackableGame
 
@@ -379,6 +376,10 @@ class TestBatterEnvScore:
 # ===================================================================
 
 class TestDNPAdjustment:
+    """Strict-mode (May 2026): the DNP filter excludes any batter without a
+    projected batting order, so `_compute_dnp_adjustment` always returns 1.0
+    for valid candidates and raises for the unreachable case."""
+
     def test_pitcher_always_1(self):
         c = _make_candidate(is_pitcher=True, batting_order=None)
         assert _compute_dnp_adjustment(c) == 1.0
@@ -387,13 +388,11 @@ class TestDNPAdjustment:
         c = _make_candidate(batting_order=3)
         assert _compute_dnp_adjustment(c) == 1.0
 
-    def test_batter_no_order_many_unknowns(self):
-        c = _make_candidate(batting_order=None, env_unknown_count=ENV_UNKNOWN_COUNT_THRESHOLD)
-        assert _compute_dnp_adjustment(c) == DNP_UNKNOWN_PENALTY
-
-    def test_batter_no_order_few_unknowns_is_confirmed_bad(self):
-        c = _make_candidate(batting_order=None, env_unknown_count=0)
-        assert _compute_dnp_adjustment(c) == DNP_RISK_PENALTY
+    def test_batter_no_order_raises(self):
+        import pytest
+        c = _make_candidate(batting_order=None)
+        with pytest.raises(RuntimeError, match="DNP filter"):
+            _compute_dnp_adjustment(c)
 
 
 # ===================================================================

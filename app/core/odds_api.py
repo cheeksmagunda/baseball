@@ -18,7 +18,8 @@ import tenacity
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.the-odds-api.com"
-_TIMEOUT = 15.0
+# Connect quickly, allow longer read for the full slate response.
+_TIMEOUT = httpx.Timeout(connect=4.0, read=15.0, write=10.0, pool=4.0)
 
 # Maps MLB team abbreviations to the team-name fragments used in The Odds API.
 # The Odds API uses full city/franchise names; we match on these fragments.
@@ -106,12 +107,15 @@ async def fetch_mlb_odds(api_key: str, game_date: date) -> list[dict]:
     }
 
     @tenacity.retry(
-        stop=tenacity.stop_after_attempt(3),
-        wait=tenacity.wait_exponential(multiplier=1, min=1, max=8),
+        stop=tenacity.stop_after_attempt(4),
+        wait=tenacity.wait_random_exponential(multiplier=1, max=8),
+        retry=tenacity.retry_if_exception_type(
+            (httpx.HTTPError, httpx.TimeoutException)
+        ),
         reraise=True,
     )
     async def _fetch() -> httpx.Response:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
             return await client.get(f"{_BASE_URL}/v4/sports/baseball_mlb/odds", params=params)
 
     resp = await _fetch()

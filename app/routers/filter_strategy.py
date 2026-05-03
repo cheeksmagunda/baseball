@@ -165,6 +165,12 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
         if not is_player_scoreable(stats_lookup.get(player.id), is_pitcher):
             excluded += 1
             continue
+        # Strict-mode (May 2026): batters must be in the RotoWire-projected
+        # lineup.  A None batting_order means the player is on the active
+        # roster but not starting today — they don't belong in the pool.
+        if not is_pitcher and sp.batting_order is None:
+            excluded += 1
+            continue
         cards.append(FilterCard(
             player_name=player.name,
             team=player.team,

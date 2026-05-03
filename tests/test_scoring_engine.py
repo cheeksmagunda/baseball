@@ -162,10 +162,18 @@ def test_pitcher_matchup_missing_opp_team_raises():
 
 def test_score_pitcher_forwards_opp_team_to_matchup():
     """Integration: score_pitcher must forward opp_team + opp_team_stats to
-    the matchup trait. If it drops either, matchup falls back to neutral."""
+    the matchup trait.  Strict-mode (May 2026) requires non-empty game_logs
+    too — recent_form raises on empty input."""
+    from datetime import date
     player = Player(id=1, name="Test SP", name_normalized="test sp", team="SEA", position="P")
     stats = PlayerStats(id=1, player_id=1, season=2026, era=3.5, whip=1.15, k_per_9=9.0, ip=50)
-    logs: list[PlayerGameLog] = []
+    logs = [
+        PlayerGameLog(
+            id=i, player_id=1, game_date=date(2026, 3, 25 + i),
+            ip=6.0, er=2, k_pitching=6,
+        )
+        for i in range(3)
+    ]
 
     result = score_pitcher(
         player, stats, logs,

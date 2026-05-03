@@ -124,27 +124,27 @@ def _prepare_batter_env_kwargs(
         game.away_starter_mlb_id if is_home else game.home_starter_mlb_id
     )
     starter_hand = game.away_starter_hand if is_home else game.home_starter_hand
-    score_kwargs: dict = {}
-    if opp_era is not None or opp_whip is not None or opp_k9 is not None:
-        # ERA and WHIP must both be present — they're fetched together from the same
-        # API call. One set without the other is a data integrity bug, not a missing-data case.
-        if opp_era is None or opp_whip is None:
-            raise RuntimeError(
-                f"Partially missing starter stats: era={opp_era}, whip={opp_whip} "
-                f"— enrichment data integrity error"
-            )
-        opp_xstats = (
-            starter_xstats_lookup.get(opp_starter_id, {})
-            if starter_xstats_lookup is not None and opp_starter_id is not None
-            else {}
+    # Strict-mode: opp starter ERA/WHIP/K9 are all mandatory live signals.
+    # The MLB Stats API populates them together from the same season-stats call.
+    if opp_era is None or opp_whip is None or opp_k9 is None:
+        raise RuntimeError(
+            f"Missing opp starter stats: era={opp_era}, whip={opp_whip}, "
+            f"k9={opp_k9} — every live signal must be enriched at T-65"
         )
-        score_kwargs["opp_pitcher_stats"] = {
+    opp_xstats = (
+        starter_xstats_lookup.get(opp_starter_id, {})
+        if starter_xstats_lookup is not None and opp_starter_id is not None
+        else {}
+    )
+    score_kwargs: dict = {
+        "opp_pitcher_stats": {
             "era": opp_era,
             "whip": opp_whip,
-            "k_per_9": opp_k9,  # None passes through; trait layer skips K-vuln if so
+            "k_per_9": opp_k9,
             "x_era": opp_xstats.get("x_era"),
             "x_woba_against": opp_xstats.get("x_woba_against"),
         }
+    }
     score_kwargs["batting_order"] = card.batting_order
     score_kwargs["park_team"] = game.home_team.upper()
     score_kwargs["wind_speed_mph"] = game.wind_speed_mph

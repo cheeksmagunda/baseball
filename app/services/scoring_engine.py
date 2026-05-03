@@ -57,7 +57,6 @@ from app.core.constants import (
     SCORING_WHIFF_PCT_FLOOR,
     SCORING_WHIP_CEILING,
     SCORING_WHIP_RANGE,
-    UNKNOWN_SCORE_RATIO,
 )
 from app.core.utils import get_recent_games, scale_score
 from app.core.weights import ScoringWeights
@@ -91,8 +90,10 @@ class PlayerScoreResult:
 def score_ace_status(stats: PlayerStats | None, max_pts: float) -> TraitResult:
     """Score based on pitcher quality indicators (IP, ERA as proxy for rotation rank)."""
     if not stats or stats.ip == 0:
-        logger.debug("ace_status: no stats — returning 0")
-        return TraitResult("ace_status", 0, max_pts, "no stats")
+        raise RuntimeError(
+            "ace_status called with no stats or 0 IP — upstream DNP filter "
+            "should have excluded this pitcher"
+        )
 
     # Use ERA as proxy: <2.5 = ace, <3.5 = solid, <4.5 = average, >4.5 = back-end
     if stats.era is None:
@@ -133,11 +134,10 @@ def score_pitcher_k_rate(
       * 5 kinematic sub-signals each contribute 1 point (0.0–1.0 scaled).
       * If ≥3 are present, kinematic score is 70% of trait (dominant).
       * If 0–2 are present, fall back to K/9 scaling at full weight.
-      * If NONE of the signals are present (true MLB-debut rookie), return
-        UNKNOWN_SCORE_RATIO × max_pts so the player doesn't get mathematically
-        benched — the env / park filters decide their fate from there.
-        Rookie Arbitrage per strategy doc §"Rookie Variance Void": the crowd
-        ignores MLB-debut arms; our job is to not ignore them ourselves.
+      * If NONE of the signals are present AND k_per_9 is None, raise.
+        A "true MLB-debut rookie" with zero kinematic data and zero K/9
+        is not scoreable from live data — they don't belong in the pool.
+        The DNP filter excludes them upstream; reaching here is a bug.
 
     V10.8: catcher framing adjustment.  When `team_framing_runs` is provided
     (the pitcher's team's season framing aggregate from TeamSeasonStats),
@@ -213,9 +213,17 @@ def _apply_framing_adjustment(
     Linear in the runs value, clamped at SCORING_FRAMING_RUNS_FLOOR/CEILING.
     Score is then clamped to [0, max_pts] so we never push a 0-score score
     negative or a near-max score above max_pts.
+
+    `team_framing_runs` is mandatory — Baseball Savant is a hard T-65
+    dependency (the Statcast refresh populates TeamSeasonStats for all 30
+    teams).  A None here means the Savant scrape silently dropped a team or
+    the candidate's team abbreviation didn't match any TeamSeasonStats row.
     """
     if team_framing_runs is None:
-        return score
+        raise RuntimeError(
+            "framing adjustment: team_framing_runs is None — Savant refresh "
+            "must populate TeamSeasonStats for every team in the slate"
+        )
     # Map runs to a -max..+max scaling in linear space.
     if team_framing_runs >= SCORING_FRAMING_RUNS_CEILING:
         adj = SCORING_FRAMING_K_RATE_MAX_ADJ
@@ -264,7 +272,10 @@ def score_pitcher_recent_form(
 ) -> TraitResult:
     """Score based on last 3 starts with trajectory signal. Rewards pitchers trending up."""
     if not game_logs:
-        return TraitResult("recent_form", max_pts * 0.4, max_pts, "no recent games")
+        raise RuntimeError(
+            "pitcher_recent_form called with empty game_logs — upstream DNP "
+            "filter should have excluded this pitcher (no MLB starts on record)"
+        )
 
     recent = get_recent_games(game_logs, 3)
 
@@ -325,7 +336,10 @@ def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitRe
     Blend: ERA 60% + WHIP 40% (the pre-V10.8 blend, restored).
     """
     if not stats or stats.ip == 0:
-        return TraitResult("era_whip", 0, max_pts, "no stats")
+        raise RuntimeError(
+            "era_whip called with no stats or 0 IP — upstream DNP filter "
+            "should have excluded this pitcher"
+        )
 
     if stats.era is None or stats.whip is None:
         raise RuntimeError(
@@ -371,11 +385,11 @@ def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResul
     The 25-pt total is preserved so the trait's contribution to total_score
     stays comparable across versions and existing tests.
 
-    Rookie Arbitrage (strategy doc §"Rookie Variance Void"): a true MLB debut
-    with zero plate appearances AND no Statcast row returns the neutral
-    baseline (UNKNOWN_SCORE_RATIO × max_pts) rather than zero, so the env /
-    park filters can still promote them.  The crowd fades rookies; our
-    engine must not also fade them by default.
+    Strict policy (May 2026): a batter with zero PA, or whose Statcast row
+    has every signal None, is not scoreable from live data and is excluded
+    by the DNP filter upstream.  Reaching this function with PA=0 or a fully
+    empty Statcast row raises — the pool must not contain rookies with no
+    measurable MLB performance.
     """
     if not stats or stats.pa == 0:
         raise RuntimeError(
@@ -409,7 +423,11 @@ def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResul
     weighted_sum = sum(s * w for s, w, _ in components if s is not None)
     denom = sum(w for s, w, _ in components if s is not None)
     if denom == 0:
-        return TraitResult("power_profile", 0, max_pts, "no power signals")
+        raise RuntimeError(
+            "power_profile: batter has stats but every Statcast signal is None "
+            "(avg_ev/hard_hit/barrel/x_woba/max_ev) — upstream DNP filter "
+            "should have excluded this player"
+        )
 
     # Scale the realised fraction up to the full POWER_PROFILE_DENOM (25) so a
     # partial-data batter can still saturate max_pts if their present signals
@@ -445,7 +463,10 @@ def score_lineup_position(batting_order: int | None, max_pts: float) -> TraitRes
     Slot 1 is NOT penalised — leadoff volume is the equal of the 2-4 RBI spots.
     """
     if batting_order is None:
-        return TraitResult("lineup_position", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "lineup unknown")
+        raise RuntimeError(
+            "lineup_position called with batting_order=None — upstream DNP "
+            "filter should have excluded batters not in the projected lineup"
+        )
 
     if batting_order in (1, 2, 3, 4):
         score = max_pts
@@ -487,12 +508,18 @@ def score_batter_matchup(
     single split.
     """
     if not opp_pitcher_stats:
-        return TraitResult("matchup_quality", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "matchup unknown")
+        raise RuntimeError(
+            "score_batter_matchup: opp_pitcher_stats is None — caller must "
+            "supply opposing-starter ERA/WHIP from the live SlateGame row"
+        )
 
     opp_era = opp_pitcher_stats.get("era")
     opp_whip = opp_pitcher_stats.get("whip")
     if opp_era is None or opp_whip is None:
-        return TraitResult("matchup_quality", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "matchup unknown")
+        raise RuntimeError(
+            f"score_batter_matchup: opp ERA={opp_era}, WHIP={opp_whip} — "
+            "data collection should populate both from the live MLB API"
+        )
 
     # Opponent ERA: higher is better for batter
     era_score = scale_score(opp_era - SCORING_BATTER_ERA_FLOOR, 0, SCORING_BATTER_ERA_RANGE, 1.0)
@@ -625,7 +652,10 @@ def score_batter_recent_form(
     volatility signal for env amplification. High CV = sensitive to conditions.
     """
     if not game_logs:
-        return TraitResult("recent_form", max_pts * 0.4, max_pts, "no recent games", {})
+        raise RuntimeError(
+            "batter_recent_form called with empty game_logs — upstream DNP "
+            "filter should have excluded this batter (no MLB games on record)"
+        )
 
     recent7 = get_recent_games(game_logs, 7)
     window_new = recent7[:2]   # most recent 2 — primary signal
@@ -635,7 +665,12 @@ def score_batter_recent_form(
         if not games:
             return 0.0
         h = sum(g.hits for g in games)
-        ab = sum(g.ab for g in games) or 1
+        ab = sum(g.ab for g in games)
+        if ab == 0:
+            # Genuine zero-AB stretch (all-walk window or pinch-runner only).
+            # h must also be 0 here — assert and return 0 contribution.
+            assert h == 0, f"recent_form: hits={h} with ab=0 — log integrity error"
+            return 0.0
         hr = sum(g.hr for g in games)
         rbi = sum(g.rbi for g in games)
         return (h / ab) + (hr * 0.05) + (rbi * 0.02)
@@ -643,11 +678,15 @@ def score_batter_recent_form(
     prod_new = _production(window_new)
     prod_old = _production(window_old)
 
-    # Compute per-game production for volatility analysis
+    # Per-game production for volatility analysis. A 0-AB game contributes 0
+    # production (definitionally — no chance to hit), not a fake "1 AB" denom.
     per_game_prod = []
     for g in recent7:
-        ab = g.ab or 1
-        prod = (g.hits / ab) + (g.hr * 0.05) + (g.rbi * 0.02)
+        if g.ab == 0:
+            assert g.hits == 0, f"recent_form: game hits={g.hits} with ab=0"
+            per_game_prod.append(0.0)
+            continue
+        prod = (g.hits / g.ab) + (g.hr * 0.05) + (g.rbi * 0.02)
         per_game_prod.append(prod)
 
     # Coefficient of variation (volatility) — player's own recent window, no historical anchor.
@@ -684,7 +723,7 @@ def score_batter_recent_form(
     score = min(max_pts, round(base_score * traj_mult, 1))
 
     all_h = sum(g.hits for g in recent7)
-    all_ab = sum(g.ab for g in recent7) or 1
+    all_ab = sum(g.ab for g in recent7)
     all_hr = sum(g.hr for g in recent7)
     all_rbi = sum(g.rbi for g in recent7)
     traj_str = "↑" if traj_mult > 1.0 else ("↓" if traj_mult < 1.0 else "→")
@@ -717,9 +756,17 @@ def score_ballpark_factor(
       - Wind blowing in 15 mph → effective ~0.96 (pitcher's park)
     """
     if not park_team:
-        return TraitResult("ballpark_factor", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "park unknown")
+        raise RuntimeError(
+            "ballpark_factor called without park_team — every SlateGame has a "
+            "home_team, so a None here is a data integrity error"
+        )
 
-    base_factor = PARK_HR_FACTORS.get(park_team, 1.0)
+    if park_team not in PARK_HR_FACTORS:
+        raise RuntimeError(
+            f"ballpark_factor: park_team={park_team!r} not in PARK_HR_FACTORS — "
+            "team abbreviation must match the canonical 30-team set"
+        )
+    base_factor = PARK_HR_FACTORS[park_team]
     adjustment = 0.0
     notes = []
 
@@ -755,7 +802,10 @@ def score_ballpark_factor(
 def score_hot_streak(game_logs: list[PlayerGameLog], max_pts: float) -> TraitResult:
     """Count multi-hit games in last 3 days."""
     if not game_logs:
-        return TraitResult("hot_streak", 0, max_pts, "no recent games")
+        raise RuntimeError(
+            "hot_streak called with empty game_logs — upstream DNP filter "
+            "should have excluded this batter"
+        )
 
     recent = get_recent_games(game_logs, 3)
     multi_hit = sum(1 for g in recent if g.hits >= 2)
@@ -775,10 +825,17 @@ def score_hot_streak(game_logs: list[PlayerGameLog], max_pts: float) -> TraitRes
 def score_speed_component(stats: PlayerStats | None, max_pts: float) -> TraitResult:
     """Score stolen base potential."""
     if not stats:
-        return TraitResult("speed_component", 0, max_pts, "no stats")
+        raise RuntimeError(
+            "speed_component called with no stats — upstream DNP filter "
+            "should have excluded this batter"
+        )
 
-    games = max(stats.games or 0, 1)  # games is 0-default in DB; or-0 guards None in tests
-    sb_pace = stats.sb / games * 162  # Project to full season
+    if not stats.games or stats.games == 0:
+        raise RuntimeError(
+            "speed_component: batter has stats but games=0 — upstream DNP "
+            "filter should have excluded a player with no game appearances"
+        )
+    sb_pace = stats.sb / stats.games * 162  # Project to full season
 
     if sb_pace >= 30:
         score = max_pts

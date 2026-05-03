@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import httpx
+import tenacity
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ _USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
-_TIMEOUT = 20.0
+_TIMEOUT = httpx.Timeout(connect=5.0, read=20.0, write=10.0, pool=5.0)
 
 
 class LineupStatus(str, Enum):
@@ -76,18 +77,30 @@ class GameLineup:
     home: TeamLineup
 
 
+@tenacity.retry(
+    # 5 attempts with full jitter — RotoWire occasionally returns a 502/503
+    # for ~1-3s during edge cache rotation; bare-once was flaky at T-65.
+    # Total worst-case wait: ~16s before the final failure raises.
+    stop=tenacity.stop_after_attempt(5),
+    wait=tenacity.wait_random_exponential(multiplier=1, max=8),
+    retry=tenacity.retry_if_exception_type(
+        (httpx.HTTPError, httpx.TimeoutException, RuntimeError)
+    ),
+    reraise=True,
+)
 async def fetch_expected_lineups() -> list[GameLineup]:
     """Fetch RotoWire's daily-lineups page and parse every game on it.
 
     Returns one GameLineup per game in HTML order.  Raises RuntimeError on
-    network failure or non-200 response.  Parse failures for individual
-    games are skipped silently — this is intentional: a single malformed
-    card on a 12-game slate must not block enrichment of the other 11.
+    network failure, non-200 response, or empty parse after all retries
+    exhaust.  Parse failures for individual games are skipped silently —
+    this is intentional: a single malformed card on a 12-game slate must
+    not block enrichment of the other 11.
 
     Use parse_lineups_html() directly with a pre-fetched HTML string for
     tests / offline reproduction.
     """
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
         try:
             resp = await client.get(_URL, headers={"User-Agent": _USER_AGENT})
         except httpx.HTTPError as exc:
@@ -97,7 +110,16 @@ async def fetch_expected_lineups() -> list[GameLineup]:
             f"RotoWire returned HTTP {resp.status_code} for {_URL} — "
             "expected lineups cannot be enriched."
         )
-    return parse_lineups_html(resp.text)
+    games = parse_lineups_html(resp.text)
+    if not games:
+        # Empty parse is treated like a transient failure: tenacity will retry
+        # before raising terminally.  Helps when RotoWire serves a partial /
+        # placeholder HTML during their CDN warmup window.
+        raise RuntimeError(
+            "RotoWire returned 200 but parsed zero games — likely a partial "
+            "page from CDN warmup; will retry"
+        )
+    return games
 
 
 def parse_lineups_html(html: str) -> list[GameLineup]:

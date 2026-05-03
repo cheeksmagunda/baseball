@@ -356,6 +356,13 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
                 player.name, player.team,
             )
             continue
+        # Strict-mode: batters not in the projected lineup are dropped.
+        if not is_pitcher and sp.batting_order is None:
+            logger.info(
+                "Excluding batter %s (%s): not in RotoWire-projected lineup",
+                player.name, player.team,
+            )
+            continue
 
         is_home = game.home_team == player.team
         park_team = game.home_team

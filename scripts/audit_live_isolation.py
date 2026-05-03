@@ -65,6 +65,19 @@ BANNED_FIELDS = [
     # V11.0 — popularity removed entirely.  Any read is a regression.
     "popularity",
     "sharp_score",
+    # May-2026 strict pass — these constants were removed because they
+    # encoded silent fallbacks (league-average defaults / "neutral" trait
+    # scores).  Reintroducing any of them re-opens a fallback path.
+    "DEFAULT_OPP_OPS",
+    "DEFAULT_OPP_K_PCT",
+    "DEFAULT_PITCHER_ERA",
+    "DEFAULT_PITCHER_WHIP",
+    "DEFAULT_BATTER_OPS_VS_LHP",
+    "DEFAULT_BATTER_OPS_VS_RHP",
+    "UNKNOWN_SCORE_RATIO",
+    "DNP_RISK_PENALTY",
+    "DNP_UNKNOWN_PENALTY",
+    "ENV_UNKNOWN_COUNT_THRESHOLD",
 ]
 
 # Filename stems of the four historical /data/ files.  Any occurrence of these
