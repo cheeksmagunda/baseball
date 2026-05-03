@@ -563,9 +563,6 @@ def compute_batter_env_score(
         "opp_pitcher_era": opp_pitcher_era,
         "opp_starter_whip": opp_starter_whip,
         "park_team": park_team,
-        "wind_speed_mph": wind_speed_mph,
-        "wind_direction": wind_direction,
-        "temperature_f": temperature_f,
         "team_moneyline": team_moneyline,
         "batting_order": batting_order,
     }

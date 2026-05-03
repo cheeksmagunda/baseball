@@ -197,15 +197,18 @@ def _extract_hour(data: dict, target_utc_hour: int) -> dict:
     }
 
 
+def _is_retryable_weather_exc(exc: BaseException) -> bool:
+    # 429 is rate-limiting — retrying immediately makes it worse and wastes time.
+    # Let it surface immediately so the caller can handle it gracefully.
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+        return False
+    return isinstance(exc, (httpx.HTTPError, httpx.TimeoutException))
+
+
 @tenacity.retry(
-    # Open-Meteo is unauthenticated and free, so they're more generous with
-    # rate limits than Odds API but slower under load.  4 attempts with full
-    # jitter; ~10s worst-case before raising to enrichment.
     stop=tenacity.stop_after_attempt(4),
     wait=tenacity.wait_random_exponential(multiplier=1, max=6),
-    retry=tenacity.retry_if_exception_type(
-        (httpx.HTTPError, httpx.TimeoutException)
-    ),
+    retry=tenacity.retry_if_exception(_is_retryable_weather_exc),
     reraise=True,
 )
 async def _fetch(url: str, lat: float, lon: float, game_date: date) -> dict:
@@ -242,7 +245,16 @@ async def get_game_weather(
     Raises RuntimeError on API failure or missing data (3 retries via tenacity).
     """
     url = ARCHIVE_URL if use_archive else FORECAST_URL
-    data = await _fetch(url, lat, lon, game_date)
+    try:
+        data = await _fetch(url, lat, lon, game_date)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            logger.warning(
+                "Open-Meteo rate-limited (429) for (%s, %s) on %s — weather unavailable",
+                lat, lon, game_date,
+            )
+            return None
+        raise
     extracted = _extract_hour(data, game_utc_hour)
     extracted["wind_direction"] = _classify_wind_direction(
         extracted["wind_direction_deg"], park_team

@@ -1186,10 +1186,11 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
             use_archive=use_archive,
         )
         if weather is None:
-            raise RuntimeError(
-                f"Weather fetch failed for {game.home_team} vs {game.away_team} on {slate.date} — "
-                "pipeline cannot proceed with NULL weather data."
+            logger.warning(
+                "Weather unavailable for %s vs %s on %s — wind/temp will be excluded from env scoring",
+                game.home_team, game.away_team, slate.date,
             )
+            continue
 
         game.wind_speed_mph  = weather["wind_speed_mph"]
         game.wind_direction  = weather["wind_direction"]
