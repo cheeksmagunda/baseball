@@ -110,11 +110,13 @@ def test_banned_field_lists_consistent():
         args, so they cannot enter EV.
       * scripts/audit_live_isolation.py (BANNED_FIELDS) — static grep guard:
         scans app/services + app/routers + app/core for any literal `.field`
-        access on these names.
+        access on these names.  Strict-mode (May 2026) extends this to also
+        flag dead-fallback constants (DEFAULT_*, UNKNOWN_SCORE_RATIO,
+        DNP_*_PENALTY) that we never want reintroduced.
 
-    If the two lists drift, one tool may green while the other catches
-    a real regression — or worse, both go silent on a new banned signal.
-    Assert they cover the same set.
+    Audit can be a SUPERSET of the dataclass-rejected set: every dataclass
+    rejection must be audited, but the audit can flag additional symbols
+    that aren't dataclass fields.
     """
     import sys as _sys
     from pathlib import Path as _Path
@@ -122,10 +124,10 @@ def test_banned_field_lists_consistent():
     _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
     from scripts.audit_live_isolation import BANNED_FIELDS as audit_banned
 
-    assert set(audit_banned) == BANNED_OUTCOME_FIELDS, (
-        f"banned-field lists drifted:\n"
-        f"  only in test_invariants: {BANNED_OUTCOME_FIELDS - set(audit_banned)}\n"
-        f"  only in audit script:    {set(audit_banned) - BANNED_OUTCOME_FIELDS}"
+    missing_from_audit = BANNED_OUTCOME_FIELDS - set(audit_banned)
+    assert not missing_from_audit, (
+        f"audit script is missing fields the dataclass rejects: "
+        f"{missing_from_audit} — add them to BANNED_FIELDS in audit script"
     )
 
 

@@ -29,13 +29,13 @@ def test_ace_status_bad_era():
 
 def test_k_rate_elite():
     stats = PlayerStats(id=1, player_id=1, season=2026, k_per_9=12.0, ip=100)
-    result = score_pitcher_k_rate(stats, 25.0)
+    result = score_pitcher_k_rate(stats, 25.0, team_framing_runs=0.0)
     assert result.score == 25.0
 
 
 def test_k_rate_below_floor():
     stats = PlayerStats(id=1, player_id=1, season=2026, k_per_9=5.0, ip=100)
-    result = score_pitcher_k_rate(stats, 25.0)
+    result = score_pitcher_k_rate(stats, 25.0, team_framing_runs=0.0)
     assert result.score == 0
 
 
@@ -116,10 +116,12 @@ def test_pitcher_full_score():
     # opp_team_stats is required — score_pitcher_matchup raises on None inputs.
     # matchup_quality weight is 0 in V12.2 so it doesn't affect total_score,
     # but the call still fires and the guard now requires real data.
+    # team_framing_runs is required — Savant scrape populates it for every team.
     result = score_pitcher(
         player, stats, logs,
         opp_team="BAL",
         opp_team_stats={"ops": 0.730, "k_pct": 0.22},
+        team_framing_runs=0.0,
     )
     # A dominant ace should score 75+
     assert result.total_score >= 75
@@ -179,6 +181,7 @@ def test_score_pitcher_forwards_opp_team_to_matchup():
         player, stats, logs,
         opp_team="OAK",
         opp_team_stats={"ops": 0.680, "k_pct": 0.25},
+        team_framing_runs=0.0,
     )
     matchup = next(t for t in result.traits if t.name == "matchup_quality")
     assert matchup.raw_value is not None
@@ -248,7 +251,7 @@ def test_batter_full_score():
     stats = PlayerStats(
         id=2, player_id=2, season=2026,
         pa=250, hr=18, sb=5, iso=0.260, barrel_pct=13.0,
-        avg=0.285, ops=0.900, ab=220, hits=63,
+        avg=0.285, ops=0.900, ab=220, hits=63, games=60,
     )
     from datetime import date
     logs = [
@@ -259,6 +262,11 @@ def test_batter_full_score():
         for i in range(5)
     ]
 
-    result = score_batter(player, stats, logs, batting_order=3, park_team="COL")
+    result = score_batter(
+        player, stats, logs,
+        batting_order=3,
+        park_team="COL",
+        opp_pitcher_stats={"era": 4.50, "whip": 1.30, "k_per_9": 8.0},
+    )
     # Power hitter at Coors batting 3rd should score 70+
     assert result.total_score >= 65

@@ -65,6 +65,33 @@ def _make_candidate(
     )
 
 
+def _baseline_pitcher_env_kwargs() -> dict:
+    """Strict-mode baseline: every required signal populated to a neutral value
+    so tests can override one signal at a time."""
+    return {
+        "team_moneyline": -150,
+        "vegas_total": 8.5,
+        "park_team": "ATL",
+        "pitcher_k_per_9": 8.5,
+        "own_starter_era": 3.8,
+        "opp_team_ops": 0.730,
+    }
+
+
+def _baseline_batter_env_kwargs() -> dict:
+    """Strict-mode baseline: every required signal populated to a neutral value."""
+    return {
+        "opp_pitcher_era": 4.0,
+        "opp_starter_whip": 1.25,
+        "park_team": "ATL",
+        "wind_speed_mph": 5,
+        "wind_direction": "CALM",
+        "temperature_f": 70,
+        "team_moneyline": -110,
+        "batting_order": 5,
+    }
+
+
 def _default_slate() -> SlateClassification:
     return SlateClassification(
         slate_type=SlateType.STANDARD,
@@ -220,18 +247,20 @@ class TestPitcherEnvScore:
         assert score >= 0.85
         assert any("Underdog" in f for f in factors)
 
-    def test_empty_env(self):
-        score, factors = compute_pitcher_env_score()
-        assert score == pytest.approx(0.0, abs=0.01)
-        assert factors == []
+    def test_strict_raises_on_missing(self):
+        """Strict-mode (May 2026): every required signal must be present.
+        Calling with no args raises with a list of missing signals."""
+        with pytest.raises(RuntimeError, match="missing required live signals"):
+            compute_pitcher_env_score()
 
     def test_ml_peak_at_underdog(self):
         """V13: 38-slate audit shows underdog (≥+100) HV 37.7% beats mild fav 29.8%
         beats clear fav 16.7% beats heavy fav 0%. Curve must reflect this."""
-        score_underdog, _ = compute_pitcher_env_score(team_moneyline=+150)
-        score_mild, _ = compute_pitcher_env_score(team_moneyline=-150)
-        score_clear, _ = compute_pitcher_env_score(team_moneyline=-220)
-        score_heavy, _ = compute_pitcher_env_score(team_moneyline=-280)
+        base = _baseline_pitcher_env_kwargs()
+        score_underdog, _ = compute_pitcher_env_score(**{**base, "team_moneyline": +150})
+        score_mild, _ = compute_pitcher_env_score(**{**base, "team_moneyline": -150})
+        score_clear, _ = compute_pitcher_env_score(**{**base, "team_moneyline": -220})
+        score_heavy, _ = compute_pitcher_env_score(**{**base, "team_moneyline": -280})
         assert score_underdog > score_mild, "V13: underdog must score higher than mild fav"
         assert score_mild > score_clear, "V13: mild fav must beat clear fav"
         assert score_clear > score_heavy, "V13: heavy fav must be penalized"
@@ -239,26 +268,23 @@ class TestPitcherEnvScore:
 
     def test_vegas_total_inverse(self):
         """V12: low O/U is a pitcher game; high O/U penalises pitcher EV."""
-        score_low, _ = compute_pitcher_env_score(team_moneyline=-150, vegas_total=7.0)
-        score_high, _ = compute_pitcher_env_score(team_moneyline=-150, vegas_total=10.0)
+        base = _baseline_pitcher_env_kwargs()
+        score_low, _ = compute_pitcher_env_score(**{**base, "vegas_total": 7.0})
+        score_high, _ = compute_pitcher_env_score(**{**base, "vegas_total": 10.0})
         assert score_low > score_high
 
     def test_pitcher_park_bonus(self):
-        score_pitcher_park, _ = compute_pitcher_env_score(
-            team_moneyline=-150, park_team="SF"  # PF≈0.92
-        )
-        score_hitter_park, _ = compute_pitcher_env_score(
-            team_moneyline=-150, park_team="COL"  # PF≈1.38
-        )
+        base = _baseline_pitcher_env_kwargs()
+        score_pitcher_park, _ = compute_pitcher_env_score(**{**base, "park_team": "SF"})
+        score_hitter_park, _ = compute_pitcher_env_score(**{**base, "park_team": "COL"})
         assert score_pitcher_park > score_hitter_park
 
     def test_dead_signals_no_longer_score(self):
         """V12 audit removed opp_team_k_pct (Q1 25% / Q4 23% HV — dead).
         Passing it should have no effect on score."""
-        score_with_kpct, _ = compute_pitcher_env_score(
-            team_moneyline=-150, opp_team_k_pct=0.26  # was a "high-K opponent" bonus
-        )
-        score_without_kpct, _ = compute_pitcher_env_score(team_moneyline=-150)
+        base = _baseline_pitcher_env_kwargs()
+        score_with_kpct, _ = compute_pitcher_env_score(**{**base, "opp_team_k_pct": 0.26})
+        score_without_kpct, _ = compute_pitcher_env_score(**base)
         assert score_with_kpct == pytest.approx(score_without_kpct, abs=0.001)
 
 
@@ -297,77 +323,74 @@ class TestBatterEnvScore:
         assert unknown == 0
         assert any("Bloated" in f or "Weak" in f for f in factors)
 
-    def test_empty_env_tracks_unknowns(self):
-        score, _, unknown = compute_batter_env_score()
-        assert score == pytest.approx(0.0, abs=0.01)
-        # V12: tracks opp_pitcher_era, opp_starter_whip, batting_order = 3 critical missing
-        assert unknown == 3
+    def test_strict_raises_on_missing(self):
+        """Strict-mode (May 2026): every required signal must be present."""
+        with pytest.raises(RuntimeError, match="missing required live signals"):
+            compute_batter_env_score()
 
     def test_dead_signals_no_longer_score(self):
         """V12 deletes vegas_total, opp_bullpen_era, opp_starter_k_per_9,
         series_*, team_l10_wins, opp_team_rest_days from the env score.
         Passing them should have ZERO effect on the result."""
-        score_with_dead, _, _ = compute_batter_env_score(
-            opp_pitcher_era=5.0,
-            opp_starter_whip=1.4,
-            batting_order=3,
-            # Dead signals (formerly contributed):
-            vegas_total=10.0,
-            opp_bullpen_era=5.5,
-            opp_starter_k_per_9=6.0,
-            series_team_wins=3, series_opp_wins=0,
-            team_l10_wins=8,
-            opp_team_rest_days=0,
-        )
-        score_without_dead, _, _ = compute_batter_env_score(
-            opp_pitcher_era=5.0,
-            opp_starter_whip=1.4,
-            batting_order=3,
-        )
+        base = _baseline_batter_env_kwargs()
+        score_with_dead, _, _ = compute_batter_env_score(**{
+            **base,
+            "vegas_total": 10.0,
+            "opp_bullpen_era": 5.5,
+            "opp_starter_k_per_9": 6.0,
+            "series_team_wins": 3, "series_opp_wins": 0,
+            "team_l10_wins": 8,
+            "opp_team_rest_days": 0,
+        })
+        score_without_dead, _, _ = compute_batter_env_score(**base)
         assert score_with_dead == pytest.approx(score_without_dead, abs=0.001)
 
     def test_underdog_premium_v12(self):
         """V12: data shows underdogs (ML +100+) HV 57% vs heavy favs 36%."""
-        score_underdog, _, _ = compute_batter_env_score(
-            opp_pitcher_era=4.0, team_moneyline=+150
-        )
-        score_heavy_fav, _, _ = compute_batter_env_score(
-            opp_pitcher_era=4.0, team_moneyline=-250
-        )
-        # Underdog premium beats heavy-favorite penalty (-0.2)
+        base = _baseline_batter_env_kwargs()
+        score_underdog, _, _ = compute_batter_env_score(**{**base, "team_moneyline": +150})
+        score_heavy_fav, _, _ = compute_batter_env_score(**{**base, "team_moneyline": -250})
         assert score_underdog > score_heavy_fav
 
     def test_batting_order_top_premium(self):
         """V12: batting order 1-3 gets premium, declining through tail."""
-        s_top, _, _ = compute_batter_env_score(opp_pitcher_era=4.0, batting_order=2)
-        s_mid, _, _ = compute_batter_env_score(opp_pitcher_era=4.0, batting_order=5)
-        s_bot, _, _ = compute_batter_env_score(opp_pitcher_era=4.0, batting_order=8)
+        base = _baseline_batter_env_kwargs()
+        s_top, _, _ = compute_batter_env_score(**{**base, "batting_order": 2})
+        s_mid, _, _ = compute_batter_env_score(**{**base, "batting_order": 5})
+        s_bot, _, _ = compute_batter_env_score(**{**base, "batting_order": 8})
         assert s_top > s_mid > s_bot
 
     def test_opp_starter_whip_independent_of_era(self):
         """V12: WHIP and ERA are independent positive contributions (no soft cap)."""
-        score_just_era, _, _ = compute_batter_env_score(opp_pitcher_era=5.5)
-        score_era_plus_whip, _, _ = compute_batter_env_score(
-            opp_pitcher_era=5.5, opp_starter_whip=1.5
+        base = _baseline_batter_env_kwargs()
+        score_low_whip, _, _ = compute_batter_env_score(
+            **{**base, "opp_pitcher_era": 5.5, "opp_starter_whip": 1.0}
         )
-        assert score_era_plus_whip > score_just_era
+        score_high_whip, _, _ = compute_batter_env_score(
+            **{**base, "opp_pitcher_era": 5.5, "opp_starter_whip": 1.5}
+        )
+        assert score_high_whip > score_low_whip
 
     def test_wind_out_beats_wind_in(self):
         """V12: wind OUT bonus, wind IN penalty (both at 10+ mph)."""
+        base = _baseline_batter_env_kwargs()
         score_out, _, _ = compute_batter_env_score(
-            opp_pitcher_era=4.0, wind_speed_mph=15, wind_direction="OUT TO CF"
+            **{**base, "wind_speed_mph": 15, "wind_direction": "OUT TO CF"}
         )
         score_in, _, _ = compute_batter_env_score(
-            opp_pitcher_era=4.0, wind_speed_mph=15, wind_direction="IN FROM CF"
+            **{**base, "wind_speed_mph": 15, "wind_direction": "IN FROM CF"}
         )
         assert score_out > score_in
 
     def test_calm_wind_no_effect(self):
         """V12: wind below 6 mph contributes nothing regardless of direction."""
+        base = _baseline_batter_env_kwargs()
         score_calm_in, _, _ = compute_batter_env_score(
-            opp_pitcher_era=4.0, wind_speed_mph=3, wind_direction="IN"
+            **{**base, "wind_speed_mph": 3, "wind_direction": "IN"}
         )
-        score_no_wind, _, _ = compute_batter_env_score(opp_pitcher_era=4.0)
+        score_no_wind, _, _ = compute_batter_env_score(
+            **{**base, "wind_speed_mph": 0, "wind_direction": "CALM"}
+        )
         assert score_calm_in == pytest.approx(score_no_wind, abs=0.001)
 
 
