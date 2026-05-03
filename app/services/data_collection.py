@@ -715,7 +715,9 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
         prior_data = await get_player_stats(mlb_id, prior_season)
         prior_people = prior_data.get("people", [])
         if prior_people:
-            for group in prior_people[0].get("stats", []):
+            prior_groups = prior_people[0].get("stats", [])
+            # 1) Season pitching aggregate → ERA/WHIP/K9
+            for group in prior_groups:
                 if (
                     group.get("type", {}).get("displayName") == "season"
                     and group.get("group", {}).get("displayName") == "pitching"
@@ -741,6 +743,57 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
                         prior_season, ps.era, ps.whip, ps.k_per_9,
                     )
                     break
+
+            # 2) Prior-season gameLog → recent_form trait input.  The trait
+            # raises if game_logs is empty, and the pitcher has no
+            # current-season starts on record by definition (we hit this
+            # branch because IP=0).  Their actual most-recent starts ARE
+            # last year's — that's "recent player performance" per directive.
+            log_count = 0
+            for group in prior_groups:
+                if group.get("type", {}).get("displayName") != "gameLog":
+                    continue
+                for split in group.get("splits", [])[:10]:
+                    game_date_str = split.get("date", "")
+                    if not game_date_str:
+                        continue
+                    gd = date.fromisoformat(game_date_str)
+                    gs = split.get("stat", {})
+
+                    existing = (
+                        db.query(PlayerGameLog)
+                        .filter_by(player_id=player.id, game_date=gd)
+                        .first()
+                    )
+                    if existing:
+                        continue
+
+                    opp = split.get("opponent", {}).get("abbreviation", "")
+                    log = PlayerGameLog(
+                        player_id=player.id,
+                        game_date=gd,
+                        opponent=opp,
+                        source="mlb_api",
+                        ab=gs.get("atBats", 0),
+                        hits=gs.get("hits", 0),
+                        hr=gs.get("homeRuns", 0),
+                        rbi=gs.get("rbi", 0),
+                        bb=gs.get("baseOnBalls", 0),
+                        so=gs.get("strikeOuts", 0),
+                        sb=gs.get("stolenBases", 0),
+                        ip=float(gs.get("inningsPitched", "0") or 0),
+                        er=gs.get("earnedRuns", 0),
+                        k_pitching=gs.get("strikeOuts", 0),
+                        decision=gs.get("decision", ""),
+                    )
+                    db.add(log)
+                    log_count += 1
+            if log_count:
+                logger.info(
+                    "Pitcher %s (mlb_id=%d): backfilled %d %d game-log rows "
+                    "for recent_form trait",
+                    player.name, mlb_id, log_count, prior_season,
+                )
 
     db.commit()
     return ps
