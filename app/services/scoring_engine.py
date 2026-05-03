@@ -379,7 +379,7 @@ def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResul
     """
     if not stats or stats.pa == 0:
         raise RuntimeError(
-            f"power_profile called with no stats or 0 PA for batter — "
+            "power_profile called with no stats or 0 PA for batter — "
             "upstream filter should have excluded this player"
         )
 
