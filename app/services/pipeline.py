@@ -20,6 +20,7 @@ from app.core.constants import (
     MIN_GAMES_REPRESENTED,
     is_game_remaining,
 )
+from app.core.utils import is_player_scoreable
 from app.models.player import Player, PlayerStats, normalize_name
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.models.scoring import PlayerScore, ScoreBreakdown
@@ -341,38 +342,20 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
         if not is_game_remaining(game.game_status):
             continue
 
-        # Exclude players without enough real data to score.
-        # Pitchers need IP > 0 or at least one Statcast signal to be meaningful.
-        # Batters need at least one plate appearance. Players excluded here
-        # simply don't get a PlayerScore row and won't appear in the optimizer pool.
+        # Exclude players without enough real data to score. The same gate
+        # is applied in `_load_active_slate` so the candidate pool matches.
         player_stats_row = (
             db.query(PlayerStats)
             .filter_by(player_id=player.id, season=game_date.year)
             .first()
         )
-        if is_pitcher:
-            has_ip = player_stats_row is not None and player_stats_row.ip > 0
-            has_statcast = player_stats_row is not None and any(
-                v is not None
-                for v in [
-                    player_stats_row.fb_velocity,
-                    player_stats_row.whiff_pct,
-                    player_stats_row.chase_pct,
-                ]
+        if not is_player_scoreable(player_stats_row, is_pitcher):
+            logger.info(
+                "Excluding %s %s (%s): insufficient stats (PA/IP/Statcast)",
+                "pitcher" if is_pitcher else "batter",
+                player.name, player.team,
             )
-            if not has_ip and not has_statcast:
-                logger.info(
-                    "Excluding pitcher %s (%s): 0 IP and no Statcast data",
-                    player.name, player.team,
-                )
-                continue
-        else:
-            if player_stats_row is None or player_stats_row.pa == 0:
-                logger.info(
-                    "Excluding batter %s (%s): 0 plate appearances",
-                    player.name, player.team,
-                )
-                continue
+            continue
 
         is_home = game.home_team == player.team
         park_team = game.home_team

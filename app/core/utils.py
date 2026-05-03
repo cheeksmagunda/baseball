@@ -2,7 +2,7 @@
 
 from sqlalchemy.orm import Session
 
-from app.models.player import Player, PlayerGameLog, normalize_name
+from app.models.player import Player, PlayerGameLog, PlayerStats, normalize_name
 from app.models.scoring import PlayerScore
 
 
@@ -101,6 +101,27 @@ def scale_score(value: float, floor: float, ceiling: float, max_pts: float) -> f
         return max_pts if value >= ceiling else 0.0
     pct = (value - floor) / (ceiling - floor)
     return round(max(0.0, min(max_pts, pct * max_pts)), 1)
+
+
+def is_player_scoreable(stats: PlayerStats | None, is_pitcher: bool) -> bool:
+    """Return True if the player has enough live data to score.
+
+    Mirrors the exclusion gate in `run_score_slate`: batters need at least one
+    plate appearance; pitchers need IP > 0 or at least one Statcast signal
+    (FB velocity, whiff%, chase%).  Players failing this check are not scored
+    AND must be excluded from the candidate pool — otherwise the resolver
+    re-scores them and `score_power_profile` / `score_pitcher_k_rate` raise.
+    """
+    if is_pitcher:
+        if stats is None:
+            return False
+        if stats.ip and stats.ip > 0:
+            return True
+        return any(
+            v is not None
+            for v in (stats.fb_velocity, stats.whiff_pct, stats.chase_pct)
+        )
+    return stats is not None and stats.pa is not None and stats.pa > 0
 
 
 def graduated_scale(value: float, floor: float, ceiling: float) -> float:

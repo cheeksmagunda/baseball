@@ -11,7 +11,11 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 
+from app.config import settings
+from app.core.constants import PITCHER_POSITIONS
+from app.core.utils import is_player_scoreable
 from app.database import get_db
+from app.models.player import PlayerStats
 from app.models.slate import Slate, SlateGame, SlatePlayer
 from app.schemas.scoring import TraitBreakdown
 from app.schemas.filter_strategy import (
@@ -134,13 +138,32 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
         for g in remaining_games
     ]
 
+    # Build PlayerStats lookup for the season so we can apply the same DNP
+    # exclusion as `run_score_slate`.  Without this, the resolver re-scores
+    # zero-PA / zero-IP players and `score_power_profile` raises (no fallback).
+    season = settings.current_season
+    player_ids = [sp.player.id for sp in slate.players if sp.player]
+    stats_lookup: dict[int, PlayerStats] = {}
+    if player_ids:
+        for ps in (
+            db.query(PlayerStats)
+            .filter(PlayerStats.player_id.in_(player_ids), PlayerStats.season == season)
+            .all()
+        ):
+            stats_lookup[ps.player_id] = ps
+
     cards: list[FilterCard] = []
+    excluded = 0
     for sp in slate.players:
         player = sp.player
         if not player or sp.player_status in ("DNP", "scratched"):
             continue
         # Skip players from games that have already started
         if sp.game_id is not None and sp.game_id not in remaining_game_ids:
+            continue
+        is_pitcher = player.position in PITCHER_POSITIONS
+        if not is_player_scoreable(stats_lookup.get(player.id), is_pitcher):
+            excluded += 1
             continue
         cards.append(FilterCard(
             player_name=player.name,
@@ -150,6 +173,12 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
             batting_order=sp.batting_order,
             platoon_advantage=bool(sp.platoon_advantage),
         ))
+
+    if excluded:
+        logger.info(
+            "_load_active_slate: excluded %d players with insufficient stats (PA/IP/Statcast)",
+            excluded,
+        )
 
     return cards, games
 
