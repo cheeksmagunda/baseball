@@ -61,22 +61,39 @@ def _build_starter_stats_cache(
     `score_batter_matchup` uses them as the simplified pitch-arsenal-
     effectiveness signal.
     """
-    starters: list[tuple[str, str, str]] = []  # (raw_name, team, normalized_name)
+    # (raw_name, team, normalized_name, mlb_id) — mlb_id is the strong key
+    # (came from MLB's probablePitcher hydrate) and is the only one that
+    # survives name variants like "Charlie Morton" vs "Charles Morton" or
+    # accent / middle-initial drift between the schedule and roster feeds.
+    starters: list[tuple[str, str, str, int | None]] = []
     for g in games:
         if g.home_starter:
-            starters.append((g.home_starter, g.home_team, normalize_name(g.home_starter)))
+            starters.append(
+                (g.home_starter, g.home_team, normalize_name(g.home_starter), g.home_starter_mlb_id)
+            )
         if g.away_starter:
-            starters.append((g.away_starter, g.away_team, normalize_name(g.away_starter)))
+            starters.append(
+                (g.away_starter, g.away_team, normalize_name(g.away_starter), g.away_starter_mlb_id)
+            )
     if not starters:
         return {}
 
-    unique_keys = {(norm, team) for _, team, norm in starters}
-    conditions = [
+    mlb_ids = {mid for _, _, _, mid in starters if mid is not None}
+    name_team_keys = {(norm, team) for _, team, norm, _ in starters}
+    name_team_conditions = [
         and_(Player.name_normalized == norm, Player.team == team)
-        for norm, team in unique_keys
+        for norm, team in name_team_keys
     ]
-    players = db.query(Player).filter(or_(*conditions)).all()
-    player_by_key = {(p.name_normalized, p.team): p for p in players}
+    q = db.query(Player)
+    if mlb_ids and name_team_conditions:
+        q = q.filter(or_(Player.mlb_id.in_(mlb_ids), *name_team_conditions))
+    elif mlb_ids:
+        q = q.filter(Player.mlb_id.in_(mlb_ids))
+    else:
+        q = q.filter(or_(*name_team_conditions))
+    players = q.all()
+    player_by_mlb_id = {p.mlb_id: p for p in players if p.mlb_id is not None}
+    player_by_name_team = {(p.name_normalized, p.team): p for p in players}
 
     stats_by_pid: dict[int, PlayerStats] = {}
     if players:
@@ -89,10 +106,17 @@ def _build_starter_stats_cache(
         stats_by_pid = {s.player_id: s for s in rows}
 
     cache: dict[str, dict] = {}
-    for name, team, norm in starters:
+    for name, team, norm, mlb_id in starters:
         if name in cache:
             continue
-        player = player_by_key.get((norm, team))
+        # Prefer mlb_id — strong key from probablePitcher hydrate.  Fall back
+        # to (name_normalized, team) only when the schedule didn't expose an
+        # mlb_id (very rare, but possible for late-announced starters).
+        player = None
+        if mlb_id is not None:
+            player = player_by_mlb_id.get(mlb_id)
+        if player is None:
+            player = player_by_name_team.get((norm, team))
         if not player:
             cache[name] = {}
             continue
