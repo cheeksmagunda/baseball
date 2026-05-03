@@ -36,8 +36,6 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from app.core.constants import is_game_remaining
-
 logger = logging.getLogger(__name__)
 
 # T-65: 60-min user draft window + 5-min final generation buffer
