@@ -24,7 +24,7 @@ from app.core.constants import (
     PITCHER_POSITIONS,
 )
 from app.core.utils import find_players_by_name_team_batch
-from app.models.player import Player, PlayerStats, TeamSeasonStats
+from app.models.player import TeamSeasonStats
 from app.schemas.filter_strategy import FilterCard, GameEnvironment
 from app.services.filter_strategy import (
     FilteredCandidate,
