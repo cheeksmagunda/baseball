@@ -273,7 +273,13 @@ Timing logic is unchanged: `_get_first_pitch_utc()` still returns the earliest o
 - `run_score_slate()` and `run_filter_strategy_from_slate()` — skip SlatePlayers whose game has started (belt-and-suspenders for stale DB rows from a prior failed run).
 - `run_full_pipeline()` — raises a clean `RuntimeError("Insufficient remaining games (N of M) for <date> — T-65 aborted")` if fewer than `MIN_GAMES_REPRESENTED` (2) games still remain, so the failure is diagnosable rather than surfacing as a cryptic `ValueError` from `_enforce_composition`.
 
-If a Redis-frozen T-65 payload from earlier in the day exists, the standard `restore_and_refreeze` path in `app/main.py` brings those picks back unchanged. The cold pipeline run only fires when no frozen payload can be restored.
+If a Redis-frozen T-65 payload from earlier in the day exists, the `restore_and_refreeze` path in `app/main.py` brings those picks back unchanged — but only when the cached payload's `deploy_id` matches the currently running process's deploy ID.
+
+**Dev-redeploy cache busting (May 2026).** Each freeze stamps the meta key with `_current_deploy_id()` (Railway's `RAILWAY_DEPLOYMENT_ID`, falling back to `RAILWAY_GIT_COMMIT_SHA`, then `local-dev`). On startup, `restore_and_refreeze` compares the cached deploy_id to the running one:
+- **Same deploy_id** (dyno crashed and restarted on the same image) → restore frozen picks unchanged. Picks must not churn on a transient crash.
+- **Different deploy_id** (a code push has shipped, or a manual Railway redeploy) → return False so the caller `purge()`s all three cache tiers (memory + Redis + SQLite) and the monitor runs a cold pipeline on remaining games. Every dev redeploy mid-slate gets fresh picks computed from the still-upcoming games only.
+
+This is the explicit knob to bust cache: push a commit (new SHA) or hit "Redeploy" in Railway (new deployment ID). Restoring after a crash on the same deploy keeps producing the same picks — no fallback, just the right semantics for both intents.
 
 One source of truth: `STARTED_GAME_STATUSES = frozenset({"Live", "Final"})` and `is_game_remaining(game_status)` live in `app/core/constants.py`.
 
@@ -706,7 +712,9 @@ filter_ev = env_factor × volatility_amplifier × trait_factor × stack_bonus ×
 ```
 
 **Composition** (V12 multi-pitcher variant chooser):
-The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each variant, picks top n_p pitchers by EV + top (5-n_p) batters by EV under per-team caps (1 default, 2 stack-eligible) AND anti-correlation guard (no opposing batters to any drafted pitcher unless they're the pitcher's teammate). Slot-weights each variant by sorting all 5 by EV descending and assigning slot multipliers 2.0, 1.8, 1.6, 1.4, 1.2. Returns the highest-total variant. **Slot 1 (2.0×) goes to the highest-EV PLAYER, not necessarily a pitcher** (rearrangement inequality).
+The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each variant, picks top n_p pitchers by EV + top (5-n_p) batters by EV under per-team caps (1 default, 2 stack-eligible) AND anti-correlation guard (no opposing batters to any drafted pitcher unless they're the pitcher's teammate). The variant chooser slot-weights each candidate set by sorting all 5 by EV descending (rearrangement-inequality maximum) and assigning slot multipliers 2.0, 1.8, 1.6, 1.4, 1.2. Returns the highest-total variant.
+
+**Final slot display: pitcher(s) always front (May 2026).** After the variant chooser picks the 5 players, `_smart_slot_assignment` reorders for display — pitchers fill slots 1..N in EV-desc order, then batters fill slots N+1..5 in EV-desc order. The selection of which 5 still uses rearrangement inequality (so EV ranking is unchanged); only the on-screen slot numbering shifts so the pitcher is always at the top of the lineup card.
 
 **V12 env signals** (audit-validated, see V12 changelog below):
 - Batter env: opp_starter_era (STRONGEST), opp_starter_whip, wind_speed_mph, park_hr_factor, team_moneyline (UNDERDOG premium — inverted from intuition), batting_order, temperature, platoon_advantage
@@ -1074,8 +1082,10 @@ Composition (`_enforce_composition`):
   2.0, 1.8, 1.6, 1.4, 1.2.  Return the highest-total variant.
 - Tiebreak: higher pitcher count wins.
 
-Slot 1 = highest-EV PLAYER regardless of position (rearrangement
-inequality).  Pitcher count is unconstrained (0..5 are all legal).
+Slot 1 = highest-EV PLAYER regardless of position for variant SELECTION
+(rearrangement inequality).  For DISPLAY, the final slot order is
+pitcher(s) first then batters in EV-desc order — pitcher count is
+unconstrained (0..5 are all legal).
 
 Trait scoring (`scoring_engine.py`) — V12.2 weights remove env
 double-counting:
@@ -1186,7 +1196,9 @@ O/U ≥ 9.0.  PATH 2 (both sides eligible, no bonus): O/U ≥ 10.5.  Every
 other team is capped at 1 batter.
 
 ### Slot sequencing
-Slot 1 (2.0×) → highest-EV PLAYER (pitcher or batter).  Slots 2-5 by EV
+Variant chooser uses rearrangement inequality (highest-EV → 2.0×) for
+selection.  Final display reorders: pitcher(s) first by EV, then batters
+by EV (so a 1P+4B lineup always shows the pitcher at slot 1).  Slots 2-5 by EV
 descending.  Rearrangement inequality: best player in best slot.
 
 ## Deployment

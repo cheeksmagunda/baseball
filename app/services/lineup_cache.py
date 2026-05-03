@@ -22,6 +22,7 @@ Turnover logic:
 """
 
 import logging
+import os
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
@@ -30,6 +31,28 @@ logger = logging.getLogger(__name__)
 _REDIS_KEY_PREFIX = "lineup"
 _REDIS_META_PREFIX = "lineup:meta"  # freeze-state invariants, survives restarts
 _REDIS_TTL = 86400  # 24 hours
+
+
+def _current_deploy_id() -> str:
+    """Identifier for the current running deploy.
+
+    Used to invalidate the frozen-pick cache on dev redeploys: a new code
+    push gets a new Railway deployment ID, so on startup we compare the ID
+    stored alongside the cached payload to the current process's ID.  If
+    they differ, the deploy is fresh and we bust cache (mid-slate restart
+    runs cold on remaining games).  If they match, the dyno just cycled
+    on the same deploy and we restore the frozen picks unchanged.
+
+    Tries (in order): RAILWAY_DEPLOYMENT_ID (per-deploy unique, set by
+    Railway), RAILWAY_GIT_COMMIT_SHA (per-commit, fine for code pushes
+    but identical across manual redeploys of the same commit), then a
+    static fallback for local dev so the check is a no-op.
+    """
+    return (
+        os.environ.get("RAILWAY_DEPLOYMENT_ID")
+        or os.environ.get("RAILWAY_GIT_COMMIT_SHA")
+        or "local-dev"
+    )
 
 
 class _LineupCache:
@@ -79,7 +102,9 @@ class _LineupCache:
     def _write_meta(self) -> None:
         """Mirror freeze-state invariants to Redis so restarts (and any sibling
         replica) see the same view. Called whenever _is_frozen or
-        _first_pitch_utc changes."""
+        _first_pitch_utc changes.  Also stamps the running deploy_id so
+        a future dev redeploy can invalidate this cache (see
+        `restore_and_refreeze`)."""
         if self._slate_date is None and self._first_pitch_utc is None:
             return
         import json
@@ -88,22 +113,26 @@ class _LineupCache:
             "frozen": self._is_frozen,
             "first_pitch_utc": self._first_pitch_utc.isoformat()
                 if self._first_pitch_utc else None,
+            "deploy_id": _current_deploy_id(),
         })
         rc = self._get_redis()
         rc.setex(self._redis_meta_key(slate_date), _REDIS_TTL, payload)
 
-    def _read_meta(self, slate_date: date) -> None:
-        """Hydrate _is_frozen and _first_pitch_utc from Redis meta, if present."""
+    def _read_meta(self, slate_date: date) -> dict | None:
+        """Hydrate _is_frozen and _first_pitch_utc from Redis meta, if present.
+        Returns the full meta dict (incl. deploy_id) so callers can do their
+        own checks; returns None when no meta exists for *slate_date*."""
         import json
         rc = self._get_redis()
         raw = rc.get(self._redis_meta_key(slate_date))
         if not raw:
-            return
+            return None
         meta = json.loads(raw)
         self._is_frozen = bool(meta.get("frozen"))
         fp = meta.get("first_pitch_utc")
         if fp:
             self._first_pitch_utc = datetime.fromisoformat(fp)
+        return meta
 
     # ---------- T-65 schedule / freeze ----------
 
@@ -145,11 +174,32 @@ class _LineupCache:
         the monitor skips pipeline regeneration (which would fail because games
         may be Live/Final).
 
-        Only restores if the cached slate date matches today — stale picks from
-        a previous day are never served.
+        Restore conditions (all must hold):
+          1. A cached payload exists for today's date.
+          2. The cached payload was stamped by the same deploy_id as the
+             currently running process.  A different deploy_id means a code
+             push has shipped — bust cache so the new deploy can run cold on
+             remaining games.  This is the dev-redeploy-busts-cache path.
 
-        Returns True if picks were successfully restored and re-frozen.
+        Returns True if picks were successfully restored and re-frozen,
+        False if either condition fails (caller will purge and run cold).
         """
+        # Read meta *before* load_from_db so we can compare deploy_ids
+        # without paying for the full payload deserialization on a miss.
+        try:
+            meta = self._read_meta(date.today())
+        except Exception:
+            meta = None
+        cached_deploy_id = (meta or {}).get("deploy_id")
+        running_deploy_id = _current_deploy_id()
+        if cached_deploy_id and cached_deploy_id != running_deploy_id:
+            logger.info(
+                "Cached picks are from a previous deploy (cached=%s, current=%s) — "
+                "busting cache so the fresh deploy runs cold on remaining games.",
+                cached_deploy_id, running_deploy_id,
+            )
+            return False
+
         loaded = self.load_from_db()
         if not loaded:
             return False

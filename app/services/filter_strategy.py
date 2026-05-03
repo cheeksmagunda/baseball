@@ -1249,25 +1249,38 @@ def _apply_game_diversification(
 def _smart_slot_assignment(
     candidates: list[FilteredCandidate],
 ) -> list[FilterSlotAssignment]:
-    """V12 slot assignment: assign all 5 candidates to slots by filter_ev
-    descending, regardless of position.  Highest-EV player → Slot 1 (2.0×),
-    next → Slot 2 (1.8×), etc.
+    """Final slot assignment: pitchers always occupy the front slots, then
+    batters fill the rest by filter_ev descending.
 
-    Pitcher-count agnostic: a pitcher gets Slot 1 only if his EV is highest;
-    otherwise the top batter takes it.  This is the right behaviour because
-    the slot multiplier compounds linearly with player EV — putting your
-    highest-EV asset in the highest-multiplier slot is always optimal
-    (rearrangement inequality).
+    The variant chooser (`_enforce_composition` + `_lineup_total_ev`) already
+    selected which 5 candidates make the lineup using rearrangement-inequality
+    slot weighting — that's where EV ranking lives.  This function only
+    rearranges the selected 5 for display: pitcher(s) go to slot 1 (and slot 2
+    if a 2P+3B variant won, etc.), then batters fill remaining slots by EV.
+
+    Within each group (pitchers among themselves, batters among themselves)
+    the higher filter_ev gets the higher multiplier — so a 2P+3B lineup
+    assigns the top-EV pitcher to slot 1 (2.0×) and the second pitcher to
+    slot 2 (1.8×).  A 0P+5B lineup behaves identically to pure EV-desc.
     """
     if not candidates:
         return []
 
     slot_mults = dict(SLOT_MULTIPLIERS)  # {1: 2.0, 2: 1.8, ...}
-    sorted_candidates = sorted(candidates, key=lambda c: c.filter_ev, reverse=True)
     slots_desc = sorted(slot_mults.items(), key=lambda x: x[1], reverse=True)
 
+    pitchers = sorted(
+        [c for c in candidates if c.is_pitcher],
+        key=lambda c: c.filter_ev, reverse=True,
+    )
+    batters = sorted(
+        [c for c in candidates if not c.is_pitcher],
+        key=lambda c: c.filter_ev, reverse=True,
+    )
+    ordered = pitchers + batters
+
     assignments: list[FilterSlotAssignment] = []
-    for player, (slot_idx, slot_mult) in zip(sorted_candidates, slots_desc):
+    for player, (slot_idx, slot_mult) in zip(ordered, slots_desc):
         slot_value = player.filter_ev * (slot_mult / BASE_MULTIPLIER)
         assignments.append(FilterSlotAssignment(
             slot_index=slot_idx,
