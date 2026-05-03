@@ -6,6 +6,8 @@ pitcher's matchup_quality trait to silently fall back to the 10.0/20
 "matchup unknown" neutral baseline regardless of populated SlateGame data.
 """
 
+import pytest
+
 from app.schemas.filter_strategy import FilterCard, GameEnvironment
 from app.services.candidate_resolver import (
     _prepare_pitcher_env_kwargs,
@@ -68,16 +70,13 @@ def test_prepare_pitcher_env_kwargs_away_perspective():
     assert kwargs["opp_team_stats"]["ops"] == 0.740
 
 
-def test_prepare_pitcher_env_kwargs_includes_opp_team_even_when_stats_null():
-    """If OPS and K% are both NULL on the SlateGame (shouldn't happen given
-    the enrichment validator, but is defined behavior), opp_team is still
-    set. That keeps the scorer contract intact; the scorer will then pair
-    opp_team with opp_stats=None and fall through to the matchup-unknown
-    branch, which is the correct outcome for truly missing data."""
+def test_prepare_pitcher_env_kwargs_raises_when_stats_null():
+    """NULL team stats after enrichment is a data integrity error — raises RuntimeError.
+    Enrichment (enrich_slate_game_team_stats) validates and raises if any field is
+    missing, so reaching candidate_resolver with NULL ops/k_pct means enrichment
+    failed and somehow continued, which must not produce a silent fallback."""
     game = _make_game(home_ops=None, away_ops=None, home_k=None, away_k=None)
     card = _make_card(team="SEA")
 
-    kwargs = _prepare_pitcher_env_kwargs(game, card)
-
-    assert kwargs["opp_team"] == "OAK"
-    assert "opp_team_stats" not in kwargs
+    with pytest.raises(RuntimeError, match="Missing opponent team stats"):
+        _prepare_pitcher_env_kwargs(game, card)

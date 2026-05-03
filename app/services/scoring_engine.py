@@ -777,7 +777,7 @@ def score_speed_component(stats: PlayerStats | None, max_pts: float) -> TraitRes
     if not stats:
         return TraitResult("speed_component", 0, max_pts, "no stats")
 
-    games = max(stats.games, 1)
+    games = max(stats.games or 0, 1)  # games is 0-default in DB; or-0 guards None in tests
     sb_pace = stats.sb / games * 162  # Project to full season
 
     if sb_pace >= 30:
