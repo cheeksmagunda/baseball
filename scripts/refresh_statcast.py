@@ -333,7 +333,13 @@ def refresh_pitcher_kinematics(db: Session, season: int) -> int:
 
 def refresh_batter_expected_stats(db: Session, season: int) -> int:
     """V10.8 — pull Savant's batter expected-stats leaderboard, upsert
-    x_woba/x_ba/x_slg onto PlayerStats."""
+    x_woba/x_ba/x_slg onto PlayerStats.
+
+    Returns the count of rows where at least one xStat field was non-NULL.
+    Counting field writes (not iterations) ensures the sanity check in main()
+    catches column-name drift — if est_woba/est_ba/est_slg are renamed,
+    row.get() returns None for every player and this returns 0.
+    """
     df = _batter_expected_stats_table(season)
     id_col = _col(df, "player_id", "batter", "mlb_id")
     if id_col is None:
@@ -341,7 +347,7 @@ def refresh_batter_expected_stats(db: Session, season: int) -> int:
             f"Batter expected-stats leaderboard missing id column "
             f"(columns: {list(df.columns)[:10]})"
         )
-    updated = 0
+    fields_written = 0
     for _, row in df.iterrows():
         mlb_id = row[id_col]
         if pd.isna(mlb_id):
@@ -349,17 +355,27 @@ def refresh_batter_expected_stats(db: Session, season: int) -> int:
         ps = _upsert_stats_row(db, int(mlb_id), season)
         if ps is None:
             continue
-        ps.x_woba = _safe_float(row.get("est_woba"))
-        ps.x_ba = _safe_float(row.get("est_ba"))
-        ps.x_slg = _safe_float(row.get("est_slg"))
-        updated += 1
+        x_woba = _safe_float(row.get("est_woba"))
+        x_ba = _safe_float(row.get("est_ba"))
+        x_slg = _safe_float(row.get("est_slg"))
+        ps.x_woba = x_woba
+        ps.x_ba = x_ba
+        ps.x_slg = x_slg
+        if any(v is not None for v in (x_woba, x_ba, x_slg)):
+            fields_written += 1
     db.commit()
-    return updated
+    return fields_written
 
 
 def refresh_pitcher_expected_stats(db: Session, season: int) -> int:
     """V10.8 — pull Savant's pitcher expected-stats leaderboard, upsert
-    x_era and x_woba_against onto PlayerStats."""
+    x_era and x_woba_against onto PlayerStats.
+
+    Returns the count of rows where at least one xStat field was non-NULL.
+    Counting field writes (not iterations) ensures the sanity check in main()
+    catches column-name drift — if xera/est_woba are renamed, row.get()
+    returns None for every player and this returns 0.
+    """
     df = _pitcher_expected_stats_table(season)
     id_col = _col(df, "player_id", "pitcher", "mlb_id")
     if id_col is None:
@@ -367,7 +383,7 @@ def refresh_pitcher_expected_stats(db: Session, season: int) -> int:
             f"Pitcher expected-stats leaderboard missing id column "
             f"(columns: {list(df.columns)[:10]})"
         )
-    updated = 0
+    fields_written = 0
     for _, row in df.iterrows():
         mlb_id = row[id_col]
         if pd.isna(mlb_id):
@@ -375,11 +391,14 @@ def refresh_pitcher_expected_stats(db: Session, season: int) -> int:
         ps = _upsert_stats_row(db, int(mlb_id), season)
         if ps is None:
             continue
-        ps.x_era = _safe_float(row.get("xera"))
-        ps.x_woba_against = _safe_float(row.get("est_woba"))
-        updated += 1
+        x_era = _safe_float(row.get("xera"))
+        x_woba_against = _safe_float(row.get("est_woba"))
+        ps.x_era = x_era
+        ps.x_woba_against = x_woba_against
+        if any(v is not None for v in (x_era, x_woba_against)):
+            fields_written += 1
     db.commit()
-    return updated
+    return fields_written
 
 
 def refresh_team_catcher_framing(db: Session, season: int) -> int:

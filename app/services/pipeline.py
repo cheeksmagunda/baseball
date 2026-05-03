@@ -16,8 +16,6 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.constants import (
-    DEFAULT_OPP_K_PCT,
-    DEFAULT_OPP_OPS,
     PITCHER_POSITIONS,
     MIN_GAMES_REPRESENTED,
     is_game_remaining,
@@ -116,53 +114,40 @@ async def _refresh_statcast() -> None:
     """Bulk-load Baseball Savant leaderboards into PlayerStats.
 
     Runs synchronously inside run_full_pipeline between stats fetch and
-    scoring. Statcast is **enrichment, not core data** — the scoring engine
-    routes through non-Statcast paths when columns are NULL (CLAUDE.md V10.1
-    "Rookie Arbitrage baseline"). When Savant is unreachable or pybaseball
-    breaks on a schema change, we log the failure loudly and continue: the
-    pipeline still produces a lineup from probable pitchers + RotoWire
-    lineups + MLB Stats API season stats.
+    scoring. Failure raises RuntimeError — per the no-fallbacks rule,
+    Statcast is a hard dependency and a failure must crash the pipeline
+    so /optimize returns HTTP 503 rather than silently serving a lineup
+    built without kinematics, xStats, or framing data.
 
-    Failures are written to stderr as plain text in addition to going
-    through the structured logger, because the JSON log formatter embeds
-    `record.exc_info` as an `exc` field that Railway's log UI doesn't
-    surface — making real failures invisible. Plain stderr bypasses that.
+    stderr output is written in addition to structured logging because
+    Railway's JSON log formatter buries exc_info in an `exc` field that
+    the log UI doesn't surface by default.
     """
     import sys as _sys
     import traceback as _traceback
 
-    try:
-        from scripts.refresh_statcast import main as refresh_main
-        from app.core.statcast import clear_statcast_cache
+    from scripts.refresh_statcast import main as refresh_main
+    from app.core.statcast import clear_statcast_cache
 
-        clear_statcast_cache()
-        logger.info("Statcast refresh: starting bulk load from Baseball Savant")
+    clear_statcast_cache()
+    logger.info("Statcast refresh: starting bulk load from Baseball Savant")
+    try:
         exit_code = await asyncio.to_thread(refresh_main)
-        if exit_code != 0:
-            logger.warning(
-                "Statcast refresh exited with code=%d — pipeline continues "
-                "without Statcast enrichment (NULL kinematic columns route "
-                "through scoring-engine fallback paths).",
-                exit_code,
-            )
-            return
-        logger.info("Statcast refresh complete (exit=0)")
     except BaseException as exc:
-        # Plain-text stderr dump so the traceback is visible in Railway's
-        # log UI regardless of how the JSON formatter handles exc_info.
-        _sys.stderr.write(
-            "\n=== STATCAST REFRESH FAILED — pipeline continues without "
-            "Statcast enrichment ===\n"
-        )
+        _sys.stderr.write("\n=== STATCAST REFRESH FAILED ===\n")
         _sys.stderr.write(f"Exception type: {type(exc).__name__}\n")
         _sys.stderr.write(f"Exception: {exc}\n")
         _traceback.print_exc(file=_sys.stderr)
         _sys.stderr.write("=== END STATCAST FAILURE ===\n\n")
         _sys.stderr.flush()
-        logger.exception(
-            "Statcast refresh failed — pipeline continues. Scoring engine "
-            "uses non-Statcast paths for NULL kinematic columns."
+        raise RuntimeError(f"Statcast refresh raised an exception: {exc}") from exc
+
+    if exit_code != 0:
+        raise RuntimeError(
+            f"Statcast refresh exited with code={exit_code} — inspect "
+            "Baseball Savant / pybaseball column names and Player.mlb_id coverage."
         )
+    logger.info("Statcast refresh complete (exit=0)")
 
 
 async def run_fetch(db: Session, game_date: date) -> dict:
@@ -208,15 +193,11 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
         else:
             fetched += 1
 
-    if players and failed >= len(players) * 0.2:
+    if failed:
         raise RuntimeError(
             f"fetch_player_stats: {failed}/{len(players)} players failed — "
-            "cannot produce a reliable lineup with more than 20% of player stats unavailable"
-        )
-    if failed:
-        logger.critical(
-            "fetch_player_stats: %d/%d players failed — lineup quality degraded, proceeding",
-            failed, len(players),
+            "pipeline cannot proceed with any missing player stats. "
+            "Every player must be scored on their own data."
         )
 
     # Enrich SlateGame starter ERA/K9 from newly-fetched PlayerStats.
@@ -351,6 +332,39 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
         if not is_game_remaining(game.game_status):
             continue
 
+        # Exclude players without enough real data to score.
+        # Pitchers need IP > 0 or at least one Statcast signal to be meaningful.
+        # Batters need at least one plate appearance. Players excluded here
+        # simply don't get a PlayerScore row and won't appear in the optimizer pool.
+        player_stats_row = (
+            db.query(PlayerStats)
+            .filter_by(player_id=player.id, season=game_date.year)
+            .first()
+        )
+        if is_pitcher:
+            has_ip = player_stats_row is not None and player_stats_row.ip > 0
+            has_statcast = player_stats_row is not None and any(
+                v is not None
+                for v in [
+                    player_stats_row.fb_velocity,
+                    player_stats_row.whiff_pct,
+                    player_stats_row.chase_pct,
+                ]
+            )
+            if not has_ip and not has_statcast:
+                logger.info(
+                    "Excluding pitcher %s (%s): 0 IP and no Statcast data",
+                    player.name, player.team,
+                )
+                continue
+        else:
+            if player_stats_row is None or player_stats_row.pa == 0:
+                logger.info(
+                    "Excluding batter %s (%s): 0 plate appearances",
+                    player.name, player.team,
+                )
+                continue
+
         is_home = game.home_team == player.team
         park_team = game.home_team
         opp_pitcher_stats = None
@@ -360,11 +374,12 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
             opp_team = game.away_team if is_home else game.home_team
             opp_ops = game.away_team_ops if is_home else game.home_team_ops
             opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
-            if opp_ops is not None or opp_k_pct is not None:
-                opp_team_stats = {
-                    "ops": opp_ops if opp_ops is not None else DEFAULT_OPP_OPS,
-                    "k_pct": opp_k_pct if opp_k_pct is not None else DEFAULT_OPP_K_PCT,
-                }
+            if opp_ops is None or opp_k_pct is None:
+                raise RuntimeError(
+                    f"Missing opponent team stats (ops={opp_ops}, k_pct={opp_k_pct}) "
+                    f"for {opp_team} — enrichment should have validated these"
+                )
+            opp_team_stats = {"ops": opp_ops, "k_pct": opp_k_pct}
         else:
             opp_starter_name = game.away_starter if is_home else game.home_starter
             if opp_starter_name:
@@ -512,11 +527,12 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             opp_team = game.away_team if is_home_p else game.home_team
             opp_ops = game.away_team_ops if is_home_p else game.home_team_ops
             opp_k_pct = game.away_team_k_pct if is_home_p else game.home_team_k_pct
-            if opp_ops is not None or opp_k_pct is not None:
-                opp_team_stats = {
-                    "ops": opp_ops if opp_ops is not None else DEFAULT_OPP_OPS,
-                    "k_pct": opp_k_pct if opp_k_pct is not None else DEFAULT_OPP_K_PCT,
-                }
+            if opp_ops is None or opp_k_pct is None:
+                raise RuntimeError(
+                    f"Missing opponent team stats (ops={opp_ops}, k_pct={opp_k_pct}) "
+                    f"for {opp_team} — enrichment should have validated these"
+                )
+            opp_team_stats = {"ops": opp_ops, "k_pct": opp_k_pct}
         else:
             opp_starter_name = game.away_starter if is_home_p else game.home_starter
             if opp_starter_name:

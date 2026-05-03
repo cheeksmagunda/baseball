@@ -36,6 +36,8 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from app.core.constants import is_game_remaining
+
 logger = logging.getLogger(__name__)
 
 # T-65: 60-min user draft window + 5-min final generation buffer
@@ -104,10 +106,17 @@ def _get_first_pitch_utc(db, game_date: date) -> datetime | None:
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
     times = []
     for g in games:
-        if g.scheduled_game_time:
-            parsed = _parse_game_time(g.scheduled_game_time, game_date)
-            if parsed:
-                times.append(parsed)
+        if not is_game_remaining(g.game_status):
+            continue  # started or final — irrelevant for lock time
+        if not g.scheduled_game_time:
+            raise RuntimeError(
+                f"Game {g.home_team} vs {g.away_team} ({g.game_status}) has no "
+                "scheduled_game_time — schedule fetch returned incomplete data. "
+                "Cannot compute T-65 lock time without all game times."
+            )
+        parsed = _parse_game_time(g.scheduled_game_time, game_date)
+        if parsed:
+            times.append(parsed)
 
     return min(times) if times else None
 

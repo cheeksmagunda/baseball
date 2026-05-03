@@ -21,10 +21,6 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.constants import (
-    DEFAULT_OPP_K_PCT,
-    DEFAULT_OPP_OPS,
-    DEFAULT_PITCHER_ERA,
-    DEFAULT_PITCHER_WHIP,
     PITCHER_POSITIONS,
 )
 from app.core.utils import find_players_by_name_team_batch
@@ -90,11 +86,12 @@ def _prepare_pitcher_env_kwargs(game: GameEnvironment, card: FilterCard) -> dict
     opp_ops = game.away_team_ops if is_home else game.home_team_ops
     opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
     score_kwargs: dict = {"opp_team": opp_team}
-    if opp_ops is not None or opp_k_pct is not None:
-        score_kwargs["opp_team_stats"] = {
-            "ops": opp_ops if opp_ops is not None else DEFAULT_OPP_OPS,
-            "k_pct": opp_k_pct if opp_k_pct is not None else DEFAULT_OPP_K_PCT,
-        }
+    if opp_ops is None or opp_k_pct is None:
+        raise RuntimeError(
+            f"Missing opponent team stats (ops={opp_ops}, k_pct={opp_k_pct}) "
+            f"for {opp_team} — enrichment should have validated these"
+        )
+    score_kwargs["opp_team_stats"] = {"ops": opp_ops, "k_pct": opp_k_pct}
     return score_kwargs
 
 
@@ -129,16 +126,22 @@ def _prepare_batter_env_kwargs(
     starter_hand = game.away_starter_hand if is_home else game.home_starter_hand
     score_kwargs: dict = {}
     if opp_era is not None or opp_whip is not None or opp_k9 is not None:
+        # ERA and WHIP must both be present — they're fetched together from the same
+        # API call. One set without the other is a data integrity bug, not a missing-data case.
+        if opp_era is None or opp_whip is None:
+            raise RuntimeError(
+                f"Partially missing starter stats: era={opp_era}, whip={opp_whip} "
+                f"— enrichment data integrity error"
+            )
         opp_xstats = (
             starter_xstats_lookup.get(opp_starter_id, {})
             if starter_xstats_lookup is not None and opp_starter_id is not None
             else {}
         )
         score_kwargs["opp_pitcher_stats"] = {
-            "era": opp_era if opp_era is not None else DEFAULT_PITCHER_ERA,
-            "whip": opp_whip if opp_whip is not None else DEFAULT_PITCHER_WHIP,
-            "k_per_9": opp_k9,  # V10.6 — None passes through; trait layer skips K-vuln if so
-            # V10.8 — None when no Savant row yet; trait layer falls through to V10.6 blend.
+            "era": opp_era,
+            "whip": opp_whip,
+            "k_per_9": opp_k9,  # None passes through; trait layer skips K-vuln if so
             "x_era": opp_xstats.get("x_era"),
             "x_woba_against": opp_xstats.get("x_woba_against"),
         }

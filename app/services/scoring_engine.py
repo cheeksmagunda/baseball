@@ -12,12 +12,6 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.core.constants import (
-    DEFAULT_BATTER_OPS_VS_LHP,
-    DEFAULT_BATTER_OPS_VS_RHP,
-    DEFAULT_OPP_K_PCT,
-    DEFAULT_OPP_OPS,
-    DEFAULT_PITCHER_ERA,
-    DEFAULT_PITCHER_WHIP,
     PARK_HR_FACTOR_MAX,
     PARK_HR_FACTOR_MIN,
     PARK_HR_FACTORS,
@@ -101,7 +95,11 @@ def score_ace_status(stats: PlayerStats | None, max_pts: float) -> TraitResult:
         return TraitResult("ace_status", 0, max_pts, "no stats")
 
     # Use ERA as proxy: <2.5 = ace, <3.5 = solid, <4.5 = average, >4.5 = back-end
-    era = stats.era or DEFAULT_PITCHER_ERA
+    if stats.era is None:
+        raise RuntimeError(
+            f"ERA is None for pitcher with {stats.ip:.1f} IP — data collection failure"
+        )
+    era = stats.era
     if era < 2.5:
         score = max_pts
     elif era < 3.0:
@@ -152,8 +150,10 @@ def score_pitcher_k_rate(
     signal than per-game rates.
     """
     if not stats:
-        logger.debug("k_rate: no stats — returning rookie baseline (%.0f%%)", UNKNOWN_SCORE_RATIO * 100)
-        return TraitResult("k_rate", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "no stats (rookie baseline)")
+        raise RuntimeError(
+            "score_pitcher_k_rate called with stats=None — "
+            "upstream filter should have excluded this pitcher"
+        )
 
     subs: list[tuple[str, float]] = []
     if stats.fb_velocity is not None:
@@ -190,15 +190,14 @@ def score_pitcher_k_rate(
             stat_parts.append(f"K/9 {stats.k_per_9:.1f}")
         return TraitResult("k_rate", round(score, 1), max_pts, " | ".join(stat_parts))
 
-    # No Statcast — fall back to K/9 scaling (covers new call-ups without Savant rows).
+    # No Statcast — fall back to K/9 scaling.
+    # k_per_9 is always set when ip > 0 (data_collection.py computes it from SO/IP).
+    # Reaching here with k_per_9 = None means ip == 0, which the upstream filter
+    # excludes. If we get here anyway, it is a data integrity error.
     if stats.k_per_9 is None:
-        # True zero-data rookie (MLB debut).  Return the neutral baseline so
-        # env + park can still lift them into the pool.
-        return TraitResult(
-            "k_rate",
-            round(max_pts * UNKNOWN_SCORE_RATIO, 1),
-            max_pts,
-            "no K/9 data, no statcast (rookie baseline)",
+        raise RuntimeError(
+            f"k_per_9 is None for pitcher with ip={stats.ip} — "
+            "upstream filter should have excluded this player"
         )
 
     score = scale_score(stats.k_per_9, SCORING_K9_FLOOR, SCORING_K9_CEILING, max_pts)
@@ -238,10 +237,13 @@ def score_pitcher_matchup(
 ) -> TraitResult:
     """Score based on opponent offensive quality. Weaker opponent = higher score."""
     if not opp_team or not opp_stats:
-        return TraitResult("matchup_quality", max_pts * UNKNOWN_SCORE_RATIO, max_pts, "matchup unknown")
+        raise RuntimeError(
+            f"score_pitcher_matchup called with opp_team={opp_team!r}, opp_stats={opp_stats} "
+            "— upstream pipeline should have raised before scoring"
+        )
 
-    opp_ops = opp_stats.get("ops", DEFAULT_OPP_OPS)
-    opp_k_pct = opp_stats.get("k_pct", DEFAULT_OPP_K_PCT)
+    opp_ops = opp_stats["ops"]
+    opp_k_pct = opp_stats["k_pct"]
 
     # OPS component: lower is better for pitcher (inverted scale)
     ops_score = scale_score(SCORING_PITCHER_OPS_CEILING - opp_ops, 0, SCORING_PITCHER_OPS_RANGE, 1.0)
@@ -322,11 +324,15 @@ def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitRe
 
     Blend: ERA 60% + WHIP 40% (the pre-V10.8 blend, restored).
     """
-    if not stats:
+    if not stats or stats.ip == 0:
         return TraitResult("era_whip", 0, max_pts, "no stats")
 
-    era = stats.era or DEFAULT_PITCHER_ERA
-    whip = stats.whip or DEFAULT_PITCHER_WHIP
+    if stats.era is None or stats.whip is None:
+        raise RuntimeError(
+            f"ERA or WHIP is None for pitcher with {stats.ip:.1f} IP — data collection failure"
+        )
+    era = stats.era
+    whip = stats.whip
 
     # ERA + WHIP both inverted (lower is better)
     era_score = scale_score(SCORING_ERA_CEILING - era, 0, SCORING_ERA_RANGE, 1.0)
@@ -372,11 +378,9 @@ def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResul
     engine must not also fade them by default.
     """
     if not stats or stats.pa == 0:
-        return TraitResult(
-            "power_profile",
-            round(max_pts * UNKNOWN_SCORE_RATIO, 1),
-            max_pts,
-            "no stats (rookie baseline)",
+        raise RuntimeError(
+            "power_profile called with no stats or 0 PA for batter — "
+            "upstream filter should have excluded this player"
         )
 
     avg_ev = stats.avg_exit_velocity
@@ -504,21 +508,15 @@ def score_batter_matchup(
     ops_split_score = None
     if starter_hand and batter_hand and batter_hand != "S":
         if starter_hand == "L":
-            batter_ops = (
-                batter_stats.ops_vs_lhp
-                if batter_stats and batter_stats.ops_vs_lhp is not None
-                else DEFAULT_BATTER_OPS_VS_LHP
-            )
-            ops_split_score = scale_score(batter_ops - SCORING_BATTER_OPS_SPLIT_FLOOR, 0, SCORING_BATTER_OPS_SPLIT_RANGE, 1.0)
-            detail += f" | {batter_ops:.3f} OPS vs LHP"
+            batter_ops = batter_stats.ops_vs_lhp if batter_stats else None
+            if batter_ops is not None:
+                ops_split_score = scale_score(batter_ops - SCORING_BATTER_OPS_SPLIT_FLOOR, 0, SCORING_BATTER_OPS_SPLIT_RANGE, 1.0)
+                detail += f" | {batter_ops:.3f} OPS vs LHP"
         elif starter_hand == "R":
-            batter_ops = (
-                batter_stats.ops_vs_rhp
-                if batter_stats and batter_stats.ops_vs_rhp is not None
-                else DEFAULT_BATTER_OPS_VS_RHP
-            )
-            ops_split_score = scale_score(batter_ops - SCORING_BATTER_OPS_SPLIT_FLOOR, 0, SCORING_BATTER_OPS_SPLIT_RANGE, 1.0)
-            detail += f" | {batter_ops:.3f} OPS vs RHP"
+            batter_ops = batter_stats.ops_vs_rhp if batter_stats else None
+            if batter_ops is not None:
+                ops_split_score = scale_score(batter_ops - SCORING_BATTER_OPS_SPLIT_FLOOR, 0, SCORING_BATTER_OPS_SPLIT_RANGE, 1.0)
+                detail += f" | {batter_ops:.3f} OPS vs RHP"
 
     # V10.6: K-vulnerability cross-axis sub-signal.
     # Computes 0..1 via batter_k_pct × opp_k9 (both normalised), inverted to a
@@ -779,7 +777,7 @@ def score_speed_component(stats: PlayerStats | None, max_pts: float) -> TraitRes
     if not stats:
         return TraitResult("speed_component", 0, max_pts, "no stats")
 
-    games = max(stats.games or 0, 1)
+    games = max(stats.games or 0, 1)  # games is 0-default in DB; or-0 guards None in tests
     sb_pace = stats.sb / games * 162  # Project to full season
 
     if sb_pace >= 30:

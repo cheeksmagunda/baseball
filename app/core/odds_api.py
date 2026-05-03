@@ -94,7 +94,11 @@ async def fetch_mlb_odds(api_key: str, game_date: date) -> list[dict]:
         "markets": "h2h,totals",
         "oddsFormat": "american",
         "dateFormat": "iso",
-        "commenceTimeFrom": f"{game_date.isoformat()}T00:00:00Z",
+        # Floor at 12:00 UTC (7 AM ET) — no real MLB game starts before this,
+        # but late West Coast games from the previous US night can have
+        # commence_time between 00:00-05:00 UTC and bleed into this window
+        # with live in-game odds (e.g. -1200 for a team up 7 in the 8th).
+        "commenceTimeFrom": f"{game_date.isoformat()}T12:00:00Z",
         # Extend to 08:00 UTC next day to capture late Pacific games
         # (e.g., 10:05 PM PDT = 01:05 AM UTC). Safe upper bound: no MLB
         # game starts before noon ET (~16:00 UTC) the following day.

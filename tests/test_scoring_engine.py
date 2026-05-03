@@ -113,7 +113,14 @@ def test_pitcher_full_score():
         for i in range(3)
     ]
 
-    result = score_pitcher(player, stats, logs)
+    # opp_team_stats is required — score_pitcher_matchup raises on None inputs.
+    # matchup_quality weight is 0 in V12.2 so it doesn't affect total_score,
+    # but the call still fires and the guard now requires real data.
+    result = score_pitcher(
+        player, stats, logs,
+        opp_team="BAL",
+        opp_team_stats={"ops": 0.730, "k_pct": 0.22},
+    )
     # A dominant ace should score 75+
     assert result.total_score >= 75
 
@@ -138,18 +145,19 @@ def test_pitcher_matchup_populated_returns_vs_label():
     assert result.score != max_pts * 0.5
 
 
-def test_pitcher_matchup_missing_opp_team_returns_unknown():
-    """The guard in score_pitcher_matchup requires BOTH opp_team and
-    opp_stats. Document and lock in the contract: omitting opp_team still
-    returns the neutral fallback, even when stats are present."""
+def test_pitcher_matchup_missing_opp_team_raises():
+    """score_pitcher_matchup requires both opp_team and opp_stats.
+    Missing either is a pipeline data integrity error — raises RuntimeError.
+    The upstream pipeline (run_score_slate, candidate_resolver) guarantees
+    these are populated or raises before scoring."""
+    import pytest
     max_pts = 20.0
-    result = score_pitcher_matchup(
-        opp_team=None,
-        opp_stats={"ops": 0.700, "k_pct": 0.24},
-        max_pts=max_pts,
-    )
-    assert result.raw_value == "matchup unknown"
-    assert result.score == max_pts * 0.5
+    with pytest.raises(RuntimeError, match="upstream pipeline should have raised"):
+        score_pitcher_matchup(
+            opp_team=None,
+            opp_stats={"ops": 0.700, "k_pct": 0.24},
+            max_pts=max_pts,
+        )
 
 
 def test_score_pitcher_forwards_opp_team_to_matchup():
