@@ -103,13 +103,26 @@ def _parse_game_time(game_time_str: str, game_date: date) -> datetime | None:
 
 
 def _get_first_pitch_utc(db, game_date: date) -> datetime | None:
-    """
-    Return the earliest scheduled game start time as a UTC datetime.
+    """Return the slate's TRUE earliest scheduled first pitch.
 
-    Queries all SlateGame rows for the given date, parses
-    scheduled_game_time via _parse_game_time, and returns the minimum.
+    This is a stable slate-level timestamp — it does NOT change as
+    games progress from Preview to Live to Final.  Used to compute
+    `lock_time = first_pitch − 65 min` and the "is the slate live"
+    boundary.  Both must be invariant across mid-slate restarts:
+    if first_pitch were redefined as "earliest REMAINING game", a
+    redeploy at 17:57 on a slate whose 18:20 game is already Live
+    would compute a fake first_pitch=19:10 and a fake lock_time=18:05
+    in the future, causing the monitor to sleep instead of restoring
+    frozen picks or running the cold pipeline on remaining games.
+
+    Postponed/Cancelled/Suspended games are excluded — those scheduled
+    times are no longer on the slate. Live and Final games ARE
+    included because their scheduled first pitch is a real, immutable
+    point in time that defines the slate boundary.
+
     Returns None if no slate exists or no times can be parsed.
     """
+    from app.core.constants import NON_PLAYING_GAME_STATUSES
     from app.models.slate import Slate, SlateGame
 
     slate = db.query(Slate).filter_by(date=game_date).first()
@@ -119,8 +132,8 @@ def _get_first_pitch_utc(db, game_date: date) -> datetime | None:
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
     times = []
     for g in games:
-        if not is_game_remaining(g.game_status):
-            continue  # started or final — irrelevant for lock time
+        if g.game_status in NON_PLAYING_GAME_STATUSES:
+            continue
         if not g.scheduled_game_time:
             raise RuntimeError(
                 f"Game {g.home_team} vs {g.away_team} ({g.game_status}) has no "
@@ -149,9 +162,13 @@ def _get_last_first_pitch_utc(db, game_date: date) -> datetime | None:
     if not slate:
         return None
 
+    from app.core.constants import NON_PLAYING_GAME_STATUSES
+
     games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
     times = []
     for g in games:
+        if g.game_status in NON_PLAYING_GAME_STATUSES:
+            continue
         if not g.scheduled_game_time:
             continue
         parsed = _parse_game_time(g.scheduled_game_time, game_date)
