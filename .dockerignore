@@ -32,7 +32,6 @@ venv
 
 # Test + tooling (not needed in image)
 tests
-scripts
 
 # Node / frontend (separate service)
 frontend/node_modules
