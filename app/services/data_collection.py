@@ -277,6 +277,16 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict[str, int]:
 
     db.commit()
 
+    # Ensure every probable starter has a Player + SlatePlayer row, even if
+    # they didn't appear on their team's active roster fetch (recent call-up
+    # or transaction not yet reflected in /teams/{id}/roster?rosterType=active).
+    # Without this, _build_starter_stats_cache cannot resolve the starter, no
+    # PlayerStats are fetched in stage 2, and SlateGame.{home,away}_starter_era
+    # stays None — which crashes _prepare_batter_env_kwargs at scoring time.
+    starter_added = await _ensure_probable_starters_present(db, slate)
+    if starter_added:
+        db.commit()
+
     # Enrich with batting order from RotoWire expected lineups. RotoWire is
     # the single source of truth at T-65 — beat-reporter projections are
     # published hours before MLB's official card (which only appears 30-60 min
@@ -290,6 +300,127 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict[str, int]:
         added, skipped, rw_enriched,
     )
     return {"added": added, "skipped": skipped}
+
+
+async def _ensure_probable_starters_present(db: Session, slate: Slate) -> int:
+    """Create Player + SlatePlayer rows for any probable starter missing from
+    the active-roster fetch.
+
+    The /teams/{id}/roster?rosterType=active endpoint occasionally lags real
+    transactions (recent call-up, IL stash starting today, fringe roster
+    move). When that happens the probable starter announced via the
+    /schedule probablePitcher hydrate has no Player row in the DB, so stage 2
+    silently skips fetching their stats and SlateGame.{home,away}_starter_era
+    stays None — corrupting every batter's matchup env at scoring time.
+
+    This helper closes the gap: for each SlateGame's home/away starter mlb_id,
+    fetch the starter's full identity from /people/{mlb_id} (via the same
+    season-stats endpoint we'd hit in stage 2 anyway, so no extra round trip
+    overall) and create the Player + SlatePlayer rows. Stage 2 then fetches
+    their stats normally.
+
+    Returns the number of newly-added probable-starter Player rows.
+    """
+    games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+    games = [g for g in games if is_game_remaining(g.game_status)]
+    if not games:
+        return 0
+
+    needed: list[tuple[int, str, SlateGame, str]] = []  # (mlb_id, team, game, side)
+    for g in games:
+        for mlb_id, team, side in (
+            (g.home_starter_mlb_id, g.home_team, "home"),
+            (g.away_starter_mlb_id, g.away_team, "away"),
+        ):
+            if not mlb_id:
+                continue
+            existing = db.query(Player).filter_by(mlb_id=mlb_id).first()
+            if existing is not None:
+                # Player exists — ensure SlatePlayer row exists for this slate
+                sp = (
+                    db.query(SlatePlayer)
+                    .filter_by(slate_id=slate.id, player_id=existing.id)
+                    .first()
+                )
+                if sp is None:
+                    db.add(SlatePlayer(
+                        slate_id=slate.id,
+                        player_id=existing.id,
+                        game_id=g.id,
+                        player_status="active",
+                    ))
+                continue
+            needed.append((mlb_id, team, g, side))
+
+    if not needed:
+        return 0
+
+    # Fetch identity for each missing starter via the same hydrate endpoint
+    # stage 2 will reuse — populates PlayerStats too, but we only need name +
+    # pitch_hand here; stage 2 re-fetches stats off the new Player row.
+    async def _fetch_one(mlb_id: int):
+        return mlb_id, await get_player_stats(mlb_id, settings.current_season)
+
+    results = await asyncio.gather(
+        *[_fetch_one(mid) for mid, _, _, _ in needed],
+        return_exceptions=True,
+    )
+    by_mlb_id: dict[int, dict] = {}
+    for r in results:
+        if isinstance(r, Exception):
+            raise RuntimeError(
+                f"Probable-starter identity fetch failed: {r}. Cannot proceed "
+                "without every announced starter present in the DB — every "
+                "batter's matchup env depends on opp starter ERA/WHIP/K9."
+            ) from r
+        mid, data = r
+        people = data.get("people", [])
+        if not people:
+            raise RuntimeError(
+                f"MLB API returned no /people row for probable starter mlb_id={mid}. "
+                "Pipeline cannot proceed without the starter identity."
+            )
+        by_mlb_id[mid] = people[0]
+
+    added = 0
+    for mlb_id, team, game, side in needed:
+        person = by_mlb_id[mlb_id]
+        full_name = person.get("fullName") or ""
+        if not full_name:
+            raise RuntimeError(
+                f"MLB API /people/{mlb_id} returned empty fullName for the "
+                f"{team} probable starter on {game.home_team}@{game.away_team}."
+            )
+        pitch_hand = person.get("pitchHand", {}).get("code")
+        bat_side = person.get("batSide", {}).get("code")
+        position = person.get("primaryPosition", {}).get("abbreviation") or "P"
+
+        norm = normalize_name(full_name)
+        player = Player(
+            name=full_name,
+            name_normalized=norm,
+            team=team,
+            position=position,
+            mlb_id=mlb_id,
+            pitch_hand=pitch_hand,
+            bat_side=bat_side,
+        )
+        db.add(player)
+        db.flush()
+
+        db.add(SlatePlayer(
+            slate_id=slate.id,
+            player_id=player.id,
+            game_id=game.id,
+            player_status="active",
+        ))
+        added += 1
+        logger.info(
+            "Probable-starter backfill: added %s (%s, mlb_id=%d) — was missing from "
+            "%s active roster fetch", full_name, team, mlb_id, team,
+        )
+
+    return added
 
 
 async def _enrich_batting_order_from_rotowire(db: Session, slate: Slate, logger) -> int:

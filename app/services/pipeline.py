@@ -253,6 +253,42 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
             if stats.get("k_per_9") is not None:
                 setattr(game, k9_field, stats["k_per_9"])
 
+    # Strict assertion: every announced probable starter MUST have ERA/WHIP/K9
+    # after enrichment. If any are missing it means either (a) the Player row
+    # is absent (should be impossible after _ensure_probable_starters_present),
+    # or (b) PlayerStats has no row for them in this season (rookie debut /
+    # never had IP). Either way the batter env scoring downstream will crash
+    # — fail here with the specific (game, team, starter) so the gap is
+    # diagnosable from logs alone.
+    missing: list[str] = []
+    for game in [g for g in games if is_game_remaining(g.game_status)]:
+        for side, name_field, era_field, whip_field, k9_field in [
+            ("home", "home_starter", "home_starter_era", "home_starter_whip", "home_starter_k_per_9"),
+            ("away", "away_starter", "away_starter_era", "away_starter_whip", "away_starter_k_per_9"),
+        ]:
+            starter_name = getattr(game, name_field)
+            if not starter_name:
+                missing.append(
+                    f"{game.away_team}@{game.home_team} {side} starter NOT ANNOUNCED"
+                )
+                continue
+            era = getattr(game, era_field)
+            whip = getattr(game, whip_field)
+            k9 = getattr(game, k9_field)
+            if era is None or whip is None or k9 is None:
+                missing.append(
+                    f"{game.away_team}@{game.home_team} {side}={starter_name} "
+                    f"era={era} whip={whip} k9={k9}"
+                )
+    if missing:
+        raise RuntimeError(
+            "Probable-starter stat enrichment incomplete after stage 2:\n  "
+            + "\n  ".join(missing)
+            + "\nEvery announced starter must have ERA/WHIP/K9 in PlayerStats — "
+            "no fallbacks. Investigate /people/{mlb_id} stats hydrate or "
+            "active-roster vs probable-pitcher mismatch."
+        )
+
     # Fetch team batting and pitching stats for all teams on the slate.
     if slate:
         await enrich_slate_game_team_stats(db, slate, game_date.year)
