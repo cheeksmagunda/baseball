@@ -206,6 +206,9 @@ def fetch_slate_payloads(target_date: str) -> dict[str, Any]:
         #   2. Click View results → /entries (navigates away, doesn't matter -- we're done)
         log.info("Locating chart icon next to View results ...")
         vr = page.get_by_text("View results", exact=True).first
+        # Scroll into view so bounding-box coords are within the visible viewport
+        vr.scroll_into_view_if_needed(timeout=10000)
+        time.sleep(0.5)
         vr_box = vr.bounding_box()
         if not vr_box:
             sys.exit("ERROR: 'View results' button not found on page")
@@ -239,13 +242,9 @@ def fetch_slate_payloads(target_date: str) -> dict[str, Any]:
         cy = chart_svg["y"] + chart_svg["h"]/2
         with page.expect_response(
             lambda r: "/games/playerratingcontest/" in r.url and r.url.split("?")[0].endswith("/stats"),
-            timeout=15000,
+            timeout=30000,
         ) as ev:
-            page.mouse.move(cx, cy)
-            time.sleep(0.2)
-            page.mouse.down()
-            time.sleep(0.05)
-            page.mouse.up()
+            page.mouse.click(cx, cy)
         stats_resp = ev.value
         captured["stats"] = json.loads(stats_resp.text())
         log.info(f"  captured stats payload ({len(stats_resp.text())}b)")
@@ -263,7 +262,7 @@ def fetch_slate_payloads(target_date: str) -> dict[str, Any]:
         vr2 = page.get_by_text("View results", exact=True).first
         with page.expect_response(
             lambda r: "/games/playerratingcontest/" in r.url and r.url.split("?")[0].endswith("/entries"),
-            timeout=15000,
+            timeout=30000,
         ) as ev:
             vr2.click(timeout=8000)
         entries_resp = ev.value

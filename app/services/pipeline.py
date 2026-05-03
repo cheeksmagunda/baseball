@@ -124,7 +124,16 @@ async def _refresh_statcast() -> None:
     the log UI doesn't surface by default.
     """
     import sys as _sys
+    import os as _os
     import traceback as _traceback
+
+    # Ensure the project root is on sys.path so `scripts.*` is importable
+    # in Railway containers where only the app sub-packages are pre-loaded.
+    _proj_root = _os.path.dirname(
+        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    )
+    if _proj_root not in _sys.path:
+        _sys.path.insert(0, _proj_root)
 
     from scripts.refresh_statcast import main as refresh_main
     from app.core.statcast import clear_statcast_cache
