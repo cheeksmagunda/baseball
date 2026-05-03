@@ -16,8 +16,6 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.constants import (
-    DEFAULT_OPP_K_PCT,
-    DEFAULT_OPP_OPS,
     PITCHER_POSITIONS,
     MIN_GAMES_REPRESENTED,
     is_game_remaining,
@@ -338,6 +336,39 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
         if not is_game_remaining(game.game_status):
             continue
 
+        # Exclude players without enough real data to score.
+        # Pitchers need IP > 0 or at least one Statcast signal to be meaningful.
+        # Batters need at least one plate appearance. Players excluded here
+        # simply don't get a PlayerScore row and won't appear in the optimizer pool.
+        player_stats_row = (
+            db.query(PlayerStats)
+            .filter_by(player_id=player.id, season=game_date.year)
+            .first()
+        )
+        if is_pitcher:
+            has_ip = player_stats_row is not None and player_stats_row.ip > 0
+            has_statcast = player_stats_row is not None and any(
+                v is not None
+                for v in [
+                    player_stats_row.fb_velocity,
+                    player_stats_row.whiff_pct,
+                    player_stats_row.chase_pct,
+                ]
+            )
+            if not has_ip and not has_statcast:
+                logger.info(
+                    "Excluding pitcher %s (%s): 0 IP and no Statcast data",
+                    player.name, player.team,
+                )
+                continue
+        else:
+            if player_stats_row is None or player_stats_row.pa == 0:
+                logger.info(
+                    "Excluding batter %s (%s): 0 plate appearances",
+                    player.name, player.team,
+                )
+                continue
+
         is_home = game.home_team == player.team
         park_team = game.home_team
         opp_pitcher_stats = None
@@ -347,11 +378,12 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
             opp_team = game.away_team if is_home else game.home_team
             opp_ops = game.away_team_ops if is_home else game.home_team_ops
             opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
-            if opp_ops is not None or opp_k_pct is not None:
-                opp_team_stats = {
-                    "ops": opp_ops if opp_ops is not None else DEFAULT_OPP_OPS,
-                    "k_pct": opp_k_pct if opp_k_pct is not None else DEFAULT_OPP_K_PCT,
-                }
+            if opp_ops is None or opp_k_pct is None:
+                raise RuntimeError(
+                    f"Missing opponent team stats (ops={opp_ops}, k_pct={opp_k_pct}) "
+                    f"for {opp_team} — enrichment should have validated these"
+                )
+            opp_team_stats = {"ops": opp_ops, "k_pct": opp_k_pct}
         else:
             opp_starter_name = game.away_starter if is_home else game.home_starter
             if opp_starter_name:
@@ -499,11 +531,12 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             opp_team = game.away_team if is_home_p else game.home_team
             opp_ops = game.away_team_ops if is_home_p else game.home_team_ops
             opp_k_pct = game.away_team_k_pct if is_home_p else game.home_team_k_pct
-            if opp_ops is not None or opp_k_pct is not None:
-                opp_team_stats = {
-                    "ops": opp_ops if opp_ops is not None else DEFAULT_OPP_OPS,
-                    "k_pct": opp_k_pct if opp_k_pct is not None else DEFAULT_OPP_K_PCT,
-                }
+            if opp_ops is None or opp_k_pct is None:
+                raise RuntimeError(
+                    f"Missing opponent team stats (ops={opp_ops}, k_pct={opp_k_pct}) "
+                    f"for {opp_team} — enrichment should have validated these"
+                )
+            opp_team_stats = {"ops": opp_ops, "k_pct": opp_k_pct}
         else:
             opp_starter_name = game.away_starter if is_home_p else game.home_starter
             if opp_starter_name:
