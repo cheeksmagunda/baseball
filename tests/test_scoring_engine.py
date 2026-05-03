@@ -162,30 +162,11 @@ def test_pitcher_matchup_missing_opp_team_raises():
         )
 
 
-def test_score_pitcher_forwards_opp_team_to_matchup():
-    """Integration: score_pitcher must forward opp_team + opp_team_stats to
-    the matchup trait.  Strict-mode (May 2026) requires non-empty game_logs
-    too — recent_form raises on empty input."""
-    from datetime import date
-    player = Player(id=1, name="Test SP", name_normalized="test sp", team="SEA", position="P")
-    stats = PlayerStats(id=1, player_id=1, season=2026, era=3.5, whip=1.15, k_per_9=9.0, ip=50)
-    logs = [
-        PlayerGameLog(
-            id=i, player_id=1, game_date=date(2026, 3, 25 + i),
-            ip=6.0, er=2, k_pitching=6,
-        )
-        for i in range(3)
-    ]
-
-    result = score_pitcher(
-        player, stats, logs,
-        opp_team="OAK",
-        opp_team_stats={"ops": 0.680, "k_pct": 0.25},
-        team_framing_runs=0.0,
-    )
-    matchup = next(t for t in result.traits if t.name == "matchup_quality")
-    assert matchup.raw_value is not None
-    assert matchup.raw_value.startswith("vs ")
+# test_score_pitcher_forwards_opp_team_to_matchup deleted in May 2026 strict-mode
+# pass.  V12.2 sets pitcher matchup_quality weight to 0, so the trait's raw_value
+# is "weight=0" (zero contribution to total_score, no opp lookup performed).
+# The forwarding check is no longer meaningful — exercise score_pitcher_matchup
+# directly with a non-zero max_pts if you need to verify the OPS/K% blend.
 
 
 # ---------------------------------------------------------------------------
