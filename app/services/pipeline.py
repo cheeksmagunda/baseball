@@ -193,15 +193,11 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
         else:
             fetched += 1
 
-    if players and failed >= len(players) * 0.2:
+    if failed:
         raise RuntimeError(
             f"fetch_player_stats: {failed}/{len(players)} players failed — "
-            "cannot produce a reliable lineup with more than 20% of player stats unavailable"
-        )
-    if failed:
-        logger.critical(
-            "fetch_player_stats: %d/%d players failed — lineup quality degraded, proceeding",
-            failed, len(players),
+            "pipeline cannot proceed with any missing player stats. "
+            "Every player must be scored on their own data."
         )
 
     # Enrich SlateGame starter ERA/K9 from newly-fetched PlayerStats.
