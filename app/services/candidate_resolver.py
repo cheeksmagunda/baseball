@@ -273,6 +273,21 @@ async def resolve_candidates(
                 card.team.upper()
             )
         else:
+            # If the opposing starter for this game hasn't been announced /
+            # enriched yet, the batter is not scoreable from live data — drop
+            # them.  Same DNP-pattern as missing PA / no batting order: not a
+            # fallback, just a "we cannot rate this matchup" exclusion.
+            is_home = game.home_team.upper() == card.team.upper()
+            opp_era = game.away_starter_era if is_home else game.home_starter_era
+            opp_whip = game.away_starter_whip if is_home else game.home_starter_whip
+            opp_k9 = game.away_starter_k_per_9 if is_home else game.home_starter_k_per_9
+            if opp_era is None or opp_whip is None or opp_k9 is None:
+                logger.info(
+                    "Excluding batter %s (%s): opposing starter not announced "
+                    "for game (era=%s whip=%s k9=%s)",
+                    card.player_name, card.team, opp_era, opp_whip, opp_k9,
+                )
+                continue
             score_kwargs = _prepare_batter_env_kwargs(
                 game, card, starter_xstats_lookup=starter_xstats_lookup
             )
