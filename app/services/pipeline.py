@@ -349,9 +349,7 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
         game_lookup[g.home_team] = g
         game_lookup[g.away_team] = g
 
-    starter_stats_cache = _build_starter_stats_cache(db, games, game_date.year)
-
-    # V10.8 — team framing-runs lookup for the catcher-framing adjustment in
+    # Team framing-runs lookup for the catcher-framing adjustment in
     # score_pitcher_k_rate.  Single SQL query, keyed by team abbreviation.
     # Empty dict when TeamSeasonStats hasn't been populated yet (first slate
     # before refresh_statcast.py has run); the framing adjustment falls
@@ -424,37 +422,10 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
             )
             continue
 
-        is_home = game.home_team == player.team
-        park_team = game.home_team
-        opp_pitcher_stats = None
-        opp_team: str | None = None
-        opp_team_stats: dict | None = None
-        if is_pitcher:
-            opp_team = game.away_team if is_home else game.home_team
-            opp_ops = game.away_team_ops if is_home else game.home_team_ops
-            opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
-            if opp_ops is None or opp_k_pct is None:
-                raise RuntimeError(
-                    f"Missing opponent team stats (ops={opp_ops}, k_pct={opp_k_pct}) "
-                    f"for {opp_team} — enrichment should have validated these"
-                )
-            opp_team_stats = {"ops": opp_ops, "k_pct": opp_k_pct}
-        else:
-            opp_starter_name = game.away_starter if is_home else game.home_starter
-            if opp_starter_name:
-                opp_pitcher_stats = starter_stats_cache.get(opp_starter_name)
-
         result = score_player(
             db, player,
             game_date=game_date,
-            opp_team=opp_team,
-            opp_team_stats=opp_team_stats,
-            opp_pitcher_stats=opp_pitcher_stats,
-            batting_order=sp.batting_order,
-            park_team=park_team,
-            wind_speed_mph=game.wind_speed_mph,
-            wind_direction=game.wind_direction,
-            temperature_f=game.temperature_f,
+            is_pitcher=is_pitcher,
             team_framing_runs=team_framing_lookup.get(player.team.upper()),
         )
 
@@ -524,9 +495,6 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
     # Classify the slate (Filter 1)
     slate_class = classify_slate(len(games), game_dicts)
 
-    # Pre-cache opposing starter ERA/WHIP so batter matchup trait is populated.
-    starter_stats_cache = _build_starter_stats_cache(db, games, game_date.year)
-
     # Build team framing-runs lookup for the pitcher k_rate catcher-framing adjustment.
     # Mirrors the same block in run_score_slate so scoring is consistent between
     # the T-65 path and this manual post-slate endpoint.
@@ -577,37 +545,10 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
         if not is_game_remaining(game.game_status):
             continue
 
-        is_home_p = game.home_team == player.team
-        park_team = game.home_team
-        opp_pitcher_stats = None
-        opp_team = None
-        opp_team_stats = None
-        if is_pitcher:
-            opp_team = game.away_team if is_home_p else game.home_team
-            opp_ops = game.away_team_ops if is_home_p else game.home_team_ops
-            opp_k_pct = game.away_team_k_pct if is_home_p else game.home_team_k_pct
-            if opp_ops is None or opp_k_pct is None:
-                raise RuntimeError(
-                    f"Missing opponent team stats (ops={opp_ops}, k_pct={opp_k_pct}) "
-                    f"for {opp_team} — enrichment should have validated these"
-                )
-            opp_team_stats = {"ops": opp_ops, "k_pct": opp_k_pct}
-        else:
-            opp_starter_name = game.away_starter if is_home_p else game.home_starter
-            if opp_starter_name:
-                opp_pitcher_stats = starter_stats_cache.get(opp_starter_name)
-
         result = score_player(
             db, player,
             game_date=game_date,
-            opp_team=opp_team,
-            opp_team_stats=opp_team_stats,
-            opp_pitcher_stats=opp_pitcher_stats,
-            batting_order=sp.batting_order,
-            park_team=park_team,
-            wind_speed_mph=game.wind_speed_mph,
-            wind_direction=game.wind_direction,
-            temperature_f=game.temperature_f,
+            is_pitcher=is_pitcher,
             team_framing_runs=team_framing_lookup.get(player.team.upper()),
         )
         game_id = sp.game_id or game.id

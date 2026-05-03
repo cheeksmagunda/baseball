@@ -3,15 +3,11 @@
 from app.models.player import Player, PlayerStats, PlayerGameLog
 from app.services.scoring_engine import (
     score_pitcher,
-    score_pitcher_matchup,
     score_batter,
     score_ace_status,
     score_pitcher_k_rate,
     score_power_profile,
-    score_lineup_position,
-    score_ballpark_factor,
     score_hot_streak,
-    score_batter_matchup,
 )
 
 
@@ -57,26 +53,6 @@ def test_power_profile_no_power():
     assert result.score <= 8.0
 
 
-def test_lineup_position_cleanup():
-    result = score_lineup_position(3, 15.0)
-    assert result.score == 15.0
-
-
-def test_lineup_position_bottom():
-    result = score_lineup_position(9, 15.0)
-    assert result.score <= 5.0
-
-
-def test_ballpark_coors():
-    result = score_ballpark_factor("COL", 10.0)
-    assert result.score == 10.0
-
-
-def test_ballpark_pitcher_park():
-    result = score_ballpark_factor("LAD", 10.0)
-    assert result.score <= 2.0
-
-
 def test_hot_streak_three_multi_hit():
     from datetime import date
     logs = [
@@ -113,117 +89,8 @@ def test_pitcher_full_score():
         for i in range(3)
     ]
 
-    # opp_team_stats is required — score_pitcher_matchup raises on None inputs.
-    # matchup_quality weight is 0 in V12.2 so it doesn't affect total_score,
-    # but the call still fires and the guard now requires real data.
-    # team_framing_runs is required — Savant scrape populates it for every team.
-    result = score_pitcher(
-        player, stats, logs,
-        opp_team="BAL",
-        opp_team_stats={"ops": 0.730, "k_pct": 0.22},
-        team_framing_runs=0.0,
-    )
-    # A dominant ace should score 75+
+    result = score_pitcher(player, stats, logs, team_framing_runs=0.0)
     assert result.total_score >= 75
-
-
-def test_pitcher_matchup_populated_returns_vs_label():
-    """Regression: when opp_team and opp_team_stats are both provided, the
-    matchup scorer must compute a real score with a 'vs ...' raw_value and
-    NOT the 'matchup unknown' neutral fallback.
-
-    This is the contract the candidate_resolver and run_score_slate call
-    sites rely on.
-    """
-    max_pts = 20.0
-    result = score_pitcher_matchup(
-        opp_team="BAL",
-        opp_stats={"ops": 0.700, "k_pct": 0.24},
-        max_pts=max_pts,
-    )
-    assert result.raw_value is not None
-    assert result.raw_value.startswith("vs ")
-    assert "matchup unknown" not in result.raw_value
-    assert result.score != max_pts * 0.5
-
-
-def test_pitcher_matchup_missing_opp_team_raises():
-    """score_pitcher_matchup requires both opp_team and opp_stats.
-    Missing either is a pipeline data integrity error — raises RuntimeError.
-    The upstream pipeline (run_score_slate, candidate_resolver) guarantees
-    these are populated or raises before scoring."""
-    import pytest
-    max_pts = 20.0
-    with pytest.raises(RuntimeError, match="upstream pipeline should have raised"):
-        score_pitcher_matchup(
-            opp_team=None,
-            opp_stats={"ops": 0.700, "k_pct": 0.24},
-            max_pts=max_pts,
-        )
-
-
-# test_score_pitcher_forwards_opp_team_to_matchup deleted in May 2026 strict-mode
-# pass.  V12.2 sets pitcher matchup_quality weight to 0, so the trait's raw_value
-# is "weight=0" (zero contribution to total_score, no opp lookup performed).
-# The forwarding check is no longer meaningful — exercise score_pitcher_matchup
-# directly with a non-zero max_pts if you need to verify the OPS/K% blend.
-
-
-# ---------------------------------------------------------------------------
-# V10.6 batter K-vulnerability sub-signal
-#
-# Cross-axis penalty: high-K batter × elite K-pitcher = floor risk (0-fer).
-# Both have to be high; either side alone passes through.
-# ---------------------------------------------------------------------------
-
-
-def _high_k_bat() -> PlayerStats:
-    """Joey Gallo / Schwarber-class profile — 33% K rate."""
-    return PlayerStats(id=10, player_id=10, season=2026, pa=300, ab=260, so=100)
-
-
-def _contact_bat() -> PlayerStats:
-    """Arraez / Tucker-class — 12% K rate, well below the floor."""
-    return PlayerStats(id=11, player_id=11, season=2026, pa=300, ab=270, so=36)
-
-
-def test_k_vuln_fires_only_on_high_k_bat_vs_high_k_pitcher():
-    """The full penalty fires only when BOTH batter K% and opp K/9 are high.
-    Otherwise the cross product is small and the matchup score is preserved."""
-    high_k_pitcher = {"era": 3.0, "whip": 1.10, "k_per_9": 11.5}
-    contact_pitcher = {"era": 3.0, "whip": 1.10, "k_per_9": 6.5}
-
-    # Hi-K bat vs hi-K pitcher → cross fires → matchup score ↓
-    danger = score_batter_matchup(high_k_pitcher, "L", 20.0, batter_stats=_high_k_bat())
-    # Hi-K bat vs contact pitcher → batter K-vuln muted (no cross K-arm)
-    safe_pitcher = score_batter_matchup(contact_pitcher, "L", 20.0, batter_stats=_high_k_bat())
-    # Contact bat vs hi-K pitcher → batter floor protects, no cross
-    safe_bat = score_batter_matchup(high_k_pitcher, "L", 20.0, batter_stats=_contact_bat())
-
-    assert danger.score < safe_pitcher.score, (
-        "High-K bat vs elite K-arm must score worse than the same bat vs a contact pitcher"
-    )
-    assert danger.score < safe_bat.score, (
-        "High-K bat vs elite K-arm must score worse than a contact bat vs the same pitcher"
-    )
-
-
-def test_k_vuln_skipped_when_batter_has_no_pa():
-    """Rookie batters with PA=0 must not divide-by-zero or fire a phantom penalty."""
-    rookie = PlayerStats(id=12, player_id=12, season=2026, pa=0, so=0)
-    pitcher = {"era": 3.0, "whip": 1.10, "k_per_9": 11.5}
-    result = score_batter_matchup(pitcher, "L", 20.0, batter_stats=rookie)
-    # Should fall back to the era+whip-only blend; no K-vuln in the detail string.
-    assert "K-vuln" not in result.raw_value
-
-
-def test_k_vuln_skipped_when_opp_k9_unknown():
-    """If we don't have opp K/9, K-vuln cannot evaluate and must drop out cleanly."""
-    bat = _high_k_bat()
-    pitcher = {"era": 3.0, "whip": 1.10}  # no k_per_9
-    result = score_batter_matchup(pitcher, "L", 20.0, batter_stats=bat)
-    assert "K-vuln" not in result.raw_value
-    assert result.score > 0
 
 
 def test_batter_full_score():
@@ -243,11 +110,5 @@ def test_batter_full_score():
         for i in range(5)
     ]
 
-    result = score_batter(
-        player, stats, logs,
-        batting_order=3,
-        park_team="COL",
-        opp_pitcher_stats={"era": 4.50, "whip": 1.30, "k_per_9": 8.0},
-    )
-    # Power hitter at Coors batting 3rd should score 70+
+    result = score_batter(player, stats, logs)
     assert result.total_score >= 65

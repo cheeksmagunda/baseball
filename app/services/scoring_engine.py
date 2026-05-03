@@ -12,9 +12,6 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.core.constants import (
-    PARK_HR_FACTOR_MAX,
-    PARK_HR_FACTOR_MIN,
-    PARK_HR_FACTORS,
     PITCHER_POSITIONS,
     POWER_PROFILE_AVG_EV_MAX,
     POWER_PROFILE_BARREL_PCT_MAX,
@@ -22,18 +19,6 @@ from app.core.constants import (
     POWER_PROFILE_MAX_EV_CEILING,
     POWER_PROFILE_X_WOBA_CEILING,
     POWER_PROFILE_X_WOBA_FLOOR,
-    SCORING_BATTER_ERA_FLOOR,
-    SCORING_BATTER_ERA_RANGE,
-    SCORING_BATTER_K_PCT_CEILING,
-    SCORING_BATTER_K_PCT_FLOOR,
-    SCORING_BATTER_OPS_SPLIT_FLOOR,
-    SCORING_BATTER_OPS_SPLIT_RANGE,
-    SCORING_BATTER_WHIP_FLOOR,
-    SCORING_BATTER_WHIP_RANGE,
-    SCORING_OPP_K9_VULN_CEILING,
-    SCORING_OPP_K9_VULN_FLOOR,
-    SCORING_OPP_X_WOBA_AGAINST_CEILING,
-    SCORING_OPP_X_WOBA_AGAINST_FLOOR,
     SCORING_CHASE_PCT_CEILING,
     SCORING_CHASE_PCT_FLOOR,
     SCORING_ERA_CEILING,
@@ -49,10 +34,6 @@ from app.core.constants import (
     SCORING_FRAMING_RUNS_FLOOR,
     SCORING_K9_CEILING,
     SCORING_K9_FLOOR,
-    SCORING_PITCHER_K_PCT_FLOOR,
-    SCORING_PITCHER_K_PCT_RANGE,
-    SCORING_PITCHER_OPS_CEILING,
-    SCORING_PITCHER_OPS_RANGE,
     SCORING_WHIFF_PCT_CEILING,
     SCORING_WHIFF_PCT_FLOOR,
     SCORING_WHIP_CEILING,
@@ -239,35 +220,6 @@ def _apply_framing_adjustment(
     adjusted = score * (1.0 + adj)
     return max(0.0, min(max_pts, adjusted))
 
-
-def score_pitcher_matchup(
-    opp_team: str | None, opp_stats: dict | None, max_pts: float
-) -> TraitResult:
-    """Score based on opponent offensive quality. Weaker opponent = higher score."""
-    if max_pts == 0:
-        return TraitResult("matchup_quality", 0.0, 0.0, "weight=0")
-
-    if not opp_team or not opp_stats:
-        raise RuntimeError(
-            f"score_pitcher_matchup called with opp_team={opp_team!r}, opp_stats={opp_stats} "
-            "— upstream pipeline should have raised before scoring"
-        )
-
-    opp_ops = opp_stats["ops"]
-    opp_k_pct = opp_stats["k_pct"]
-
-    # OPS component: lower is better for pitcher (inverted scale)
-    ops_score = scale_score(SCORING_PITCHER_OPS_CEILING - opp_ops, 0, SCORING_PITCHER_OPS_RANGE, 1.0)
-    # K% component: higher K% is better for pitcher
-    k_score = scale_score(opp_k_pct - SCORING_PITCHER_K_PCT_FLOOR, 0, SCORING_PITCHER_K_PCT_RANGE, 1.0)
-
-    combined = (ops_score * 0.6 + k_score * 0.4) * max_pts
-    return TraitResult(
-        "matchup_quality",
-        round(combined, 1),
-        max_pts,
-        f"vs {opp_ops:.3f} OPS | {opp_k_pct:.1%} K-rate",
-    )
 
 
 def score_pitcher_recent_form(
@@ -457,198 +409,6 @@ def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResul
     )
 
 
-def score_lineup_position(batting_order: int | None, max_pts: float) -> TraitResult:
-    """Score based on where they bat.
-
-    V10.0: slots 1-4 are all maximum-volume spots (strategy doc §"Predicting
-    the Unpredictable": top-half batters get the most PAs and the highest
-    probability of stepping to the plate in late-inning lead-change leverage).
-    Slot 1 is NOT penalised — leadoff volume is the equal of the 2-4 RBI spots.
-    """
-    if max_pts == 0:
-        return TraitResult("lineup_position", 0.0, 0.0, "weight=0")
-
-    if batting_order is None:
-        raise RuntimeError(
-            "lineup_position called with batting_order=None — upstream DNP "
-            "filter should have excluded batters not in the projected lineup"
-        )
-
-    if batting_order in (1, 2, 3, 4):
-        score = max_pts
-    elif batting_order == 5:
-        score = max_pts * 0.8
-    elif batting_order in (6, 7):
-        score = max_pts * 0.5
-    else:
-        score = max_pts * 0.25
-
-    return TraitResult("lineup_position", round(score, 1), max_pts, f"bats #{batting_order}")
-
-
-def score_batter_matchup(
-    opp_pitcher_stats: dict | None,
-    batter_hand: str | None,
-    max_pts: float,
-    starter_hand: str | None = None,
-    batter_stats: PlayerStats | None = None,
-) -> TraitResult:
-    """Score matchup vs opposing starter.  Higher opponent ERA = better for batter.
-
-    Sub-signals (blended; weights re-normalised when one is missing):
-      * pitcher ERA       — opp ERA above 2.5 produces credit (35% weight).
-      * pitcher WHIP      — opp WHIP above 0.9 produces credit (20% weight).
-      * hand-split OPS    — batter's season OPS vs starter handedness, when
-                            both starter_hand and batter_hand are known and
-                            batter is not switch (30% weight).
-      * K-vulnerability   — V10.6: cross-axis penalty.  Batter K% × opp K/9
-                            crossed; full penalty fires only when BOTH are
-                            high (high-K batter vs elite K-pitcher = 0-fer
-                            floor risk).  Contact hitter or contact pitcher
-                            individually = no penalty.  15% weight, applied
-                            as `(1 - vuln) * weight` so the credit is
-                            preserved on safe matchups.
-
-    Falls back to ERA/WHIP-only when no other signal is available.  Switch
-    hitters (bat_side = "S") skip the hand-split — they don't carry a
-    single split.
-    """
-    # V12.2 zero-weighted in production (env handles opp ERA/WHIP).  When
-    # max_pts is 0 the trait contributes nothing to the total, so skip the
-    # data-presence check — there is no scoring to do.
-    if max_pts == 0:
-        return TraitResult("matchup_quality", 0.0, 0.0, "weight=0")
-
-    if not opp_pitcher_stats:
-        raise RuntimeError(
-            "score_batter_matchup: opp_pitcher_stats is None — caller must "
-            "supply opposing-starter ERA/WHIP from the live SlateGame row"
-        )
-
-    opp_era = opp_pitcher_stats.get("era")
-    opp_whip = opp_pitcher_stats.get("whip")
-    if opp_era is None or opp_whip is None:
-        raise RuntimeError(
-            f"score_batter_matchup: opp ERA={opp_era}, WHIP={opp_whip} — "
-            "data collection should populate both from the live MLB API"
-        )
-
-    # Opponent ERA: higher is better for batter
-    era_score = scale_score(opp_era - SCORING_BATTER_ERA_FLOOR, 0, SCORING_BATTER_ERA_RANGE, 1.0)
-    # Opponent WHIP: higher is better for batter
-    whip_score = scale_score(opp_whip - SCORING_BATTER_WHIP_FLOOR, 0, SCORING_BATTER_WHIP_RANGE, 1.0)
-
-    detail = f"vs ERA {opp_era:.2f} / WHIP {opp_whip:.2f}"
-
-    # Handedness-specific OPS split: direct conditional sensitivity signal.
-    # Uses the batter's actual season OPS vs this pitcher handedness; falls back
-    # to league-average default when splits are absent.  Switch hitters (S) are
-    # skipped — they optimally face both hands and don't carry a single split.
-    ops_split_score = None
-    if starter_hand and batter_hand and batter_hand != "S":
-        if starter_hand == "L":
-            batter_ops = batter_stats.ops_vs_lhp if batter_stats else None
-            if batter_ops is not None:
-                ops_split_score = scale_score(batter_ops - SCORING_BATTER_OPS_SPLIT_FLOOR, 0, SCORING_BATTER_OPS_SPLIT_RANGE, 1.0)
-                detail += f" | {batter_ops:.3f} OPS vs LHP"
-        elif starter_hand == "R":
-            batter_ops = batter_stats.ops_vs_rhp if batter_stats else None
-            if batter_ops is not None:
-                ops_split_score = scale_score(batter_ops - SCORING_BATTER_OPS_SPLIT_FLOOR, 0, SCORING_BATTER_OPS_SPLIT_RANGE, 1.0)
-                detail += f" | {batter_ops:.3f} OPS vs RHP"
-
-    # V10.6: K-vulnerability cross-axis sub-signal.
-    # Computes 0..1 via batter_k_pct × opp_k9 (both normalised), inverted to a
-    # credit so safe matchups (low batter K% OR low opp K/9) preserve max
-    # contribution while only the cross (high × high) is penalised.
-    # Both stats must be present to evaluate; falls through to None otherwise.
-    k_vuln_credit = None
-    opp_k9 = opp_pitcher_stats.get("k_per_9")
-    if (
-        opp_k9 is not None
-        and batter_stats is not None
-        and batter_stats.pa is not None
-        and batter_stats.pa > 0
-        and batter_stats.so is not None
-    ):
-        batter_k_pct = batter_stats.so / max(batter_stats.pa, 1)
-        bk_norm = scale_score(
-            batter_k_pct - SCORING_BATTER_K_PCT_FLOOR,
-            0,
-            SCORING_BATTER_K_PCT_CEILING - SCORING_BATTER_K_PCT_FLOOR,
-            1.0,
-        )
-        opp_k9_norm = scale_score(
-            opp_k9 - SCORING_OPP_K9_VULN_FLOOR,
-            0,
-            SCORING_OPP_K9_VULN_CEILING - SCORING_OPP_K9_VULN_FLOOR,
-            1.0,
-        )
-        # Cross-axis: only the (high × high) corner fires the full penalty.
-        vuln = bk_norm * opp_k9_norm
-        k_vuln_credit = 1.0 - vuln
-        if vuln >= 0.30:
-            detail += f" | K-vuln {vuln:.0%} (batter K%={batter_k_pct:.0%}, opp K/9={opp_k9:.1f})"
-
-    # V10.8: opposing-arsenal-effectiveness sub-signal via xwOBA-against.
-    # Independent of ERA/WHIP — those are sequencing-sensitive outcomes;
-    # xwOBA-against is the leading indicator of contact quality the arsenal
-    # is allowing.  Inverted scale: lower xwOBA-against = elite arsenal =
-    # WORSE for the batter's matchup, hence the (1 − x_woba_credit) inverted
-    # contribution.  Skipped when the opposing pitcher has no Savant row
-    # yet (rookie pre-50 PA).  10% weight when present — meaningful without
-    # double-counting ERA which already captures the realised version of
-    # this signal.
-    arsenal_credit = None
-    opp_x_woba_against = opp_pitcher_stats.get("x_woba_against")
-    if opp_x_woba_against is not None:
-        # graduated_scale arg order — descending range (floor > ceiling).
-        norm = scale_score(
-            SCORING_OPP_X_WOBA_AGAINST_FLOOR - opp_x_woba_against,
-            0,
-            SCORING_OPP_X_WOBA_AGAINST_FLOOR - SCORING_OPP_X_WOBA_AGAINST_CEILING,
-            1.0,
-        )
-        # `norm` is 0 when opp xwOBA-against ≥ floor (weak arsenal, batter
-        # favored), 1 when ≤ ceiling (elite arsenal, batter suppressed).
-        # The matchup credit is the inverse — high norm = low credit.
-        arsenal_credit = 1.0 - norm
-        if norm >= 0.30:
-            detail += f" | arsenal xwOBA-against {opp_x_woba_against:.3f}"
-
-    # Blend.  Weight rebalancing depends on which sub-signals are available.
-    # V10.8 default (5 signals): era 30% + whip 18% + split 27% + k-vuln 15% + arsenal 10%.
-    if ops_split_score is not None and k_vuln_credit is not None and arsenal_credit is not None:
-        combined = (
-            era_score * 0.30
-            + whip_score * 0.18
-            + ops_split_score * 0.27
-            + k_vuln_credit * 0.15
-            + arsenal_credit * 0.10
-        ) * max_pts
-    elif ops_split_score is not None and k_vuln_credit is not None:
-        # 4 signals (no arsenal): the V10.6 blend.
-        combined = (
-            era_score * 0.35
-            + whip_score * 0.20
-            + ops_split_score * 0.30
-            + k_vuln_credit * 0.15
-        ) * max_pts
-    elif ops_split_score is not None:
-        # ERA + WHIP + split (no K-vuln, e.g., rookie batter with 0 PA so far).
-        combined = (era_score * 0.40 + whip_score * 0.25 + ops_split_score * 0.35) * max_pts
-    elif k_vuln_credit is not None:
-        # ERA + WHIP + K-vuln (no hand split, e.g., switch hitter).
-        combined = (
-            era_score * 0.50
-            + whip_score * 0.30
-            + k_vuln_credit * 0.20
-        ) * max_pts
-    else:
-        # ERA + WHIP only — bare-bones matchup with no additional signals.
-        combined = (era_score * 0.6 + whip_score * 0.4) * max_pts
-
-    return TraitResult("matchup_quality", round(combined, 1), max_pts, detail)
 
 
 def score_batter_recent_form(
@@ -748,71 +508,6 @@ def score_batter_recent_form(
     )
 
 
-def score_ballpark_factor(
-    park_team: str | None,
-    max_pts: float,
-    wind_speed_mph: float | None = None,
-    wind_direction: str | None = None,
-    temperature_f: int | None = None,
-) -> TraitResult:
-    """Score based on home ballpark HR factor, dynamically adjusted for weather.
-
-    Wind blowing out increases the effective park factor (balls carry further).
-    Wind blowing in decreases it (suppresses fly balls).  Temperature above 80°F
-    also gives a small boost (warmer air is less dense).
-
-    This is critical for parks like Wrigley Field whose factor swings wildly
-    depending on wind off Lake Michigan:
-      - CHC base factor = 1.06
-      - Wind blowing out 15 mph → effective ~1.16
-      - Wind blowing in 15 mph → effective ~0.96 (pitcher's park)
-    """
-    if max_pts == 0:
-        return TraitResult("ballpark_factor", 0.0, 0.0, "weight=0")
-
-    if not park_team:
-        raise RuntimeError(
-            "ballpark_factor called without park_team — every SlateGame has a "
-            "home_team, so a None here is a data integrity error"
-        )
-
-    if park_team not in PARK_HR_FACTORS:
-        raise RuntimeError(
-            f"ballpark_factor: park_team={park_team!r} not in PARK_HR_FACTORS — "
-            "team abbreviation must match the canonical 30-team set"
-        )
-    base_factor = PARK_HR_FACTORS[park_team]
-    adjustment = 0.0
-    notes = []
-
-    if wind_speed_mph is not None and wind_speed_mph >= 5 and wind_direction:
-        direction_upper = wind_direction.upper()
-        # Wind intensity: scale from 5 mph (minimal) to 20 mph (max effect)
-        wind_intensity = min(1.0, (wind_speed_mph - 5.0) / 15.0)
-
-        if direction_upper == "OUT":
-            # Wind blowing out — balls carry further, raises HR factor
-            adjustment += 0.10 * wind_intensity
-            notes.append(f"wind out +{adjustment:.2f}")
-        elif direction_upper == "IN":
-            # Wind blowing in — suppresses fly balls
-            adjustment -= 0.10 * wind_intensity
-            notes.append(f"wind in {adjustment:.2f}")
-
-    if temperature_f is not None and temperature_f >= 80:
-        # Hot air is less dense, balls carry further
-        temp_boost = min(0.04, (temperature_f - 80) / 250)
-        adjustment += temp_boost
-        notes.append(f"temp +{temp_boost:.2f}")
-
-    effective_factor = base_factor + adjustment
-    note_str = f"park={park_team} base={base_factor:.2f} eff={effective_factor:.2f}"
-    if notes:
-        note_str += f" ({', '.join(notes)})"
-
-    score = scale_score(effective_factor, PARK_HR_FACTOR_MIN, PARK_HR_FACTOR_MAX, max_pts)
-    return TraitResult("ballpark_factor", round(score, 1), max_pts, note_str)
-
 
 def score_hot_streak(game_logs: list[PlayerGameLog], max_pts: float) -> TraitResult:
     """Count multi-hit games in last 3 days."""
@@ -874,8 +569,6 @@ def score_pitcher(
     player: Player,
     stats: PlayerStats | None,
     game_logs: list[PlayerGameLog],
-    opp_team: str | None = None,
-    opp_team_stats: dict | None = None,
     weights: ScoringWeights | None = None,
     team_framing_runs: float | None = None,
 ) -> PlayerScoreResult:
@@ -893,7 +586,6 @@ def score_pitcher(
     traits = [
         score_ace_status(stats, w.ace_status),
         score_pitcher_k_rate(stats, w.k_rate, team_framing_runs=team_framing_runs),
-        score_pitcher_matchup(opp_team, opp_team_stats, w.matchup_quality),
         score_pitcher_recent_form(game_logs, w.recent_form),
         score_pitcher_era_whip(stats, w.era_whip),
     ]
@@ -913,24 +605,14 @@ def score_batter(
     player: Player,
     stats: PlayerStats | None,
     game_logs: list[PlayerGameLog],
-    batting_order: int | None = None,
-    opp_pitcher_stats: dict | None = None,
-    park_team: str | None = None,
     weights: ScoringWeights | None = None,
-    wind_speed_mph: float | None = None,
-    wind_direction: str | None = None,
-    temperature_f: int | None = None,
-    starter_hand: str | None = None,
 ) -> PlayerScoreResult:
     """Score a batter on all traits."""
     w = (weights or ScoringWeights()).batter
 
     traits = [
         score_power_profile(stats, w.power_profile),
-        score_lineup_position(batting_order, w.lineup_position),
-        score_batter_matchup(opp_pitcher_stats, player.bat_side, w.matchup_quality, starter_hand=starter_hand, batter_stats=stats),
         score_batter_recent_form(game_logs, w.recent_form),
-        score_ballpark_factor(park_team, w.ballpark_factor, wind_speed_mph, wind_direction, temperature_f),
         score_hot_streak(game_logs, w.hot_streak),
         score_speed_component(stats, w.speed_component),
     ]
@@ -957,16 +639,7 @@ def score_player(
     db: Session,
     player: Player,
     game_date: date | None = None,
-    opp_team: str | None = None,
-    opp_team_stats: dict | None = None,
-    opp_pitcher_stats: dict | None = None,
-    batting_order: int | None = None,
-    park_team: str | None = None,
-    wind_speed_mph: float | None = None,
-    wind_direction: str | None = None,
-    temperature_f: int | None = None,
     is_pitcher: bool | None = None,
-    starter_hand: str | None = None,
     team_framing_runs: float | None = None,
 ) -> PlayerScoreResult:
     """Score any player (auto-detects pitcher vs batter, override with is_pitcher).
@@ -1010,22 +683,6 @@ def score_player(
     )
 
     if is_pitcher:
-        return score_pitcher(
-            player, stats, game_logs,
-            opp_team=opp_team,
-            opp_team_stats=opp_team_stats,
-            weights=weights,
-            team_framing_runs=team_framing_runs,
-        )
+        return score_pitcher(player, stats, game_logs, weights=weights, team_framing_runs=team_framing_runs)
     else:
-        return score_batter(
-            player, stats, game_logs,
-            batting_order=batting_order,
-            opp_pitcher_stats=opp_pitcher_stats,
-            park_team=park_team or opp_team,
-            weights=weights,
-            wind_speed_mph=wind_speed_mph,
-            wind_direction=wind_direction,
-            temperature_f=temperature_f,
-            starter_hand=starter_hand,
-        )
+        return score_batter(player, stats, game_logs, weights=weights)

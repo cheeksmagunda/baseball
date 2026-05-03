@@ -79,79 +79,6 @@ def _detect_two_way_pitcher(player, card: FilterCard, game: GameEnvironment) -> 
     return False
 
 
-def _prepare_pitcher_env_kwargs(game: GameEnvironment, card: FilterCard) -> dict:
-    """Extract pitcher environment scoring kwargs from game context."""
-    is_home = game.home_team.upper() == card.team.upper()
-    opp_team = game.away_team if is_home else game.home_team
-    opp_ops = game.away_team_ops if is_home else game.home_team_ops
-    opp_k_pct = game.away_team_k_pct if is_home else game.home_team_k_pct
-    score_kwargs: dict = {"opp_team": opp_team}
-    if opp_ops is None or opp_k_pct is None:
-        raise RuntimeError(
-            f"Missing opponent team stats (ops={opp_ops}, k_pct={opp_k_pct}) "
-            f"for {opp_team} — enrichment should have validated these"
-        )
-    score_kwargs["opp_team_stats"] = {"ops": opp_ops, "k_pct": opp_k_pct}
-    return score_kwargs
-
-
-def _prepare_batter_env_kwargs(
-    game: GameEnvironment,
-    card: FilterCard,
-    starter_xstats_lookup: dict[int, dict] | None = None,
-) -> dict:
-    """Extract batter environment scoring kwargs from game context.
-
-    V10.6 carries opp K/9 into `opp_pitcher_stats` so `score_batter_matchup`
-    can fire the K-vulnerability sub-signal (batter K% × opp K/9 cross
-    penalty for high-K bats vs elite K-arms).  Without K/9 here the trait
-    layer would still rely on ERA/WHIP only, missing the floor-risk angle.
-
-    V10.8 carries opp x_era and x_woba_against into `opp_pitcher_stats` —
-    the simplified pitch-arsenal-mismatch signal.  These flow from the
-    starter_xstats_lookup (built once per slate by resolve_candidates by
-    mlb_id) into score_batter_matchup, which uses them as a 5th sub-signal
-    measuring how the opposing arsenal suppresses contact independent of
-    BABIP / sequencing luck.  When the lookup is None or the starter row
-    is missing (rookie pre-50 PA, schema drift), trait layer falls through
-    to the V10.6 four-sub-signal blend.
-    """
-    is_home = game.home_team.upper() == card.team.upper()
-    opp_era = game.away_starter_era if is_home else game.home_starter_era
-    opp_whip = game.away_starter_whip if is_home else game.home_starter_whip
-    opp_k9 = game.away_starter_k_per_9 if is_home else game.home_starter_k_per_9
-    opp_starter_id = (
-        game.away_starter_mlb_id if is_home else game.home_starter_mlb_id
-    )
-    starter_hand = game.away_starter_hand if is_home else game.home_starter_hand
-    # Strict-mode: opp starter ERA/WHIP/K9 are all mandatory live signals.
-    # The MLB Stats API populates them together from the same season-stats call.
-    if opp_era is None or opp_whip is None or opp_k9 is None:
-        raise RuntimeError(
-            f"Missing opp starter stats: era={opp_era}, whip={opp_whip}, "
-            f"k9={opp_k9} — every live signal must be enriched at T-65"
-        )
-    opp_xstats = (
-        starter_xstats_lookup.get(opp_starter_id, {})
-        if starter_xstats_lookup is not None and opp_starter_id is not None
-        else {}
-    )
-    score_kwargs: dict = {
-        "opp_pitcher_stats": {
-            "era": opp_era,
-            "whip": opp_whip,
-            "k_per_9": opp_k9,
-            "x_era": opp_xstats.get("x_era"),
-            "x_woba_against": opp_xstats.get("x_woba_against"),
-        }
-    }
-    score_kwargs["batting_order"] = card.batting_order
-    score_kwargs["park_team"] = game.home_team.upper()
-    score_kwargs["wind_speed_mph"] = game.wind_speed_mph
-    score_kwargs["wind_direction"] = game.wind_direction
-    score_kwargs["temperature_f"] = game.temperature_f
-    score_kwargs["starter_hand"] = starter_hand
-    return score_kwargs
 
 
 async def resolve_candidates(
@@ -169,43 +96,9 @@ async def resolve_candidates(
     # so drafts=None is routine pre-game and should NOT filter the card out.
     cards = [c for c in cards if c.player_name]
 
-    # V10.8 — pre-build a starter xStats lookup keyed by MLB ID.  One SQL
-    # query for every probable starter on the slate, then per-card matchup
-    # scoring resolves x_era / x_woba_against in O(1) without re-querying.
-    # Falls through cleanly when a starter has no PlayerStats row.
-    starter_mlb_ids: list[int] = []
-    for g in games:
-        if g.home_starter_mlb_id is not None:
-            starter_mlb_ids.append(g.home_starter_mlb_id)
-        if g.away_starter_mlb_id is not None:
-            starter_mlb_ids.append(g.away_starter_mlb_id)
     _current_season = settings.current_season
 
-    starter_xstats_lookup: dict[int, dict] = {}
-    if starter_mlb_ids:
-        starter_players = (
-            db.query(Player).filter(Player.mlb_id.in_(set(starter_mlb_ids))).all()
-        )
-        if starter_players:
-            stats_rows = (
-                db.query(PlayerStats)
-                .filter(
-                    PlayerStats.player_id.in_([p.id for p in starter_players]),
-                    PlayerStats.season == _current_season,
-                )
-                .all()
-            )
-            stats_by_pid = {s.player_id: s for s in stats_rows}
-            for p in starter_players:
-                ps = stats_by_pid.get(p.id)
-                if p.mlb_id is None:
-                    continue
-                starter_xstats_lookup[p.mlb_id] = {
-                    "x_era": ps.x_era if ps else None,
-                    "x_woba_against": ps.x_woba_against if ps else None,
-                }
-
-    # V10.8 — pre-build a team framing-runs lookup for the slate.  One SQL
+    # Pre-build a team framing-runs lookup for the slate.  One SQL
     # query per slate, keyed by team abbreviation.  Pass into score_player so
     # `score_pitcher_k_rate` can apply the small ±5% framing adjustment.
     # Falls through cleanly when TeamSeasonStats has no row for a team
@@ -261,23 +154,12 @@ async def resolve_candidates(
             if is_two_way_pitcher:
                 is_pitcher = True
 
-        # Build game-aware scoring context. Without this, batters default to
-        # neutral scores on lineup_position, matchup_quality, and ballpark_factor,
-        # causing unboosted pitchers (whose ERA/K-rate come from season stats) to
-        # systematically outscore boosted batters regardless of matchup or order.
-        if is_pitcher:
-            score_kwargs = _prepare_pitcher_env_kwargs(game, card)
-            # V10.8 — pitcher's own team framing aggregate, threaded into
-            # score_pitcher_k_rate as the ±5% catcher-framing adjustment.
-            score_kwargs["team_framing_runs"] = team_framing_lookup.get(
-                card.team.upper()
-            )
-        else:
-            score_kwargs = _prepare_batter_env_kwargs(
-                game, card, starter_xstats_lookup=starter_xstats_lookup
-            )
-
-        score_result = score_player(db, player, is_pitcher=is_pitcher, **score_kwargs)
+        score_result = score_player(
+            db,
+            player,
+            is_pitcher=is_pitcher,
+            team_framing_runs=team_framing_lookup.get(card.team.upper()) if is_pitcher else None,
+        )
 
         series_team_w: int | None = None
         series_opp_w: int | None = None

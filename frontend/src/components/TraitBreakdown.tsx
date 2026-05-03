@@ -13,7 +13,8 @@ interface TraitBreakdownProps {
 export function TraitBreakdown({ breakdowns, teamColor }: TraitBreakdownProps) {
   const [open, setOpen] = useState(false);
 
-  if (breakdowns.length === 0) return null;
+  const active = breakdowns.filter((t) => t.max_score > 0);
+  if (active.length === 0) return null;
 
   return (
     <div className="mt-2 border-t border-border-subtle pt-2">
@@ -22,7 +23,7 @@ export function TraitBreakdown({ breakdowns, teamColor }: TraitBreakdownProps) {
         aria-expanded={open}
         className="flex w-full items-center justify-between text-fluid-xs font-medium text-text-muted transition-colors hover:text-text-secondary focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:outline-none"
       >
-        <span>Trait Breakdown</span>
+        <span>Player Profile</span>
         <motion.span
           animate={{ rotate: open ? 180 : 0 }}
           transition={{ duration: 0.2 }}
@@ -42,7 +43,7 @@ export function TraitBreakdown({ breakdowns, teamColor }: TraitBreakdownProps) {
             className="overflow-hidden"
           >
             <div className="mt-2 space-y-1.5">
-              {breakdowns.map((trait) => {
+              {active.map((trait) => {
                 const pct = trait.max_score > 0 ? (trait.score / trait.max_score) * 100 : 0;
                 return (
                   <div key={trait.trait_name} className="space-y-0.5">
