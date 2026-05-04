@@ -30,8 +30,6 @@ from app.core.constants import (
     STACK_BONUS,
     ROOKIE_ENV_MODIFIER_CEILING,
     POSITION_VOLUME_MULTIPLIER,
-    ENV_MODIFIER_FLOOR,
-    ENV_MODIFIER_CEILING,
     PITCHER_ENV_MODIFIER_CEILING,
 )
 from app.services.filter_strategy import StackableGame
