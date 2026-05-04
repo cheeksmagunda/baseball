@@ -280,20 +280,24 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
             .all()
         }
 
-    starter_rookie_lookup: dict[str, bool] = {}
+    # Key by mlb_id, not name — schedule-feed names ("Charles Morton") drift
+    # from active-roster names ("Charlie Morton") and any name-keyed lookup
+    # silently misses rookie pitchers, which fires the strict assertion below
+    # and crashes the whole T-65 pipeline.  Same root-cause fix as 7d01f03.
+    starter_rookie_lookup: dict[int, bool] = {}
     for sp in slate_players:
         p = sp.player
-        if p is None:
+        if p is None or p.mlb_id is None:
             continue
         ps_row = ps_by_player_id.get(p.id)
         if ps_row is not None:
-            starter_rookie_lookup[p.name] = bool(ps_row.is_rookie_track)
+            starter_rookie_lookup[p.mlb_id] = bool(ps_row.is_rookie_track)
 
     missing: list[str] = []
     for game in [g for g in games if is_game_remaining(g.game_status)]:
-        for side, name_field, era_field, whip_field, k9_field in [
-            ("home", "home_starter", "home_starter_era", "home_starter_whip", "home_starter_k_per_9"),
-            ("away", "away_starter", "away_starter_era", "away_starter_whip", "away_starter_k_per_9"),
+        for side, name_field, mlb_id_field, era_field, whip_field, k9_field in [
+            ("home", "home_starter", "home_starter_mlb_id", "home_starter_era", "home_starter_whip", "home_starter_k_per_9"),
+            ("away", "away_starter", "away_starter_mlb_id", "away_starter_era", "away_starter_whip", "away_starter_k_per_9"),
         ]:
             starter_name = getattr(game, name_field)
             if not starter_name:
@@ -305,12 +309,13 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
             whip = getattr(game, whip_field)
             k9 = getattr(game, k9_field)
             if era is None or whip is None or k9 is None:
-                if starter_rookie_lookup.get(starter_name, False):
+                starter_mlb_id = getattr(game, mlb_id_field)
+                if starter_mlb_id is not None and starter_rookie_lookup.get(starter_mlb_id, False):
                     logger.warning(
-                        "%s@%s %s starter %s on rookie scoring track "
+                        "%s@%s %s starter %s (mlb_id=%s) on rookie scoring track "
                         "(no ERA/WHIP/K9) — will be scored on Statcast "
                         "kinematics + env only.",
-                        game.away_team, game.home_team, side, starter_name,
+                        game.away_team, game.home_team, side, starter_name, starter_mlb_id,
                     )
                     continue
                 missing.append(
