@@ -284,10 +284,17 @@ async def _post_lock_monitor(today: date) -> None:
                     continue
 
                 logger.info(
-                    "Slate %s complete (%d games final) — clearing frozen cache",
+                    "Slate %s complete (%d games final) — purging frozen cache",
                     today, len(games),
                 )
-                lineup_cache.clear()
+                # purge() (not clear()) so the Redis lineup:{today} +
+                # lineup:meta:{today} keys are deleted alongside the in-memory
+                # state.  Otherwise the 24h Redis TTL keeps yesterday's
+                # payload alive: a dyno crash between slate-complete and
+                # midnight would let restore_and_refreeze() re-freeze today's
+                # finished slate (deploy_id matches, slate_date >= today),
+                # and the user wouldn't see tomorrow's picks until midnight.
+                lineup_cache.purge()
 
                 # Fetch tomorrow's schedule so Phase 1 of the next cycle has
                 # game times immediately (countdown shows right after restart).

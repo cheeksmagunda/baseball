@@ -265,7 +265,7 @@ The app uses an event-driven timing model that triggers the ONLY full pipeline r
    - Picks are available immediately once the T-65 pipeline completes and Redis is written
    - `/api/filter-strategy/optimize` serves frozen picks (zero computation per request)
    - Lightweight 60-second loop monitors game completion
-   - On all-final, clear cache and pre-warm tomorrow's pipeline
+   - On all-final, **purge** cache (memory + Redis + SQLite) and pre-warm tomorrow's pipeline.  Purge — not clear — so the Redis 24h TTL doesn't keep yesterday's frozen payload alive past the slate's actual end (a dyno crash between slate-complete and midnight could otherwise let `restore_and_refreeze` re-freeze the finished slate's picks).
 
 **Timing Gates (Prevent Mid-Slate Interference):**
 
@@ -314,6 +314,8 @@ Per the user directive ("live data with full context and recent player performan
 3. After that, polls `/schedule` every `POST_LOCK_CHECK_INTERVAL` (120 s) until every game has final scores or sits in NON_PLAYING_GAME_STATUSES.
 
 Net effect: a 15-game slate with first pitches spanning 17:35–22:05 ET produces ≤30 schedule fetches in the post-lock window (down from ~250). Picks stay frozen the entire time. The monitor re-emerges from Phase 4a with no compute cost.
+
+**Post-lock cache purge on slate completion (May 2026).** When the post-lock loop detects all games final, it now calls `lineup_cache.purge()` rather than `lineup_cache.clear()`. `clear()` only nulls the in-memory state; the Redis `lineup:{today}` and `lineup:meta:{today}` keys keep their 24h TTL.  If the dyno crashed in the narrow window between "slate complete" and "midnight UTC", the next boot's `restore_and_refreeze` would see a same-deploy_id meta entry with `slate_date == today` and re-freeze the just-finished slate's picks — the user wouldn't see tomorrow's lineup until midnight rolled the active slate date forward.  `purge()` wipes all three tiers (memory + Redis + SQLite) so a post-completion crash always falls through to the fresh next-slate cycle.
 
 **The four runtime windows the monitor handles uniformly:**
 1. **Normal T-65 trigger (cold morning start)**: Phase 1 bootstrap → Phase 2 sleeps until T-65 → Phase 3 full pipeline → Phase 4 state-aware completion watch.

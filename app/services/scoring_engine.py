@@ -699,8 +699,12 @@ def score_player(
     )
 
     if stats is None:
+        # No defaults exist post-strict-mode (May 2026): the trait scorers
+        # raise on missing inputs.  This branch is reachable only if a
+        # caller bypassed `is_player_scoreable`; logged for diagnostic
+        # value before the inevitable downstream raise.
         logger.debug(
-            "score_player: no season-%d stats for %s (%s) — using defaults",
+            "score_player: no season-%d stats for %s (%s) — will raise downstream",
             settings.current_season, player.name, player.team,
         )
 
