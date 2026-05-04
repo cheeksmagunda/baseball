@@ -17,6 +17,13 @@ TIMEOUT = httpx.Timeout(connect=4.0, read=15.0, write=10.0, pool=4.0)
 # of them simultaneously, risking rate-limits or connection exhaustion.
 _API_SEM = asyncio.Semaphore(20)
 
+# Module-level client — reused across every request for keep-alive (HTTP/1.1
+# connection pooling).  Without this, each call did a fresh DNS lookup +
+# TCP+TLS handshake; the T-65 pipeline's ~260 calls were paying that cost
+# 260 times.  The Semaphore(20) above keeps connection count bounded.
+# Closed by app/main.py's lifespan handler at shutdown.
+_CLIENT = httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True)
+
 
 @tenacity.retry(
     # 4 attempts with full jitter (random exponential).  Without jitter,
@@ -34,10 +41,14 @@ async def _get(path: str, params: dict | None = None) -> dict:
     """Make a GET request to the MLB Stats API."""
     async with _API_SEM:
         url = f"{settings.mlb_api_base_url}{path}"
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
+        resp = await _CLIENT.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def aclose() -> None:
+    """Close the module-level client.  Called at app shutdown."""
+    await _CLIENT.aclose()
 
 
 async def get_schedule(game_date: str) -> dict:

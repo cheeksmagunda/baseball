@@ -49,6 +49,7 @@ from typing import Any
 
 
 from app.core.constants import (
+    canonicalize_team,
     PARK_HR_FACTORS,
     SLOT_MULTIPLIERS,
     TINY_SLATE_MAX_GAMES,
@@ -398,8 +399,12 @@ def compute_pitcher_env_score(
         elif vegas_total <= 9.0:
             score += 0.2
 
-    # 3. Park HR factor — pitcher-friendly.  park_team is precondition-checked
-    # to be present and to exist in PARK_HR_FACTORS (raise on unknown team).
+    # 3. Park HR factor — pitcher-friendly.  Canonicalize the team
+    # abbreviation first so vendor variants (KCR/KC, CHW/CWS, OAK/ATH) all
+    # land on the same row — otherwise a mid-season MLB API drift crashes
+    # env scoring for the entire slate.  PARK_HR_FACTORS uses the canonical
+    # form; raises on a genuinely unknown team (real schedule bug).
+    park_team = canonicalize_team(park_team)
     if park_team not in PARK_HR_FACTORS:
         raise RuntimeError(
             f"compute_pitcher_env_score: park_team={park_team!r} not in PARK_HR_FACTORS"
@@ -638,8 +643,10 @@ def compute_batter_env_score(
             else:
                 score += 0.1
 
-    # 4. Park HR factor — modest contribution for batters.  park_team is
-    # precondition-checked to be present; raise on unknown team.
+    # 4. Park HR factor — modest contribution for batters.  Canonicalize
+    # first (KCR/KC, CHW/CWS, OAK/ATH) so vendor abbreviation drift doesn't
+    # crash env scoring; raise only on a genuinely unknown team.
+    park_team = canonicalize_team(park_team)
     if park_team not in PARK_HR_FACTORS:
         raise RuntimeError(
             f"compute_batter_env_score: park_team={park_team!r} not in PARK_HR_FACTORS"

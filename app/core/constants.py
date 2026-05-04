@@ -136,6 +136,28 @@ MAX_PLAYERS_PER_GAME_BATTERS = 2
 MIN_GAMES_REPRESENTED = 2        # pipeline-level data-sufficiency guard (not a lineup rule)
 
 
+# ---------------------------------------------------------------------------
+# Rookie scoring track
+# ---------------------------------------------------------------------------
+# True MLB debutants — players with no current-season stats AND no prior-season
+# fallback hit — are the only legitimate "missing traditional stats" case.
+# They go through a separate scorer in scoring_engine that uses Statcast
+# kinematics + env signals only, with neutral trait_factor.  Every other case
+# (returning veteran, traded mid-day, IL returnee with last-year MLB stats)
+# is covered by the prior-season fallback in fetch_player_season_stats and
+# scored on the normal track.
+#
+# A player qualifies for the rookie track when, AFTER the prior-season
+# fallback runs, the relevant traditional stats are still missing AND the
+# player has fewer than ROOKIE_GAMES_THRESHOLD MLB games of experience for
+# batters / less than ROOKIE_PITCHER_IP_THRESHOLD career IP for pitchers.
+# These thresholds also gate the strict-assertion bypass in
+# pipeline.run_fetch_player_stats — a 5-year veteran missing ERA is still
+# a hard crash (real bug), only true debutants skip the gate.
+ROOKIE_GAMES_THRESHOLD = 3        # batters: < this many career MLB games
+ROOKIE_PITCHER_IP_THRESHOLD = 5.0 # pitchers: < this much career MLB IP
+
+
 def is_stack_eligible_game(
     moneyline: int | None, vegas_total: float | None
 ) -> bool:

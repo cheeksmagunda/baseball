@@ -30,9 +30,24 @@ def find_players_by_name_team_batch(
 ) -> dict[tuple[str, str], Player]:
     """Batch equivalent of find_player_by_name, scoped by team.
 
-    One SQL query regardless of input size. Matches substring-on-normalized
-    name — same semantics as find_player_by_name(name, team). Returns a dict
-    keyed by the original (name, team) tuple; missing matches are absent.
+    One SQL query regardless of input size. Matches in three passes against
+    the same team's roster:
+
+      1. Exact normalized name (full-name → full-name) — the common case.
+      2. Substring either direction — covers RotoWire's "J. Aranda" vs the
+         DB's "Jonathan Aranda", AND the reverse case where RotoWire spells
+         out a name the DB stores abbreviated.
+      3. Token-set: every non-trivial token in one name appears in the
+         other.  Covers "Joe Smith Jr." vs "J Smith" with suffix drift.
+
+    The earlier substring-only check was one-directional (card → DB) and
+    silently missed pairs where RotoWire's abbreviation didn't appear in
+    the DB record.  A single missing match raised in candidate_resolver
+    and crashed the whole 14-game candidate pool, so the additional
+    passes here are a real availability fix, not a fallback.
+
+    Returns a dict keyed by the original (name, team) tuple; pairs with
+    no match are absent so the caller can report which one(s) failed.
     """
     if not pairs:
         return {}
@@ -42,15 +57,37 @@ def find_players_by_name_team_batch(
     for p in rows:
         by_team.setdefault(p.team, []).append(p)
 
+    def _tokens(s: str) -> set[str]:
+        # Tokens of length ≥ 2 ignore initials ("J") and the trailing dot.
+        return {t for t in s.replace(".", " ").split() if len(t) >= 2}
+
     result: dict[tuple[str, str], Player] = {}
     for name, team in pairs:
         if not team:
             continue
         norm = normalize_name(name)
-        for p in by_team.get(team.upper(), []):
-            if norm in p.name_normalized:
-                result[(name, team)] = p
-                break
+        roster = by_team.get(team.upper(), [])
+
+        # Pass 1: exact normalized match.
+        match = next((p for p in roster if p.name_normalized == norm), None)
+        # Pass 2: substring either direction.
+        if match is None:
+            match = next(
+                (p for p in roster if norm in p.name_normalized or p.name_normalized in norm),
+                None,
+            )
+        # Pass 3: token-set containment either direction.
+        if match is None:
+            card_tokens = _tokens(norm)
+            if card_tokens:
+                for p in roster:
+                    db_tokens = _tokens(p.name_normalized)
+                    if card_tokens.issubset(db_tokens) or db_tokens.issubset(card_tokens):
+                        match = p
+                        break
+
+        if match is not None:
+            result[(name, team)] = match
     return result
 
 
@@ -127,9 +164,19 @@ def is_player_scoreable(stats: PlayerStats | None, is_pitcher: bool) -> bool:
         are None.
 
     Anyone failing this gate is dropped from the pool entirely.
+
+    V13.2 exception: rookie-track players (true MLB debutants flagged by
+    `fetch_player_season_stats`) are scoreable regardless of the traditional-
+    stat checks — they're routed to `score_rookie` which uses neutral
+    trait_factor + env-only EV.  Without this carve-out, every rookie
+    spot-starter and every September call-up batter would silently drop out
+    of the candidate pool, recreating the "rookie crashes the slate" failure
+    mode just one layer up.
     """
     if stats is None:
         return False
+    if stats.is_rookie_track:
+        return True
     if is_pitcher:
         if not stats.ip or stats.ip <= 0:
             return False

@@ -1,7 +1,7 @@
 import unicodedata
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -100,6 +100,16 @@ class PlayerStats(Base):
     # the headline number that a pitcher's overall arsenal performs well.
     x_era: Mapped[float | None] = mapped_column(Float, nullable=True)               # ERA-scale xERA
     x_woba_against: Mapped[float | None] = mapped_column(Float, nullable=True)      # est_woba-against
+
+    # Rookie scoring track (V13.2).  Set when a player has no current-season
+    # stats AND no prior-season fallback hit AND is below the rookie thresholds
+    # in app/core/constants.py (ROOKIE_GAMES_THRESHOLD / ROOKIE_PITCHER_IP_THRESHOLD).
+    # When True the scoring engine routes to score_rookie_pitcher / score_rookie_batter
+    # which use Statcast kinematics + env signals only, with neutral trait_factor.
+    # This is the long-term solve for the "rookie spot-starter crashes the
+    # whole pipeline" failure mode — one missing-data case (true MLB debut),
+    # one separate scorer, no league-average defaults.
+    is_rookie_track: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

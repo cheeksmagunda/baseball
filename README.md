@@ -122,22 +122,22 @@ V10.4 added a RotoWire scrape that pre-fills `SlatePlayer.batting_order` from be
 
 The scoring engine outputs a 0-100 ranking signal, not an RS prediction.
 
-**Statcast refresh:** Exit velocity, barrel%, hard-hit%, FB velocity, IVB, extension, whiff%, chase%, xwOBA, xBA, xSLG, xERA, and xwOBA-against are populated by `scripts/refresh_statcast.py`. The slate monitor fires this script in the background during Phase 2 (before the T-65 sleep window), so kinematics are ready before the pipeline runs. If Statcast fails, the monitor crashes and `/optimize` returns 503 rather than serving a lineup built on NULL kinematics. For new call-ups with no Savant row yet, the engine routes through a non-Statcast fallback path using the UNKNOWN_SCORE_RATIO baseline.
+**Statcast refresh:** Exit velocity, barrel%, hard-hit%, FB velocity, IVB, extension, whiff%, chase%, xwOBA, xBA, xSLG, xERA, and xwOBA-against are populated by `scripts/refresh_statcast.py`, invoked inline by the T-65 pipeline between stat fetch and scoring. If Statcast fails, the pipeline crashes and `/optimize` returns 503 rather than serving a lineup built on NULL kinematics. True MLB debutants (no current-season + no prior-season stats) are routed to the V13.2 rookie scoring track — neutral trait_factor, env-only EV — so they do not require Statcast or traditional stats.
 
 ### Fail-loud data fetches
 
-Every live-data fetch used by the T-65 pipeline either succeeds or fails loud. There are no silent fallbacks.
+Every live-data fetch used by the T-65 pipeline either succeeds or fails loud. There are no silent fallbacks. The DB schema is rebuilt from SQLAlchemy models on every startup; there are no Alembic migrations.
 
 | Path | On failure |
 |---|---|
-| Alembic migration (startup) | App lifespan crashes |
-| Schema-drift smoke check (startup) | RuntimeError if expected columns or tables are missing |
-| Statcast kinematics refresh (in-monitor Phase 2) | Non-zero exit calls `lineup_cache.mark_failed()`, `/optimize` returns 503 |
+| Schema build (`init_db()` at startup) | App lifespan crashes |
+| Statcast kinematics refresh (inline at T-65) | Non-zero exit calls `lineup_cache.mark_failed()`, `/optimize` returns 503 |
 | Vegas lines (Odds API) | RuntimeError if key missing, quota exhausted, or any game without lines |
-| Weather (Open-Meteo) | Raises if any game's weather cannot be fetched |
+| Weather (Open-Meteo) | RuntimeError on any non-2xx response, including 429 |
 | Series context + rest days | Raises if any team's schedule lookback fails |
 | Team batting/pitching stats | Raises if any field is NULL post-fetch |
-| RotoWire expected lineups | Best-effort only. Failure logs but does not abort. The only intentional graceful-degradation path. |
+| RotoWire expected lineups | RuntimeError on network failure or zero parseable games |
+| Probable-starter ERA/WHIP/K9 | Raises unless the starter is rookie-track (V13.2) |
 
 ---
 
@@ -235,11 +235,11 @@ All endpoints are under `/api/`.
 ## Tech Stack
 
 - **FastAPI** - REST API framework
-- **SQLAlchemy** - ORM with SQLite (swappable to Postgres via `BO_DATABASE_URL`)
-- **Alembic** - Schema migrations
+- **SQLAlchemy** - ORM with SQLite (swappable to Postgres via `BO_DATABASE_URL`); schema rebuilt from models at startup
 - **Redis** - Required cache layer. Startup fails without it.
 - **Pydantic** - Request/response validation
-- **httpx** - Async HTTP client for MLB Stats API
+- **httpx** - Async HTTP client (module-level keep-alive) for MLB Stats API, Odds API, Open-Meteo, RotoWire
+- **tenacity** - Full-jitter exponential retries on every external fetch
 - **NumPy** - Calibration metrics
 - **pybaseball** - Statcast data wrapper for Baseball Savant
 - **Railway** - Deployment target (single-replica only, since the T-65 monitor is an in-process singleton)
@@ -296,7 +296,7 @@ pip install -e ".[dev]"
 # Copy and fill in environment variables
 cp .env.example .env
 
-# Run the server (DB schema is created via Alembic on startup)
+# Run the server (DB schema is rebuilt from SQLAlchemy models on every startup)
 uvicorn app.main:app --reload
 
 # Run tests
@@ -328,7 +328,7 @@ The database does not store historical data. Appending to the four files in `/da
 
 ## Deployment (Railway)
 
-The app includes a `Dockerfile` and `Procfile` for Railway deployment. Set `BO_DATABASE_URL` and `PORT` as environment variables. The database schema is created via Alembic on first startup. Only current-cycle live state is persisted.
+The app includes a `Dockerfile` and `Procfile` for Railway deployment. Set `BO_DATABASE_URL` and `PORT` as environment variables. The database schema is rebuilt from SQLAlchemy models (`Base.metadata.create_all()`) on every startup — there are no Alembic migrations because the DB stores only current-cycle live state and is ephemeral by design.
 
 ---
 
