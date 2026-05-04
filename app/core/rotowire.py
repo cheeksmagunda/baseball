@@ -41,6 +41,15 @@ _USER_AGENT = (
 )
 _TIMEOUT = httpx.Timeout(connect=5.0, read=20.0, write=10.0, pool=5.0)
 
+# Module-level client — reused for HTTP keep-alive.  See mlb_api.py for
+# rationale.  Closed by app/main.py's lifespan handler at shutdown.
+_CLIENT = httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True)
+
+
+async def aclose() -> None:
+    """Close the module-level client.  Called at app shutdown."""
+    await _CLIENT.aclose()
+
 
 class LineupStatus(str, Enum):
     """RotoWire's per-team lineup status (from the lineup__status li)."""
@@ -100,11 +109,10 @@ async def fetch_expected_lineups() -> list[GameLineup]:
     Use parse_lineups_html() directly with a pre-fetched HTML string for
     tests / offline reproduction.
     """
-    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
-        try:
-            resp = await client.get(_URL, headers={"User-Agent": _USER_AGENT})
-        except httpx.HTTPError as exc:
-            raise RuntimeError(f"RotoWire fetch failed: {exc}") from exc
+    try:
+        resp = await _CLIENT.get(_URL, headers={"User-Agent": _USER_AGENT})
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"RotoWire fetch failed: {exc}") from exc
     if resp.status_code != 200:
         raise RuntimeError(
             f"RotoWire returned HTTP {resp.status_code} for {_URL} — "

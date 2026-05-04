@@ -29,6 +29,15 @@ ARCHIVE_URL  = "https://archive-api.open-meteo.com/v1/archive"
 # eat the whole budget intended for the read.
 _TIMEOUT = httpx.Timeout(connect=4.0, read=10.0, write=5.0, pool=4.0)
 
+# Module-level client — reused for HTTP keep-alive.  See mlb_api.py for
+# rationale.  Closed by app/main.py's lifespan handler at shutdown.
+_CLIENT = httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True)
+
+
+async def aclose() -> None:
+    """Close the module-level client.  Called at app shutdown."""
+    await _CLIENT.aclose()
+
 
 # ---------------------------------------------------------------------------
 # Stadium coordinates — (latitude, longitude) for each MLB park
@@ -197,18 +206,12 @@ def _extract_hour(data: dict, target_utc_hour: int) -> dict:
     }
 
 
-def _is_retryable_weather_exc(exc: BaseException) -> bool:
-    # 429 is rate-limiting — retrying immediately makes it worse and wastes time.
-    # Let it surface immediately so the caller can handle it gracefully.
-    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
-        return False
-    return isinstance(exc, (httpx.HTTPError, httpx.TimeoutException))
-
-
 @tenacity.retry(
     stop=tenacity.stop_after_attempt(4),
     wait=tenacity.wait_random_exponential(multiplier=1, max=6),
-    retry=tenacity.retry_if_exception(_is_retryable_weather_exc),
+    retry=tenacity.retry_if_exception_type(
+        (httpx.HTTPError, httpx.TimeoutException)
+    ),
     reraise=True,
 )
 async def _fetch(url: str, lat: float, lon: float, game_date: date) -> dict:
@@ -222,10 +225,9 @@ async def _fetch(url: str, lat: float, lon: float, game_date: date) -> dict:
         "start_date":       game_date.isoformat(),
         "end_date":         game_date.isoformat(),
     }
-    async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
-        resp = await client.get(url, params=params)
-        resp.raise_for_status()
-        return resp.json()
+    resp = await _CLIENT.get(url, params=params)
+    resp.raise_for_status()
+    return resp.json()
 
 
 async def get_game_weather(
@@ -242,19 +244,15 @@ async def get_game_weather(
     wind_direction (str — "OUT" or 8-point compass), and
     wind_direction_deg (int — raw degrees for observability).
 
-    Raises RuntimeError on API failure or missing data (3 retries via tenacity).
+    Raises RuntimeError / HTTPStatusError on API failure or missing data
+    (4 retries via tenacity).  No graceful 429 path — Open-Meteo's free
+    tier allows ~10k requests/day and one slate uses ~15.  A 429 here is
+    either a vendor outage or app misconfiguration; both warrant a loud
+    crash so /optimize returns 503 and ops investigates.  Silent NULL
+    weather corrupts env scoring per the no-fallbacks rule.
     """
     url = ARCHIVE_URL if use_archive else FORECAST_URL
-    try:
-        data = await _fetch(url, lat, lon, game_date)
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 429:
-            logger.warning(
-                "Open-Meteo rate-limited (429) for (%s, %s) on %s — weather unavailable",
-                lat, lon, game_date,
-            )
-            return None
-        raise
+    data = await _fetch(url, lat, lon, game_date)
     extracted = _extract_hour(data, game_utc_hour)
     extracted["wind_direction"] = _classify_wind_direction(
         extracted["wind_direction_deg"], park_team

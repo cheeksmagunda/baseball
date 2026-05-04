@@ -118,11 +118,28 @@ The pipeline either works with real data or it fails loudly. Fallbacks mask bugs
 
 The codebase was audited end-to-end for silent fallback paths and converted to fail-loud behavior. The five concrete enforcement layers:
 
-1. **DNP filter (`app/core/utils.py::is_player_scoreable`)** — single source of truth for "scoreable from live data". Pitchers need IP > 0 plus ERA, WHIP, and K/9; batters need PA > 0 plus at least one Statcast power signal (avg_ev / hard_hit / barrel / x_woba / max_ev). Applied identically in `app/services/pipeline.py::run_score_slate` and `app/routers/filter_strategy.py::_load_active_slate`. Both call sites also drop batters whose `SlatePlayer.batting_order` is `None` (not in the RotoWire-projected lineup).
+1. **DNP filter (`app/core/utils.py::is_player_scoreable`)** — single source of truth for "scoreable from live data". Pitchers need IP > 0 plus ERA, WHIP, and K/9; batters need PA > 0 plus at least one Statcast power signal (avg_ev / hard_hit / barrel / x_woba / max_ev). Applied identically in `app/services/pipeline.py::run_score_slate` and `app/routers/filter_strategy.py::_load_active_slate`. Both call sites also drop batters whose `SlatePlayer.batting_order` is `None` (not in the RotoWire-projected lineup).  Rookie-track players (V13.2, see below) are admitted regardless of traditional-stat coverage and are scored separately.
 2. **Trait scorers (`app/services/scoring_engine.py`)** — every previously-silent fallback (`UNKNOWN_SCORE_RATIO × max_pts`, `return 0`, `return max_pts * 0.4`) raises `RuntimeError`. The DNP filter ensures these raises are unreachable in normal operation; if one fires, it is a real data-collection bug, not a missing-data event.
 3. **Env scorers (`app/services/filter_strategy.py::compute_pitcher_env_score`, `compute_batter_env_score`)** — top-of-function precondition checks raise on any `None` input. The previous `if x is not None: ...` skip-if-missing pattern is gone.
 4. **`PARK_HR_FACTORS` lookups** — replaced `.get(team, 1.0)` with direct `[team]` indexing so an unknown team raises rather than silently scoring as a neutral park.
 5. **Removed dead constants** — `DEFAULT_OPP_OPS`, `DEFAULT_OPP_K_PCT`, `DEFAULT_PITCHER_ERA`, `DEFAULT_PITCHER_WHIP`, `DEFAULT_BATTER_OPS_VS_LHP`, `DEFAULT_BATTER_OPS_VS_RHP`, `UNKNOWN_SCORE_RATIO`, `DNP_RISK_PENALTY`, `DNP_UNKNOWN_PENALTY`, `ENV_UNKNOWN_COUNT_THRESHOLD`. Don't reintroduce them.
+
+### Rookie Scoring Track (V13.2 — May 2026)
+
+Strict-mode enforcement above assumes that every player in the candidate pool has at least the minimum traditional stats (ERA/WHIP/K9 for pitchers, OPS for batters). For nearly every player in the league this is true — returning veterans, IL returnees, and mid-day acquisitions all carry stats from their current or prior MLB season, and `fetch_player_season_stats` falls back to prior-season aggregates when current-season is empty.
+
+The one exception is **true MLB debutants**: a rookie spot-starter with zero career MLB IP, or a September call-up with their first plate appearance tonight. They have no current-season stats AND no prior-season stats AND no Statcast leaderboard row yet. Pre-V13.2, the strict assertions in `pipeline.run_fetch_player_stats` raised on these players and crashed the entire T-65 pipeline — one rookie spot-start would kill optimization for all 14 other games on the slate.
+
+V13.2 fixes this with a separate scoring track:
+
+- `PlayerStats.is_rookie_track` (Boolean) — set by `fetch_player_season_stats` when the player has zero current-season stats AND zero prior-season stats AND fewer than `ROOKIE_GAMES_THRESHOLD` (3) MLB games of experience for batters / less than `ROOKIE_PITCHER_IP_THRESHOLD` (5.0) career IP for pitchers.
+- The strict assertions in `run_fetch_player_stats` skip rookie-track players with a logged warning. Non-rookies still raise — a 5-year veteran missing ERA is a real data-collection bug, not a missing-data event.
+- `is_player_scoreable` admits rookie-track players regardless of stat coverage.
+- `score_player` routes them to `score_rookie`, which returns the neutral score (`ROOKIE_NEUTRAL_SCORE = 57.5`) and an empty traits list. This calibrates `trait_factor` to exactly 1.0 in the EV formula, so the rookie's EV is purely env-driven (`env_factor × 1.0 × stack_bonus × dnp_adj × 100`).
+
+This is *not* a fallback. The rookie has no traditional stats — period. Pretending they have league-average ERA would be a fallback (forbidden); routing them through a separate scorer that doesn't depend on traditional stats is a separate code path with its own admission rules. Empirically the crowd fades rookies and the optimizer should treat them as "decided by environment" until they cross the threshold and rejoin the traditional track. A rookie's Statcast leaderboard row populates after ~50 batted balls / pitches; once they cross `ROOKIE_GAMES_THRESHOLD` games their flag clears automatically on the next pipeline run and they're scored normally.
+
+**Weather, Vegas, and team stats are NOT exceptions to strict mode.** Open-Meteo, The Odds API, and the MLB Stats API team endpoints serve every team and every game on every slate; a missing wind/temp/moneyline is a vendor outage or app misconfiguration, never a "true rookie" equivalent. These still raise loudly and crash the pipeline so ops investigates and restores the upstream source. There is no slate-level "drop the game" path — the only legitimate missing-data case is the rookie-track carve-out above.
 
 ### Live data resiliency (May 2026)
 

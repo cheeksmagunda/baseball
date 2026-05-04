@@ -561,6 +561,42 @@ def score_speed_component(stats: PlayerStats | None, max_pts: float) -> TraitRes
 # Orchestration
 # ---------------------------------------------------------------------------
 
+# V13.2 — Rookie scoring track.  When PlayerStats.is_rookie_track is True
+# the player is a true MLB debutant (no current-season + no prior-season
+# stats).  The traditional trait scorers above all raise on missing
+# ERA/WHIP/K9 / OPS, which is correct for veterans (a missing stat there
+# is a real data-collection bug) but wrong for debutants.  Rookies are
+# scored separately below: trait_factor is forced to neutral (1.0) by
+# returning total_score = ROOKIE_NEUTRAL_SCORE so their EV is decided
+# entirely by env_factor + stack_bonus + dnp_adj.  No league-average
+# defaults — the rookie has no traditional stats to score on, period.
+#
+# The neutral score is calibrated so that
+#   trait_factor = TRAIT_MODIFIER_FLOOR + (raw_trait - 0.15) × 0.30 / 0.85
+# returns 1.0 — i.e. raw_trait = 0.575, total_score = 57.5 / 100.
+# See app/services/filter_strategy.py:865-870 for the lerp.
+ROOKIE_NEUTRAL_SCORE = 57.5
+
+
+def score_rookie(player: Player) -> PlayerScoreResult:
+    """Score a true MLB debutant (V13.2).
+
+    Returns the neutral score that maps to trait_factor = 1.0 in the EV
+    formula, with no traits.  The optimizer's EV for this player becomes
+    purely env-driven: env_factor × 1.0 × stack_bonus × dnp_adj × 100.
+    Empirically the crowd fades rookies and the optimizer should treat
+    them as "decided by environment" until they accumulate enough MLB
+    stats to cross the rookie threshold and rejoin the traditional track.
+    """
+    return PlayerScoreResult(
+        player_name=player.name,
+        team=player.team,
+        position=player.position,
+        total_score=ROOKIE_NEUTRAL_SCORE,
+        traits=[],
+    )
+
+
 def score_pitcher(
     player: Player,
     stats: PlayerStats | None,
@@ -671,6 +707,16 @@ def score_player(
     # Caller override takes precedence; fall back to DB position.
     if is_pitcher is None:
         is_pitcher = player.position in PITCHER_POSITIONS
+
+    # V13.2 — true MLB debutants are scored separately on a neutral track
+    # so missing traditional stats don't crash the trait scorers.
+    if stats is not None and stats.is_rookie_track:
+        logger.info(
+            "score_player: %s (%s, %s) on rookie scoring track — "
+            "neutral total_score, env-driven EV.",
+            player.name, player.team, player.position,
+        )
+        return score_rookie(player)
 
     logger.debug(
         "scoring %s (%s, %s) as_pitcher=%s stats=%s game_logs=%d",

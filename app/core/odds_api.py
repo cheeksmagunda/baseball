@@ -21,6 +21,15 @@ _BASE_URL = "https://api.the-odds-api.com"
 # Connect quickly, allow longer read for the full slate response.
 _TIMEOUT = httpx.Timeout(connect=4.0, read=15.0, write=10.0, pool=4.0)
 
+# Module-level client — reused for HTTP keep-alive.  See mlb_api.py for
+# rationale.  Closed by app/main.py's lifespan handler at shutdown.
+_CLIENT = httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True)
+
+
+async def aclose() -> None:
+    """Close the module-level client.  Called at app shutdown."""
+    await _CLIENT.aclose()
+
 # Maps MLB team abbreviations to the team-name fragments used in The Odds API.
 # The Odds API uses full city/franchise names; we match on these fragments.
 ODDS_API_TEAM_FRAGMENTS: dict[str, list[str]] = {
@@ -115,8 +124,7 @@ async def fetch_mlb_odds(api_key: str, game_date: date) -> list[dict]:
         reraise=True,
     )
     async def _fetch() -> httpx.Response:
-        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
-            return await client.get(f"{_BASE_URL}/v4/sports/baseball_mlb/odds", params=params)
+        return await _CLIENT.get(f"{_BASE_URL}/v4/sports/baseball_mlb/odds", params=params)
 
     resp = await _fetch()
 

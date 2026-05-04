@@ -245,6 +245,19 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
+    # Close pooled HTTP clients so connections are returned cleanly at shutdown.
+    from app.core import mlb_api as _mlb_api
+    from app.core import odds_api as _odds_api
+    from app.core import open_meteo as _open_meteo
+    from app.core import rotowire as _rotowire
+    for _close in (
+        _mlb_api.aclose, _odds_api.aclose, _open_meteo.aclose, _rotowire.aclose,
+    ):
+        try:
+            await _close()
+        except Exception as exc:
+            logger.warning("HTTP client close failed: %s", exc)
+
 
 app = FastAPI(
     title="Ben Oracle",
