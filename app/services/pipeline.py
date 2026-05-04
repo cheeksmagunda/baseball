@@ -694,6 +694,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             env_factors=env_factors,
             game_id=game_id,
             is_pitcher=is_pitcher,
+            is_rookie_track=result.is_rookie_track,
             series_team_wins=series_team_w,
             series_opp_wins=series_opp_w,
             team_l10_wins=team_l10,

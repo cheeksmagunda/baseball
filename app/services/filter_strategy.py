@@ -85,6 +85,9 @@ from app.core.constants import (
     QUALITY_SP_ERA_THRESHOLD,
     # V10.6 — asymmetric pitcher env ceiling (vs batter)
     PITCHER_ENV_MODIFIER_CEILING,
+    # V13.3 — rookie env cap + position-volume haircut
+    ROOKIE_ENV_MODIFIER_CEILING,
+    POSITION_VOLUME_MULTIPLIER,
 )
 from app.core.utils import BASE_MULTIPLIER, graduated_scale
 
@@ -807,6 +810,14 @@ class FilteredCandidate:
     # so users understand why position ≠ slot assignment.
     is_two_way_pitcher: bool = False
 
+    # V13.3: rookie-track players have no MLB quality signal — their
+    # trait_factor is fixed at 1.0 by score_rookie, so EV is purely
+    # env-driven.  _compute_base_ev applies ROOKIE_ENV_MODIFIER_CEILING
+    # (1.10) instead of the regular pitcher/batter ceiling (1.55/1.30)
+    # so unproven players cannot beat established trait-rated players
+    # on env alone.  Sourced from PlayerScoreResult.is_rookie_track.
+    is_rookie_track: bool = False
+
     # Computed by the optimizer
     filter_ev: float = 0.0
 
@@ -879,13 +890,27 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
     """
     raw_env = max(candidate.env_score, 0.0)
     # V10.6 (April 28-29 evaluation): asymmetric env ceiling — pitchers cap at
-    # PITCHER_ENV_MODIFIER_CEILING (1.20) vs batters at ENV_MODIFIER_CEILING
+    # PITCHER_ENV_MODIFIER_CEILING (1.55, V13) vs batters at ENV_MODIFIER_CEILING
     # (1.30).  Pitcher outcomes are 1-player-dependent, so over-saturating
     # pitcher EV (5 env factors trivially → 1.0 saturation → 1.30 multiplier)
     # priced batters out of the top-10 even on shootout slates.  The harness
     # showed 54% of model top-10 were pitchers (target ~40%); tightening the
     # pitcher band lets exceptional batter env situations compete.
-    env_ceiling = PITCHER_ENV_MODIFIER_CEILING if candidate.is_pitcher else ENV_MODIFIER_CEILING
+    #
+    # V13.3 (May 2026): rookie-track players cap at ROOKIE_ENV_MODIFIER_CEILING
+    # (1.10).  Their trait_factor is fixed at 1.0 (neutral, by score_rookie),
+    # so without an env cap a rookie pitcher in the V13 underdog-peak ML zone
+    # (mild underdog +100..+150, low O/U, pitcher park) saturates env to 1.55
+    # and tops EV — exactly the wrong outcome (debutants/spot starters with
+    # no MLB track record beating established arms).  Same logic on the
+    # batter side: a rookie call-up in a stack-eligible game shouldn't out-EV
+    # a proven veteran in the same context.  Cap rookies just above neutral.
+    if candidate.is_rookie_track:
+        env_ceiling = ROOKIE_ENV_MODIFIER_CEILING
+    elif candidate.is_pitcher:
+        env_ceiling = PITCHER_ENV_MODIFIER_CEILING
+    else:
+        env_ceiling = ENV_MODIFIER_CEILING
     env_factor = ENV_MODIFIER_FLOOR + raw_env * (env_ceiling - ENV_MODIFIER_FLOOR)
     env_factor = max(ENV_MODIFIER_FLOOR, min(env_ceiling, env_factor))
 
@@ -926,12 +951,27 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
     stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
     dnp_adj = _compute_dnp_adjustment(candidate)
 
+    # V13.3 (May 2026): position-volume multiplier.  Pitchers bypass — they
+    # already have their own env ceiling.  For batters, catchers and middle
+    # infielders historically win 0% of slot-1 spots (40-slate audit) due to
+    # ~30% fewer PAs/game (rest days, pinch-hits, late-inning pulls).
+    # Without this haircut, an elite-OPS catcher in a stack-eligible game
+    # tops EV over outfielders / 1B / DH with the same trait + env, but
+    # never delivers the slot-1 winning RS in practice.
+    if candidate.is_pitcher:
+        position_mult = 1.0
+    else:
+        position_mult = POSITION_VOLUME_MULTIPLIER.get(
+            (candidate.position or "").upper(), 1.0
+        )
+
     return (
         env_factor
         * volatility_amplifier
         * trait_factor
         * stack_bonus
         * dnp_adj
+        * position_mult
         * 100.0
     )
 

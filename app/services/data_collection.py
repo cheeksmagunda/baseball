@@ -1029,7 +1029,7 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats:
     # traditional track.
     from app.core.constants import (
         ROOKIE_GAMES_THRESHOLD,
-        ROOKIE_PITCHER_IP_THRESHOLD,
+        PITCHER_FALLBACK_MIN_PRIOR_IP,
     )
     pos = (player.position or "").upper()
     if pos in ("P", "SP", "RP"):
@@ -1044,7 +1044,15 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats:
                 "current+prior-season fetch — model default failed.  Cannot "
                 "decide rookie-track without a number."
             )
-        rookie = ps.ip < ROOKIE_PITCHER_IP_THRESHOLD
+        # V13.3: tighten the gate.  ROOKIE_PITCHER_IP_THRESHOLD (5.0) catches
+        # true debutants but lets thin-sample spot starters slip through —
+        # e.g., a pitcher with 6 IP / 0.00 ERA / 0.33 WHIP from one prior
+        # start has those numbers trusted at face value, which combined
+        # with V13's underdog-peak ML reward saturated env to top-EV pitcher
+        # for an unproven arm.  Use the higher PITCHER_FALLBACK_MIN_PRIOR_IP
+        # (30.0) as the rookie-track gate so thin-prior pitchers get the
+        # rookie env cap (1.10) rather than the regular pitcher cap (1.55).
+        rookie = ps.ip < PITCHER_FALLBACK_MIN_PRIOR_IP
     else:
         # Batter: rookie if combined current+prior games is below threshold.
         # Same model-default contract: ps.games is `Integer, default=0`.

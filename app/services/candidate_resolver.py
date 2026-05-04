@@ -258,6 +258,7 @@ async def resolve_candidates(
             game_id=pre["game_id"],
             is_pitcher=pre["is_pitcher"],
             is_two_way_pitcher=pre["is_two_way_pitcher"],
+            is_rookie_track=score_result.is_rookie_track,
             traits=score_result.traits,
             batting_order=card.batting_order,
             series_team_wins=pre.get("series_team_wins"),

@@ -28,6 +28,11 @@ from app.core.constants import (
     MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT,
     SLOT_MULTIPLIERS,
     STACK_BONUS,
+    ROOKIE_ENV_MODIFIER_CEILING,
+    POSITION_VOLUME_MULTIPLIER,
+    ENV_MODIFIER_FLOOR,
+    ENV_MODIFIER_CEILING,
+    PITCHER_ENV_MODIFIER_CEILING,
 )
 from app.services.filter_strategy import StackableGame
 
@@ -47,6 +52,7 @@ def _make_candidate(
     batting_order: int | None = 3,
     env_unknown_count: int = 0,
     is_in_blowout_game: bool = False,
+    is_rookie_track: bool = False,
     traits: list | None = None,
 ) -> FilteredCandidate:
     return FilteredCandidate(
@@ -61,6 +67,7 @@ def _make_candidate(
         traits=traits or [],
         batting_order=batting_order if not is_pitcher else None,
         is_in_blowout_game=is_in_blowout_game,
+        is_rookie_track=is_rookie_track,
     )
 
 
@@ -490,6 +497,108 @@ class TestBaseEV:
         ev_low = _compute_base_ev(low_env)
         ev_high = _compute_base_ev(high_env)
         assert ev_high > ev_low
+
+
+# ===================================================================
+# 7b. V13.3 — Position multiplier + rookie env cap
+# ===================================================================
+
+class TestV133PositionAndRookie:
+    """Regression tests for V13.3: catcher/2B/SS volume haircut + rookie env cap."""
+
+    def test_catcher_ev_less_than_outfielder_same_context(self):
+        """Catcher EV is haircut by POSITION_VOLUME_MULTIPLIER vs OF (same env+trait)."""
+        of = _make_candidate(position="OF", env_score=0.8, total_score=70.0)
+        c = _make_candidate(position="C", env_score=0.8, total_score=70.0)
+        ev_of = _compute_base_ev(of)
+        ev_c = _compute_base_ev(c)
+        assert ev_c < ev_of
+        # The C multiplier (0.90) should be the precise ratio
+        assert ev_c == pytest.approx(ev_of * POSITION_VOLUME_MULTIPLIER["C"], rel=0.001)
+
+    def test_middle_infield_takes_smaller_haircut(self):
+        """2B and SS take 0.95 haircut (less than C's 0.90)."""
+        of = _make_candidate(position="OF", env_score=0.7, total_score=60.0)
+        ss = _make_candidate(position="SS", env_score=0.7, total_score=60.0)
+        ev_of = _compute_base_ev(of)
+        ev_ss = _compute_base_ev(ss)
+        assert ev_ss == pytest.approx(ev_of * POSITION_VOLUME_MULTIPLIER["SS"], rel=0.001)
+
+    def test_pitcher_does_not_pay_position_multiplier(self):
+        """Pitchers bypass the position multiplier entirely."""
+        # Position string for pitcher is forced to "SP" by the helper; even
+        # if we passed "C" by hand, the is_pitcher branch should skip the lookup.
+        p = _make_candidate(is_pitcher=True, env_score=0.7, total_score=60.0)
+        ev_p = _compute_base_ev(p)
+        # Reconstruct via known multipliers — no position haircut applies.
+        # Bare check: EV is not silently 0.90 of itself.
+        assert ev_p > 0
+        # Confirm by comparing with explicit non-haircut position
+        of = _make_candidate(position="OF", env_score=0.7, total_score=60.0)
+        ev_of = _compute_base_ev(of)
+        # Pitchers use PITCHER_ENV_MODIFIER_CEILING (1.55) vs batter ENV_MODIFIER_CEILING (1.30)
+        # so direct EV comparison isn't equality, but the relationship should be:
+        # P should be MORE than the OF result × pitcher-vs-batter env ratio.
+        assert ev_p > ev_of  # pitcher's larger env ceiling dominates
+
+    def test_rookie_pitcher_env_capped_at_rookie_ceiling(self):
+        """Rookie-track pitcher in saturated env can't exceed ROOKIE_ENV_MODIFIER_CEILING."""
+        rookie_p = _make_candidate(
+            is_pitcher=True,
+            is_rookie_track=True,
+            env_score=1.0,  # fully saturated env
+            total_score=50.0,  # neutral trait (rookie)
+        )
+        ev = _compute_base_ev(rookie_p)
+        # With env_factor capped at 1.10 and trait at ~1.0 (50/100 maps neutral),
+        # EV should be ≤ 1.10 × 1.0 × 1.0 × 1.0 × 1.0 × 100 = 110
+        assert ev <= ROOKIE_ENV_MODIFIER_CEILING * 100.0 + 1e-6
+
+    def test_non_rookie_pitcher_env_uses_pitcher_ceiling(self):
+        """Non-rookie pitcher in saturated env uses the higher PITCHER_ENV_MODIFIER_CEILING."""
+        veteran_p = _make_candidate(
+            is_pitcher=True,
+            is_rookie_track=False,
+            env_score=1.0,
+            total_score=50.0,
+        )
+        ev = _compute_base_ev(veteran_p)
+        # Veteran pitcher env saturates at PITCHER_ENV_MODIFIER_CEILING (1.55) → EV ≥ 110
+        assert ev > ROOKIE_ENV_MODIFIER_CEILING * 100.0
+        assert ev <= PITCHER_ENV_MODIFIER_CEILING * 100.0 + 1e-6
+
+    def test_rookie_pitcher_loses_to_veteran_in_same_env(self):
+        """In matched env, a rookie pitcher must lose EV to a veteran (otherwise V13.3 fails its goal)."""
+        rookie = _make_candidate(
+            name="Debutant",
+            is_pitcher=True,
+            is_rookie_track=True,
+            env_score=0.95,
+            total_score=50.0,  # rookie neutral
+        )
+        veteran = _make_candidate(
+            name="Veteran",
+            is_pitcher=True,
+            is_rookie_track=False,
+            env_score=0.95,
+            total_score=70.0,  # solid trait
+        )
+        ev_rookie = _compute_base_ev(rookie)
+        ev_vet = _compute_base_ev(veteran)
+        assert ev_vet > ev_rookie
+
+    def test_rookie_batter_env_also_capped(self):
+        """Rookie-track batter (rare) also gets ROOKIE_ENV_MODIFIER_CEILING."""
+        rookie_b = _make_candidate(
+            position="OF",
+            is_pitcher=False,
+            is_rookie_track=True,
+            env_score=1.0,
+            total_score=50.0,
+        )
+        ev = _compute_base_ev(rookie_b)
+        # Batter doesn't have stack/dnp/volatility extras, so cap-driven max ≤ 1.10
+        assert ev <= ROOKIE_ENV_MODIFIER_CEILING * 100.0 + 1e-6
 
 # ===================================================================
 # 8. Composition Enforcement
