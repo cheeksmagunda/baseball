@@ -254,12 +254,28 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
                 setattr(game, k9_field, stats["k_per_9"])
 
     # Strict assertion: every announced probable starter MUST have ERA/WHIP/K9
-    # after enrichment. If any are missing it means either (a) the Player row
-    # is absent (should be impossible after _ensure_probable_starters_present),
-    # or (b) PlayerStats has no row for them in this season (rookie debut /
-    # never had IP). Either way the batter env scoring downstream will crash
-    # — fail here with the specific (game, team, starter) so the gap is
-    # diagnosable from logs alone.
+    # after enrichment, UNLESS they're flagged for the rookie track (V13.2).
+    # A rookie-track pitcher is a true MLB debutant — no current-season IP and
+    # no prior-season fallback hit — and is scored separately via Statcast
+    # kinematics + env in scoring_engine.  Any non-rookie missing stats means
+    # either (a) the Player row is absent (should be impossible after
+    # _ensure_probable_starters_present), or (b) PlayerStats has no row for
+    # them in this season AND the player has crossed the rookie threshold —
+    # i.e. a real data-collection bug.  Fail here with the specific
+    # (game, team, starter) so the gap is diagnosable from logs alone.
+    starter_rookie_lookup: dict[str, bool] = {}
+    for sp in slate_players:
+        p = sp.player
+        if p is None:
+            continue
+        ps_row = (
+            db.query(PlayerStats)
+            .filter_by(player_id=p.id, season=game_date.year)
+            .first()
+        )
+        if ps_row is not None:
+            starter_rookie_lookup[p.name] = bool(ps_row.is_rookie_track)
+
     missing: list[str] = []
     for game in [g for g in games if is_game_remaining(g.game_status)]:
         for side, name_field, era_field, whip_field, k9_field in [
@@ -276,6 +292,14 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
             whip = getattr(game, whip_field)
             k9 = getattr(game, k9_field)
             if era is None or whip is None or k9 is None:
+                if starter_rookie_lookup.get(starter_name, False):
+                    logger.warning(
+                        "%s@%s %s starter %s on rookie scoring track "
+                        "(no ERA/WHIP/K9) — will be scored on Statcast "
+                        "kinematics + env only.",
+                        game.away_team, game.home_team, side, starter_name,
+                    )
+                    continue
                 missing.append(
                     f"{game.away_team}@{game.home_team} {side}={starter_name} "
                     f"era={era} whip={whip} k9={k9}"
@@ -284,9 +308,11 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
         raise RuntimeError(
             "Probable-starter stat enrichment incomplete after stage 2:\n  "
             + "\n  ".join(missing)
-            + "\nEvery announced starter must have ERA/WHIP/K9 in PlayerStats — "
-            "no fallbacks. Investigate /people/{mlb_id} stats hydrate or "
-            "active-roster vs probable-pitcher mismatch."
+            + "\nEvery announced non-rookie starter must have ERA/WHIP/K9 in "
+            "PlayerStats — no fallbacks. Investigate /people/{mlb_id} stats "
+            "hydrate or active-roster vs probable-pitcher mismatch.  True "
+            "rookie debutants are auto-flagged for the rookie track in "
+            "fetch_player_season_stats and skip this gate."
         )
 
     # Strict assertion (V13.1): every RotoWire-projected batter MUST have OPS
@@ -324,6 +350,17 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
             .first()
         )
         if ps is None or ps.ops is None:
+            # Rookie-track batters (true MLB debutants — no current-season + no
+            # prior-season hitting record) are scored separately on Statcast
+            # kinematics + env, so no OPS is required.  Any non-rookie missing
+            # OPS is a real data-collection bug and still raises.
+            if ps is not None and ps.is_rookie_track:
+                logger.warning(
+                    "%s #%s %s (mlb_id=%s) on rookie scoring track (no OPS) "
+                    "— will be scored on Statcast kinematics + env only.",
+                    sp.team, sp.batting_order, player.name, player.mlb_id,
+                )
+                continue
             ops_val = ps.ops if ps else "no_row"
             batter_missing.append(
                 f"{sp.team} #{sp.batting_order} {player.name} (mlb_id={player.mlb_id}) ops={ops_val}"
@@ -332,9 +369,11 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
         raise RuntimeError(
             "Batter OPS enrichment incomplete after stage 2:\n  "
             + "\n  ".join(batter_missing)
-            + "\nEvery RotoWire-projected batter must have OPS in PlayerStats — "
-            "no fallbacks. Investigate /people/{mlb_id} stats hydrate or the "
-            "prior-season hitting fallback path used for current-season PA=0 returners."
+            + "\nEvery RotoWire-projected non-rookie batter must have OPS in "
+            "PlayerStats — no fallbacks. Investigate /people/{mlb_id} stats "
+            "hydrate or the prior-season hitting fallback path used for "
+            "current-season PA=0 returners.  True rookies are auto-flagged "
+            "for the rookie track in fetch_player_season_stats."
         )
 
     # Fetch team batting and pitching stats for all teams on the slate.

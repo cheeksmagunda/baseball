@@ -127,9 +127,19 @@ def is_player_scoreable(stats: PlayerStats | None, is_pitcher: bool) -> bool:
         are None.
 
     Anyone failing this gate is dropped from the pool entirely.
+
+    V13.2 exception: rookie-track players (true MLB debutants flagged by
+    `fetch_player_season_stats`) are scoreable regardless of the traditional-
+    stat checks — they're routed to `score_rookie` which uses neutral
+    trait_factor + env-only EV.  Without this carve-out, every rookie
+    spot-starter and every September call-up batter would silently drop out
+    of the candidate pool, recreating the "rookie crashes the slate" failure
+    mode just one layer up.
     """
     if stats is None:
         return False
+    if stats.is_rookie_track:
+        return True
     if is_pitcher:
         if not stats.ip or stats.ip <= 0:
             return False

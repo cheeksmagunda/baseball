@@ -900,6 +900,38 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
                     player.name, mlb_id, log_count, prior_season,
                 )
 
+    # Rookie scoring track (V13.2). After both current-season fetch AND
+    # prior-season fallback have run, decide whether the player has enough
+    # MLB experience to be scored on the traditional trait engine.  True
+    # debutants (zero current-season + zero prior-season + below the games/IP
+    # threshold) are flagged here; the strict assertion in
+    # run_fetch_player_stats skips them, and scoring_engine routes them to
+    # the rookie scorer (Statcast kinematics + env-only, neutral trait_factor).
+    # Veterans whose prior-season fallback DID populate stats stay on the
+    # traditional track.
+    from app.core.constants import (
+        ROOKIE_GAMES_THRESHOLD,
+        ROOKIE_PITCHER_IP_THRESHOLD,
+    )
+    pos = (player.position or "").upper()
+    if pos in ("P", "SP", "RP"):
+        # Pitcher: rookie if combined current+prior IP is below threshold.
+        rookie = (ps.ip or 0.0) < ROOKIE_PITCHER_IP_THRESHOLD
+    else:
+        # Batter: rookie if combined current+prior games is below threshold.
+        rookie = (ps.games or 0) < ROOKIE_GAMES_THRESHOLD
+    if rookie and not ps.is_rookie_track:
+        ps.is_rookie_track = True
+        logger.warning(
+            "Player %s (mlb_id=%d, pos=%s) flagged for rookie scoring track: "
+            "games=%s ip=%s — will be scored on Statcast kinematics + env only.",
+            player.name, mlb_id, pos, ps.games, ps.ip,
+        )
+    elif (not rookie) and ps.is_rookie_track:
+        # A player previously flagged as rookie has crossed the threshold —
+        # clear the flag and let them rejoin the traditional track.
+        ps.is_rookie_track = False
+
     db.commit()
     return ps
 
@@ -1290,13 +1322,6 @@ async def enrich_slate_game_weather(db: Session, slate: Slate) -> int:
             park_team=park,
             use_archive=use_archive,
         )
-        if weather is None:
-            logger.warning(
-                "Weather unavailable for %s vs %s on %s — wind/temp will be excluded from env scoring",
-                game.home_team, game.away_team, slate.date,
-            )
-            continue
-
         game.wind_speed_mph  = weather["wind_speed_mph"]
         game.wind_direction  = weather["wind_direction"]
         game.temperature_f   = weather["temperature_f"]

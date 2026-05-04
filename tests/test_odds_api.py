@@ -64,8 +64,7 @@ async def test_fetch_mlb_odds_401_raises():
     mock_response = MagicMock()
     mock_response.status_code = 401
 
-    with patch("httpx.AsyncClient") as mock_client:
-        mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
+    with patch("app.core.odds_api._CLIENT.get", AsyncMock(return_value=mock_response)):
         with pytest.raises(RuntimeError, match="invalid API key"):
             await fetch_mlb_odds("valid_key", date(2026, 4, 28))
 
@@ -75,8 +74,7 @@ async def test_fetch_mlb_odds_422_raises():
     mock_response = MagicMock()
     mock_response.status_code = 422
 
-    with patch("httpx.AsyncClient") as mock_client:
-        mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
+    with patch("app.core.odds_api._CLIENT.get", AsyncMock(return_value=mock_response)):
         with pytest.raises(RuntimeError, match="quota exhausted"):
             await fetch_mlb_odds("valid_key", date(2026, 4, 28))
 
@@ -86,8 +84,7 @@ async def test_fetch_mlb_odds_500_raises():
     mock_response = MagicMock()
     mock_response.status_code = 500
 
-    with patch("httpx.AsyncClient") as mock_client:
-        mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
+    with patch("app.core.odds_api._CLIENT.get", AsyncMock(return_value=mock_response)):
         with pytest.raises(RuntimeError, match="unexpected status 500"):
             await fetch_mlb_odds("valid_key", date(2026, 4, 28))
 
@@ -127,8 +124,7 @@ async def test_fetch_mlb_odds_success_parses_response():
         }
     ]
 
-    with patch("httpx.AsyncClient") as mock_client:
-        mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
+    with patch("app.core.odds_api._CLIENT.get", AsyncMock(return_value=mock_response)):
         result = await fetch_mlb_odds("valid_key", date(2026, 4, 28))
 
     assert len(result) == 1
@@ -155,8 +151,7 @@ async def test_fetch_mlb_odds_unknown_team_raises():
         }
     ]
 
-    with patch("httpx.AsyncClient") as mock_client:
-        mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
+    with patch("app.core.odds_api._CLIENT.get", AsyncMock(return_value=mock_response)):
         with pytest.raises(RuntimeError, match="could not match teams"):
             await fetch_mlb_odds("valid_key", date(2026, 4, 28))
 
@@ -169,8 +164,7 @@ async def test_fetch_mlb_odds_empty_events():
     mock_response.headers = {"x-requests-remaining": "490"}
     mock_response.json.return_value = []
 
-    with patch("httpx.AsyncClient") as mock_client:
-        mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
+    with patch("app.core.odds_api._CLIENT.get", AsyncMock(return_value=mock_response)):
         result = await fetch_mlb_odds("valid_key", date(2026, 4, 28))
 
     assert result == []
