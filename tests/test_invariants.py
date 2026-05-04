@@ -187,6 +187,25 @@ class TestSchemaContract:
             "allowed in the live EV path."
         )
 
+    def test_slate_player_does_not_have_team_column(self):
+        """SlatePlayer.team must not exist — team lives on the related Player.
+
+        Regression: pipeline code that wants the team for a SlatePlayer must
+        go through `sp.player.team`, not `sp.team`. A `team` column on
+        SlatePlayer would mask AttributeError at the call site (which
+        previously fired in the rookie-track warning path) and let stale
+        denormalised values drift from Player.team. Keep the relationship as
+        the single source of truth.
+        """
+        from sqlalchemy import inspect as sa_inspect
+        from app.models.slate import SlatePlayer
+        cols = {c.name for c in sa_inspect(SlatePlayer).columns}
+        assert "team" not in cols, (
+            "SlatePlayer.team must not exist as a column — code that needs "
+            "the team should resolve via `sp.player.team` (or join Player "
+            "explicitly)."
+        )
+
 
 # ---------------------------------------------------------------------------
 # 3. Constant-perturbation rank stability

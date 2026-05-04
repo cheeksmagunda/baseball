@@ -185,6 +185,83 @@ class TestBuildStarterStatsCache:
 
 
 # ---------------------------------------------------------------------------
+# pipeline.run_fetch_player_stats — rookie-track batter tolerance
+# ---------------------------------------------------------------------------
+
+class TestRookieTrackBatterTolerance:
+    """Regression: a rookie-track batter with no current/prior-season OPS must
+    log a warning and be skipped, not crash the T-65 pipeline.
+
+    Pre-fix: `app/services/pipeline.py:376/381` used `sp.team`, which is not a
+    column on SlatePlayer (the team lives on the related Player row).  A
+    single MLB-debutant batter on the slate would raise AttributeError on the
+    warning's format args and abort the entire T-65 run.
+    """
+
+    @pytest.mark.asyncio
+    async def test_rookie_track_batter_no_ops_logs_and_continues(
+        self, db_session, monkeypatch
+    ):
+        from app.models.slate import SlatePlayer
+        from app.services import pipeline as pipeline_module
+
+        slate = Slate(date=date(2026, 5, 4), game_count=1, status="pending")
+        db_session.add(slate)
+        db_session.flush()
+
+        # Pre-populate a remaining game with full probable-starter stats so
+        # stage 3 (the pitcher ERA/WHIP/K9 gate) passes and we reach stage 4
+        # (the batter OPS gate) — which is where the regression lived.
+        game = SlateGame(
+            slate_id=slate.id,
+            home_team="NYY", away_team="BOS",
+            game_status="Preview",
+            home_starter="Home SP", away_starter="Away SP",
+            home_starter_era=3.50, home_starter_whip=1.10, home_starter_k_per_9=9.5,
+            away_starter_era=3.50, away_starter_whip=1.10, away_starter_k_per_9=9.5,
+        )
+        db_session.add(game)
+        db_session.flush()
+
+        rookie = Player(
+            name="Test Rookie", name_normalized=normalize_name("Test Rookie"),
+            team="NYY", position="OF", mlb_id=999_999,
+        )
+        db_session.add(rookie)
+        db_session.flush()
+
+        sp = SlatePlayer(
+            slate_id=slate.id, player_id=rookie.id,
+            batting_order=1, game_id=game.id, player_status="active",
+        )
+        db_session.add(sp)
+
+        # Rookie-track row: no OPS, flagged as a true MLB debutant.
+        ps = PlayerStats(
+            player_id=rookie.id, season=2026,
+            ops=None, is_rookie_track=True,
+        )
+        db_session.add(ps)
+        db_session.commit()
+
+        # Stage 1 (network fetch) must not crash — pre-populated PlayerStats
+        # is sufficient, so a no-op return is fine.
+        async def _noop(_db, _player):
+            return None
+
+        monkeypatch.setattr(
+            pipeline_module, "fetch_player_season_stats", _noop
+        )
+
+        # Pre-fix: AttributeError on `sp.team` aborts the run.
+        # Post-fix: warning is logged, the rookie is skipped, function returns.
+        result = await pipeline_module.run_fetch_player_stats(
+            db_session, date(2026, 5, 4)
+        )
+        assert "error" not in result, result
+
+
+# ---------------------------------------------------------------------------
 # lineup_cache
 # ---------------------------------------------------------------------------
 

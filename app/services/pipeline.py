@@ -373,12 +373,12 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
                 logger.warning(
                     "%s #%s %s (mlb_id=%s) on rookie scoring track (no OPS) "
                     "— will be scored on Statcast kinematics + env only.",
-                    sp.team, sp.batting_order, player.name, player.mlb_id,
+                    player.team, sp.batting_order, player.name, player.mlb_id,
                 )
                 continue
             ops_val = ps.ops if ps else "no_row"
             batter_missing.append(
-                f"{sp.team} #{sp.batting_order} {player.name} (mlb_id={player.mlb_id}) ops={ops_val}"
+                f"{player.team} #{sp.batting_order} {player.name} (mlb_id={player.mlb_id}) ops={ops_val}"
             )
     if batter_missing:
         raise RuntimeError(
