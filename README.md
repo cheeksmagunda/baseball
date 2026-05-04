@@ -296,7 +296,7 @@ pip install -e ".[dev]"
 # Copy and fill in environment variables
 cp .env.example .env
 
-# Run the server (DB schema is created via Alembic on startup)
+# Run the server (DB schema is rebuilt from SQLAlchemy models on every startup)
 uvicorn app.main:app --reload
 
 # Run tests
@@ -328,7 +328,7 @@ The database does not store historical data. Appending to the four files in `/da
 
 ## Deployment (Railway)
 
-The app includes a `Dockerfile` and `Procfile` for Railway deployment. Set `BO_DATABASE_URL` and `PORT` as environment variables. The database schema is created via Alembic on first startup. Only current-cycle live state is persisted.
+The app includes a `Dockerfile` and `Procfile` for Railway deployment. Set `BO_DATABASE_URL` and `PORT` as environment variables. The database schema is rebuilt from SQLAlchemy models (`Base.metadata.create_all()`) on every startup — there are no Alembic migrations because the DB stores only current-cycle live state and is ephemeral by design.
 
 ---
 

@@ -54,6 +54,13 @@ def _detect_two_way_pitcher(player, card: FilterCard, game: GameEnvironment) -> 
     """Check if a non-pitcher (e.g., DH) is the confirmed starter.
 
     Returns True if detected as a confirmed starter, False otherwise.
+
+    Matching priority:
+      1. mlb_id equality — the only authoritative match.
+      2. Token-set equality on lowercased, dot-stripped names — prevents
+         "Smith" from matching "Smith Jr." (false positive in the previous
+         loose substring check).  Both names must share the same set of
+         length-≥2 tokens to count as a match.
     """
     is_home = game.home_team.upper() == card.team.upper()
     starter_mlb_id = game.home_starter_mlb_id if is_home else game.away_starter_mlb_id
@@ -66,12 +73,18 @@ def _detect_two_way_pitcher(player, card: FilterCard, game: GameEnvironment) -> 
         )
         return True
 
-    if starter_name is not None:
-        card_name = card.player_name.lower().strip()
-        prob_name = starter_name.lower().strip()
-        if card_name in prob_name or prob_name in card_name:
+    if starter_name is not None and player.mlb_id is None:
+        # Only fall back to name matching if we have no mlb_id to verify
+        # against — otherwise mlb_id mismatch above is the real signal.
+        def _tokens(s: str) -> frozenset[str]:
+            return frozenset(
+                t for t in s.lower().replace(".", " ").split() if len(t) >= 2
+            )
+        card_tokens = _tokens(card.player_name)
+        prob_tokens = _tokens(starter_name)
+        if card_tokens and card_tokens == prob_tokens:
             logger.info(
-                "Two-way player detected (name match): %s (%s) is confirmed starter — treating as SP",
+                "Two-way player detected (token-set match): %s (%s) is confirmed starter — treating as SP",
                 card.player_name, card.team,
             )
             return True
@@ -177,9 +190,14 @@ async def resolve_candidates(
                 if player.mlb_id != starter_mlb_id:
                     continue
             elif starter_name is not None:
-                card_name = card.player_name.lower().strip()
-                prob_name = starter_name.lower().strip()
-                if card_name not in prob_name and prob_name not in card_name:
+                # Token-set equality — same matcher as _detect_two_way_pitcher.
+                # The previous substring check let "Smith" match "Smith Jr." in
+                # either direction, occasionally including a non-starter pitcher.
+                def _tokens(s: str) -> frozenset[str]:
+                    return frozenset(
+                        t for t in s.lower().replace(".", " ").split() if len(t) >= 2
+                    )
+                if _tokens(card.player_name) != _tokens(starter_name):
                     continue
 
             env_score, env_factors = compute_pitcher_env_score(

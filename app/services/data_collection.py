@@ -331,7 +331,11 @@ async def _ensure_probable_starters_present(db: Session, slate: Slate) -> int:
     if not games:
         return 0
 
-    needed: list[tuple[int, str, SlateGame, str]] = []  # (mlb_id, team, game, side)
+    # Collect every announced starter mlb_id, then batch the Player and
+    # SlatePlayer lookups — was 4 queries per game (4 starters × 2
+    # round-trips: Player.filter_by, SlatePlayer.filter_by) ≈ 60-80 queries
+    # for a 15-game slate.  Two queries total now regardless of slate size.
+    starter_specs: list[tuple[int, str, SlateGame, str]] = []
     for g in games:
         for mlb_id, team, side in (
             (g.home_starter_mlb_id, g.home_team, "home"),
@@ -339,23 +343,39 @@ async def _ensure_probable_starters_present(db: Session, slate: Slate) -> int:
         ):
             if not mlb_id:
                 continue
-            existing = db.query(Player).filter_by(mlb_id=mlb_id).first()
-            if existing is not None:
-                # Player exists — ensure SlatePlayer row exists for this slate
-                sp = (
-                    db.query(SlatePlayer)
-                    .filter_by(slate_id=slate.id, player_id=existing.id)
-                    .first()
-                )
-                if sp is None:
-                    db.add(SlatePlayer(
-                        slate_id=slate.id,
-                        player_id=existing.id,
-                        game_id=g.id,
-                        player_status="active",
-                    ))
-                continue
-            needed.append((mlb_id, team, g, side))
+            starter_specs.append((mlb_id, team, g, side))
+
+    starter_mlb_ids = [m for m, *_ in starter_specs]
+    existing_players = (
+        db.query(Player).filter(Player.mlb_id.in_(starter_mlb_ids)).all()
+        if starter_mlb_ids else []
+    )
+    player_by_mlb_id: dict[int, Player] = {p.mlb_id: p for p in existing_players}
+    existing_player_ids = [p.id for p in existing_players]
+    sp_existing = (
+        db.query(SlatePlayer)
+        .filter(
+            SlatePlayer.slate_id == slate.id,
+            SlatePlayer.player_id.in_(existing_player_ids),
+        )
+        .all()
+        if existing_player_ids else []
+    )
+    sp_by_player_id = {sp.player_id: sp for sp in sp_existing}
+
+    needed: list[tuple[int, str, SlateGame, str]] = []  # (mlb_id, team, game, side)
+    for mlb_id, team, g, side in starter_specs:
+        existing = player_by_mlb_id.get(mlb_id)
+        if existing is not None:
+            if sp_by_player_id.get(existing.id) is None:
+                db.add(SlatePlayer(
+                    slate_id=slate.id,
+                    player_id=existing.id,
+                    game_id=g.id,
+                    player_status="active",
+                ))
+            continue
+        needed.append((mlb_id, team, g, side))
 
     if not needed:
         return 0
@@ -637,7 +657,17 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
 
         elif stat_type == "season" and group.get("group", {}).get("displayName") == "pitching":
             ps.games = s.get("gamesPlayed", 0)
-            ps.ip = _safe_float(s.get("inningsPitched", "")) or 0.0
+            # MLB API returns "" for inningsPitched on players who haven't
+            # pitched (e.g. positional players with a one-off mop-up
+            # appearance shown only as a row but no real IP).  _safe_float
+            # converts that to None.  Treat None as "0 IP not pitched", which
+            # is what the API is signalling — explicit, not an `or 0.0`
+            # fallback hiding a parse error.  The strict assertion at the
+            # end of run_fetch_player_stats catches genuinely-missing ERA /
+            # WHIP / K9 for announced starters; the rookie-track gate in
+            # fetch_player_season_stats handles true MLB debutants.
+            parsed_ip = _safe_float(s.get("inningsPitched", ""))
+            ps.ip = parsed_ip if parsed_ip is not None else 0.0
             ps.era = _safe_float(s.get("era", ""))
             ps.whip = _safe_float(s.get("whip", ""))
             so = s.get("strikeOuts", 0)
@@ -735,7 +765,12 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
                     if not splits:
                         continue
                     s = splits[0].get("stat", {})
-                    prior_ip = _safe_float(s.get("inningsPitched", "")) or 0.0
+                    # _safe_float returns None on empty / sentinel strings.
+                    # Treat None as "no prior-season IP" — same as 0.0 — and
+                    # short-circuit via the next check.  Explicit None-gate
+                    # instead of `or 0.0` to make the intent obvious.
+                    prior_ip_parsed = _safe_float(s.get("inningsPitched", ""))
+                    prior_ip = prior_ip_parsed if prior_ip_parsed is not None else 0.0
                     if prior_ip <= 0:
                         continue
                     ps.ip = prior_ip
@@ -925,10 +960,27 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
     pos = (player.position or "").upper()
     if pos in ("P", "SP", "RP"):
         # Pitcher: rookie if combined current+prior IP is below threshold.
-        rookie = (ps.ip or 0.0) < ROOKIE_PITCHER_IP_THRESHOLD
+        # ps.ip is `Float, default=0.0` on the model — it is always a number
+        # after current-season + prior-season fetch.  A None here would mean
+        # the column-default failed, which is an ORM bug, not a missing-data
+        # event; fail loud rather than papering over with `or 0.0`.
+        if ps.ip is None:
+            raise RuntimeError(
+                f"Pitcher {player.name} (mlb_id={mlb_id}): ps.ip is None after "
+                "current+prior-season fetch — model default failed.  Cannot "
+                "decide rookie-track without a number."
+            )
+        rookie = ps.ip < ROOKIE_PITCHER_IP_THRESHOLD
     else:
         # Batter: rookie if combined current+prior games is below threshold.
-        rookie = (ps.games or 0) < ROOKIE_GAMES_THRESHOLD
+        # Same model-default contract: ps.games is `Integer, default=0`.
+        if ps.games is None:
+            raise RuntimeError(
+                f"Batter {player.name} (mlb_id={mlb_id}): ps.games is None after "
+                "current+prior-season fetch — model default failed.  Cannot "
+                "decide rookie-track without a number."
+            )
+        rookie = ps.games < ROOKIE_GAMES_THRESHOLD
     if rookie and not ps.is_rookie_track:
         ps.is_rookie_track = True
         logger.warning(
@@ -1161,14 +1213,21 @@ async def enrich_slate_game_series_context(db: Session, slate: Slate) -> int:
         completed game and `slate_date`.  0 = back-to-back (played yesterday),
         1 = one rest day, etc.  None = no completed games in lookback.
 
-        Raises RuntimeError if no completed games are found in the lookback
-        window — indicates an API or data problem mid-season.
+        Returns all-None on opening-day-class edge cases (no completed games
+        in the 14-day window).  These columns are observability-only post-V12:
+        the env scoring engine has explicitly deprecated series wins / L10
+        momentum / rest-days as inputs (`compute_batter_env_score` and
+        `compute_pitcher_env_score` mark them "V12: ignored").  A NULL here
+        therefore CANNOT corrupt env scoring — it just leaves the slate-game
+        row's display columns blank.  Logged at WARN so a sudden mid-season
+        gap is still investigable.
         """
         raw = team_games.get(team, [])
         if not raw:
             logger.warning(
                 "No completed games found for team %r in last 14 days — "
-                "series context will be NULL for this team",
+                "series context will be NULL for this team (display-only, "
+                "does not affect env scoring)",
                 team,
             )
             return None, None, None, None

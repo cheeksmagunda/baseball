@@ -263,16 +263,29 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     # them in this season AND the player has crossed the rookie threshold —
     # i.e. a real data-collection bug.  Fail here with the specific
     # (game, team, starter) so the gap is diagnosable from logs alone.
+    # Single batched PlayerStats query keyed by player_id — was N+1 (one
+    # query per slate player ≈ 200+ queries per slate).  We reuse the same
+    # dict for both the pitcher rookie-track lookup below AND the batter
+    # OPS gate further down.
+    slate_player_ids = [sp.player.id for sp in slate_players if sp.player is not None]
+    ps_by_player_id: dict[int, PlayerStats] = {}
+    if slate_player_ids:
+        ps_by_player_id = {
+            ps.player_id: ps
+            for ps in db.query(PlayerStats)
+            .filter(
+                PlayerStats.player_id.in_(slate_player_ids),
+                PlayerStats.season == game_date.year,
+            )
+            .all()
+        }
+
     starter_rookie_lookup: dict[str, bool] = {}
     for sp in slate_players:
         p = sp.player
         if p is None:
             continue
-        ps_row = (
-            db.query(PlayerStats)
-            .filter_by(player_id=p.id, season=game_date.year)
-            .first()
-        )
+        ps_row = ps_by_player_id.get(p.id)
         if ps_row is not None:
             starter_rookie_lookup[p.name] = bool(ps_row.is_rookie_track)
 
@@ -344,11 +357,8 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
             continue
         if (player.position or "").upper() in PITCHER_POSITIONS:
             continue
-        ps = (
-            db.query(PlayerStats)
-            .filter_by(player_id=player.id, season=game_date.year)
-            .first()
-        )
+        # Reuse the batched lookup built above — no per-batter SQL.
+        ps = ps_by_player_id.get(player.id)
         if ps is None or ps.ops is None:
             # Rookie-track batters (true MLB debutants — no current-season + no
             # prior-season hitting record) are scored separately on Statcast
