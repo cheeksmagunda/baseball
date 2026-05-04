@@ -289,6 +289,31 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
             "active-roster vs probable-pitcher mismatch."
         )
 
+    # Strict assertion: every RotoWire-projected batter (batting_order set) must
+    # have current-season PA.  PA=0 means either a debut (no scoreable data yet)
+    # or a stats collection gap — both are data problems that should fail loud
+    # here rather than being silently excluded by the DNP filter at stage 3.
+    games_by_id: dict[int, SlateGame] = {g.id: g for g in games}
+    missing_batter_pa: list[str] = []
+    for sp in slate_players:
+        player = sp.player
+        if player is None or sp.batting_order is None:
+            continue
+        if player.position in PITCHER_POSITIONS:
+            continue
+        game = games_by_id.get(sp.game_id)
+        if game is None or not is_game_remaining(game.game_status):
+            continue
+        ps = db.query(PlayerStats).filter_by(player_id=player.id, season=game_date.year).first()
+        if ps is None or not ps.pa:
+            missing_batter_pa.append(f"{player.name} ({player.team})")
+    if missing_batter_pa:
+        raise RuntimeError(
+            "Projected batters with no current-season PA after stage 2:\n  "
+            + "\n  ".join(missing_batter_pa)
+            + "\nEvery RotoWire-projected batter must have live MLB API batting stats."
+        )
+
     # Fetch team batting and pitching stats for all teams on the slate.
     if slate:
         await enrich_slate_game_team_stats(db, slate, game_date.year)
