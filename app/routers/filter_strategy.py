@@ -140,7 +140,7 @@ def _load_active_slate(db: Session, slate_date: date | None = None) -> tuple[lis
 
     # Build PlayerStats lookup for the season so we can apply the same DNP
     # exclusion as `run_score_slate`.  Without this, the resolver re-scores
-    # zero-PA / zero-IP players and `score_power_profile` raises (no fallback).
+    # zero-PA / zero-IP players and `score_offensive_profile` raises (no fallback).
     season = settings.current_season
     player_ids = [sp.player.id for sp in slate.players if sp.player]
     stats_lookup: dict[int, PlayerStats] = {}

@@ -117,8 +117,14 @@ def is_player_scoreable(stats: PlayerStats | None, is_pitcher: bool) -> bool:
     Batter requires:
       * stats row exists
       * PA > 0
+      * OPS populated (V13.1 — anchor for `score_offensive_profile`).
+        For batters returning from IL with current-season PA=0,
+        `fetch_player_season_stats` falls back to prior-season OPS so
+        the player carries a real, factual signal (mirroring the
+        existing pitcher IP=0 → prior-season ERA/WHIP/K9 path).
       * at least one Statcast power signal: avg_ev / hard_hit / barrel /
-        x_woba / max_ev — `score_power_profile` raises if all five are None.
+        x_woba / max_ev — `score_offensive_profile` raises if all five
+        are None.
 
     Anyone failing this gate is dropped from the pool entirely.
     """
@@ -133,6 +139,8 @@ def is_player_scoreable(stats: PlayerStats | None, is_pitcher: bool) -> bool:
             and stats.k_per_9 is not None
         )
     if stats.pa is None or stats.pa <= 0:
+        return False
+    if stats.ops is None:
         return False
     return any(
         v is not None

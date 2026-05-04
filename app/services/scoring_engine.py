@@ -13,10 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import (
     PITCHER_POSITIONS,
+    OFFENSIVE_PROFILE_OPS_CEILING,
+    OFFENSIVE_PROFILE_OPS_FLOOR,
     POWER_PROFILE_AVG_EV_MAX,
     POWER_PROFILE_BARREL_PCT_MAX,
     POWER_PROFILE_HARD_HIT_MAX,
-    POWER_PROFILE_MAX_EV_CEILING,
     POWER_PROFILE_X_WOBA_CEILING,
     POWER_PROFILE_X_WOBA_FLOOR,
     SCORING_CHASE_PCT_CEILING,
@@ -320,89 +321,84 @@ def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitRe
 # Batter trait scorers
 # ---------------------------------------------------------------------------
 
-def score_power_profile(stats: PlayerStats | None, max_pts: float) -> TraitResult:
-    """Score power based on Statcast kinematics + HR rate.
+def score_offensive_profile(stats: PlayerStats | None, max_pts: float) -> TraitResult:
+    """Score holistic offensive output: OPS-anchored season aggregate plus
+    Statcast kinematics for upside confirmation.
 
-    V10.0: rebuilt around what the target app actually rewards — distance of
-    the play.  Strategy doc §"Offensive Engine": avg exit velocity, hard-hit
-    %, and barrel % are the upstream signals that produce 400+ ft home runs
-    and 105 mph hits.  HR/PA and max EV are kept as thin confirmation
-    signals (2 pts each) — they lag the physical profile.
+    V13.1 sub-signals (out of POWER_PROFILE_DENOM = 30 sub-pts, scaled to
+    `max_pts`):
+      OPS                 → 10 pts  (ANCHOR — outcome-side, captures both
+                                     on-base and slugging in one number)
+      x_woba              →  7 pts  (Statcast contact-quality leading indicator)
+      hard_hit_pct        →  5 pts
+      barrel_pct          →  4 pts
+      avg_exit_velocity   →  4 pts
+      (max_exit_velocity DROPPED — 1pt of noise, redundant with hard_hit/barrel)
 
-    V10.8 components (25-pt denominator):
-      avg_exit_velocity  → 7 pts  (92 mph floor, league-avg power)
-      hard_hit_pct       → 7 pts  (50% → elite sluggers)
-      barrel_pct         → 6 pts  (15% → Stewart/DeLauter tier)
-      x_woba             → 4 pts  (NEW V10.8 — Statcast xwOBA, contact-quality leading indicator)
-      max_exit_velocity  → 1 pt   (V10.8: trimmed from 2 → 1, x_woba absorbs power-tail confirmation)
-      HR/PA              → 0 pts  (V10.8: removed — MLB API never populated reliably; lagging outcome anyway)
+    Why OPS, not ISO: OPS = OBP + SLG, which already captures slugging.
+    Adding ISO (= SLG − AVG) would double-count power exactly in the
+    direction we're trying to balance against.
 
-    The 25-pt total is preserved so the trait's contribution to total_score
-    stays comparable across versions and existing tests.
-
-    Strict policy (May 2026): a batter with zero PA, or whose Statcast row
-    has every signal None, is not scoreable from live data and is excluded
-    by the DNP filter upstream.  Reaching this function with PA=0 or a fully
-    empty Statcast row raises — the pool must not contain rookies with no
-    measurable MLB performance.
+    Strict policy: OPS is required.  The DNP filter (`is_player_scoreable`)
+    excludes any batter with `ops is None` upstream, so reaching this
+    function with `stats.ops is None` is a data-collection failure and
+    raises.  Statcast sub-signals retain the existing re-normalisation
+    pattern (they're allowed to be None for new call-ups whose Savant rows
+    haven't populated yet — the DNP filter requires only at least one).
     """
     if not stats or stats.pa == 0:
         raise RuntimeError(
-            "power_profile called with no stats or 0 PA for batter — "
+            "offensive_profile called with no stats or 0 PA for batter — "
             "upstream filter should have excluded this player"
         )
+    if stats.ops is None:
+        raise RuntimeError(
+            "offensive_profile: OPS is None for batter — "
+            "DNP filter should have excluded this player"
+        )
 
+    ops = stats.ops
     avg_ev = stats.avg_exit_velocity
     hard_hit = stats.hard_hit_pct
     barrel_pct = stats.barrel_pct
-    max_ev = stats.max_exit_velocity
-    x_woba = stats.x_woba   # V10.8 — Savant xwOBA, contact-quality leading indicator
+    x_woba = stats.x_woba
+    # max_ev intentionally not read — dropped in V13.1.
 
     # Each sub-score is 0.0–1.0, then weighted by its point allotment.
+    ops_score = scale_score(ops, OFFENSIVE_PROFILE_OPS_FLOOR, OFFENSIVE_PROFILE_OPS_CEILING, 1.0)
     avg_ev_score = scale_score(avg_ev, 85.0, POWER_PROFILE_AVG_EV_MAX, 1.0) if avg_ev is not None else None
     hard_hit_score = scale_score(hard_hit, 30.0, POWER_PROFILE_HARD_HIT_MAX, 1.0) if hard_hit is not None else None
     barrel_score = scale_score(barrel_pct, 4.0, POWER_PROFILE_BARREL_PCT_MAX, 1.0) if barrel_pct is not None else None
-    max_ev_score = scale_score(max_ev, 105.0, POWER_PROFILE_MAX_EV_CEILING, 1.0) if max_ev is not None else None
     x_woba_score = scale_score(x_woba, POWER_PROFILE_X_WOBA_FLOOR, POWER_PROFILE_X_WOBA_CEILING, 1.0) if x_woba is not None else None
 
-    # Weighted sum. Missing sub-scores drop out of the numerator AND denominator
-    # so rookies with partial Statcast coverage aren't penalised for sparse data.
-    # V10.8 weights: avg_ev 7 + hard_hit 7 + barrel 6 + x_woba 4 + max_ev 1 = 25.
+    # Weighted sum. Missing Statcast sub-scores drop out of the numerator AND
+    # denominator so call-ups with partial Savant coverage aren't penalised
+    # for sparse kinematics data.  OPS is always present (strict).
     components = [
-        (avg_ev_score, 7.0, "EV"),
-        (hard_hit_score, 7.0, "HH%"),
-        (barrel_score, 6.0, "brl%"),
-        (x_woba_score, 4.0, "xwOBA"),
-        (max_ev_score, 1.0, "maxEV"),
+        (ops_score, 10.0, "OPS"),
+        (x_woba_score, 7.0, "xwOBA"),
+        (hard_hit_score, 5.0, "HH%"),
+        (barrel_score, 4.0, "brl%"),
+        (avg_ev_score, 4.0, "EV"),
     ]
     weighted_sum = sum(s * w for s, w, _ in components if s is not None)
     denom = sum(w for s, w, _ in components if s is not None)
-    if denom == 0:
-        raise RuntimeError(
-            "power_profile: batter has stats but every Statcast signal is None "
-            "(avg_ev/hard_hit/barrel/x_woba/max_ev) — upstream DNP filter "
-            "should have excluded this player"
-        )
+    # denom >= 10 always (OPS is required).
 
-    # Scale the realised fraction up to the full POWER_PROFILE_DENOM (25) so a
-    # partial-data batter can still saturate max_pts if their present signals
-    # all max out — but not arbitrarily: the denominator reflects evidence.
     total = (weighted_sum / denom) * max_pts
 
-    detail_parts = []
-    if avg_ev is not None:
-        detail_parts.append(f"{avg_ev:.1f} avg EV")
+    detail_parts = [f"{ops:.3f} OPS"]
+    if x_woba is not None:
+        detail_parts.append(f"{x_woba:.3f} xwOBA")
     if hard_hit is not None:
         detail_parts.append(f"{hard_hit:.0f}% hard-hit")
     if barrel_pct is not None:
         detail_parts.append(f"{barrel_pct:.0f}% barrel")
-    if x_woba is not None:
-        detail_parts.append(f"{x_woba:.3f} xwOBA")
-    if max_ev is not None:
-        detail_parts.append(f"{max_ev:.1f} max EV")
+    if avg_ev is not None:
+        detail_parts.append(f"{avg_ev:.1f} avg EV")
 
     return TraitResult(
-        "power_profile",
+        "offensive_profile",
         round(total, 1),
         max_pts,
         " ".join(detail_parts),
@@ -611,7 +607,7 @@ def score_batter(
     w = (weights or ScoringWeights()).batter
 
     traits = [
-        score_power_profile(stats, w.power_profile),
+        score_offensive_profile(stats, w.offensive_profile),
         score_batter_recent_form(game_logs, w.recent_form),
         score_hot_streak(game_logs, w.hot_streak),
         score_speed_component(stats, w.speed_component),
@@ -647,7 +643,7 @@ def score_player(
     The is_pitcher override is required for two-way players (e.g. Ohtani) whose
     DB position is 'DH' but who are confirmed starters for today's game.
     Without the override, score_player routes them to score_batter, producing
-    batter traits (power_profile, etc.) while the caller expects pitcher traits
+    batter traits (offensive_profile, etc.) while the caller expects pitcher traits
     (k_rate, ace_status, etc.), silently corrupting their EV calculation.
     """
     from app.config import settings

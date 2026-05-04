@@ -412,35 +412,46 @@ QUALITY_SP_ERA_THRESHOLD = 3.5
 # V10.0: rebalanced to reflect the strategy-doc hierarchy — average exit
 # velocity and hard-hit % are the ground-truth signals; ISO/HR are outcome
 # proxies that lag.  When Statcast data is present, it dominates.
-#   avg EV     ≥ AVG_EV_MAX (≈ 92 mph)       → 8 points
-#   hard-hit % ≥ HARD_HIT_MAX (≈ 50%)        → 7 points
-#   barrel %   ≥ BARREL_PCT_MAX              → 6 points
-#   max EV     ≥ MAX_EV_CEILING (≈ 112 mph)  → 2 points
-#   HR/PA      ≥ HR_PA_MAX                   → 2 points
-# Sum is normalised by POWER_PROFILE_DENOM (25).
-# ISO was removed as a power signal — it is a downstream SLG-AVG outcome that
-# correlates with exit velocity but adds noise.  The V9.x code read ps.iso
-# regardless and the MLB API never populated it.
+# V13.1 — `score_offensive_profile` (formerly score_power_profile).  The
+# 40-pt batter trait was rebuilt around season OPS as the holistic anchor
+# instead of pure Statcast kinematics.  A high-OPS contact-and-on-base
+# hitter (Arraez, Freeman) used to score ~6/40 because the trait only saw
+# exit-velo / hard-hit / barrels — none of which fire for singles+walks
+# profiles.  With OPS as the dominant sub-signal (10 of 30 sub-pts), those
+# hitters now reach the EV pool on their own merit when matchup conditions
+# favor them — no diversity quota, no categorical contact-vs-power slicer.
+#
+# Sub-signal weights (out of OFFENSIVE_PROFILE_DENOM = 30 sub-pts, scaled
+# to the trait's 40 max_pts inside `score_offensive_profile`):
+#   OPS         (anchor)               → 10 sub-pts  (NEW V13.1)
+#   x_woba                              →  7 sub-pts  (bumped from 4)
+#   hard_hit_pct                        →  5 sub-pts  (trimmed from 7)
+#   barrel_pct                          →  4 sub-pts  (trimmed from 6)
+#   avg_exit_velocity                   →  4 sub-pts  (trimmed from 7)
+#   max_exit_velocity                   →  0 sub-pts  (DROPPED — 1pt of noise,
+#                                                     xwOBA + barrel cover the
+#                                                     power-tail confirmation)
+#
+# OPS floor 0.700 / ceiling 0.950.  League-average regular OPS is ~0.730;
+# 0.950+ is the Judge/Soto tier.  ISO is NOT used as a sub-signal — OPS
+# already includes SLG, and adding ISO would double-count power exactly
+# in the direction we're trying to balance against.  ISO continues to be
+# computed and stored on PlayerStats for historical reference only.
+OFFENSIVE_PROFILE_OPS_FLOOR = 0.700
+OFFENSIVE_PROFILE_OPS_CEILING = 0.950
 POWER_PROFILE_BARREL_PCT_MAX = 15.0
 POWER_PROFILE_AVG_EV_MAX = 92.0
 POWER_PROFILE_HARD_HIT_MAX = 50.0
-POWER_PROFILE_MAX_EV_CEILING = 112.0
-POWER_PROFILE_DENOM = 25.0
+POWER_PROFILE_DENOM = 30.0
 
-# V10.8 — batter xwOBA scaling for power_profile.  Replaces some weight from
-# HR/PA (a lagging outcome proxy that the MLB API never reliably populates)
-# with the industry-standard quality-of-contact signal.  xwOBA derives from
-# exit velocity + launch angle (and sprint speed for some batted balls); it
-# captures the full value of contact, including weak grounders and warning-
-# track flies that don't show up in HR counts.  See MLB Glossary on
-# xwOBA: https://www.mlb.com/glossary/statcast/expected-woba
+# V10.8 — batter xwOBA scaling.  xwOBA derives from exit velocity + launch
+# angle (and sprint speed for some batted balls); it captures the full
+# value of contact, including weak grounders and warning-track flies that
+# don't show up in HR counts.  See MLB Glossary on xwOBA:
+# https://www.mlb.com/glossary/statcast/expected-woba
 #
 # Floor 0.300 = league-average wOBA (no credit), ceiling 0.400 = elite
-# (Judge / Soto / Ohtani tier, full credit).  4 points out of the 25-pt
-# power_profile denom — meaningful weight without dominating the kinematic
-# signals.  Redistribution is balanced inside `score_power_profile` by
-# trimming HR/PA from 2 → 1 and shaving 1 point off avg_ev / hard_hit
-# (8+7→7+7); the denom stays at 25 so existing tests don't drift.
+# (Judge / Soto / Ohtani tier, full credit).
 POWER_PROFILE_X_WOBA_FLOOR = 0.300        # at or below → 0 contribution
 POWER_PROFILE_X_WOBA_CEILING = 0.400      # at or above → full contribution
 
