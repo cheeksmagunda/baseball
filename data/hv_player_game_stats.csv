@@ -650,23 +650,43 @@ date,player_name,team_actual,position,real_score,card_boost,game_result,ab,r,h,h
 2026-05-01,Vinnie Pasquantino,KC,OF,3.4,3.0,KC 7 SEA 6,5.0,2.0,2.0,1.0,2.0,0.0,2.0,,,,,"2-5 | HR, 2 K, 2 RBI | vs SEA (away)",0.631,0.176
 2026-05-01,Munetaka Murakami,CWS,OF,3.5,2.4,CWS 8 SD 2,3.0,1.0,1.0,1.0,3.0,2.0,0.0,,,,,"1-3 | HR, 2 BB, 3 RBI | vs SD (away)",0.967,0.345
 2026-05-01,Ben Rice,NYY,OF,3.9,1.9,BAL 2 NYY 7,5.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, R | vs BAL (home)",1.169,0.398
-2026-05-02,Cody Bellinger,NYY,OF,8.5,3.0,BAL 4 NYY 9,,,,,,,,,,,,auto-scraped (box score backfill pending),0.855,0.207
-2026-05-02,Drake Baldwin,ATL,OF,6.3,2.2,ATL 9 COL 1,,,,,,,,,,,,auto-scraped (box score backfill pending),0.913,0.210
-2026-05-02,Shea Langeliers,ATH,OF,5.7,2.3,CLE 14 ATH 6,,,,,,,,,,,,auto-scraped (box score backfill pending),1.017,0.291
-2026-05-02,Ian Happ,CHC,OF,4.8,3.0,ARI 0 CHC 2,,,,,,,,,,,,auto-scraped (box score backfill pending),0.890,0.271
-2026-05-02,Konnor Griffin,PIT,OF,4.4,3.0,CIN 7 PIT 17,,,,,,,,,,,,auto-scraped (box score backfill pending),0.714,0.130
-2026-05-02,Dillon Dingler,DET,OF,4.3,2.7,TEX 1 DET 5,,,,,,,,,,,,auto-scraped (box score backfill pending),0.825,0.238
-2026-05-02,Trent Grisham,NYY,OF,4.0,3.0,BAL 4 NYY 9,,,,,,,,,,,,auto-scraped (box score backfill pending),0.675,0.198
-2026-05-02,Oswald Peraza,LAA,OF,3.7,3.0,NYM 3 LAA 4,,,,,,,,,,,,auto-scraped (box score backfill pending),0.850,0.194
-2026-05-02,Christian Walker,HOU,OF,4.2,2.4,HOU 6 BOS 3,,,,,,,,,,,,auto-scraped (box score backfill pending),0.963,0.268
-2026-05-02,Marcell Ozuna,PIT,OF,4.3,3.0,CIN 7 PIT 17,,,,,,,,,,,,auto-scraped (box score backfill pending),0.550,0.111
-2026-05-02,Brice Matthews,HOU,OF,4.2,3.0,HOU 6 BOS 3,,,,,,,,,,,,auto-scraped (box score backfill pending),0.727,0.200
-2026-05-02,Ryan O'Hearn,PIT,OF,3.8,2.6,CIN 7 PIT 17,,,,,,,,,,,,auto-scraped (box score backfill pending),0.888,0.171
-2026-05-02,Kazuma Okamoto,TOR,OF,3.4,3.0,TOR 11 MIN 4,,,,,,,,,,,,auto-scraped (box score backfill pending),0.770,0.219
-2026-05-02,Lenyn Sosa,TOR,OF,3.8,3.0,TOR 11 MIN 4,,,,,,,,,,,,auto-scraped (box score backfill pending),0.515,0.091
-2026-05-02,Nathaniel Lowe,CIN,OF,3.4,2.9,CIN 7 PIT 17,,,,,,,,,,,,auto-scraped (box score backfill pending),0.991,0.339
-2026-05-02,Max Meyer,MIA,P,7.8,0.0,PHI 0 MIA 4,,,,,,,,,,,,auto-scraped (box score backfill pending),,
-2026-05-02,Brandon Valenzuela,TOR,OF,3.2,3.0,TOR 11 MIN 4,,,,,,,,,,,,auto-scraped (box score backfill pending),0.680,0.210
-2026-05-02,Myles Straw,TOR,OF,3.4,3.0,TOR 11 MIN 4,,,,,,,,,,,,auto-scraped (box score backfill pending),0.806,0.163
-2026-05-02,Austin Riley,ATL,OF,3.1,3.0,ATL 9 COL 1,,,,,,,,,,,,auto-scraped (box score backfill pending),0.633,0.141
-2026-05-02,Emerson Hancock,SEA,P,7.2,0.0,KC 3 SEA 2,,,,,,,,,,,,auto-scraped (box score backfill pending),,
+2026-05-02,Cody Bellinger,NYY,OF,8.5,3.0,BAL 4 NYY 9,4.0,3.0,4.0,2.0,4.0,0.0,0.0,,,,,"4-4 | 2 HR, 2B, 4 RBI | vs BAL (home)",0.855,0.207
+2026-05-02,Drake Baldwin,ATL,OF,6.3,2.2,ATL 9 COL 1,4.0,1.0,3.0,1.0,4.0,1.0,1.0,,,,,"3-4 | HR, 2B, BB | vs COL (away)",0.913,0.210
+2026-05-02,Shea Langeliers,ATH,OF,5.7,2.3,CLE 14 ATH 6,5.0,2.0,3.0,2.0,3.0,0.0,0.0,,,,,"3-5 | 2 HR, 3 RBI, 2 R | vs CLE (home)",1.017,0.291
+2026-05-02,Ian Happ,CHC,OF,4.8,3.0,AZ 0 CHC 2,3.0,2.0,3.0,1.0,1.0,1.0,0.0,,,,,"3-3 | HR, 3B, 2B | vs AZ (home)",0.890,0.271
+2026-05-02,Konnor Griffin,PIT,OF,4.4,3.0,CIN 7 PIT 17,5.0,1.0,4.0,0.0,2.0,1.0,0.0,,,,,"4-5 | 3B, 2B, BB | vs CIN (home)",0.714,0.130
+2026-05-02,Dillon Dingler,DET,OF,4.3,2.7,TEX 1 DET 5,4.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-4 | HR, 3 RBI, R | vs TEX (home)",0.825,0.238
+2026-05-02,Trent Grisham,NYY,OF,4.0,3.0,BAL 4 NYY 9,4.0,2.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-4 | HR, 2B, BB | vs BAL (home)",0.675,0.198
+2026-05-02,Oswald Peraza,LAA,OF,3.7,3.0,NYM 3 LAA 4,5.0,0.0,3.0,0.0,1.0,0.0,0.0,,,,,"3-5 | 2B, RBI | vs NYM (home)",0.850,0.194
+2026-05-02,Christian Walker,HOU,OF,4.2,2.4,HOU 6 BOS 3,4.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-4 | HR, HBP, 2 RBI | vs BOS (away)",0.963,0.268
+2026-05-02,Marcell Ozuna,PIT,OF,4.3,3.0,CIN 7 PIT 17,5.0,3.0,3.0,0.0,3.0,1.0,2.0,,,,,"3-5 | 2B, BB, 2 K | vs CIN (home)",0.550,0.111
+2026-05-02,Brice Matthews,HOU,OF,4.2,3.0,HOU 6 BOS 3,3.0,1.0,2.0,1.0,3.0,1.0,1.0,,,,,"2-3 | HR, BB, K | vs BOS (away)",0.727,0.200
+2026-05-02,Ryan O'Hearn,PIT,OF,3.8,2.6,CIN 7 PIT 17,4.0,3.0,2.0,0.0,3.0,1.0,2.0,,,,,"2-4 | 2B, BB, 2 K | vs CIN (home)",0.888,0.171
+2026-05-02,Kazuma Okamoto,TOR,OF,3.4,3.0,TOR 11 MIN 4,5.0,2.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-5 | HR, 2 RBI, 2 R | vs MIN (away)",0.770,0.219
+2026-05-02,Lenyn Sosa,TOR,OF,3.8,3.0,TOR 11 MIN 4,5.0,2.0,2.0,1.0,2.0,0.0,2.0,,,,,"2-5 | HR, 2 K, 2 RBI | vs MIN (away)",0.515,0.091
+2026-05-02,Nathaniel Lowe,CIN,OF,3.4,2.9,CIN 7 PIT 17,4.0,0.0,2.0,0.0,3.0,0.0,2.0,,,,,"2-4 | 2B, 2 K, 3 RBI | vs PIT (away)",0.991,0.339
+2026-05-02,Max Meyer,MIA,P,7.8,0.0,PHI 0 MIA 4,,,,,,,,7.0,0,7,W,"7.0 IP, 0 ER, 7 K, BB | vs PHI (home)",,
+2026-05-02,Brandon Valenzuela,TOR,OF,3.2,3.0,TOR 11 MIN 4,3.0,1.0,1.0,1.0,3.0,1.0,0.0,,,,,"1-3 | HR, BB, 3 RBI | vs MIN (away)",0.680,0.210
+2026-05-02,Myles Straw,TOR,OF,3.4,3.0,TOR 11 MIN 4,2.0,2.0,1.0,1.0,2.0,2.0,0.0,,,,,"1-2 | HR, 2 BB, 2 RBI | vs MIN (away)",0.806,0.163
+2026-05-02,Austin Riley,ATL,OF,3.1,3.0,ATL 9 COL 1,3.0,2.0,1.0,1.0,2.0,1.0,2.0,,,,,"1-3 | HR, BB, 2 K | vs COL (away)",0.633,0.141
+2026-05-02,Emerson Hancock,SEA,P,7.2,0.0,KC 3 SEA 2,,,,,,,,7.0,1,14,ND,"7.0 IP, ER, 14 K, 0 BB | vs KC (home)",,
+2026-05-03,Mark Vientos,NYM,OF,6.4,3.0,NYM 5 LAA 1,4.0,2.0,2.0,2.0,4.0,0.0,1.0,,,,,"2-4 | 2 HR, K, 4 RBI | vs LAA (away)",0.737,0.190
+2026-05-03,Jonah Heim,ATL,OF,6.7,3.0,ATL 11 COL 6,4.0,2.0,2.0,1.0,5.0,0.0,0.0,,,,,"2-4 | HR, 2B, 5 RBI | vs COL (away)",0.721,0.179
+2026-05-03,Logan Henderson,MIL,P,5.6,3.0,MIL 2 WSH 3,,,,,,,,6.0,2,8,L,"6.0 IP, 2 ER, 8 K, 0 BB | vs WSH (away)",,
+2026-05-03,Jasson Dominguez,NYY,OF,5.5,3.0,BAL 3 NYY 11,5.0,2.0,3.0,1.0,3.0,0.0,0.0,,,,,"3-5 | HR, 2 2B, 3 RBI | vs BAL (home)",0.872,0.278
+2026-05-03,Michael Busch,CHC,OF,5.2,3.0,AZ 4 CHC 8,3.0,1.0,2.0,0.0,4.0,1.0,1.0,,,,,"2-3 | 3B, 2B, BB | vs AZ (home)",0.656,0.121
+2026-05-03,Mickey Moniak,COL,OF,5.6,2.2,ATL 11 COL 6,4.0,2.0,2.0,2.0,3.0,1.0,1.0,,,,,"2-4 | 2 HR, BB, K | vs ATL (home)",1.098,0.397
+2026-05-03,Moises Ballesteros,CHC,OF,4.3,3.0,AZ 4 CHC 8,4.0,2.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs AZ (home)",0.978,0.281
+2026-05-03,Jonathan Aranda,TB,OF,4.3,2.5,SF 1 TB 2,5.0,0.0,4.0,0.0,1.0,0.0,0.0,,,,,4-5 | RBI | vs SF (home),0.814,0.210
+2026-05-03,TJ Rumfield,COL,OF,4.1,3.0,ATL 11 COL 6,5.0,1.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-5 | HR, K, 2 RBI | vs ATL (home)",0.754,0.157
+2026-05-03,Cam Smith,HOU,OF,3.7,3.0,HOU 3 BOS 1,5.0,0.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-5 | K, 2 RBI | vs BOS (away)",0.697,0.152
+2026-05-03,Aaron Judge,NYY,OF,4.1,2.2,BAL 3 NYY 11,4.0,2.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs BAL (home)",1.031,0.364
+2026-05-03,Tyler Soderstrom,ATH,OF,3.3,2.9,CLE 1 ATH 7,4.0,2.0,3.0,1.0,1.0,0.0,1.0,,,,,"3-4 | HR, K, RBI | vs CLE (home)",0.730,0.205
+2026-05-03,Spencer Torkelson,DET,OF,3.1,3.0,TEX 1 DET 7,4.0,1.0,1.0,1.0,2.0,0.0,3.0,,,,,"1-4 | HR, 3 K, 2 RBI | vs TEX (home)",0.789,0.216
+2026-05-03,Zack Littell,WSH,P,3.2,2.8,MIL 2 WSH 3,,,,,,,,3.2,1,1,W,"3.2 IP, ER, K, BB | vs MIL (home)",,
+2026-05-03,Ryan McMahon,NYY,OF,3.4,3.0,BAL 3 NYY 11,4.0,1.0,3.0,0.0,1.0,0.0,0.0,,,,,"3-4 | 2B, RBI, R | vs BAL (home)",0.589,0.100
+2026-05-03,Nasim Nunez,WSH,OF,3.2,3.0,MIL 2 WSH 3,3.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,"2-3 | 2 RBI, R | vs MIL (home)",0.557,0.010
+2026-05-03,Chase Burns,CIN,P,7.1,0.0,CIN 0 PIT 1,,,,,,,,7.0,0,7,ND,"7.0 IP, 0 ER, 7 K, BB | vs PIT (away)",,
+2026-05-03,Jeff McNeil,ATH,OF,3.3,3.0,CLE 1 ATH 7,4.0,0.0,2.0,0.0,3.0,0.0,0.0,,,,,"2-4 | 2B, 3 RBI | vs CLE (home)",0.801,0.108
+2026-05-03,Jorge Mateo,ATL,OF,3.3,3.0,ATL 11 COL 6,5.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-5 | HR, K, 2 RBI | vs COL (away)",0.794,0.190
+2026-05-03,Braxton Ashcraft,PIT,P,7.0,0.0,CIN 0 PIT 1,,,,,,,,7.2,0,6,ND,"7.2 IP, 0 ER, 6 K, 2 BB | vs CIN (home)",,

@@ -30,7 +30,8 @@ Composition: builds variants 0P-5P, returns highest slot-weighted total EV.
 Display: pitcher(s) first by EV desc, then batters by EV desc.
 
 Stacking (is_stack_eligible_game): PATH 1 (ML≤-200 AND O/U≥9.0, favored
-side only, earns STACK_BONUS) OR PATH 2 (O/U≥10.5, both sides, no bonus).
+side only, earns STACK_BONUS) OR PATH 2 (O/U≥10.5, both sides, no bonus)
+OR PATH 3 (opp_SP_ERA≥6.5 AND own_team_OPS≥0.760, favored side only, no bonus).
 
 V12 was rebuilt from a 35-slate audit of every pre-game signal against
 actual HV outcomes.  Dead/inverted signals (Vegas O/U batter, opp K/9,
@@ -67,6 +68,8 @@ from app.core.constants import (
     MAX_PLAYERS_PER_GAME_BATTERS,
     is_stack_eligible_game,
     STACK_ELIGIBILITY_SHOOTOUT_TOTAL,
+    STACK_ELIGIBILITY_PATH3_OPP_SP_ERA,
+    STACK_ELIGIBILITY_PATH3_OWN_TEAM_OPS,
     STACK_BONUS,
     ENV_MODIFIER_FLOOR,
     ENV_MODIFIER_CEILING,
@@ -120,6 +123,7 @@ class StackableGame:
     moneyline: int | None = None
     vegas_total: float | None = None
     opp_starter_era: float | None = None
+    own_team_ops: float | None = None
     is_blowout_favorite: bool = True
 
 
@@ -171,6 +175,11 @@ def classify_slate(
         away_ml = g.get("away_moneyline")
         home_team = g.get("home_team", "")
         away_team = g.get("away_team", "")
+        home_ops = g.get("home_team_ops")
+        away_ops = g.get("away_team_ops")
+        home_sp_era = g.get("home_starter_era")
+        away_sp_era = g.get("away_starter_era")
+
         path1_ou_ok = vt is not None and vt >= STACK_ELIGIBILITY_VEGAS_TOTAL
         if home_ml is not None and home_ml <= BLOWOUT_MONEYLINE_THRESHOLD and path1_ou_ok:
             blowout_games += 1
@@ -179,7 +188,8 @@ def classify_slate(
                 favored_team=home_team,
                 moneyline=home_ml,
                 vegas_total=vt,
-                opp_starter_era=g.get("away_starter_era"),
+                opp_starter_era=away_sp_era,
+                own_team_ops=home_ops,
                 is_blowout_favorite=True,
             ))
         elif away_ml is not None and away_ml <= BLOWOUT_MONEYLINE_THRESHOLD and path1_ou_ok:
@@ -189,7 +199,8 @@ def classify_slate(
                 favored_team=away_team,
                 moneyline=away_ml,
                 vegas_total=vt,
-                opp_starter_era=g.get("home_starter_era"),
+                opp_starter_era=home_sp_era,
+                own_team_ops=away_ops,
                 is_blowout_favorite=True,
             ))
 
@@ -206,7 +217,8 @@ def classify_slate(
                     favored_team=home_team,
                     moneyline=home_ml,
                     vegas_total=vt,
-                    opp_starter_era=g.get("away_starter_era"),
+                    opp_starter_era=away_sp_era,
+                    own_team_ops=home_ops,
                     is_blowout_favorite=False,
                 ))
             if away_team and away_team not in already_listed:
@@ -215,9 +227,45 @@ def classify_slate(
                     favored_team=away_team,
                     moneyline=away_ml,
                     vegas_total=vt,
-                    opp_starter_era=g.get("home_starter_era"),
+                    opp_starter_era=home_sp_era,
+                    own_team_ops=away_ops,
                     is_blowout_favorite=False,
                 ))
+
+        # PATH 3: catastrophic opposing starter facing an above-average lineup.
+        # Conservative two-gate (opp_SP_ERA + own_team_OPS) — fires on ~32% of
+        # slates.  Each side evaluated independently against its own opposing
+        # SP.  No STACK_BONUS — bonus stays gated to PATH 1 blowouts.  Only
+        # add if not already listed for this game (PATH 1/2 take precedence).
+        already_listed = {
+            s.favored_team for s in stackable if s.game_id == g.get("game_id")
+        }
+        def _path3_qualifies(opp_era: float | None, own_ops: float | None) -> bool:
+            return (opp_era is not None and own_ops is not None
+                    and opp_era >= STACK_ELIGIBILITY_PATH3_OPP_SP_ERA
+                    and own_ops >= STACK_ELIGIBILITY_PATH3_OWN_TEAM_OPS)
+        if (home_team and home_team not in already_listed
+                and _path3_qualifies(away_sp_era, home_ops)):
+            stackable.append(StackableGame(
+                game_id=g.get("game_id"),
+                favored_team=home_team,
+                moneyline=home_ml,
+                vegas_total=vt,
+                opp_starter_era=away_sp_era,
+                own_team_ops=home_ops,
+                is_blowout_favorite=False,
+            ))
+        if (away_team and away_team not in already_listed
+                and _path3_qualifies(home_sp_era, away_ops)):
+            stackable.append(StackableGame(
+                game_id=g.get("game_id"),
+                favored_team=away_team,
+                moneyline=away_ml,
+                vegas_total=vt,
+                opp_starter_era=home_sp_era,
+                own_team_ops=away_ops,
+                is_blowout_favorite=False,
+            ))
 
         # Check home starter as quality matchup
         h_era = g.get("home_starter_era")
@@ -891,15 +939,18 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
 def _compute_stack_eligible_teams(slate_class: SlateClassification) -> set[str]:
     """Return the set of team abbreviations allowed to contribute a stack today.
 
-    A team is stack-eligible only if its game satisfies BOTH the blowout
-    moneyline gate AND the high-total Vegas O/U gate (see is_stack_eligible_game
-    in app/core/constants.py).  Only teams on the favored side of qualifying
-    games are returned; every other team falls back to 1-batter-per-team in
-    the composition phase.
+    A team is stack-eligible if its game satisfies any of the three paths in
+    is_stack_eligible_game (see app/core/constants.py): PATH 1 (blowout +
+    high O/U), PATH 2 (extreme shootout), or PATH 3 (catastrophic opp SP +
+    above-average own offense).  Only teams on the eligible side of
+    qualifying games are returned; every other team falls back to
+    1-batter-per-team in the composition phase.
     """
     eligible: set[str] = set()
     for sg in slate_class.stackable_games:
-        if is_stack_eligible_game(sg.moneyline, sg.vegas_total) and sg.favored_team:
+        if sg.favored_team and is_stack_eligible_game(
+            sg.moneyline, sg.vegas_total, sg.opp_starter_era, sg.own_team_ops
+        ):
             eligible.add(sg.favored_team.upper())
     return eligible
 
