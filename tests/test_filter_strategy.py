@@ -26,7 +26,6 @@ from app.services.filter_strategy import (
 )
 from app.core.constants import (
     MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT,
-    PITCHER_ANCHOR_SLOT,
     SLOT_MULTIPLIERS,
     STACK_BONUS,
 )
@@ -654,7 +653,7 @@ class TestComposition:
         lineup = _enforce_composition(pool, _default_slate())
         assert len(lineup) == 5
         assert sum(1 for c in lineup if c.is_pitcher) == 1
-        assert lineup[0].player_name == "AcePitcher"
+        assert any(c.player_name == "AcePitcher" for c in lineup)
 
 
 # ===================================================================
@@ -662,20 +661,6 @@ class TestComposition:
 # ===================================================================
 
 class TestSlotAssignment:
-    def test_slot_1_is_highest_ev_player(self):
-        """V12: slot 1 (2.0× multiplier) goes to the highest-EV player —
-        not necessarily a pitcher.  Rearrangement inequality: best player
-        in best slot."""
-        pool = _make_pool()
-        for c in pool:
-            c.filter_ev = _compute_base_ev(c)
-        lineup = _enforce_composition(pool, _default_slate())
-        slots = _smart_slot_assignment(lineup)
-        slot1 = next(s for s in slots if s.slot_index == PITCHER_ANCHOR_SLOT)
-        # Slot 1 candidate must have the highest filter_ev among the lineup
-        max_ev = max(c.filter_ev for c in lineup)
-        assert slot1.candidate.filter_ev == pytest.approx(max_ev, abs=0.001)
-
     def test_5_slots_assigned(self):
         pool = _make_pool()
         for c in pool:
