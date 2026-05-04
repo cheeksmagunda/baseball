@@ -571,41 +571,71 @@ async def fetch_boxscore_results(db: Session, slate: Slate) -> int:
     return updated
 
 
-async def resolve_mlb_id(db: Session, player: Player) -> int | None:
-    """Look up a player's MLB ID if we don't have it."""
+async def resolve_mlb_id(db: Session, player: Player) -> int:
+    """Resolve a player's MLB ID.  Raises if it cannot be determined.
+
+    Strict-mode (May 2026 audit): every code path that previously returned
+    None on lookup failure has been converted to a hard raise.  A missing
+    MLB ID is an impossible state for any player on a T-65 slate roster —
+    `populate_slate_players` and `_ensure_probable_starters_present`
+    populate `Player.mlb_id` directly from the MLB API's roster /
+    probablePitcher hydrates, so this fallback search only fires for legacy
+    DB rows.  A search miss with no team match means downstream stats
+    cannot be fetched, every Statcast/season aggregate stays NULL, and the
+    DNP filter would silently drop the player from the candidate pool —
+    masking a real upstream bug.  Fail loud here so the (player, team)
+    appears in logs and ops investigates rather than silently producing a
+    smaller, corrupt candidate pool.
+    """
     if player.mlb_id:
         return player.mlb_id
 
     results = await search_player(player.name)
-    if results:
-        # Best match: same team
-        for r in results:
-            team_abbr = r.get("currentTeam", {}).get("abbreviation", "")
-            if team_abbr == player.team:
-                player.mlb_id = r["id"]
-                db.commit()
-                return player.mlb_id
-
-        # No exact team match — refuse to guess.  Assigning the wrong
-        # player's MLB ID would corrupt all downstream stats for this player.
-        logger.warning(
-            "MLB ID lookup for %s (%s): %d results but no team match — skipping",
-            player.name, player.team, len(results),
+    if not results:
+        raise RuntimeError(
+            f"MLB ID lookup for {player.name!r} ({player.team}): "
+            f"/people/search returned 0 results.  Cannot fetch stats; "
+            "pipeline must fail loudly per the no-fallbacks rule."
         )
 
-    return None
+    for r in results:
+        team_abbr = r.get("currentTeam", {}).get("abbreviation", "")
+        if team_abbr == player.team:
+            player.mlb_id = r["id"]
+            db.commit()
+            return player.mlb_id
+
+    # No exact team match — refuse to guess.  Assigning the wrong player's
+    # MLB ID would corrupt all downstream stats; silently returning None
+    # was masking the same bug one layer up.
+    raise RuntimeError(
+        f"MLB ID lookup for {player.name!r} ({player.team}): "
+        f"/people/search returned {len(results)} result(s) but none matched "
+        f"team {player.team!r}.  Refusing to guess — would corrupt downstream "
+        "stats.  Investigate: stale Player row, name normalisation drift, or "
+        "mid-day trade not yet in MLB's people index."
+    )
 
 
-async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats | None:
-    """Fetch and store season stats for a player from MLB API."""
+async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats:
+    """Fetch and store season stats for a player from MLB API.
+
+    Raises RuntimeError if the MLB ID cannot be resolved or the API returns
+    no /people row for it.  Per the no-fallbacks rule, a missing stats row
+    is a real data-collection bug, not a missing-data event — the rookie
+    track in `is_player_scoreable` handles true MLB debutants who have a
+    /people row but no season stats yet.
+    """
     mlb_id = await resolve_mlb_id(db, player)
-    if not mlb_id:
-        return None
 
     data = await get_player_stats(mlb_id, settings.current_season)
     people = data.get("people", [])
     if not people:
-        return None
+        raise RuntimeError(
+            f"MLB API /people/{mlb_id} (player={player.name!r}, team={player.team}) "
+            "returned an empty 'people' array.  Cannot proceed without identity "
+            "+ stats payload; pipeline must fail loudly per the no-fallbacks rule."
+        )
 
     person = people[0]
 

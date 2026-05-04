@@ -6,6 +6,7 @@ import httpx
 import tenacity
 
 from app.config import settings
+from app.core.logging_config import tracing_event_hook
 
 # Split timeout — connect must succeed quickly (DNS / TCP), read can take
 # longer for large stat hydrations (player.stats season+gameLog).
@@ -21,8 +22,14 @@ _API_SEM = asyncio.Semaphore(20)
 # connection pooling).  Without this, each call did a fresh DNS lookup +
 # TCP+TLS handshake; the T-65 pipeline's ~260 calls were paying that cost
 # 260 times.  The Semaphore(20) above keeps connection count bounded.
+# `tracing_event_hook` injects the active `X-Request-ID` correlation ID on
+# every outbound request — distributed tracing without an OpenTelemetry SDK.
 # Closed by app/main.py's lifespan handler at shutdown.
-_CLIENT = httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True)
+_CLIENT = httpx.AsyncClient(
+    timeout=TIMEOUT,
+    follow_redirects=True,
+    event_hooks={"request": [tracing_event_hook]},
+)
 
 
 @tenacity.retry(
