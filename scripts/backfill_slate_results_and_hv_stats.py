@@ -333,8 +333,20 @@ async def backfill_hv_stats(all_games: dict[str, list[dict]]) -> None:
             updated_rows.append(r)
     updated_rows.extend(additions)
 
+    # Preserve any extra columns added by other backfill scripts
+    # (e.g. ops_at_slate, iso_at_slate from backfill_player_season_stats_at_slate).
+    extra_keys: list[str] = []
+    seen = set(HV_FIELDNAMES)
+    for r in updated_rows:
+        for k in r.keys():
+            if k is None or k in seen:
+                continue
+            seen.add(k)
+            extra_keys.append(k)
+    fieldnames = HV_FIELDNAMES + extra_keys
+
     with HV_STATS.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=HV_FIELDNAMES)
+        w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         w.writerows(updated_rows)
 
