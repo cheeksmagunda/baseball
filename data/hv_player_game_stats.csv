@@ -1,672 +1,672 @@
-date,player_name,team_actual,position,real_score,card_boost,game_result,ab,r,h,hr,rbi,bb,so,ip,er,k_pitching,decision,notes
-2026-03-25,Austin Wells,NYY,C,1.2,,SF 0 NYY 7,3.0,1.0,2.0,0.0,0.0,1.0,0.0,,,,,2-for-3 | vs SF (away)
-2026-03-25,Ben Rice,NYY,1B,0.2,,SF 0 NYY 7,4.0,1.0,1.0,0.0,0.0,1.0,2.0,,,,,Minimal contribution | vs SF (away)
-2026-03-25,Camilo Doval,NYY,P,1.1,,SF 0 NYY 7,,,,,,,,1.0,0.0,0.0,ND,1 IP scoreless in 9th | vs SF (away)
-2026-03-25,Cody Bellinger,NYY,OF,0.2,,SF 0 NYY 7,5.0,1.0,1.0,0.0,0.0,0.0,2.0,,,,,Bad day at plate | vs SF (away)
-2026-03-25,Giancarlo Stanton,NYY,DH,1.7,,SF 0 NYY 7,4.0,1.0,2.0,0.0,1.0,0.0,1.0,,,,,First Yankee hit of season | vs SF (away)
-2026-03-25,JT Brubaker,SF,P,1.8,,SF 0 NYY 7,,,,,,,,2.0,0.0,2.0,ND,~1 IP relief scoreless | vs NYY (home)
-2026-03-25,Jake Bird,NYY,P,0.8,,SF 0 NYY 7,,,,,,,,0.2,0.0,1.0,ND,0.2 IP scoreless relief | vs SF (away)
-2026-03-25,Jazz Chisholm Jr.,NYY,3B,0.9,,SF 0 NYY 7,3.0,1.0,1.0,0.0,0.0,0.0,0.0,,,,,HBP single SB scored on error | vs SF (away)
-2026-03-25,Jose Caballero,NYY,SS,1.0,,SF 0 NYY 7,4.0,1.0,1.0,0.0,1.0,0.0,0.0,,,,,RBI double; first ABS challenge | vs SF (away)
-2026-03-25,Logan Webb,SF,P,0.3,,SF 0 NYY 7,,,,,,,,5.0,6.0,7.0,L,5 IP 9H 6ER 7R - got shelled | vs NYY (home)
-2026-03-25,Luis Arraez,SF,DH,0.3,,SF 0 NYY 7,3.0,0.0,1.0,0.0,0.0,1.0,0.0,,,,,Bad day at plate | vs NYY (home)
-2026-03-25,Max Fried,NYY,P,6.0,,SF 0 NYY 7,,,,,,,,6.1,0.0,4.0,W,6.1 IP 2H 0ER 1BB 4K - dominant opening day | vs SF (away)
-2026-03-25,Ryan McMahon,NYY,3B,2.2,,SF 0 NYY 7,3.0,1.0,1.0,0.0,2.0,1.0,2.0,,,,,2-RBI single to center | vs SF (away)
-2026-03-25,Trent Grisham,NYY,OF,2.0,,SF 0 NYY 7,5.0,0.0,1.0,0.0,2.0,0.0,1.0,,,,,2-run triple 105.7mph EV | vs SF (away)
-2026-03-26,Alec Burleson,STL,OF,5.0,,STL 9 TB 7,4.0,2.0,3.0,1.0,2.0,1.0,0.0,,,,,432ft go-ahead 2-run HR in 8-run 6th | vs TB (home)
-2026-03-26,Andrew Abbott,CIN,P,4.6,,CIN 0 BOS 3,,,,,,,,6.0,0.0,4.0,ND,6 IP 7H 0ER 1BB 4K - no run support | vs BOS (home)
-2026-03-26,Andy Pages,LAD,OF,5.3,,LAD 8 AZ 2,4.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,Go-ahead 3-run HR 400ft + diving catch | vs AZ (home)
-2026-03-26,Brandon Lowe,PIT,2B,5.1,,NYM 11 PIT 7,4.0,2.0,2.0,2.0,3.0,0.0,0.0,,,,,2 HR off Peralta in Pirates debut | vs NYM (away)
-2026-03-26,Chase DeLauter,CLE,OF,5.3,,SEA 4 CLE 6,5.0,3.0,3.0,2.0,2.0,0.0,1.0,,,,,2 HR in MLB debut (422ft/111.1mph) - historic | vs SEA (away)
-2026-03-26,Cristopher Sánchez,PHI,P,6.8,,PHI 5 TEX 3,,,,,,,,6.0,0.0,10.0,W,vs TEX (home)
-2026-03-26,Dominic Canzone,SEA,OF,4.3,,SEA 4 CLE 6,4.0,2.0,2.0,2.0,2.0,0.0,0.0,,,,,2 solo HR (418ft + 444ft/109.3mph) | vs CLE (home)
-2026-03-26,Garrett Crochet,BOS,P,5.8,,CIN 0 BOS 3,,,,,,,,6.0,0.0,8.0,W,6 IP 3H 0ER 2BB 8K | vs CIN (away)
-2026-03-26,Jacob Misiorowski,MIL,P,4.2,,MIL 14 CWS 2,,,,,,,,5.0,1.0,11.0,W,5 IP 2H 1ER 3BB 11K franchise record - 101.1mph | vs CWS (home)
-2026-03-26,Joe Ryan,MIN,P,5.6,,BAL 2 MIN 1,,,,,,,,5.1,0.0,7.0,ND,5.1 IP 1H 0ER 2BB 7K - dominant but lost | vs BAL (away)
-2026-03-26,José Soriano,LAA,P,5.6,,HOU 0 LAA 3,,,,,,,,6.0,0.0,7.0,W,vs HOU (away)
-2026-03-26,Kevin McGonigle,DET,3B,4.9,,SD 2 DET 8,5.0,2.0,4.0,0.0,2.0,0.0,0.0,,,,,4-for-5 w/2 2B in MLB debut - youngest since Griffey | vs SD (away)
-2026-03-26,Tarik Skubal,DET,P,6.0,,SD 2 DET 8,,,,,,,,6.0,0.0,6.0,W,6 IP 3H 0ER 0BB 6K | vs SD (away)
-2026-03-26,Trevor Rogers,BAL,P,5.9,,BAL 2 MIN 1,,,,,,,,7.0,0.0,5.0,W,7 IP 3H 0ER 4BB 5K - 3 double plays | vs MIN (home)
-2026-03-27,Andrés Giménez,TOR,2B,5.9,,TOR 3 ATH 2,3.0,0.0,2.0,0.0,3.0,1.0,0.0,,,,,vs ATH (home)
-2026-03-27,Cam Schlittler,NYY,P,6.1,,SF 0 NYY 3,,,,,,,,5.1,0.0,8.0,W,5.1 IP 1H 0ER 0BB 8K - MLB debut 68 pitches | vs SF (away)
-2026-03-27,Chris Sale,ATL,P,5.2,,ATL 6 KC 0,,,,,,,,6.0,0.0,6.0,W,6 IP 3H 0ER 3BB 6K - 88 pitches | vs KC (home)
-2026-03-27,George Kirby,SEA,P,4.4,,SEA 5 CLE 1,,,,,,,,6.0,1.0,6.0,W,6 IP 2H 1ER 2BB 6K - 90 pitches | vs CLE (home)
-2026-03-27,Giancarlo Stanton,NYY,DH,2.3,1.8,SF 0 NYY 3,4.0,1.0,2.0,1.0,1.0,0.0,1.0,,,,,414ft HR to left off Butto + K in 1st AB | vs SF (away)
-2026-03-27,Kevin Gausman,TOR,P,6.6,,TOR 3 ATH 2,,,,,,,,6.0,1.0,11.0,ND,6 IP 1H 1ER 0BB 11K - Blue Jays OD record | vs ATH (home)
-2026-03-27,Kyle Tucker,LAD,OF,2.6,2.0,LAD 5 AZ 4,3.0,1.0,1.0,0.0,1.0,1.0,2.0,,,,,Go-ahead RBI single 8th + RBI double 7th + SB | vs AZ (home)
-2026-03-27,Luke Raley,SEA,OF,2.5,1.6,SEA 5 CLE 1,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,2-run HR 390ft off Holderman in 6th | vs CLE (home)
-2026-03-27,Michael King,SD,P,4.1,,SD 2 DET 5,,,,,,,,5.0,0.0,6.0,ND,5 IP 1H 0ER(1 unearned) 4BB 6K | vs DET (home)
-2026-03-27,Mike Trout,LAA,OF,3.2,,HOU 2 LAA 6,4.0,1.0,3.0,1.0,1.0,1.0,0.0,,,,,3-for-4 1BB solo HR - career first back-to-back HR games | vs HOU (away)
-2026-03-27,Mookie Betts,LAD,SS,4.2,2.5,LAD 5 AZ 4,4.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,3-run HR to center off R. Nelson | vs AZ (home)
-2026-03-27,Randy Arozarena,SEA,OF,1.6,3.0,SEA 5 CLE 1,1.0,2.0,0.0,0.0,0.0,3.0,0.0,,,,,2+ BB 1R 1SB 1 OF assist - walks/baserunning | vs CLE (home)
-2026-03-27,Sandy Alcantara,MIA,P,5.7,,MIA 2 COL 1,,,,,,,,7.0,0.0,5.0,W,7 IP 4H 0ER(1 unearned) 2BB 5K - 6th OD start | vs COL (home)
-2026-03-27,Shea Langeliers,ATH,C,5.4,,TOR 3 ATH 2,4.0,2.0,3.0,2.0,2.0,0.0,1.0,,,,,2 HR off two different pitchers (Gausman + Hoffman) | vs TOR (away)
-2026-03-28,Christian Walker,HOU,1B,2.6,3.0,HOU 11 LAA 9,4.0,1.0,2.0,0.0,1.0,1.0,1.0,,,,,RBI single in 6th + double; part of comeback | vs LAA (home)
-2026-03-28,Ezequiel Tovar,COL,SS,2.9,3.0,MIA 4 COL 3,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,2-run HR in 4th (1st of season) | vs MIA (away)
-2026-03-28,Garrett Mitchell,MIL,OF,3.6,3.0,MIL 6 CWS 1,4.0,1.0,2.0,0.0,2.0,1.0,1.0,,,,,2 singles 2 SB 2 RBI + BB | vs CWS (home)
-2026-03-28,JJ Wetherholt,STL,2B,4.5,1.2,STL 6 TB 5,5.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,Walk-off 2-run single in 10th + SB | vs TB (home)
-2026-03-28,Jake Meyers,HOU,OF,3.0,3.0,HOU 11 LAA 9,5.0,2.0,2.0,0.0,2.0,0.0,1.0,,,,,2-run double in 6th during 8-run rally + SB | vs LAA (home)
-2026-03-28,Jorge Soler,LAA,DH,3.2,3.0,HOU 11 LAA 9,2.0,1.0,1.0,1.0,2.0,3.0,1.0,,,,,Solo HR; part of Angels early 3-0 lead | vs HOU (away)
-2026-03-28,Luis Robert Jr.,NYM,OF,5.5,1.1,NYM 4 PIT 2,4.0,1.0,1.0,1.0,3.0,1.0,0.0,,,,,Walk-off 3-run HR in 11th | vs PIT (home)
-2026-03-28,Nolan Schanuel,LAA,1B,3.2,2.5,HOU 11 LAA 9,5.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,3-run HR in 9th (2nd HR of season) | vs HOU (away)
-2026-03-28,Oswald Peraza,LAA,SS,3.4,3.0,HOU 11 LAA 9,4.0,2.0,3.0,1.0,1.0,0.0,1.0,,,,,HR + 2 singles; 3-for-5ish | vs HOU (away)
-2026-03-28,Owen Caissie,MIA,OF,3.8,1.8,MIA 4 COL 3,4.0,0.0,3.0,0.0,1.0,0.0,0.0,,,,,3-for-4 w/2B go-ahead RBI single in 8th | vs COL (home)
-2026-03-28,Royce Lewis,MIN,SS,4.1,3.0,BAL 1 MIN 4,3.0,2.0,1.0,1.0,2.0,1.0,1.0,,,,,2-run HR off Bradish + BB + SB | vs BAL (away)
-2026-03-28,Shea Langeliers,ATH,C,5.7,0.5,TOR 8 ATH 7,4.0,1.0,2.0,1.0,4.0,1.0,1.0,,,,,Grand slam 420ft in 7th - 3rd HR in 2 games | vs TOR (away)
-2026-03-28,Will Smith,LAD,C,3.8,1.6,LAD 3 AZ 2,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,Go-ahead 2-run HR in 8th on his birthday | vs AZ (home)
-2026-03-28,Wilyer Abreu,BOS,OF,3.4,3.0,CIN 6 BOS 5,5.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,Game-tying solo HR in 9th + RBI double in 7th | vs CIN (away)
-2026-03-29,Alex Bregman,CHC,3B,4.0,3.0,CHC 3 WSH 6,4.0,2.0,2.0,2.0,2.0,0.0,0.0,,,,,2 solo HRs (4th and 8th) - first HRs as a Cub | vs WSH (home)
-2026-03-29,Andrew McCutchen,TEX,DH,4.6,3.0,PHI 3 TEX 8,4.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,3-run HR in 4th for 5-0 lead - first HR with Rangers | vs PHI (away)
-2026-03-29,Brandon Nimmo,TEX,OF,3.7,3.0,PHI 3 TEX 8,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,2-run HR 410ft off Luzardo - first HR as Ranger | vs PHI (away)
-2026-03-29,Brendan Donovan,SEA,2B,4.7,2.3,SEA 8 CLE 0,3.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,3-run HR line drive over wall + 2 HBP | vs CLE (home)
-2026-03-29,Christian Yelich,MIL,OF,5.2,1.3,MIL 9 CWS 7,1.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,Pinch-hit 3-run HR 421ft 111.1mph EV - first career PH HR | vs CWS (home)
-2026-03-29,Colson Montgomery,CWS,SS,6.3,3.0,MIL 9 CWS 7,3.0,1.0,2.0,1.0,5.0,1.0,0.0,,,,,Grand slam 405ft 103.6mph EV + RBI single | vs MIL (away)
-2026-03-29,Eugenio Suárez,CIN,3B,5.4,3.0,CIN 3 BOS 2,3.0,1.0,1.0,1.0,3.0,1.0,1.0,,,,,vs BOS (home)
-2026-03-29,Isaac Paredes,HOU,3B,3.5,3.0,HOU 9 LAA 7,5.0,1.0,2.0,0.0,2.0,0.0,1.0,,,,,Go-ahead 2-RBI double in 8th on full count | vs LAA (home)
-2026-03-29,Jordan Walker,STL,OF,5.4,3.0,STL 7 TB 11,4.0,3.0,3.0,1.0,3.0,0.0,1.0,,,,,3-run HR + double; batting .400 thru 3 games | vs TB (home)
-2026-03-29,Owen Caissie,MIA,OF,4.6,1.1,MIA 4 COL 3,2.0,1.0,1.0,1.0,2.0,0.0,0.0,,,,,Pinch-hit walk-off 2-run HR 393ft 107.9mph EV | vs COL (home)
-2026-03-29,Tyler O'Neill,BAL,OF,3.9,3.0,BAL 8 MIN 6,3.0,2.0,1.0,1.0,3.0,1.0,0.0,,,,,3-run HR 391ft 109mph + walk + OF assist | vs MIN (home)
-2026-03-29,Wilyer Abreu,BOS,OF,4.8,1.8,CIN 3 BOS 2,4.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,2-run HR in 4th + single + double; 6-for-13 series | vs CIN (away)
-2026-03-29,Yandy Díaz,TB,1B,7.5,1.9,STL 7 TB 11,6.0,2.0,5.0,0.0,4.0,0.0,0.0,,,,,vs STL (away)
-2026-03-29,Zach Neto,LAA,SS,3.8,2.9,HOU 9 LAA 7,2.0,2.0,1.0,1.0,2.0,3.0,0.0,,,,,2-run HR to left in 4th | vs HOU (away)
-2026-03-30,Austin Hays,CWS,OF,3.3,3.0,MIA 4 CWS 9,5.0,1.0,1.0,1.0,3.0,0.0,4.0,,,,,3-run HR | vs MIA (away)
-2026-03-30,Colt Keith,DET,2B,2.8,3.0,AZ 9 DET 6,5.0,1.0,2.0,0.0,2.0,0.0,2.0,,,,,2 doubles 2 RBI | vs AZ (away)
-2026-03-30,Corbin Carroll,AZ,OF,5.9,3.0,AZ 9 DET 6,4.0,2.0,2.0,1.0,4.0,1.0,1.0,,,,,3-run HR + triple = 4 RBI | vs DET (home)
-2026-03-30,Ezequiel Tovar,COL,SS,4.0,2.9,TOR 5 COL 14,6.0,2.0,3.0,0.0,3.0,0.0,1.0,,,,,3 hits 3 RBI + SB in 14-5 blowout | vs TOR (away)
-2026-03-30,Gunnar Henderson,BAL,SS,3.0,3.0,BAL 2 TEX 5,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,Solo HR + hit; 2 errors in field | vs TEX (home)
-2026-03-30,Jackson Merrill,SD,OF,2.6,3.0,SD 2 SF 3,4.0,1.0,1.0,1.0,2.0,0.0,0.0,,,,,2-run HR | vs SF (home)
-2026-03-30,Jose Altuve,HOU,2B,5.7,3.0,HOU 8 BOS 1,4.0,4.0,4.0,2.0,2.0,1.0,0.0,,,,,4-for-? 2 solo HRs - 15th career multi-HR game | vs BOS (home)
-2026-03-30,Kyle Isbel,KC,OF,4.5,3.0,KC 3 MIN 1,3.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,2-run HR + SB | vs MIN (home)
-2026-03-30,Mauricio Dubón,ATL,OF,3.4,3.0,ATL 4 ATH 0,4.0,0.0,3.0,0.0,3.0,0.0,1.0,,,,,vs ATH (home)
-2026-03-30,Miguel Vargas,CWS,3B,6.2,3.0,MIA 4 CWS 9,4.0,2.0,2.0,1.0,6.0,0.0,0.0,,,,,Grand slam + RBI single + sac fly = 6 RBI | vs MIA (away)
-2026-03-30,Steven Kwan,CLE,OF,3.6,3.0,LAD 2 CLE 4,5.0,1.0,3.0,0.0,1.0,0.0,1.0,,,,,2+ hits 2 RBI + SB | vs LAD (away)
-2026-03-30,TJ Rumfield,COL,OF,3.0,3.0,TOR 5 COL 14,5.0,1.0,3.0,0.0,2.0,0.0,1.0,,,,,3 hits incl 2B in blowout | vs TOR (away)
-2026-03-30,William Contreras,MIL,C,3.9,2.1,MIL 2 TB 3,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,2-run HR | vs TB (home)
-2026-03-30,Yordan Alvarez,HOU,DH,3.1,2.2,HOU 8 BOS 1,5.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,2-run HR | vs BOS (home)
-2026-03-31,Ben Rice,NYY,1B,3.1,3.0,SEA 0 NYY 5,2.0,2.0,2.0,0.0,1.0,2.0,0.0,,,,,2B + BB + BB | vs SEA (away)
-2026-03-31,Carlos Correa,HOU,SS,3.0,3.0,HOU 9 BOS 2,3.0,2.0,2.0,0.0,2.0,1.0,1.0,,,,,2 hits 2 RBI | vs BOS (home)
-2026-03-31,Corey Seager,TEX,SS,3.4,2.8,BAL 5 TEX 8,4.0,2.0,2.0,1.0,2.0,1.0,1.0,,,,,Solo HR in 9th + RBI single | vs BAL (away)
-2026-03-31,Danny Jansen,TEX,C,5.1,3.0,BAL 5 TEX 8,5.0,1.0,3.0,1.0,3.0,0.0,1.0,,,,,3-run HR + double + single | vs BAL (away)
-2026-03-31,Jacob Wilson,ATH,SS,2.9,3.0,ATL 2 ATH 5,4.0,0.0,2.0,0.0,2.0,0.0,0.0,,,,,2B + hit 2 RBI | vs ATL (away)
-2026-03-31,Jake Bauers,MIL,1B,3.1,3.0,MIL 6 TB 2,4.0,2.0,2.0,1.0,1.0,0.0,0.0,,,,,Solo HR + SB | vs TB (home)
-2026-03-31,Jung Hoo Lee,SF,OF,4.2,3.0,SD 3 SF 9,5.0,0.0,3.0,0.0,3.0,0.0,0.0,,,,,2-run 2B + RBI single | vs SD (away)
-2026-03-31,Logan Webb,SF,P,3.7,3.0,SD 3 SF 9,,,,,,,,6.0,3.0,5.0,W,6 IP 3H 3ER 4BB 5K - got run support | vs SD (away)
-2026-03-31,Max Muncy,LAD,3B,2.9,3.0,LAD 4 CLE 1,3.0,2.0,2.0,1.0,1.0,1.0,0.0,,,,,Solo HR 410ft | vs CLE (home)
-2026-03-31,Oneil Cruz,PIT,SS,5.7,3.0,CIN 3 PIT 8,4.0,3.0,3.0,2.0,3.0,0.0,1.0,,,,,2 HR (444ft + 403ft) 3 RBI | vs CIN (away)
-2026-03-31,Shohei Ohtani,LAD,DH,5.8,3.0,LAD 4 CLE 1,3.0,0.0,1.0,0.0,0.0,2.0,1.0,6.0,0.0,6.0,W,Two-way: 6 IP 1H 0ER 3BB 6K pitching + 1-for-3 2BB batting | vs CLE (home)
-2026-03-31,Taylor Ward,BAL,OF,4.6,3.0,BAL 5 TEX 8,5.0,1.0,4.0,0.0,2.0,0.0,1.0,,,,,4-for-5 w/2-run 2B in 9th | vs TEX (home)
-2026-03-31,Willy Adames,SF,SS,5.5,3.0,SD 3 SF 9,5.0,2.0,4.0,1.0,2.0,0.0,0.0,,,,,4-for-5 w/HR + 2 doubles (near cycle) | vs SD (away)
-2026-03-31,Yordan Alvarez,HOU,DH,4.2,1.8,HOU 9 BOS 2,3.0,2.0,2.0,1.0,2.0,1.0,0.0,,,,,HR + 2B | vs BOS (home)
-2026-04-01,Ben Rice,NYY,1B,4.3,2.1,NYY 5 SEA 3,3.0,2.0,2.0,1.0,2.0,1.0,0.0,,,,,vs SEA (away)
-2026-04-01,Carlos Correa,HOU,SS,3.9,2.8,HOU 6 BOS 4,4.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,vs BOS (home)
-2026-04-01,Drake Baldwin,ATL,C,5.0,2.4,ATL 5 ATH 1,3.0,1.0,2.0,0.0,4.0,1.0,0.0,,,,,vs ATH (home)
-2026-04-01,Freddy Peralta,NYM,P,4.7,1.7,STL 2 NYM 1,,,,,,,,5.1,1.0,7.0,ND,vs STL (away)
-2026-04-01,Gavin Williams,CLE,P,7.8,1.6,CLE 4 LAD 1,,,,,,,,7.0,0.0,10.0,W,vs LAD (away)
-2026-04-01,Jonathan India,KC,2B,4.3,3.0,KC 13 MIN 9,5.0,1.0,2.0,1.0,5.0,0.0,1.0,,,,,vs MIN (home)
-2026-04-01,Josh Bell,MIN,1B,3.7,3.0,KC 13 MIN 9,3.0,3.0,1.0,1.0,3.0,2.0,1.0,,,,,vs KC (away)
-2026-04-01,Justin Crawford,PHI,OF,3.7,3.0,PHI 6 WSH 5,5.0,0.0,3.0,0.0,1.0,0.0,1.0,,,,,vs WSH (home)
-2026-04-01,Kyle Isbel,KC,OF,5.2,1.8,KC 13 MIN 9,4.0,3.0,4.0,1.0,2.0,0.0,0.0,,,,,vs MIN (home)
-2026-04-01,Liam Hicks,MIA,C,5.4,1.8,MIA 10 CWS 0,4.0,2.0,3.0,1.0,4.0,0.0,0.0,,,,,vs CWS (home)
-2026-04-01,Nico Hoerner,CHC,2B,3.7,3.0,CHC 6 LAA 2,5.0,1.0,3.0,0.0,1.0,0.0,1.0,,,,,vs LAA (home)
-2026-04-01,Oneil Cruz,PIT,SS,4.5,2.3,PIT 8 CIN 3,5.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,vs CIN (away)
-2026-04-01,Sandy Alcantara,MIA,P,9.5,,MIA 10 CWS 0,,,,,,,,9.0,0.0,7.0,W,vs CWS (home)
-2026-04-01,Zac Gallen,AZ,P,4.5,3.0,AZ 1 DET 0,,,,,,,,6.0,0.0,2.0,W,vs DET (home)
-2026-04-02,Austin Riley,ATL,3B,2.2,3.0,AZ 2 ATL 17,3.0,1.0,1.0,0.0,2.0,1.0,1.0,,,,,2-run double in 8-run 5th | vs AZ (away)
-2026-04-02,Casey Schmitt,SF,3B,2.5,3.0,SF 7 NYM 2,3.0,0.0,3.0,0.0,1.0,1.0,0.0,,,,,2 hits 2 RBI | vs NYM (home)
-2026-04-02,Cole Ragans,KC,P,5.3,3.0,KC 1 MIN 5,,,,,,,,6.0,0.0,8.0,L,6 IP 4H 1ER 1BB 8K - outdueled by Bradley despite strong outing | vs MIN (home)
-2026-04-02,Jordan Lawlar,AZ,SS,2.1,3.0,AZ 2 ATL 17,2.0,1.0,1.0,1.0,1.0,0.0,1.0,,,,,Solo HR in 3rd - first career HR in 126 PA | vs ATL (home)
-2026-04-02,Josh Bell,MIN,1B,2.0,2.4,KC 1 MIN 5,3.0,2.0,1.0,1.0,1.0,1.0,1.0,,,,,Back-to-back HR with Clemens in 9th | vs KC (away)
-2026-04-02,Kody Clemens,MIN,2B,2.6,3.0,KC 1 MIN 5,3.0,2.0,2.0,1.0,1.0,1.0,0.0,,,,,2 hits 2 RBI + HR in 9th | vs KC (away)
-2026-04-02,Luis Arraez,SF,2B,2.8,3.0,SF 7 NYM 2,5.0,2.0,2.0,0.0,1.0,0.0,1.0,,,,,3-for-4 2 RBI | vs NYM (home)
-2026-04-02,Matt Chapman,SF,3B,2.0,3.0,SF 7 NYM 2,5.0,1.0,2.0,0.0,1.0,0.0,0.0,,,,,HR + walk | vs NYM (home)
-2026-04-02,Matt Olson,ATL,1B,5.6,3.0,AZ 2 ATL 17,5.0,3.0,3.0,1.0,3.0,1.0,1.0,,,,,HR + 2 doubles + RBI single; 8-run 5th inning | vs AZ (away)
-2026-04-02,Matt Wallner,MIN,OF,1.7,3.0,KC 1 MIN 5,4.0,1.0,1.0,1.0,1.0,0.0,1.0,,,,,HR in 9th to break game open | vs KC (away)
-2026-04-02,Mauricio Dubón,ATL,OF,2.3,2.5,AZ 2 ATL 17,4.0,3.0,2.0,1.0,1.0,1.0,0.0,,,,,Solo HR + hit | vs AZ (away)
-2026-04-02,Michael Harris II,ATL,OF,1.8,3.0,AZ 2 ATL 17,6.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,2-run double in 5th + BB | vs AZ (away)
-2026-04-02,Rafael Devers,SF,3B,1.9,3.0,SF 7 NYM 2,5.0,1.0,2.0,1.0,1.0,0.0,1.0,,,,,2 hits 1 RBI | vs NYM (home)
-2026-04-02,Taj Bradley,MIN,P,4.8,,KC 1 MIN 5,,,,,,,,6.0,0.0,3.0,W,7 IP 1ER 9K quality start - outdueled Ragans | vs KC (away)
-2026-04-03,Aaron Judge,NYY,OF,5.6,3.0,NYY 8 MIA 2,3.0,2.0,2.0,1.0,3.0,1.0,1.0,,,,,2 HR (solo 430ft + 3-run 445ft) 3-for-4 1BB - 4 RBI | vs MIA (home)
-2026-04-03,CJ Abrams,WSH,SS,5.0,2.2,WSH 6 LAD 13,5.0,1.0,2.0,1.0,4.0,0.0,1.0,,,,,3-run HR + 2 singles; 3-for-4 in losing effort | vs LAD (home)
-2026-04-03,Chase DeLauter,CLE,OF,5.1,1.9,CLE 4 CHC 1,4.0,1.0,3.0,1.0,3.0,0.0,0.0,,,,,3-for-4 w/HR + double + SB; continued hot streak from debut | vs CHC (home)
-2026-04-03,Gunnar Henderson,BAL,SS,4.4,3.0,PIT 5 BAL 4,5.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,3-run HR in 4th + RBI double; only 9 drafts | vs PIT (away)
-2026-04-03,Lawrence Butler,ATH,OF,5.3,3.0,ATH 11 HOU 4,5.0,2.0,3.0,1.0,4.0,0.0,1.0,,,,,Grand slam 415ft in 5th + single + double; only 2 drafts | vs HOU (home)
-2026-04-03,Marcelo Mayer,BOS,SS,4.2,3.0,BOS 5 SD 2,2.0,2.0,2.0,1.0,2.0,0.0,0.0,,,,,2-run HR in 5th + single; only 1 draft | vs SD (home)
-2026-04-03,Marcus Semien,NYM,2B,4.5,3.0,SF 3 NYM 10,5.0,1.0,3.0,1.0,3.0,0.0,1.0,,,,,3-for-5 w/HR + double + SB; only 1 draft | vs SF (away)
-2026-04-03,Max Muncy,LAD,3B,4.6,3.0,WSH 6 LAD 13,5.0,1.0,1.0,0.0,0.0,0.0,2.0,,,,,Solo HR 405ft + RBI double | vs WSH (away)
-2026-04-03,Sean Burke,CWS,P,5.4,2.9,CWS 5 TOR 4,,,,,,,,6.0,1.0,7.0,ND,7 IP 2H 0ER 1BB 8K - dominant; only 6 drafts | vs TOR (home)
-2026-04-03,Shohei Ohtani,LAD,DH,4.9,2.6,WSH 6 LAD 13,5.0,1.0,2.0,1.0,4.0,0.0,2.0,,,,,2-run HR + RBI single; 2-for-4 1BB | vs WSH (away)
-2026-04-03,Sonny Gray,BOS,P,4.1,3.0,BOS 5 SD 2,,,,,,,,6.0,2.0,3.0,W,6 IP 4H 1ER 2BB 7K - most drafted 3x at 1.9k | vs SD (home)
-2026-04-03,Spencer Steer,CIN,3B,4.4,3.0,TEX 3 CIN 5,4.0,2.0,2.0,1.0,2.0,0.0,1.0,,,,,Solo HR + RBI triple + SB; only 1 draft | vs TEX (away)
-2026-04-03,Tristan Gray,MIN,3B,5.0,2.3,MIN 10 TB 4,2.0,1.0,1.0,1.0,5.0,1.0,0.0,,,,,2-run HR + 2 singles 3 RBI; only 2 drafts | vs TB (home)
-2026-04-03,Tyler Stephenson,CIN,C,4.1,3.0,TEX 3 CIN 5,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,2-run HR in 3rd + single; only 2 drafts | vs TEX (away)
-2026-04-04,Andy Pages,LAD,OF,4.8,1.4,WSH 5 LAD 10,5.0,2.0,3.0,1.0,3.0,0.0,1.0,,,,,vs WSH (away)
-2026-04-04,Christian Walker,HOU,1B,4.5,2.3,ATH 0 HOU 11,5.0,3.0,3.0,1.0,2.0,1.0,1.0,,,,,vs ATH (away)
-2026-04-04,Cody Bellinger,NYY,OF,3.5,3.0,NYY 9 MIA 7,3.0,1.0,1.0,1.0,3.0,1.0,0.0,,,,,vs MIA (home)
-2026-04-04,Freddie Freeman,LAD,OF,4.6,2.9,WSH 5 LAD 10,5.0,0.0,2.0,0.0,4.0,0.0,1.0,,,,,vs WSH (away)
-2026-04-04,Garrett Mitchell,MIL,OF,6.1,1.9,KC 2 MIL 5,4.0,0.0,1.0,0.0,1.0,0.0,1.0,,,,,vs KC (away)
-2026-04-04,Jesús Luzardo,PHI,P,6.5,1.4,COL 1 PHI 2,,,,,,,,6.2,1.0,11.0,W,vs COL (away)
-2026-04-04,Joey Loperfido,HOU,OF,3.8,3.0,ATH 0 HOU 11,4.0,2.0,3.0,0.0,2.0,2.0,1.0,,,,,vs ATH (away)
-2026-04-04,Jordan Walker,STL,OF,6.8,2.8,DET 11 STL 6,4.0,1.0,3.0,1.0,5.0,0.0,1.0,,,,,vs DET (away)
-2026-04-04,Munetaka Murakami,CWS,OF,3.9,2.9,CWS 6 TOR 3,3.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,vs TOR (home)
-2026-04-04,Shane Baz,BAL,P,4.1,3.0,PIT 3 BAL 2,,,,,,,,5.2,1.0,5.0,ND,vs PIT (away)
-2026-04-04,Steven Matz,TB,P,5.9,1.8,MIN 1 TB 7,,,,,,,,6.0,1.0,8.0,W,vs MIN (away)
-2026-04-04,Vladimir Guerrero Jr.,TOR,1B,3.3,3.0,CWS 6 TOR 3,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,vs CWS (away)
-2026-04-04,Xavier Edwards,MIA,SS,3.5,2.8,NYY 9 MIA 7,4.0,2.0,3.0,0.0,1.0,1.0,0.0,,,,,vs NYY (away)
-2026-04-04,Zach McKinstry,DET,OF,3.9,3.0,DET 11 STL 6,4.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,vs STL (home)
-2026-04-05,Brent Rooker,ATH,OF,9.8,3.0,ATH 12 HOU 10,4.0,2.0,2.0,2.0,6.0,1.0,1.0,,,,,multi-HR monster game — highest RS of season at 2 drafts ghost; possible 2 HR 5 RBI | vs HOU (home)
-2026-04-05,CJ Kayfus,CLE,OF,4.0,3.0,CLE 0 CHC 1,2.0,2.0,2.0,1.0,2.0,0.0,0.0,,,,,vs CHC (home)
-2026-04-05,Cam Smith,HOU,3B,3.8,3.0,ATH 12 HOU 10,5.0,0.0,2.0,0.0,3.0,1.0,1.0,,,,,vs ATH (away)
-2026-04-05,Cole Young,SEA,SS,5.0,2.5,LAA 8 SEA 7,4.0,2.0,1.0,1.0,3.0,1.0,0.0,,,,,strong day for SEA prospect at 6 drafts | vs LAA (away)
-2026-04-05,Corbin Carroll,AZ,OF,4.6,2.1,AZ 6 ATL 5,4.0,2.0,3.0,0.0,1.0,0.0,0.0,,,,,strong day; most popular HV performer 1.6k drafts | vs ATL (home)
-2026-04-05,Davis Martin,CWS,P,5.5,2.5,CWS 3 TOR 0,,,,,,,,6.0,0.0,6.0,W,quality start ~6 IP 1ER 7K | vs TOR (home)
-2026-04-05,Drake Baldwin,ATL,C,6.0,2.2,AZ 6 ATL 5,5.0,1.0,3.0,1.0,4.0,0.0,0.0,,,,,HR + 3 RBI — ghost player at 50 drafts | vs AZ (away)
-2026-04-05,Jackson Merrill,SD,OF,4.7,3.0,BOS 6 SD 8,5.0,3.0,3.0,1.0,2.0,0.0,0.0,,,,,solid multi-hit game at 1 draft | vs BOS (away)
-2026-04-05,James Wood,WSH,OF,4.0,3.0,WSH 6 LAD 8,4.0,2.0,1.0,1.0,3.0,1.0,1.0,,,,,vs LAD (home)
-2026-04-05,Maikel Garcia,KC,2B,3.8,3.0,KC 5 MIL 8,5.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,vs MIL (home)
-2026-04-05,Manny Machado,SD,3B,5.2,3.0,BOS 6 SD 8,4.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,multi-hit game with HR | vs BOS (away)
-2026-04-05,Masataka Yoshida,BOS,DH,5.2,3.0,BOS 6 SD 8,4.0,0.0,3.0,0.0,3.0,0.0,0.0,,,,,multi-hit multi-RBI game at 1 draft | vs SD (home)
-2026-04-05,Mickey Moniak,COL,OF,4.2,3.0,COL 4 PHI 1,4.0,2.0,2.0,2.0,2.0,0.0,1.0,,,,,vs PHI (home)
-2026-04-05,Ryan O'Hearn,PIT,1B,5.0,1.9,PIT 8 BAL 2,5.0,1.0,2.0,1.0,4.0,0.0,1.0,,,,,productive day at low ownership | vs BAL (home)
-2026-04-05,Slade Cecconi,CLE,P,6.3,3.0,CLE 0 CHC 1,,,,,,,,6.0,0.0,6.0,ND,~7 IP 1ER 8K dominant start; top pitcher April 5 | vs CHC (home)
-2026-04-05,Tyler Soderstrom,ATH,C,5.5,3.0,ATH 12 HOU 10,4.0,3.0,1.0,0.0,3.0,2.0,1.0,,,,,solid multi-hit game part of OAK ghost stack | vs HOU (home)
-2026-04-05,Xavier Edwards,MIA,SS,3.7,3.0,NYY 6 MIA 7,4.0,0.0,2.0,0.0,3.0,0.0,0.0,,,,,vs NYY (away)
-2026-04-06,Brady House,WSH,3B,4.9,3.0,WSH 9 STL 6,5.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,part of WSH big inning; 2 drafts; rank 2 lineup stacked WSH | vs STL (home)
-2026-04-06,Bryce Harper,PHI,1B,5.0,3.0,SF 4 PHI 6,4.0,1.0,3.0,0.0,3.0,1.0,0.0,,,,,multi-hit in PHI road win; 13 drafts | vs SF (away)
-2026-04-06,Carter Jensen,KC,C,3.1,3.0,CLE 2 KC 4,4.0,2.0,2.0,1.0,1.0,0.0,1.0,,,,,vs CLE (away)
-2026-04-06,Dalton Rushing,LAD,C,4.7,2.2,TOR 2 LAD 14,4.0,3.0,4.0,2.0,2.0,0.0,0.0,,,,,LAD blowout; backup catcher 1 draft; slotted slot 5 in rank 1 | vs TOR (away)
-2026-04-06,Freddie Freeman,LAD,1B,4.0,2.3,TOR 2 LAD 14,4.0,2.0,2.0,1.0,3.0,1.0,1.0,,,,,multi-hit in LAD blowout; appeared in 8 of 12 top lineups | vs TOR (away)
-2026-04-06,James Wood,WSH,OF,5.5,3.0,WSH 9 STL 6,3.0,2.0,2.0,1.0,3.0,2.0,0.0,,,,,ghost player (3 drafts) multi-hit game with HR; WSH big win | vs STL (home)
-2026-04-06,Jo Adell,LAA,OF,3.1,3.0,LAA 6 ATL 2,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,vs ATL (home)
-2026-04-06,Jonathan India,KC,2B,4.3,2.9,CLE 2 KC 4,4.0,1.0,2.0,1.0,3.0,0.0,2.0,,,,,productive in KC road win; 1 draft | vs CLE (away)
-2026-04-06,José Soriano,LAA,P,8.2,0.0,LAA 6 ATL 2,,,,,,,,8.0,1.0,10.0,W,dominant start in LAA win; 142 drafts but no boost — best pitcher RS of the day | vs ATL (home)
-2026-04-06,Luke Keaschall,MIN,2B,3.7,3.0,MIN 7 DET 3,3.0,2.0,1.0,1.0,2.0,2.0,1.0,,,,,vs DET (home)
-2026-04-06,Matt Chapman,SF,3B,3.6,3.0,SF 4 PHI 6,4.0,1.0,2.0,0.0,2.0,0.0,1.0,,,,,vs PHI (home)
-2026-04-06,TJ Rumfield,COL,OF,3.2,2.9,COL 9 HOU 7,4.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,vs HOU (home)
-2026-04-06,Teoscar Hernández,LAD,OF,5.2,3.0,TOR 2 LAD 14,5.0,2.0,2.0,1.0,4.0,1.0,1.0,,,,,LAD blowout winner; only 3 drafts at +3.0x — pure ghost HV | vs TOR (away)
-2026-04-06,Troy Johnston,COL,1B,4.5,3.0,COL 9 HOU 7,5.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,COL high-scoring win vs HOU; 4 drafts | vs HOU (home)
-2026-04-06,Victor Caratini,MIN,C,3.3,3.0,MIN 7 DET 3,4.0,0.0,2.0,0.0,3.0,0.0,0.0,,,,,vs DET (home)
-2026-04-06,Willson Contreras,BOS,1B,5.0,3.0,BOS 6 MIL 8,3.0,1.0,3.0,1.0,2.0,1.0,0.0,,,,,strong individual game in BOS loss; 1 draft | vs MIL (home)
-2026-04-06,Zack Littell,WSH,P,3.7,3.0,WSH 9 STL 6,,,,,,,,5.0,1.0,6.0,ND,quality start; 1.5k drafts at +3.0x but env supported (WSH home win) | vs STL (home)
-2026-04-07,Alex Freeland,LAD,OF,3.3,3.0,TOR 1 LAD 4,4.0,2.0,4.0,0.0,1.0,0.0,0.0,,,,,vs TOR (away) | vs TOR (away)
-2026-04-07,Amed Rosario,NYY,SS,7.3,3.0,NYY 5 ATH 3,4.0,2.0,2.0,2.0,4.0,0.0,1.0,,,,,vs ATH (home) | vs ATH (home)
-2026-04-07,Curtis Mead,WSH,3B,4.8,3.0,WSH 6 STL 7,4.0,1.0,3.0,1.0,2.0,0.0,1.0,,,,,vs STL (home) | vs STL (home)
-2026-04-07,Daniel Susac,SF,C,4.1,3.0,SF 6 PHI 0,4.0,1.0,3.0,0.0,2.0,0.0,0.0,,,,,vs PHI (home) | vs PHI (home)
-2026-04-07,Gunnar Henderson,BAL,SS,4.0,2.5,CWS 2 BAL 4,4.0,1.0,2.0,1.0,2.0,1.0,2.0,,,,,vs CWS (away) | vs CWS (away)
-2026-04-07,Jakob Marsee,MIA,OF,2.9,3.0,MIA 3 CIN 6,4.0,2.0,2.0,0.0,0.0,1.0,0.0,,,,,vs CIN (home) | vs CIN (home)
-2026-04-07,James Wood,WSH,OF,3.8,2.2,WSH 6 STL 7,4.0,3.0,2.0,1.0,1.0,1.0,1.0,,,,,vs STL (home) | vs STL (home)
-2026-04-07,Jorge Soler,LAA,DH,3.4,3.0,LAA 2 ATL 7,1.0,1.0,1.0,1.0,2.0,0.0,0.0,,,,,vs ATL (home) | vs ATL (home)
-2026-04-07,Matt Chapman,SF,3B,3.0,2.8,SF 6 PHI 0,4.0,1.0,3.0,0.0,1.0,0.0,1.0,,,,,vs PHI (home) | vs PHI (home)
-2026-04-07,Matt McLain,CIN,SS,3.6,3.0,MIA 3 CIN 6,5.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,vs MIA (away) | vs MIA (away)
-2026-04-07,Moisés Ballesteros,CHC,C,3.5,3.0,TB 2 CHC 9,4.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,vs TB (away) | vs TB (away)
-2026-04-07,Nathan Church,STL,OF,3.2,3.0,WSH 6 STL 7,2.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,vs WSH (away) | vs WSH (away)
-2026-04-07,Nathan Eovaldi,TEX,P,3.4,3.0,TEX 3 SEA 2,,,,,,,,6.0,2.0,7.0,W,vs SEA (home) | vs SEA (home)
-2026-04-07,Pete Crow-Armstrong,CHC,OF,4.0,3.0,TB 2 CHC 9,5.0,3.0,3.0,1.0,1.0,0.0,0.0,,,,,vs TB (away) | vs TB (away)
-2026-04-07,Sandy Alcantara,MIA,P,7.5,0.0,MIA 3 CIN 6,,,,,,,,8.1,2.0,6.0,ND,vs CIN (home) | vs CIN (home)
-2026-04-07,Shane Smith,CWS,P,2.8,3.0,CWS 2 BAL 4,,,,,,,,3.2,0.0,8.0,ND,vs BAL (home) | vs BAL (home)
-2026-04-07,Willi Castro,COL,OF,5.4,3.0,COL 5 HOU 1,4.0,1.0,3.0,1.0,3.0,0.0,1.0,,,,,vs HOU (home) | vs HOU (home)
-2026-04-08,Alec Burleson,STL,OF,4.6,2.8,WSH 1 STL 6,4.0,1.0,3.0,0.0,3.0,1.0,0.0,,,,,vs WSH (away)
-2026-04-08,Angel Martínez,CLE,SS,6.9,3.0,CLE 10 KC 2,5.0,1.0,4.0,1.0,4.0,0.0,1.0,,,,,vs KC (home)
-2026-04-08,Corbin Carroll,AZ,OF,4.2,1.9,NYM 2 AZ 7,5.0,1.0,3.0,0.0,2.0,0.0,0.0,,,,,vs NYM (away)
-2026-04-08,Edouard Julien,COL,2B,3.6,3.0,COL 9 HOU 1,4.0,2.0,2.0,0.0,2.0,1.0,0.0,,,,,vs HOU (home)
-2026-04-08,Gleyber Torres,DET,2B,2.8,3.0,MIN 8 DET 6,5.0,2.0,2.0,0.0,2.0,0.0,1.0,,,,,vs MIN (away)
-2026-04-08,Griffin Conine,MIA,OF,3.5,3.0,MIA 7 CIN 4,4.0,2.0,2.0,1.0,2.0,0.0,1.0,,,,,vs CIN (home)
-2026-04-08,Matt Olson,ATL,1B,3.0,2.9,LAA 2 ATL 8,4.0,1.0,1.0,1.0,2.0,1.0,1.0,,,,,vs LAA (away)
-2026-04-08,Michael Lorenzen,COL,P,3.5,3.0,COL 9 HOU 1,,,,,,,,5.2,1.0,4.0,W,vs HOU (home)
-2026-04-08,Nick Castellanos,SD,OF,3.1,3.0,PIT 2 SD 8,3.0,1.0,1.0,0.0,2.0,1.0,0.0,,,,,vs PIT (away)
-2026-04-08,Nico Hoerner,CHC,2B,4.1,2.3,TB 2 CHC 6,5.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,vs TB (away)
-2026-04-08,Rafael Devers,SF,3B,5.1,3.0,SF 5 PHI 0,4.0,1.0,2.0,1.0,4.0,0.0,1.0,,,,,vs PHI (home)
-2026-04-08,Ryne Nelson,AZ,P,5.0,1.7,NYM 2 AZ 7,,,,,,,,5.2,1.0,5.0,W,vs NYM (away)
-2026-04-08,Sal Stewart,CIN,3B,4.5,2.3,MIA 7 CIN 4,4.0,2.0,2.0,1.0,2.0,0.0,0.0,,,,,vs MIA (away)
-2026-04-08,Shohei Ohtani,LAD,DH,4.4,1.7,TOR 4 LAD 3,3.0,0.0,0.0,0.0,0.0,1.0,2.0,6.0,0.0,2.0,ND,vs TOR (away)
-2026-04-08,Taylor Ward,BAL,OF,5.1,2.5,CWS 3 BAL 5,5.0,1.0,4.0,0.0,2.0,0.0,0.0,,,,,vs CWS (away)
-2026-04-08,Tyler Mahle,SF,P,4.6,3.0,SF 5 PHI 0,,,,,,,,5.2,0.0,6.0,ND,vs PHI (home)
-2026-04-08,Zach Agnos,COL,2B,3.4,3.0,COL 9 HOU 1,,,,,,,,3.1,0.0,2.0,SV,vs HOU (home)
-2026-04-09,Agustín Ramírez,MIA,C,2.0,3.0,MIA 8 CIN 1,5.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,vs CIN (home) | vs CIN (home)
-2026-04-09,Anthony Kay,CWS,P,4.4,0.6,KC 0 CWS 2,,,,,,,,5.2,0.0,6.0,W,vs KC (away) | vs KC (away)
-2026-04-09,Brenton Doyle,COL,OF,2.7,3.0,SD 7 COL 3,4.0,1.0,2.0,1.0,1.0,1.0,0.0,,,,,vs SD (away) | vs SD (away)
-2026-04-09,Brooks Lee,MIN,SS,2.8,3.0,MIN 3 DET 1,1.0,0.0,1.0,0.0,2.0,0.0,0.0,,,,,vs DET (home) | vs DET (home)
-2026-04-09,Gabriel Moreno,AZ,C,3.3,3.0,NYM 1 AZ 7,2.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,vs NYM (away) | vs NYM (away)
-2026-04-09,Jack Flaherty,DET,P,3.2,2.1,MIN 3 DET 1,,,,,,,,5.2,1.0,6.0,ND,vs MIN (away) | vs MIN (away)
-2026-04-09,Jaden Hill,COL,P,2.1,3.0,SD 7 COL 3,,,,,,,,1.2,0.0,2.0,ND,vs SD (away) | vs SD (away)
-2026-04-09,Javier Sanoja,MIA,SS,2.9,2.6,MIA 8 CIN 1,4.0,0.0,3.0,0.0,2.0,0.0,1.0,,,,,vs CIN (home) | vs CIN (home)
-2026-04-09,Jeffrey Springs,ATH,P,7.3,,NYY 0 ATH 1,,,,,,,,7.0,0.0,6.0,W,vs NYY (away) | vs NYY (away)
-2026-04-09,Josh Bell,MIN,1B,3.5,2.4,MIN 3 DET 1,4.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,vs DET (home) | vs DET (home)
-2026-04-09,Manny Machado,SD,3B,2.0,3.0,SD 7 COL 3,4.0,1.0,1.0,0.0,1.0,1.0,1.0,,,,,vs COL (home) | vs COL (home)
-2026-04-09,Max Muncy,LAD,3B,2.1,2.9,,,,,,,,,,,,,No LAD game on Apr 9 (off day) — DNP
-2026-04-09,Mick Abel,MIN,P,4.6,3.0,MIN 3 DET 1,,,,,,,,6.0,0.0,6.0,ND,vs DET (home) | vs DET (home)
-2026-04-09,Nolan McLean,NYM,P,5.6,,NYM 1 AZ 7,,,,,,,,6.1,2.0,8.0,L,vs AZ (home) | vs AZ (home)
-2026-04-09,Owen Caissie,MIA,OF,5.0,2.1,MIA 8 CIN 1,4.0,2.0,3.0,0.0,3.0,0.0,1.0,,,,,vs CIN (home) | vs CIN (home)
-2026-04-09,Ryan Weathers,NYY,P,6.6,0.5,NYY 0 ATH 1,,,,,,,,8.0,1.0,7.0,L,vs ATH (home) | vs ATH (home)
-2026-04-09,Xander Bogaerts,SD,SS,7.6,3.0,SD 7 COL 3,6.0,2.0,2.0,1.0,4.0,0.0,1.0,,,,,vs COL (home) | vs COL (home)
-2026-04-10,Andy Pages,LAD,OF,7.2,1.6,LAD 8 TEX 7,3.0,2.0,3.0,1.0,4.0,1.0,0.0,,,,,vs TEX (home) | vs TEX (home)
-2026-04-10,Brandon Valenzuela,TOR,C,4.3,3.0,TOR 10 MIN 4,4.0,2.0,2.0,1.0,2.0,0.0,1.0,,,,,vs MIN (home) | vs MIN (home)
-2026-04-10,Bryan Reynolds,PIT,OF,3.4,3.0,PIT 2 CHC 0,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,vs CHC (away) | vs CHC (away)
-2026-04-10,Corey Seager,TEX,SS,3.9,2.9,LAD 8 TEX 7,5.0,1.0,1.0,1.0,3.0,0.0,3.0,,,,,vs LAD (away) | vs LAD (away)
-2026-04-10,Davis Schneider,TOR,2B,3.5,3.0,TOR 10 MIN 4,3.0,2.0,2.0,0.0,2.0,1.0,1.0,,,,,vs MIN (home) | vs MIN (home)
-2026-04-10,Dustin May,STL,P,5.0,3.0,STL 3 BOS 2,,,,,,,,6.0,1.0,4.0,W,vs BOS (home) | vs BOS (home)
-2026-04-10,Gavin Sheets,SD,OF,7.5,3.0,SD 5 COL 2,4.0,2.0,2.0,2.0,4.0,0.0,2.0,,,,,vs COL (home) | vs COL (home)
-2026-04-10,Jake Bauers,MIL,1B,5.5,3.0,WSH 7 MIL 3,3.0,1.0,2.0,1.0,3.0,1.0,0.0,,,,,vs WSH (home) | vs WSH (home)
-2026-04-10,James Wood,WSH,OF,4.2,2.0,WSH 7 MIL 3,5.0,1.0,4.0,0.0,1.0,0.0,1.0,,,,,vs MIL (away) | vs MIL (away)
-2026-04-10,Jorge Soler,LAA,DH,4.8,2.6,LAA 10 CIN 2,5.0,2.0,2.0,1.0,4.0,0.0,2.0,,,,,vs CIN (away) | vs CIN (away)
-2026-04-10,Max Muncy,LAD,3B,9.6,3.0,LAD 8 TEX 7,5.0,5.0,4.0,3.0,3.0,0.0,0.0,,,,,vs TEX (home) | vs TEX (home)
-2026-04-10,Randy Arozarena,SEA,OF,4.4,3.0,SEA 9 HOU 6,4.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,vs HOU (home) | vs HOU (home)
-2026-04-10,Ronald Acuña Jr.,ATL,OF,3.4,3.0,ATL 11 CLE 5,5.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,vs CLE (home) | vs CLE (home)
-2026-04-10,Ryan Jeffers,MIN,C,5.5,3.0,TOR 10 MIN 4,3.0,1.0,3.0,1.0,3.0,0.0,0.0,,,,,vs TOR (away) | vs TOR (away)
-2026-04-10,Vladimir Guerrero Jr.,TOR,1B,3.6,3.0,TOR 10 MIN 4,5.0,2.0,3.0,0.0,1.0,0.0,0.0,,,,,vs MIN (home) | vs MIN (home)
-2026-04-10,Walker Buehler,SD,P,5.9,3.0,SD 5 COL 2,,,,,,,,6.0,0.0,4.0,ND,vs COL (home) | vs COL (home)
-2026-04-10,Willy Adames,SF,SS,3.5,3.0,SF 6 BAL 3,5.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,vs BAL (away) | vs BAL (away)
-2026-04-11,Bo Bichette,NYM,SS,4.4,3.0,ATH 11 NYM 6,3.0,1.0,2.0,1.0,3.0,2.0,1.0,,,,,vs ATH (home) | vs ATH (home)
-2026-04-11,Brandon Nimmo,TEX,OF,6.2,2.8,LAD 6 TEX 3,4.0,2.0,3.0,2.0,3.0,0.0,0.0,,,,,vs LAD (away) | vs LAD (away)
-2026-04-11,Cam Smith,HOU,3B,4.8,3.0,SEA 8 HOU 7,5.0,1.0,4.0,0.0,2.0,0.0,1.0,,,,,vs SEA (away) | vs SEA (away)
-2026-04-11,J.P. Crawford,SEA,SS,5.4,3.0,SEA 8 HOU 7,3.0,2.0,2.0,0.0,3.0,2.0,0.0,,,,,vs HOU (home) | vs HOU (home)
-2026-04-11,Jeremiah Jackson,BAL,SS,4.3,3.0,BAL 6 SF 2,4.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,vs SF (home) | vs SF (home)
-2026-04-11,Jose Caballero,NYY,SS,4.3,3.0,TB 5 NYY 4,5.0,0.0,2.0,0.0,3.0,0.0,2.0,,,,,vs TB (away) | vs TB (away)
-2026-04-11,José Ramírez,CLE,3B,3.9,3.0,CLE 6 ATL 0,4.0,2.0,2.0,1.0,1.0,1.0,1.0,,,,,vs ATL (away) | vs ATL (away)
-2026-04-11,Julio Rodriguez,SEA,OF,3.9,3.0,SEA 8 HOU 7,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,vs HOU (home) | vs HOU (home)
-2026-04-11,Kyle Schwarber,PHI,DH,4.6,3.0,PHI 4 AZ 3,4.0,1.0,1.0,1.0,3.0,0.0,2.0,,,,,vs AZ (home) | vs AZ (home)
-2026-04-11,Mickey Moniak,COL,OF,6.5,3.0,SD 9 COL 5,4.0,2.0,3.0,2.0,4.0,0.0,1.0,,,,,vs SD (away) | vs SD (away)
-2026-04-11,Oneil Cruz,PIT,SS,4.6,2.0,PIT 4 CHC 3,5.0,1.0,4.0,0.0,0.0,1.0,0.0,,,,,vs CHC (away) | vs CHC (away)
-2026-04-11,Ramón Laureano,SD,OF,6.1,3.0,SD 9 COL 5,3.0,3.0,2.0,1.0,3.0,2.0,0.0,,,,,vs COL (home) | vs COL (home)
-2026-04-11,Ranger Suarez,BOS,P,5.7,3.0,BOS 7 STL 1,,,,,,,,6.0,0.0,6.0,W,vs STL (away) | vs STL (away)
-2026-04-11,Riley Greene,DET,OF,5.8,3.0,DET 6 MIA 1,3.0,2.0,2.0,1.0,4.0,1.0,0.0,,,,,vs MIA (home) | vs MIA (home)
-2026-04-11,Taylor Trammell,HOU,OF,4.4,3.0,SEA 8 HOU 7,4.0,1.0,2.0,0.0,3.0,1.0,2.0,,,,,vs SEA (away) | vs SEA (away)
-2026-04-11,Teoscar Hernández,LAD,OF,4.9,2.6,LAD 6 TEX 3,4.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,vs TEX (home) | vs TEX (home)
-2026-04-11,Tyler Soderstrom,ATH,C,7.1,2.8,ATH 11 NYM 6,5.0,2.0,3.0,2.0,5.0,0.0,0.0,,,,,vs NYM (away) | vs NYM (away)
-2026-04-12,Brandon Lowe,PIT,2B,6.3,3.0,CHC 7 PIT 6,4.0,2.0,2.0,2.0,5.0,1.0,2.0,,,,,vs CHC (away) | vs CHC (away)
-2026-04-12,Brayan Bello,BOS,P,3.6,3.0,STL 3 BOS 9,,,,,,,,6.2,2.0,2.0,W,vs STL (away) | vs STL (away)
-2026-04-12,Brice Turang,MIL,2B,6.0,2.0,MIL 6 WSH 8,4.0,3.0,3.0,2.0,2.0,1.0,0.0,,,,,vs WSH (home) | vs WSH (home)
-2026-04-12,Chandler Simpson,TB,OF,3.8,3.0,TB 5 NYY 4,4.0,2.0,3.0,0.0,1.0,0.0,0.0,,,,,vs NYY (home) | vs NYY (home)
-2026-04-12,Colson Montgomery,CWS,SS,4.7,3.0,KC 5 CWS 6,3.0,2.0,2.0,1.0,2.0,0.0,0.0,,,,,vs KC (away) | vs KC (away)
-2026-04-12,Dillon Dingler,DET,C,3.7,3.0,DET 8 MIA 2,4.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,vs MIA (home) | vs MIA (home)
-2026-04-12,Elly De La Cruz,CIN,SS,3.9,2.6,CIN 6 LAA 9,5.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,vs LAA (home) | vs LAA (home)
-2026-04-12,Gary Sánchez,MIL,C,4.4,2.8,MIL 6 WSH 8,2.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,vs WSH (home) | vs WSH (home)
-2026-04-12,Jarren Duran,BOS,OF,3.5,3.0,STL 3 BOS 9,4.0,2.0,1.0,0.0,3.0,1.0,2.0,,,,,vs STL (away) | vs STL (away)
-2026-04-12,Jorge Mateo,ATL,SS,3.7,3.0,ATL 13 CLE 1,4.0,2.0,4.0,0.0,1.0,0.0,0.0,,,,,vs CLE (home) | vs CLE (home)
-2026-04-12,Luke Raley,SEA,OF,3.5,3.0,SEA 6 HOU 1,5.0,1.0,3.0,0.0,2.0,0.0,0.0,,,,,vs HOU (home) | vs HOU (home)
-2026-04-12,Mauricio Dubón,ATL,OF,3.6,2.9,ATL 13 CLE 1,4.0,2.0,3.0,0.0,2.0,0.0,0.0,,,,,vs CLE (home) | vs CLE (home)
-2026-04-12,Trea Turner,PHI,SS,3.6,3.0,PHI 3 AZ 4,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,vs AZ (home) | vs AZ (home)
-2026-04-12,Trevor Story,BOS,SS,4.1,3.0,STL 3 BOS 9,5.0,1.0,4.0,0.0,2.0,0.0,0.0,,,,,vs STL (away) | vs STL (away)
-2026-04-12,Tristan Gray,MIN,3B,4.4,2.3,TOR 2 MIN 8,3.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,vs TOR (away) | vs TOR (away)
-2026-04-12,Ty France,SD,1B,4.2,3.0,SD 7 COL 2,3.0,3.0,3.0,1.0,1.0,0.0,0.0,,,,,vs COL (home) | vs COL (home)
-2026-04-12,Willson Contreras,BOS,1B,5.8,2.8,STL 3 BOS 9,5.0,1.0,4.0,1.0,3.0,0.0,0.0,,,,,vs STL (away) | vs STL (away)
-2026-04-14,Byron Buxton,MIN,OF,5.9,3.0,BOS 0 MIN 6,5.0,4.0,4.0,2.0,2.0,0.0,1.0,,,,,"4-5 | 2 HR, K, 2 RBI | vs BOS (home)"
-2026-04-14,Dominic Smith,ATL,1B,6.7,2.1,ATL 6 MIA 5,4.0,1.0,3.0,0.0,4.0,,,,,,,3-for-4 | RBI single in 2nd + bases-clearing 2B in 8th | vs MIA
-2026-04-14,JJ Wetherholt,STL,2B,5.1,3.0,CLE 5 STL 6,4.0,2.0,2.0,2.0,3.0,0.0,1.0,,,,,"2-4 | 2 HR, K, 3 RBI | vs CLE (home)"
-2026-04-14,Edmundo Sosa,PHI,2B,4.8,3.0,CHC 10 PHI 4,4.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-4 | HR, 2B, 3 RBI | vs CHC (home)"
-2026-04-14,Mick Abel,MIN,P,7.7,0.8,BOS 0 MIN 6,,,,,,,,7.0,0.0,10,W,7 IP 0 ER 10K W | vs BOS (home)
-2026-04-14,Carson Kelly,CHC,C,4.3,3.0,CHC 10 PHI 4,4.0,2.0,2.0,1.0,3.0,1.0,0.0,,,,,"2-4 | HR, BB, 3 RBI | vs PHI (away)"
-2026-04-14,Xander Bogaerts,SD,SS,4.3,3.0,SEA 1 SD 4,4.0,0.0,3.0,0.0,3.0,0.0,0.0,,,,,3-4 | 3 RBI | vs SEA (home)
-2026-04-14,Hunter Goodman,COL,C,4.0,3.0,COL 6 HOU 7,5.0,2.0,2.0,2.0,2.0,0.0,3.0,,,,,"2-5 | 2 HR, 3 K, 2 RBI | vs HOU (away)"
-2026-04-14,Ildemaro Vargas,ARI,3B,4.4,2.3,AZ 4 BAL 3,5.0,1.0,1.0,1.0,3.0,0.0,2.0,,,,,"1-5 | HR, 2 K, 3 RBI | vs BAL (away)"
-2026-04-14,Alex Bregman,CHC,3B,3.8,3.0,CHC 10 PHI 4,5.0,0.0,3.0,0.0,3.0,0.0,1.0,,,,,"3-5 | K, 3 RBI | vs PHI (away)"
-2026-04-14,José Ramírez,CLE,3B,3.6,3.0,CLE 5 STL 6,4.0,2.0,2.0,1.0,1.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs STL (away)"
-2026-04-14,Ben Williamson,TB,3B,4.3,3.0,TB 8 CWS 5,3.0,2.0,2.0,0.0,3.0,1.0,1.0,,,,,"2-3 | 2 2B, BB, K | vs CWS (away)"
-2026-04-14,Christian Walker,HOU,1B,4.0,2.4,COL 6 HOU 7,4.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-4 | HR, 2 RBI, 2 R | vs COL (home)"
-2026-04-14,Jake Bauers,MIL,1B,4.0,2.5,TOR 9 MIL 7,4.0,1.0,1.0,1.0,3.0,1.0,1.0,,,,,"1-4 | HR, BB, K | vs TOR (home)"
-2026-04-14,Everson Pereira,CWS,OF,3.3,3.0,TB 8 CWS 5,4.0,1.0,1.0,1.0,3.0,0.0,2.0,,,,,"1-4 | HR, 2 K, 3 RBI | vs TB (home)"
-2026-04-14,Munetaka Murakami,CWS,OF,3.2,3.0,TB 8 CWS 5,3.0,2.0,1.0,1.0,2.0,2.0,0.0,,,,,"1-3 | HR, 2 BB, 2 RBI | vs TB (home)"
-2026-04-14,Ryan Vilade,TB,OF,3.6,3.0,TB 8 CWS 5,5.0,3.0,3.0,0.0,1.0,0.0,1.0,,,,,"3-5 | 2B, K, RBI | vs CWS (away)"
-2026-04-14,Vladimir Guerrero Jr.,TOR,1B,3.1,3.0,TOR 9 MIL 7,5.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,"2-5 | 2B, 2 RBI, R | vs MIL (away)"
-2026-04-14,CJ Abrams,WSH,SS,4.2,1.7,WSH 5 PIT 4,4.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-4 | HR, 2B, 2 RBI | vs PIT (away)"
-2026-04-14,Francisco Lindor,NYM,SS,3.1,3.0,NYM 1 LAD 2,4.0,1.0,2.0,1.0,1.0,0.0,1.0,,,,,"2-4 | HR, K, RBI | vs LAD (away)"
-2026-04-15,Sal Stewart,CIN,3B,7.8,2.1,SF 3 CIN 8,4.0,2.0,2.0,2.0,6.0,0.0,1.0,,,,,"2-4 | 2 HR, K, 6 RBI | vs SF (home)"
-2026-04-15,Adrian Del Castillo,ARI,C,7.4,2.4,AZ 8 BAL 5,5.0,1.0,2.0,1.0,5.0,0.0,0.0,,,,,"2-5 | HR, 3B, 5 RBI | vs BAL (away)"
-2026-04-15,Nico Hoerner,CHC,2B,6.5,2.2,CHC 11 PHI 2,5.0,2.0,3.0,1.0,5.0,0.0,0.0,,,,,"3-5 | HR, 5 RBI, 2 R | vs PHI (away)"
-2026-04-15,Dalton Rushing,LAD,C,5.6,1.5,NYM 2 LAD 8,4.0,2.0,2.0,1.0,4.0,0.0,2.0,,,,,"2-4 | HR, 2B, 2 K | vs NYM (home)"
-2026-04-15,Shohei Ohtani,LAD,P,5.7,1.8,NYM 2 LAD 8,,,,,,,,6.0,1.0,10,W,6 IP 1 ER 10K W | pitcher-only start (hit in shoulder prev game) | vs NYM (home)
-2026-04-15,Trevor Story,BOS,SS,5.3,3.0,BOS 9 MIN 5,4.0,1.0,2.0,1.0,5.0,1.0,0.0,,,,,"2-4 | HR, 2B, BB | vs MIN (away)"
-2026-04-15,Luke Raley,SEA,OF,5.1,2.8,SEA 6 SD 7,5.0,2.0,4.0,1.0,2.0,0.0,1.0,,,,,"4-5 | HR, 2B, K | vs SD (away)"
-2026-04-15,Jeremiah Jackson,BAL,SS,4.7,2.6,AZ 8 BAL 5,5.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-5 | HR, K, 3 RBI | vs AZ (home)"
-2026-04-15,Jackson Merrill,SD,OF,4.4,2.3,SEA 6 SD 7,5.0,1.0,2.0,0.0,2.0,0.0,1.0,,,,,"2-5 | 2B, K, 2 RBI | vs SEA (home)"
-2026-04-15,Mike Trout,LAA,OF,4.0,2.1,LAA 4 NYY 5,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, K, 2 RBI | vs NYY (away)"
-2026-04-15,Matt Shaw,CHC,3B,4.8,3.0,CHC 11 PHI 2,4.0,3.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-4 | 3 2B, 2 RBI, 3 R | vs PHI (away)"
-2026-04-15,José Caballero,NYY,SS,3.9,3.0,LAA 4 NYY 5,3.0,1.0,1.0,0.0,2.0,1.0,0.0,,,,,"1-3 | 2B, BB, 2 RBI | vs LAA (home)"
-2026-04-15,Shea Langeliers,ATH,C,3.7,2.4,TEX 5 ATH 6,5.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-5 | HR, 2B, 2 RBI | vs TEX (home)"
-2026-04-15,Jake Burger,TEX,3B,3.6,2.6,TEX 5 ATH 6,2.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,"1-2 | HR, K, 3 RBI | vs ATH (away)"
-2026-04-15,Corey Seager,TEX,SS,3.5,2.9,TEX 5 ATH 6,3.0,2.0,1.0,1.0,2.0,1.0,1.0,,,,,"1-3 | HR, BB, K | vs ATH (away)"
-2026-04-15,Ryan Kreidler,MIN,SS,3.5,3.0,BOS 9 MIN 5,3.0,1.0,1.0,1.0,3.0,1.0,2.0,,,,,"1-3 | HR, BB, 2 K | vs BOS (home)"
-2026-04-15,Junior Caminero,TB,3B,3.3,3.0,TB 8 CWS 3,4.0,2.0,1.0,1.0,2.0,1.0,1.0,,,,,"1-4 | HR, BB, K | vs CWS (away)"
-2026-04-15,Jacob Wilson,ATH,SS,3.2,3.0,TEX 5 ATH 6,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-4 | HR, 2 RBI, R | vs TEX (home)"
-2026-04-15,Dansby Swanson,CHC,SS,3.2,3.0,CHC 11 PHI 2,5.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-5 | HR, 2 RBI, 2 R | vs PHI (away)"
-2026-04-16,Parker Messick,CLE,P,8.1,,BAL 2 CLE 4,,,,,,,,8.1,0.0,9,W,8.1 IP 0 ER 9K W | no-hit bid broken up in 9th by Taveras | vs BAL (home)
-2026-04-16,Brandon Sproat,MIL,P,5.8,3.0,TOR 1 MIL 2,,,,,,,,6.2,1,6,ND,"6.2 IP, ER, 6 K, BB | vs TOR (home)"
-2026-04-16,Oswald Peraza,LAA,SS,5.8,3.0,LAA 11 NYY 4,4.0,2.0,2.0,1.0,3.0,1.0,1.0,,,,,"2-4 | HR, 2B, BB | vs NYY (away)"
-2026-04-16,Jo Adell,LAA,OF,5.6,3.0,LAA 11 NYY 4,4.0,3.0,2.0,1.0,4.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs NYY (away)"
-2026-04-16,Riley Greene,DET,OF,5.4,3.0,KC 9 DET 10,4.0,2.0,3.0,0.0,2.0,1.0,1.0,,,,,"3-4 | 2 2B, BB, K | vs KC (home)"
-2026-04-16,Salvador Perez,KC,C,5.4,3.0,KC 9 DET 10,4.0,1.0,2.0,1.0,4.0,0.0,2.0,,,,,"2-4 | HR, 2 K, 4 RBI | vs DET (away)"
-2026-04-16,Chase Dollander,COL,P,5.3,0.6,COL 3 HOU 2,,,,,,,,5.1,0,9,W,"5.1 IP, 0 ER, 9 K, 2 BB | vs HOU (away)"
-2026-04-16,Josh Jung,TEX,3B,5.0,3.0,TEX 9 ATH 6,5.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-5 | HR, 2B, 2 RBI | vs ATH (away)"
-2026-04-16,Nick Kurtz,ATH,1B,4.7,3.0,TEX 9 ATH 6,4.0,0.0,2.0,0.0,3.0,1.0,0.0,,,,,"2-4 | 2B, BB, 3 RBI | vs TEX (home)"
-2026-04-16,José Ramírez,CLE,3B,4.1,2.8,BAL 2 CLE 4,3.0,2.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-3 | HR, BB, 2 RBI | vs BAL (home)"
-2026-04-16,Ezequiel Duran,TEX,2B,3.8,3.0,TEX 9 ATH 6,4.0,2.0,2.0,0.0,2.0,1.0,0.0,,,,,"2-4 | 2B, BB, 2 RBI | vs ATH (away)"
-2026-04-16,Marcell Ozuna,PIT,DH,3.8,3.0,WSH 8 PIT 7,4.0,1.0,1.0,1.0,3.0,1.0,1.0,,,,,"1-4 | HR, BB, K | vs WSH (home)"
-2026-04-16,Bobby Witt Jr.,KC,SS,3.6,3.0,KC 9 DET 10,5.0,3.0,3.0,0.0,1.0,0.0,2.0,,,,,"3-5 | 2 2B, 2 K, RBI | vs DET (away)"
-2026-04-16,Giancarlo Stanton,NYY,DH,3.3,3.0,LAA 11 NYY 4,4.0,1.0,1.0,1.0,2.0,0.0,0.0,,,,,"1-4 | HR, 2 RBI, R | vs LAA (home)"
-2026-04-16,Jacob Wilson,ATH,SS,3.3,3.0,TEX 9 ATH 6,5.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,"2-5 | 2 RBI, R, SB | vs TEX (home)"
-2026-04-16,Dillon Dingler,DET,C,3.2,2.6,KC 9 DET 10,5.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-5 | HR, 2B, 2 RBI | vs KC (home)"
-2026-04-16,Everson Pereira,CWS,OF,3.0,2.7,TB 5 CWS 3,3.0,1.0,2.0,1.0,1.0,1.0,0.0,,,,,"2-3 | HR, BB, RBI | vs TB (home)"
-2026-04-16,Hunter Goodman,COL,C,2.9,3.0,COL 3 HOU 2,3.0,1.0,2.0,1.0,1.0,1.0,1.0,,,,,"2-3 | HR, 2B, BB | vs HOU (away)"
-2026-04-16,Jacob Lopez,ATH,P,2.8,3.0,TEX 9 ATH 6,,,,,,,,5.0,2,5,ND,"5.0 IP, 2 ER, 5 K, 4 BB | vs TEX (home)"
-2026-04-13,Aaron Judge,NYY,OF,5.2,2.4,LAA 10 NYY 11,5.0,2.0,2.0,2.0,3.0,0.0,1.0,,,,,"2-5 | 2 HR, K, 3 RBI | vs LAA (home)"
-2026-04-13,Agustín Ramírez,MIA,C,6.6,3.0,MIA 10 ATL 4,4.0,2.0,3.0,1.0,4.0,1.0,0.0,,,,,"3-4 | HR, BB, 4 RBI | vs ATL (away)"
-2026-04-13,Brandon Lowe,PIT,2B,5.8,2.3,WSH 5 PIT 16,5.0,2.0,3.0,1.0,5.0,0.0,0.0,,,,,"3-5 | HR, HBP, 5 RBI | vs WSH (home)"
-2026-04-13,Brandon Marsh,PHI,OF,4.5,3.0,CHC 7 PHI 13,4.0,2.0,3.0,0.0,2.0,1.0,0.0,,,,,"3-4 | 2B, BB, 2 RBI | vs CHC (home)"
-2026-04-13,Bryan Reynolds,PIT,OF,5.3,2.8,WSH 5 PIT 16,4.0,1.0,3.0,0.0,4.0,0.0,1.0,,,,,"3-4 | 3B, HBP, K | vs WSH (home)"
-2026-04-13,Kyle Schwarber,PHI,DH,6.1,2.6,CHC 7 PHI 13,3.0,4.0,2.0,2.0,3.0,1.0,0.0,,,,,"2-3 | 2 HR, BB, HBP | vs CHC (home)"
-2026-04-13,Mike Trout,LAA,OF,8.0,3.0,LAA 10 NYY 11,5.0,3.0,2.0,2.0,5.0,0.0,0.0,,,,,"2-5 | 2 HR, 5 RBI, 3 R | vs NYY (away)"
-2026-04-13,Nathan Eovaldi,TEX,P,6.7,1.4,TEX 8 ATH 1,,,,,,,,7.0,0,7,W,"7.0 IP, 0 ER, 7 K, 2 BB | vs ATH (away)"
-2026-04-13,Trent Grisham,NYY,OF,7.7,3.0,LAA 10 NYY 11,3.0,2.0,2.0,2.0,5.0,0.0,0.0,,,,,"2-3 | 2 HR, 5 RBI, 2 R | vs LAA (home)"
-2026-04-17,Max Muncy,LAD,OF,5.6,3.0,LAD 7 COL 1,4.0,2.0,3.0,2.0,3.0,0.0,1.0,,,,,"3-4 | 2 HR, 2B, K | vs COL (away)"
-2026-04-17,Munetaka Murakami,CWS,OF,5.3,3.0,CWS 9 ATH 2,5.0,2.0,3.0,1.0,4.0,0.0,2.0,,,,,"3-5 | HR, 2 K, 4 RBI | vs ATH (away)"
-2026-04-17,Otto Lopez,MIA,OF,4.6,2.9,MIL 7 MIA 5,5.0,2.0,3.0,1.0,2.0,0.0,2.0,,,,,"3-5 | HR, 3B, 2 K | vs MIL (home)"
-2026-04-17,Austin Riley,ATL,OF,4.5,3.0,ATL 9 PHI 0,5.0,2.0,2.0,2.0,4.0,0.0,3.0,,,,,"2-5 | 2 HR, 3 K, 4 RBI | vs PHI (away)"
-2026-04-17,Heliot Ramos,SF,OF,4.5,3.0,SF 10 WSH 5,4.0,1.0,1.0,1.0,4.0,1.0,0.0,,,,,"1-4 | HR, BB, 4 RBI | vs WSH (away)"
-2026-04-17,Moises Ballesteros,CHC,OF,4.1,3.0,NYM 4 CHC 12,2.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-2 | HR, 3 RBI, R | vs NYM (home)"
-2026-04-17,Ivan Herrera,STL,OF,4.1,3.0,STL 9 HOU 4,4.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-4 | HR, HBP, 3 RBI | vs HOU (away)"
-2026-04-17,Jeremiah Jackson,BAL,OF,4.3,2.3,BAL 6 CLE 4,4.0,1.0,1.0,1.0,3.0,0.0,2.0,,,,,"1-4 | HR, 2 K, 3 RBI | vs CLE (away)"
-2026-04-17,Ranger Suarez,BOS,P,7.7,0.4,DET 0 BOS 1,,,,,,,,8.0,0.0,4,ND,8 IP 0 ER 4K ND | walk-off BOS win in extras | vs DET (home)
-2026-04-17,Ben Rice,NYY,OF,4.2,2.0,KC 2 NYY 4,4.0,2.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, K, 2 RBI | vs KC (home)"
-2026-04-17,Garrett Mitchell,MIL,OF,3.8,2.6,MIL 7 MIA 5,4.0,0.0,2.0,0.0,3.0,1.0,2.0,,,,,"2-4 | 2B, BB, 2 K | vs MIA (away)"
-2026-04-17,Matt Chapman,SF,OF,3.4,3.0,SF 10 WSH 5,5.0,1.0,3.0,0.0,3.0,0.0,1.0,,,,,"3-5 | K, 3 RBI, R | vs WSH (away)"
-2026-04-17,Vinnie Pasquantino,KC,OF,3.3,3.0,KC 2 NYY 4,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-4 | HR, 2 RBI, R | vs NYY (away)"
-2026-04-18,Cody Bellinger,NYY,OF,6.2,3.0,KC 4 NYY 13,4.0,2.0,3.0,2.0,5.0,1.0,0.0,,,,,"3-4 | 2 HR, BB, 5 RBI | vs KC (home)"
-2026-04-18,Corbin Carroll,ARI,OF,6.4,2.0,TOR 2 AZ 6,3.0,2.0,1.0,1.0,4.0,1.0,0.0,,,,,"1-3 | HR, BB, 4 RBI | vs TOR (home)"
-2026-04-18,Troy Johnston,COL,1B,5.1,3.0,LAD 3 COL 4,4.0,1.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-4 | 2 2B, K, 2 RBI | vs LAD (home)"
-2026-04-18,Heliot Ramos,SF,OF,5.0,3.0,SF 7 WSH 6,5.0,2.0,3.0,1.0,2.0,1.0,1.0,,,,,"3-5 | HR, 2B, BB | vs WSH (away)"
-2026-04-18,Carson Kelly,CHC,C,4.7,3.0,NYM 2 CHC 4,1.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-1 | HR, 3 RBI, R | vs NYM (home)"
-2026-04-18,Nick Kurtz,ATH,1B,4.3,3.0,CWS 6 ATH 7,3.0,1.0,2.0,1.0,2.0,3.0,0.0,,,,,"2-3 | HR, 3 BB, 2 RBI | vs CWS (home)"
-2026-04-18,Amed Rosario,NYY,SS,4.2,3.0,KC 4 NYY 13,5.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, 2 R | vs KC (home)"
-2026-04-18,Kyle Tucker,LAD,OF,4.1,3.0,LAD 3 COL 4,5.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-5 | HR, 2 RBI, R | vs COL (away)"
-2026-04-18,Cedric Mullins,TB,OF,4.6,3.0,TB 8 PIT 7,5.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-5 | HR, K, 3 RBI | vs PIT (away)"
-2026-04-18,Ryan O'Hearn,PIT,1B,4.2,2.6,TB 8 PIT 7,3.0,2.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-3 | HR, BB, K | vs TB (home)"
-2026-04-18,Brayan Rocchio,CLE,SS,4.4,3.0,BAL 2 CLE 4,3.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-3 | HR, 3 RBI, R | vs BAL (home)"
-2026-04-18,Yusei Kikuchi,LAA,P,4.9,1.9,SD 4 LAA 1,,,,,,,,6.0,0,8,ND,"6.0 IP, 0 ER, 8 K, BB | vs SD (home)"
-2026-04-18,Brice Turang,MIL,2B,4.6,1.8,MIL 5 MIA 2,3.0,1.0,2.0,1.0,3.0,2.0,0.0,,,,,"2-3 | HR, 2 BB, 3 RBI | vs MIA (away)"
-2026-04-18,Kerry Carpenter,DET,OF,3.3,3.0,DET 4 BOS 1,3.0,1.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-3 | HR, BB, K | vs BOS (away)"
-2026-04-18,Jonny DeLuca,TB,OF,3.5,3.0,TB 8 PIT 7,4.0,2.0,2.0,0.0,2.0,0.0,0.0,,,,,"2-4 | 2B, 2 RBI, 2 R | vs PIT (away)"
-2026-04-18,J.C. Escarra,NYY,OF,3.8,3.0,KC 4 NYY 13,4.0,2.0,2.0,0.0,3.0,0.0,0.0,,,,,"2-4 | 3B, 2B, 3 RBI | vs KC (home)"
-2026-04-18,German Marquez,SD,P,4.4,1.6,SD 4 LAA 1,,,,,,,,5.2,0,5,ND,"5.2 IP, 0 ER, 5 K, 2 BB | vs LAA (away)"
-2026-04-18,Cole Young,SEA,OF,3.1,3.0,TEX 3 SEA 7,3.0,1.0,2.0,0.0,2.0,1.0,1.0,,,,,"2-3 | BB, K, 2 RBI | vs TEX (home)"
-2026-04-18,Dominic Canzone,SEA,OF,3.7,3.0,TEX 3 SEA 7,4.0,1.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-4 | 2B, K, 2 RBI | vs TEX (home)"
-2026-04-18,James Wood,WSH,OF,3.9,1.9,SF 7 WSH 6,3.0,3.0,1.0,1.0,2.0,2.0,1.0,,,,,"1-3 | HR, 2 BB, HBP | vs SF (home)"
-2026-04-17,Daniel Schneemann,CLE,SS,5.4,3.0,BAL 6 CLE 4,4.0,,2.0,1.0,4.0,,,,,,,2-for-4 | grand slam (407ft) in 7th | 4 RBI | vs BAL (home)
-2026-04-17,Colson Montgomery,CWS,SS,3.0,3.0,CWS 9 ATH 2,4.0,0.0,2.0,0.0,2.0,1.0,2.0,,,,,"2-4 | 2B, BB, 2 K | vs ATH (away)"
-2026-04-17,Spencer Horwitz,PIT,1B,3.2,3.0,TB 1 PIT 5,3.0,,3.0,,1.0,,,,,,,3-for-3 | RBI double (perfect 10-for-10 career vs Martinez) | vs TB (home)
-2026-04-17,Nolan Arenado,ARI,3B,3.2,3.0,TOR 3 AZ 6,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-4 | HR, 2 RBI, R | vs TOR (home)"
-2026-04-17,Andrew Benintendi,CWS,OF,3.1,3.0,CWS 9 ATH 2,6.0,2.0,3.0,0.0,1.0,0.0,1.0,,,,,"3-6 | 2 2B, K, RBI | vs ATH (away)"
-2026-04-17,Luisangel Acuna,CWS,2B,7.4,0.0,CWS 9 ATH 2,4.0,2.0,2.0,0.0,1.0,1.0,2.0,,,,,"2-4 | 2B, BB, 2 K | vs ATH (away)"
-2026-04-20,Max Muncy,LAD,3B,5.6,2.8,LAD 12 COL 3,4.0,4.0,4.0,2.0,2.0,1.0,0.0,,,,,"4-4 | 2 HR, BB, 2 RBI | vs COL (away)"
-2026-04-20,Vladimir Guerrero Jr.,TOR,1B,4.9,2.8,TOR 5 LAA 2,4.0,2.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-4 | HR, K, 2 RBI | vs LAA (away)"
-2026-04-20,Isaac Paredes,HOU,3B,4.5,3,HOU 9 CLE 2,5.0,,3.0,2.0,2.0,,,,,,,3-for-5 | 2 solo HR (1st 2 HRs of 2026 season) | vs CLE (away)
-2026-04-20,Christian Walker,HOU,1B,4.7,2.6,HOU 9 CLE 2,5.0,3.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-5 | HR, 2B, K | vs CLE (away)"
-2026-04-20,Leody Taveras,BAL,OF,4.3,3,BAL 7 KC 5,5.0,1.0,1.0,1.0,4.0,0.0,1.0,,,,,"1-5 | HR, K, 4 RBI | vs KC (away)"
-2026-04-20,Miguel Rojas,LAD,SS,4,3,LAD 12 COL 3,3.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-3 | HR, 2 RBI, R | vs COL (away)"
-2026-04-20,Carlos Cortes,ATH,OF,4,3,ATH 6 SEA 4,5.0,,4.0,1.0,,,,,,,,4-for-5 | solo HR | vs SEA (away)
-2026-04-20,Riley Greene,DET,OF,3.5,3,DET 6 BOS 8,3.0,1.0,2.0,0.0,2.0,2.0,0.0,,,,,"2-3 | 2B, 2 BB, 2 RBI | vs BOS (away)"
-2026-04-20,Drake Baldwin,ATL,C,4.1,2.1,ATL 9 WSH 4,4.0,2.0,2.0,0.0,2.0,1.0,0.0,,,,,"2-4 | 2B, BB, 2 RBI | vs WSH (away)"
-2026-04-20,Josh Naylor,SEA,1B,3.3,3,ATH 6 SEA 4,4.0,,3.0,,1.0,,,,,,,3-for-4 | RBI double in 1st | vs ATH (home)
-2026-04-20,Dansby Swanson,CHC,SS,3.2,3,PHI 1 CHC 5,4.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,"1-4 | HR, K, 3 RBI | vs PHI (home)"
-2026-04-20,Sal Stewart,CIN,3B,4,2,CIN 6 TB 1,4.0,2.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, 2B, K | vs TB (away)"
-2026-04-20,Carlos Correa,HOU,SS,3.4,3,HOU 9 CLE 2,5.0,1.0,3.0,0.0,2.0,0.0,2.0,,,,,"3-5 | 2 K, 2 RBI, R | vs CLE (away)"
-2026-04-20,Matt Olson,ATL,1B,3.4,2.4,ATL 9 WSH 4,4.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-4 | HR, 3 RBI, R | vs WSH (away)"
-2026-04-20,Samuel Basallo,BAL,C,3.6,3,BAL 7 KC 5,3.0,1.0,2.0,0.0,2.0,2.0,0.0,,,,,"2-3 | 2 BB, 2 RBI, R | vs KC (away)"
-2026-04-20,Masyn Winn,STL,SS,2.9,3,STL 3 MIA 5,3.0,1.0,2.0,0.0,1.0,0.0,1.0,,,,,"2-3 | 3B, K, RBI | vs MIA (away)"
-2026-04-20,Seth Lugo,KC,P,6.8,,BAL 7 KC 5,,,,,,,,7.0,0,7,ND,"7.0 IP, 0 ER, 7 K, 4 BB | vs BAL (home)"
-2026-04-20,Carlos Narváez,BOS,C,2.8,3,DET 6 BOS 8,3.0,1.0,2.0,0.0,1.0,1.0,0.0,,,,,"2-3 | 2B, BB, RBI | vs DET (home)"
-2026-04-19,Dillon Dingler,DET,C,7.1,2.7,DET 6 BOS 2,5.0,1.0,4.0,1.0,4.0,0.0,0.0,,,,,"4-5 | HR, 2B, 4 RBI | vs BOS (away)"
-2026-04-19,TJ Friedl,CIN,OF,4.9,3,CIN 7 MIN 4,5.0,0.0,2.0,0.0,3.0,0.0,1.0,,,,,"2-5 | 2B, K, 3 RBI | vs MIN (away)"
-2026-04-19,Masyn Winn,STL,SS,4.9,3,STL 7 HOU 5,5.0,1.0,3.0,0.0,3.0,0.0,2.0,,,,,"3-5 | 2B, 2 K, 3 RBI | vs HOU (away)"
-2026-04-19,Walbert Urena,LAA,P,4.7,3,SD 2 LAA 1,,,,,,,,6.0,2.0,8,L,6 IP 2 ER 8K L | vs SD (home)
-2026-04-19,Mickey Moniak,COL,OF,4.8,2.7,LAD 6 COL 9,5.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, 2 R | vs LAD (home)"
-2026-04-19,Taylor Ward,BAL,OF,4.0,3,BAL 4 CLE 8,5.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, R | vs CLE (away)"
-2026-04-19,Edouard Julien,COL,2B,4.7,3,LAD 6 COL 9,5.0,1.0,3.0,0.0,3.0,0.0,0.0,,,,,"3-5 | 2B, 3 RBI, R | vs LAD (home)"
-2026-04-19,Nathan Lukes,TOR,OF,3.8,3,TOR 10 AZ 4,5.0,1.0,3.0,0.0,3.0,0.0,0.0,,,,,"3-5 | 2 2B, 3 RBI, R | vs AZ (away)"
-2026-04-19,Brayan Rocchio,CLE,SS,3.9,3,BAL 4 CLE 8,4.0,0.0,3.0,0.0,3.0,0.0,1.0,,,,,"3-4 | K, 3 RBI | vs BAL (home)"
-2026-04-19,Vladimir Guerrero Jr.,TOR,1B,3.7,3,TOR 10 AZ 4,5.0,2.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-5 | 2B, K, 2 RBI | vs AZ (away)"
-2026-04-19,Kazuma Okamoto,TOR,OF,3.9,3,TOR 10 AZ 4,4.0,2.0,2.0,1.0,3.0,1.0,2.0,,,,,"2-4 | HR, 2B, BB | vs AZ (away)"
-2026-04-19,Miguel Vargas,CWS,3B,3.8,3,CWS 7 ATH 4,3.0,2.0,2.0,1.0,2.0,2.0,0.0,,,,,"2-3 | HR, 2 BB, 2 RBI | vs ATH (away)"
-2026-04-19,Kyle Schwarber,PHI,DH,4.0,2.6,ATL 4 PHI 2,4.0,1.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-4 | HR, 2B, BB | vs ATL (home)"
-2026-04-19,Trent Grisham,NYY,OF,3.8,3,KC 0 NYY 7,4.0,1.0,2.0,1.0,3.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs KC (home)"
-2026-04-21,Elly De La Cruz,CIN,OF,6.8,2.7,TB 6 CIN 12,6.0,,3.0,2.0,5.0,,,,,,,3-for-6 | 2 HR (2-run in 1st + solo in 9th) | 5 RBI | 6th career multi-HR game | vs TB (home)
-2026-04-21,Luis Garcia Jr.,WSH,OF,5.8,3.0,ATL 4 WSH 11,5.0,1.0,4.0,0.0,3.0,0.0,0.0,,,,,"4-5 | 2B, 3 RBI, R | vs ATL (home)"
-2026-04-21,Luis Gil,NYY,P,4.9,3.0,NYY 4 BOS 0,,,,,,,,6.1,0.0,2,W,6.1 IP 0 ER W (shutout) | vs BOS (away)
-2026-04-21,Giancarlo Stanton,NYY,OF,4.5,3.0,NYY 4 BOS 0,4.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-4 | HR, 2B, K | vs BOS (away)"
-2026-04-21,Chase DeLauter,CLE,OF,4.5,2.8,HOU 5 CLE 8,4.0,1.0,1.0,0.0,3.0,1.0,0.0,,,,,"1-4 | 3B, BB, 3 RBI | vs HOU (home)"
-2026-04-21,Colson Montgomery,CWS,OF,4.3,2.9,CWS 11 AZ 5,5.0,2.0,2.0,1.0,3.0,0.0,2.0,,,,,"2-5 | HR, 2B, 2 K | vs AZ (away)"
-2026-04-21,Francisco Lindor,NYM,OF,4.2,3.0,MIN 5 NYM 3,3.0,1.0,1.0,1.0,3.0,1.0,1.0,,,,,"1-3 | HR, BB, K | vs MIN (home)"
-2026-04-21,Adley Rutschman,BAL,OF,4.0,3.0,BAL 5 KC 6,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, K, 2 RBI | vs KC (away)"
-2026-04-21,Coby Mayo,BAL,OF,3.9,3.0,BAL 5 KC 6,3.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-3 | HR, 3 RBI, R | vs KC (away)"
-2026-04-21,Jakob Marsee,MIA,OF,3.3,3.0,STL 5 MIA 3,4.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-4 | HR, HBP, RBI | vs STL (home)"
-2026-04-21,Luke Keaschall,MIN,OF,3.3,3.0,MIN 5 NYM 3,4.0,0.0,2.0,0.0,2.0,0.0,1.0,,,,,"2-4 | K, 2 RBI, SB | vs NYM (away)"
-2026-04-21,Nathan Church,STL,OF,3.6,3.0,STL 5 MIA 3,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-4 | HR, 2 RBI, R | vs MIA (away)"
-2026-04-21,Sam Antonacci,CWS,OF,3.9,3.0,CWS 11 AZ 5,5.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3B, 3 RBI | vs AZ (away)"
-2026-04-21,Curtis Mead,WSH,OF,3.8,3.0,ATL 4 WSH 11,2.0,2.0,1.0,1.0,3.0,1.0,1.0,,,,,"1-2 | HR, BB, K | vs ATL (home)"
-2026-04-21,Seiya Suzuki,CHC,OF,3.1,3.0,PHI 4 CHC 7,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, HBP, K | vs PHI (home)"
-2026-04-21,Alec Burleson,STL,OF,3.3,2.6,STL 5 MIA 3,4.0,1.0,2.0,0.0,2.0,0.0,1.0,,,,,"2-4 | 2B, K, 2 RBI | vs MIA (away)"
-2026-04-21,Munetaka Murakami,CWS,OF,3.1,2.6,CWS 11 AZ 5,5.0,2.0,3.0,1.0,1.0,1.0,0.0,,,,,"3-5 | HR, BB, RBI | vs AZ (away)"
-2026-04-21,Cal Raleigh,SEA,OF,2.8,3.0,ATH 5 SEA 2,3.0,1.0,2.0,1.0,1.0,1.0,0.0,,,,,"2-3 | HR, BB, RBI | vs ATH (home)"
-2026-04-22,Nolan Arenado,ARI,OF,6.6,3.0,CWS 7 AZ 11,4.0,3.0,4.0,1.0,3.0,1.0,0.0,,,,,"4-4 | HR, BB, 3 RBI | vs CWS (home)"
-2026-04-22,Ildemaro Vargas,ARI,OF,7.4,2.2,CWS 7 AZ 11,5.0,2.0,2.0,2.0,5.0,0.0,1.0,,,,,"2-5 | 2 HR, K, 5 RBI | vs CWS (home)"
-2026-04-22,Nolan Schanuel,LAA,OF,5.8,3.0,TOR 3 LAA 7,4.0,2.0,2.0,1.0,4.0,0.0,1.0,,,,,"2-4 | HR, 2B, K | vs TOR (home)"
-2026-04-22,Michael Harris II,ATL,OF,5.0,3.0,ATL 8 WSH 6,4.0,2.0,2.0,2.0,3.0,0.0,0.0,,,,,"2-4 | 2 HR, 3 RBI, 2 R | vs WSH (away)"
-2026-04-22,Daylen Lile,WSH,OF,4.8,3.0,ATL 8 WSH 6,5.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 2B, 3 RBI | vs ATL (home)"
-2026-04-22,Amed Rosario,NYY,OF,4.6,3.0,NYY 4 BOS 1,1.0,1.0,1.0,1.0,4.0,0.0,0.0,,,,,"1-1 | HR, 4 RBI, R | vs BOS (away)"
-2026-04-22,Cal Raleigh,SEA,OF,4.4,3.0,ATH 4 SEA 5,5.0,2.0,3.0,1.0,1.0,0.0,1.0,,,,,"3-5 | HR, 2B, K | vs ATH (home)"
-2026-04-22,Patrick Bailey,SF,OF,4.3,3.0,LAD 0 SF 3,3.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-3 | HR, 3 RBI, R | vs LAD (home)"
-2026-04-22,Pete Crow-Armstrong,CHC,OF,3.9,3.0,PHI 2 CHC 7,4.0,0.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-4 | 2B, K, 2 RBI | vs PHI (home)"
-2026-04-22,Tyler Mahle,SF,P,6.7,0.9,LAD 0 SF 3,,,,,,,,7.0,0,5,W,"7.0 IP, 0 ER, 5 K, 2 BB | vs LAD (home)"
-2026-04-22,Hunter Goodman,COL,OF,3.8,3.0,SD 3 COL 8,4.0,2.0,3.0,1.0,1.0,1.0,1.0,,,,,"3-4 | HR, 2 2B, BB | vs SD (home)"
-2026-04-22,Geraldo Perdomo,ARI,OF,3.8,3.0,CWS 7 AZ 11,4.0,1.0,3.0,0.0,1.0,1.0,1.0,,,,,"3-4 | 2 3B, BB, K | vs CWS (home)"
-2026-04-22,Carter Jensen,KC,OF,3.8,3.0,BAL 8 KC 6,3.0,2.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-3 | HR, BB, 2 RBI | vs BAL (home)"
-2026-04-22,Shohei Ohtani,LAD,OF,4.8,1.8,LAD 0 SF 3,4.0,0.0,0.0,0.0,0.0,0.0,1.0,,,,,0-4 | K | vs SF (away)
-2026-04-22,Josh Jung,TEX,OF,3.8,3.0,PIT 8 TEX 4,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, K, 2 RBI | vs PIT (home)"
-2026-04-22,Corbin Carroll,ARI,OF,4.5,1.9,CWS 7 AZ 11,4.0,2.0,3.0,0.0,1.0,1.0,0.0,,,,,"3-4 | 3B, BB, RBI | vs CWS (home)"
-2026-04-22,Yordan Alvarez,HOU,OF,4.6,1.7,HOU 2 CLE 0,4.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-4 | HR, 2 RBI, R | vs CLE (away)"
-2026-04-22,Miguel Vargas,CWS,OF,3.4,3.0,CWS 7 AZ 11,4.0,3.0,2.0,1.0,1.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs AZ (away)"
-2026-04-22,Munetaka Murakami,CWS,OF,3.7,2.4,CWS 7 AZ 11,5.0,1.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-5 | HR, K, 2 RBI | vs AZ (away)"
-2026-04-22,Luis Campusano,SD,OF,3.6,3.0,SD 3 COL 8,4.0,2.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-4 | HR, 2 2B, RBI | vs COL (away)"
-2026-04-23,Ozzie Albies,ATL,OF,5.8,3.0,ATL 7 WSH 2,4.0,2.0,3.0,1.0,4.0,0.0,1.0,,,,,"3-4 | HR, K, 4 RBI | vs WSH (away)"
-2026-04-23,Bo Bichette,NYM,OF,5.8,3.0,MIN 8 NYM 10,5.0,2.0,3.0,0.0,3.0,0.0,2.0,,,,,"3-5 | 2B, 2 K, 3 RBI | vs MIN (home)"
-2026-04-23,Brandon Marsh,PHI,OF,5.8,3.0,PHI 7 CHC 8,4.0,2.0,3.0,2.0,3.0,1.0,1.0,,,,,"3-4 | 2 HR, BB, K | vs CHC (away)"
-2026-04-23,Ryan Jeffers,MIN,OF,5.7,2.9,MIN 8 NYM 10,3.0,1.0,1.0,1.0,4.0,2.0,1.0,,,,,"1-3 | HR, 2 BB, K | vs NYM (away)"
-2026-04-23,Mickey Moniak,COL,OF,6.2,2.3,SD 10 COL 8,5.0,3.0,4.0,2.0,2.0,0.0,1.0,,,,,"4-5 | 2 HR, K, 2 RBI | vs SD (home)"
-2026-04-23,Gavin Sheets,SD,OF,5.1,3.0,SD 10 COL 8,2.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-2 | HR, 3 RBI, R | vs COL (away)"
-2026-04-23,Brett Baty,NYM,OF,5.1,3.0,MIN 8 NYM 10,4.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-4 | HR, K, 3 RBI | vs MIN (home)"
-2026-04-23,Michael Busch,CHC,OF,4.8,3.0,PHI 7 CHC 8,6.0,1.0,2.0,1.0,4.0,0.0,2.0,,,,,"2-6 | HR, 2 K, 4 RBI | vs PHI (home)"
-2026-04-23,Seiya Suzuki,CHC,OF,4.2,3.0,PHI 7 CHC 8,4.0,2.0,3.0,1.0,1.0,2.0,0.0,,,,,"3-4 | HR, 2 BB, RBI | vs PHI (home)"
-2026-04-23,Xander Bogaerts,SD,OF,4.3,2.8,SD 10 COL 8,3.0,3.0,2.0,1.0,2.0,2.0,0.0,,,,,"2-3 | HR, 2 BB, 2 RBI | vs COL (away)"
-2026-04-23,Miguel Andujar,SD,OF,3.9,3.0,SD 10 COL 8,5.0,0.0,2.0,0.0,3.0,0.0,2.0,,,,,"2-5 | 2B, 2 K, 3 RBI | vs COL (away)"
-2026-04-23,Corey Seager,TEX,OF,3.8,2.9,PIT 1 TEX 6,4.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-4 | HR, K, 3 RBI | vs PIT (home)"
-2026-04-23,TJ Rumfield,COL,OF,3.6,3.0,SD 10 COL 8,4.0,1.0,2.0,0.0,2.0,1.0,0.0,,,,,"2-4 | 2 2B, BB, 2 RBI | vs SD (home)"
-2026-04-23,Tyler Glasnow,LAD,P,9.0,0.0,LAD 3 SF 0,,,,,,,,8.0,0,9,W,"8.0 IP, 0 ER, 9 K, BB | vs SF (away)"
-2026-04-23,Riley Greene,DET,OF,3.7,2.8,MIL 4 DET 5,3.0,1.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-3 | HR, BB, K | vs MIL (home)"
-2026-04-23,Evan Carter,TEX,OF,3.5,3.0,PIT 1 TEX 6,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, K, 2 RBI | vs PIT (home)"
-2026-04-23,Michael Harris II,ATL,OF,3.6,2.7,ATL 7 WSH 2,4.0,0.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-4 | 2B, 2 RBI | vs WSH (away)"
-2026-04-23,Troy Johnston,COL,OF,3.2,3.0,SD 10 COL 8,4.0,0.0,3.0,0.0,2.0,1.0,0.0,,,,,"3-4 | BB, 2 RBI | vs SD (home)"
-2026-04-23,Dansby Swanson,CHC,OF,3.1,3.0,PHI 7 CHC 8,5.0,0.0,2.0,0.0,2.0,0.0,0.0,,,,,2-5 | 2 RBI | vs PHI (home)
-2026-04-23,Ramon Laureano,SD,OF,3.5,2.3,SD 10 COL 8,6.0,0.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-6 | 3B, K, 2 RBI | vs COL (away)"
-2026-04-24,Dansby Swanson,CHC,OF,7.1,3.0,CHC 6 LAD 4,3.0,2.0,2.0,1.0,4.0,0.0,1.0,,,,,"2-3 | HR, 3B, HBP | vs LAD (away)"
-2026-04-24,Nathaniel Lowe,CIN,OF,7.0,3.0,DET 8 CIN 9,5.0,3.0,2.0,2.0,3.0,0.0,0.0,,,,,"2-5 | 2 HR, 3 RBI, 3 R | vs DET (home)"
-2026-04-24,Adley Rutschman,BAL,OF,7.1,2.9,BOS 3 BAL 10,5.0,2.0,3.0,2.0,6.0,0.0,0.0,,,,,"3-5 | 2 HR, 6 RBI, 2 R | vs BOS (home)"
-2026-04-24,Carlos Cortes,ATH,OF,5.7,3.0,ATH 8 TEX 1,4.0,2.0,2.0,2.0,4.0,0.0,0.0,,,,,"2-4 | 2 HR, 4 RBI, 2 R | vs TEX (away)"
-2026-04-24,Matt McLain,CIN,OF,6.0,3.0,DET 8 CIN 9,4.0,2.0,2.0,2.0,4.0,1.0,0.0,,,,,"2-4 | 2 HR, BB, 4 RBI | vs DET (home)"
-2026-04-24,Jazz Chisholm Jr.,NYY,OF,5.4,3.0,NYY 12 HOU 4,4.0,3.0,3.0,1.0,4.0,1.0,1.0,,,,,"3-4 | HR, BB, K | vs HOU (away)"
-2026-04-24,Angel Martinez,CLE,OF,5.4,3.0,CLE 8 TOR 6,4.0,2.0,2.0,2.0,4.0,0.0,2.0,,,,,"2-4 | 2 HR, 2 K, 4 RBI | vs TOR (away)"
-2026-04-24,Konnor Griffin,PIT,OF,5.3,3.0,PIT 6 MIL 0,4.0,1.0,3.0,1.0,3.0,0.0,0.0,,,,,"3-4 | HR, 3 RBI, R | vs MIL (away)"
-2026-04-24,Junior Caminero,TB,OF,5.0,3.0,MIN 2 TB 6,4.0,2.0,2.0,2.0,3.0,0.0,0.0,,,,,"2-4 | 2 HR, 3 RBI, 2 R | vs MIN (home)"
-2026-04-24,Michael Lorenzen,COL,P,5.5,1.7,COL 4 NYM 3,,,,,,,,7.0,1,3,W,"7.0 IP, ER, 3 K, 0 BB | vs NYM (away)"
-2026-04-24,Will Smith,LAD,OF,3.9,3.0,CHC 6 LAD 4,4.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,"1-4 | HR, K, 3 RBI | vs CHC (home)"
-2026-04-24,Jonathan Aranda,TB,OF,4.0,2.6,MIN 2 TB 6,4.0,2.0,2.0,2.0,2.0,0.0,1.0,,,,,"2-4 | 2 HR, K, 2 RBI | vs MIN (home)"
-2026-04-24,Samuel Basallo,BAL,OF,3.8,3.0,BOS 3 BAL 10,5.0,1.0,4.0,1.0,1.0,0.0,0.0,,,,,"4-5 | HR, 2B, RBI | vs BOS (home)"
-2026-04-24,Xavier Edwards,MIA,OF,3.6,3.0,MIA 9 SF 4,4.0,1.0,3.0,0.0,1.0,1.0,0.0,,,,,"3-4 | 2B, BB, RBI | vs SF (away)"
-2026-04-24,Kerry Carpenter,DET,OF,3.5,3.0,DET 8 CIN 9,2.0,1.0,1.0,1.0,2.0,0.0,0.0,,,,,"1-2 | HR, 2 RBI, R | vs CIN (away)"
-2026-04-24,Andres Gimenez,TOR,OF,3.5,2.9,CLE 8 TOR 6,4.0,0.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-4 | 2B, 2 RBI | vs CLE (home)"
-2026-04-24,Josh Naylor,SEA,OF,3.4,3.0,SEA 3 STL 2,3.0,2.0,1.0,1.0,1.0,1.0,2.0,,,,,"1-3 | HR, BB, 2 K | vs STL (away)"
-2026-04-24,Gunnar Henderson,BAL,OF,3.7,2.6,BOS 3 BAL 10,5.0,3.0,3.0,1.0,1.0,0.0,1.0,,,,,"3-5 | HR, K, RBI | vs BOS (home)"
-2026-04-24,Ronald Acuna Jr.,ATL,OF,3.4,3.0,PHI 3 ATL 5,3.0,1.0,1.0,1.0,2.0,2.0,0.0,,,,,"1-3 | HR, 2 BB, 2 RBI | vs PHI (home)"
-2026-04-24,Brooks Lee,MIN,OF,3.4,3.0,MIN 2 TB 6,4.0,1.0,3.0,1.0,1.0,0.0,1.0,,,,,"3-4 | HR, 2B, K | vs TB (away)"
-2026-04-26,Manny Machado,SD,OF,6.1,3.0,SD 7 AZ 12,5.0,2.0,2.0,2.0,5.0,0.0,1.0,,,,,"2-5 | 2 HR, K, 5 RBI | vs AZ (away)"
-2026-04-26,Lane Thomas,KC,OF,7.0,3.0,LAA 9 KC 11,6.0,2.0,3.0,1.0,3.0,0.0,1.0,,,,,"3-6 | HR, K, 3 RBI | vs LAA (home)"
-2026-04-26,Ildemaro Vargas,ARI,OF,6.9,1.9,SD 7 AZ 12,5.0,3.0,3.0,1.0,4.0,0.0,1.0,,,,,"3-5 | HR, 3B, 2B | vs SD (home)"
-2026-04-26,Christian Walker,HOU,OF,5.8,2.5,NYY 4 HOU 7,4.0,1.0,3.0,1.0,4.0,0.0,1.0,,,,,"3-4 | HR, 2B, K | vs NYY (home)"
-2026-04-26,Casey Schmitt,SF,OF,4.8,2.9,MIA 3 SF 6,3.0,2.0,1.0,1.0,3.0,1.0,1.0,,,,,"1-3 | HR, BB, K | vs MIA (home)"
-2026-04-26,Gleyber Torres,DET,OF,4.8,3.0,DET 8 CIN 3,5.0,3.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-5 | HR, K, 2 RBI | vs CIN (away)"
-2026-04-26,Carlos Cortes,ATH,OF,4.5,2.9,ATH 2 TEX 1,4.0,0.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-4 | 3B, 2 RBI | vs TEX (away)"
-2026-04-26,Isaac Paredes,HOU,OF,4.5,3.0,NYY 4 HOU 7,4.0,3.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-4 | HR, 3 RBI, 3 R | vs NYY (home)"
-2026-04-26,Tim Tawa,ARI,OF,4.1,3.0,SD 7 AZ 12,4.0,1.0,1.0,1.0,4.0,0.0,1.0,,,,,"1-4 | HR, K, 4 RBI | vs SD (home)"
-2026-04-26,Zach Neto,LAA,OF,4.0,3.0,LAA 9 KC 11,5.0,2.0,3.0,0.0,2.0,1.0,1.0,,,,,"3-5 | 2 2B, BB, K | vs KC (away)"
-2026-04-26,Jesus Sanchez,TOR,OF,4.0,3.0,CLE 2 TOR 4,3.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-3 | HR, 3 RBI, R | vs CLE (home)"
-2026-04-26,Spencer Torkelson,DET,OF,3.9,3.0,DET 8 CIN 3,4.0,1.0,3.0,1.0,1.0,1.0,1.0,,,,,"3-4 | HR, 2 2B, BB | vs CIN (away)"
-2026-04-26,Jose Quintana,COL,P,3.7,3.0,COL 3 NYM 0,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-04-26,Kerry Carpenter,DET,OF,3.5,3.0,DET 8 CIN 3,5.0,1.0,2.0,0.0,2.0,0.0,1.0,,,,,"2-5 | 3B, 2B, K | vs CIN (away)"
-2026-04-26,Lourdes Gurriel Jr.,ARI,OF,3.4,3.0,SD 7 AZ 12,4.0,0.0,2.0,0.0,2.0,1.0,1.0,,,,,"2-4 | 2B, BB, K | vs SD (home)"
-2026-04-26,Jung Hoo Lee,SF,OF,3.4,3.0,MIA 3 SF 6,5.0,2.0,4.0,0.0,0.0,0.0,0.0,,,,,"4-5 | 3B, 2 R | vs MIA (home)"
-2026-04-26,Bobby Witt Jr.,KC,OF,3.3,3.0,LAA 9 KC 11,5.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-5 | HR, 3B, 2 RBI | vs LAA (home)"
-2026-04-26,Kyle Harrison,MIL,P,7.5,0.2,PIT 0 MIL 5,,,,,,,,6.0,0,12,W,"6.0 IP, 0 ER, 12 K, BB | vs PIT (home)"
-2026-04-26,Jac Caglianone,KC,OF,3.4,3.0,LAA 9 KC 11,2.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,"1-2 | HR, K, 2 RBI | vs LAA (home)"
-2026-04-26,Luis Campusano,SD,OF,3.5,2.6,SD 7 AZ 12,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-4 | HR, 2B, 2 RBI | vs AZ (away)"
-2026-04-25,Sal Stewart,CIN,OF,7.0,2.0,DET 2 CIN 9,4.0,1.0,3.0,1.0,5.0,1.0,0.0,,,,,"3-4 | HR, BB, 5 RBI | vs DET (home)"
-2026-04-25,Bryce Harper,PHI,OF,5.6,2.9,PHI 8 ATL 5,3.0,2.0,2.0,0.0,4.0,1.0,0.0,,,,,"2-3 | BB, 4 RBI, 2 R | vs ATL (away)"
-2026-04-25,Nathan Church,STL,OF,5.9,3.0,SEA 11 STL 9,4.0,2.0,2.0,2.0,4.0,0.0,0.0,,,,,"2-4 | 2 HR, 4 RBI, 2 R | vs SEA (home)"
-2026-04-25,Julio Rodriguez,SEA,OF,4.6,3.0,SEA 11 STL 9,6.0,2.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-6 | HR, K, 2 RBI | vs STL (away)"
-2026-04-25,Nasim Nunez,WSH,OF,5.0,3.0,WSH 6 CWS 3,4.0,0.0,2.0,0.0,4.0,1.0,2.0,,,,,"2-4 | BB, 2 K, 4 RBI | vs CWS (away)"
-2026-04-25,Willson Contreras,BOS,OF,4.4,3.0,BOS 17 BAL 1,4.0,2.0,2.0,1.0,5.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs BAL (away)"
-2026-04-25,Cole Young,SEA,OF,4.2,3.0,SEA 11 STL 9,4.0,3.0,3.0,1.0,1.0,0.0,1.0,,,,,"3-4 | HR, 2B, HBP | vs STL (away)"
-2026-04-25,Salvador Perez,KC,OF,4.0,3.0,LAA 1 KC 12,5.0,2.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-5 | HR, K, 2 RBI | vs LAA (home)"
-2026-04-25,Casey Schmitt,SF,OF,4.2,3.0,MIA 2 SF 6,3.0,1.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-3 | HR, 2B, BB | vs MIA (home)"
-2026-04-25,Kazuma Okamoto,TOR,OF,3.7,3.0,CLE 3 TOR 5,3.0,2.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-3 | HR, BB, K | vs CLE (home)"
-2026-04-25,Ben Williamson,TB,OF,4.0,3.0,MIN 1 TB 6,4.0,1.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-4 | 3B, 2B, 2 RBI | vs MIN (home)"
-2026-04-25,Josh Jung,TEX,OF,3.7,2.7,ATH 3 TEX 4,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,"1-4 | HR, K, 2 RBI | vs ATH (home)"
-2026-04-25,Austin Wells,NYY,OF,3.9,3.0,NYY 8 HOU 3,3.0,1.0,2.0,1.0,2.0,2.0,0.0,,,,,"2-3 | HR, 2 BB, 2 RBI | vs HOU (away)"
-2026-04-25,Jose Caballero,NYY,OF,3.6,3.0,NYY 8 HOU 3,5.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-5 | HR, RBI, R | vs HOU (away)"
-2026-04-25,Carlos Correa,HOU,OF,3.5,3.0,NYY 8 HOU 3,3.0,2.0,2.0,1.0,1.0,1.0,0.0,,,,,"2-3 | HR, 2B, BB | vs NYY (home)"
-2026-04-25,Max Muncy,LAD,OF,3.5,2.6,CHC 4 LAD 12,1.0,1.0,1.0,1.0,2.0,2.0,0.0,,,,,"1-1 | HR, 2 BB, 2 RBI | vs CHC (home)"
-2026-04-25,Jose Fernandez,ARI,OF,3.2,3.0,SD 6 AZ 4,4.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,"2-4 | 2B, 2 RBI, R | vs SD (home)"
-2026-04-25,Kevin McGonigle,DET,OF,3.3,2.8,DET 2 CIN 9,5.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-5 | HR, 2B, RBI | vs CIN (away)"
-2026-04-25,Seiya Suzuki,CHC,OF,3.3,2.8,CHC 4 LAD 12,4.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-4 | HR, RBI, R | vs LAD (away)"
-2026-04-25,Ozzie Albies,ATL,OF,3.2,2.8,PHI 8 ATL 5,5.0,1.0,3.0,0.0,1.0,0.0,0.0,,,,,"3-5 | 2 2B, RBI, R | vs PHI (home)"
-2026-04-13,Jake Burger,TEX,3B,6.0,3.0,TEX 8 ATH 1,4.0,2.0,2.0,2.0,4.0,1.0,1.0,,,,,"2-4 | 2 HR, BB, K | vs ATH (away)"
-2026-04-13,Jeremiah Jackson,BAL,SS,7.4,3.0,AZ 7 BAL 9,4.0,2.0,3.0,2.0,5.0,0.0,0.0,,,,,"3-4 | 2 HR, 5 RBI, 2 R | vs AZ (home)"
-2026-04-13,Josh Naylor,SEA,1B,6.6,3.0,HOU 2 SEA 6,4.0,2.0,2.0,2.0,5.0,0.0,0.0,,,,,"2-4 | 2 HR, 5 RBI, 2 R | vs HOU (home)"
-2026-04-13,Nolan Arenado,ARI,3B,6.2,3.0,AZ 7 BAL 9,4.0,2.0,2.0,2.0,5.0,0.0,1.0,,,,,"2-4 | 2 HR, K, 5 RBI | vs BAL (away)"
-2026-04-13,Pete Alonso,BAL,1B,4.7,3.0,AZ 7 BAL 9,3.0,2.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-3 | HR, 2B, BB | vs AZ (home)"
-2026-04-27,Moises Ballesteros,CHC,OF,5.6,3.0,CHC 7 SD 9,4.0,1.0,1.0,1.0,4.0,0.0,0.0,,,,,"1-4 | HR, 4 RBI, R | vs SD (away)"
-2026-04-27,Ty France,SD,OF,6.0,3.0,CHC 7 SD 9,3.0,1.0,2.0,0.0,4.0,1.0,0.0,,,,,"2-3 | 3B, 2B, BB | vs CHC (home)"
-2026-04-27,Wilber Dotel,PIT,P,4.6,3.0,STL 4 PIT 2,,,,,,,,4.0,0,3,HOLD,"4.0 IP, 0 ER, 3 K, 0 BB | vs STL (home)"
-2026-04-27,Kody Clemens,MIN,OF,5.2,3.0,SEA 4 MIN 11,5.0,1.0,2.0,1.0,5.0,0.0,1.0,,,,,"2-5 | HR, K, 5 RBI | vs SEA (home)"
-2026-04-27,Munetaka Murakami,CWS,OF,4.9,2.5,LAA 7 CWS 8,4.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-4 | HR, 3 RBI, R | vs LAA (home)"
-2026-04-27,Liam Hicks,MIA,OF,4.2,2.4,MIA 4 LAD 5,4.0,1.0,1.0,1.0,3.0,0.0,2.0,,,,,"1-4 | HR, 2 K, 3 RBI | vs LAD (away)"
-2026-04-27,Ranger Suarez,BOS,P,8.9,0.0,BOS 5 TOR 0,,,,,,,,8.0,0,10,W,"8.0 IP, 0 ER, 10 K, BB | vs TOR (away)"
-2026-04-27,Ryan Vilade,TB,OF,3.9,3.0,TB 3 CLE 2,4.0,0.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-4 | K, 2 RBI | vs CLE (away)"
-2026-04-27,Aaron Judge,NYY,OF,3.9,2.3,NYY 4 TEX 2,3.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-3 | HR, 2 2B, HBP | vs TEX (away)"
-2026-04-27,Andrew Benintendi,CWS,OF,3.2,3.0,LAA 7 CWS 8,4.0,1.0,1.0,0.0,3.0,0.0,1.0,,,,,"1-4 | 2B, K, 3 RBI | vs LAA (home)"
-2026-04-27,Jorge Soler,LAA,OF,3.2,2.8,LAA 7 CWS 8,4.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-4 | HR, 3 RBI, R | vs CWS (away)"
-2026-04-27,Kyle Tucker,LAD,OF,3.0,3.0,MIA 4 LAD 5,5.0,0.0,1.0,0.0,2.0,0.0,1.0,,,,,"1-5 | K, 2 RBI | vs MIA (home)"
-2026-04-27,Ryan Jeffers,MIN,OF,3.3,2.5,SEA 4 MIN 11,4.0,2.0,2.0,0.0,2.0,1.0,0.0,,,,,"2-4 | BB, 2 RBI, 2 R | vs SEA (home)"
-2026-04-27,Trevor Larnach,MIN,OF,2.9,3.0,SEA 4 MIN 11,4.0,1.0,2.0,0.0,1.0,1.0,1.0,,,,,"2-4 | 3B, BB, K | vs SEA (home)"
-2026-04-27,Manny Machado,SD,OF,2.8,3.0,CHC 7 SD 9,4.0,3.0,3.0,0.0,0.0,0.0,0.0,,,,,"3-4 | 2 2B, 3 R | vs CHC (home)"
-2026-04-27,Shohei Ohtani,LAD,OF,3.4,1.7,MIA 4 LAD 5,5.0,2.0,3.0,0.0,1.0,0.0,1.0,,,,,"3-5 | 2B, K, RBI | vs MIA (home)"
-2026-04-27,Seiya Suzuki,CHC,OF,2.7,2.7,CHC 7 SD 9,4.0,2.0,2.0,1.0,1.0,0.0,1.0,,,,,"2-4 | HR, K, RBI | vs SD (away)"
-2026-04-27,Daniel Schneemann,CLE,OF,2.9,2.8,TB 3 CLE 2,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,"1-4 | HR, K, 2 RBI | vs TB (home)"
-2026-04-27,Teoscar Hernandez,LAD,OF,2.5,2.9,MIA 4 LAD 5,2.0,0.0,1.0,0.0,2.0,2.0,1.0,,,,,"1-2 | 2 BB, K, 2 RBI | vs MIA (home)"
-2026-04-27,Cal Raleigh,SEA,OF,2.4,3.0,SEA 4 MIN 11,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,"1-4 | HR, K, 2 RBI | vs MIN (away)"
-2026-04-28,Elly De La Cruz,CIN,OF,7.3,2.3,COL 2 CIN 7,4.0,2.0,3.0,1.0,4.0,0.0,1.0,,,,,"3-4 | HR, K, 4 RBI | vs COL (home)"
-2026-04-28,Josh Naylor,SEA,OF,5.7,3.0,SEA 7 MIN 1,5.0,1.0,3.0,1.0,4.0,0.0,0.0,,,,,"3-5 | HR, 4 RBI, R | vs MIN (away)"
-2026-04-28,Bobby Witt Jr.,KC,OF,4.7,3.0,KC 4 ATH 1,5.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-5 | HR, 3 RBI, R | vs ATH (away)"
-2026-04-28,Julio Rodriguez,SEA,OF,4.4,3.0,SEA 7 MIN 1,5.0,2.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-5 | 3 2B, 2 RBI, 2 R | vs MIN (away)"
-2026-04-28,Edouard Julien,COL,OF,4.1,3.0,COL 2 CIN 7,4.0,1.0,3.0,1.0,2.0,1.0,1.0,,,,,"3-4 | HR, BB, K | vs CIN (away)"
-2026-04-28,Pete Crow-Armstrong,CHC,OF,3.9,3.0,CHC 8 SD 3,4.0,2.0,1.0,1.0,3.0,1.0,2.0,,,,,"1-4 | HR, BB, 2 K | vs SD (away)"
-2026-04-28,Trea Turner,PHI,OF,3.6,3.0,SF 0 PHI 7,5.0,2.0,4.0,0.0,1.0,0.0,1.0,,,,,"4-5 | K, RBI, 2 R | vs SF (home)"
-2026-04-28,Sal Frelick,MIL,OF,3.6,3.0,AZ 2 MIL 13,2.0,3.0,2.0,1.0,1.0,1.0,0.0,,,,,"2-2 | HR, BB, RBI | vs AZ (home)"
-2026-04-28,Tyler Black,MIL,OF,3.6,3.0,AZ 2 MIL 13,5.0,1.0,3.0,0.0,3.0,0.0,0.0,,,,,"3-5 | 3 RBI, R | vs AZ (home)"
-2026-04-28,Ryan O'Hearn,PIT,OF,3.4,2.6,STL 11 PIT 7,4.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-4 | HR, K, 3 RBI | vs STL (home)"
-2026-04-28,Alec Burleson,STL,OF,3.5,2.7,STL 11 PIT 7,4.0,2.0,2.0,0.0,3.0,1.0,2.0,,,,,"2-4 | 2 2B, BB, 2 K | vs PIT (away)"
-2026-04-28,Jesus Luzardo,PHI,P,7.5,0.1,SF 0 PHI 7,,,,,,,,7.0,0,8,W,"7.0 IP, 0 ER, 8 K, 0 BB | vs SF (home)"
-2026-04-28,Nolan Gorman,STL,OF,3.1,3.0,STL 11 PIT 7,4.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,"1-4 | HR, K, 3 RBI | vs PIT (away)"
-2026-04-28,Jordan Walker,STL,OF,3.5,2.4,STL 11 PIT 7,4.0,1.0,2.0,0.0,3.0,0.0,1.0,,,,,"2-4 | K, 3 RBI, R | vs PIT (away)"
-2026-04-28,Shohei Ohtani,LAD,OF,4.1,1.6,MIA 2 LAD 1,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-04-28,Byron Buxton,MIN,OF,3.0,3.0,SEA 7 MIN 1,5.0,1.0,2.0,1.0,1.0,0.0,1.0,,,,,"2-5 | HR, K, RBI | vs SEA (home)"
-2026-04-28,Dansby Swanson,CHC,OF,3.1,2.6,CHC 8 SD 3,1.0,0.0,1.0,0.0,2.0,0.0,0.0,,,,,"1-1 | 2B, 2 RBI, SB | vs SD (away)"
-2026-04-28,Bo Bichette,NYM,OF,2.8,3.0,WSH 0 NYM 8,2.0,1.0,1.0,1.0,2.0,1.0,0.0,,,,,"1-2 | HR, BB, 2 RBI | vs WSH (home)"
-2026-04-28,William Contreras,MIL,OF,2.7,3.0,AZ 2 MIL 13,4.0,2.0,2.0,0.0,2.0,1.0,0.0,,,,,"2-4 | BB, 2 RBI, 2 R | vs AZ (home)"
-2026-04-28,Cole Young,SEA,OF,2.7,3.0,SEA 7 MIN 1,4.0,1.0,3.0,0.0,1.0,0.0,0.0,,,,,"3-4 | RBI, R | vs MIN (away)"
-2026-04-29,Hunter Goodman,COL,OF,5.4,3.0,COL 13 CIN 2,4.0,4.0,3.0,2.0,3.0,1.0,0.0,,,,,"3-4 | 2 HR, BB, 3 RBI | vs CIN (away)"
-2026-04-29,Cole Young,SEA,OF,4.9,2.9,SEA 5 MIN 3,4.0,1.0,2.0,0.0,3.0,0.0,0.0,,,,,"2-4 | 2B, 3 RBI, R | vs MIN (away)"
-2026-04-29,Nolan Arenado,ARI,OF,4.6,2.9,AZ 6 MIL 2,3.0,1.0,1.0,1.0,3.0,1.0,0.0,,,,,"1-3 | HR, BB, 3 RBI | vs MIL (away)"
-2026-04-29,Brett Sullivan,COL,OF,4.8,3.0,COL 13 CIN 2,4.0,1.0,3.0,0.0,3.0,1.0,0.0,,,,,"3-4 | 2 2B, BB, 3 RBI | vs CIN (away)"
-2026-04-29,Curtis Mead,WSH,OF,4.8,3.0,WSH 14 NYM 2,5.0,4.0,4.0,1.0,2.0,0.0,0.0,,,,,"4-5 | HR, 2B, HBP | vs NYM (away)"
-2026-04-29,Matt Olson,ATL,OF,5.1,2.0,DET 3 ATL 4,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, K, 2 RBI | vs DET (home)"
-2026-04-29,Lawrence Butler,ATH,OF,3.9,3.0,KC 2 ATH 5,4.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,"1-4 | HR, K, 3 RBI | vs KC (home)"
-2026-04-29,Matt Shaw,CHC,OF,3.9,3.0,CHC 5 SD 4,4.0,2.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-4 | HR, 2B, RBI | vs SD (away)"
-2026-04-29,Ozzie Albies,ATL,OF,3.7,2.6,DET 3 ATL 4,3.0,2.0,1.0,1.0,2.0,1.0,0.0,,,,,"1-3 | HR, BB, 2 RBI | vs DET (home)"
-2026-04-29,Pete Crow-Armstrong,CHC,OF,3.4,3.0,CHC 5 SD 4,4.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,"1-4 | HR, K, 3 RBI | vs SD (away)"
-2026-04-29,Brady House,WSH,OF,3.6,3.0,WSH 14 NYM 2,5.0,1.0,1.0,1.0,4.0,1.0,2.0,,,,,"1-5 | HR, BB, 2 K | vs NYM (away)"
-2026-04-29,Gavin Williams,CLE,P,8.2,0.0,TB 1 CLE 3,,,,,,,,7.2,0,9,W,"7.2 IP, 0 ER, 9 K, 0 BB | vs TB (home)"
-2026-04-29,Nick Castellanos,SD,OF,3.5,3.0,CHC 5 SD 4,2.0,2.0,1.0,1.0,2.0,1.0,1.0,,,,,"1-2 | HR, BB, K | vs CHC (home)"
-2026-04-29,Juan Soto,NYM,OF,3.2,3.0,WSH 14 NYM 2,5.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-5 | HR, 2B, RBI | vs WSH (home)"
-2026-04-29,Brooks Lee,MIN,OF,3.2,3.0,SEA 5 MIN 3,4.0,0.0,2.0,0.0,2.0,0.0,1.0,,,,,"2-4 | K, 2 RBI, SB | vs SEA (home)"
-2026-04-29,Nathan Eovaldi,TEX,P,6.6,0.3,NYY 0 TEX 3,,,,,,,,7.0,0,7,W,"7.0 IP, 0 ER, 7 K, BB | vs NYY (home)"
-2026-04-29,Luis Severino,ATH,P,6.1,0.3,KC 2 ATH 5,,,,,,,,7.0,1,8,W,"7.0 IP, ER, 8 K, 2 BB | vs KC (home)"
-2026-04-29,CJ Abrams,WSH,OF,3.1,2.4,WSH 14 NYM 2,4.0,0.0,3.0,0.0,2.0,1.0,1.0,,,,,"3-4 | 2B, BB, K | vs NYM (away)"
-2026-04-29,James Wood,WSH,OF,3.4,2.0,WSH 14 NYM 2,5.0,3.0,2.0,0.0,3.0,1.0,2.0,,,,,"2-5 | 2B, BB, 2 K | vs NYM (away)"
-2026-04-29,J.P. Crawford,SEA,OF,3.1,3.0,SEA 5 MIN 3,3.0,1.0,2.0,1.0,1.0,2.0,0.0,,,,,"2-3 | HR, 2 BB, RBI | vs MIN (away)"
-2026-04-30,William Contreras,MIL,OF,7.2,3.0,AZ 1 MIL 13,4.0,3.0,4.0,1.0,4.0,1.0,0.0,,,,,"4-4 | HR, 2B, BB | vs AZ (home)"
-2026-04-30,Kyle Schwarber,PHI,OF,6.2,2.6,SF 5 PHI 6,4.0,2.0,4.0,1.0,2.0,1.0,0.0,,,,,"4-4 | HR, 2 2B, BB | vs SF (home)"
-2026-04-30,Jeremiah Jackson,BAL,OF,5.5,2.7,HOU 11 BAL 5,4.0,0.0,0.0,0.0,0.0,0.0,2.0,,,,,0-4 | 2 K | vs HOU (home)
-2026-04-30,CJ Abrams,WSH,OF,5.5,2.3,WSH 5 NYM 4,3.0,1.0,2.0,1.0,3.0,1.0,1.0,,,,,"2-3 | HR, BB, K | vs NYM (away)"
-2026-04-30,MJ Melendez,NYM,OF,4.9,3.0,WSH 5 NYM 4,2.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-2 | HR, 3 RBI, R | vs WSH (home)"
-2026-04-30,Maikel Garcia,KC,OF,4.6,3.0,KC 3 ATH 6,5.0,2.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-5 | HR, 2 2B, RBI | vs ATH (away)"
-2026-04-30,Adley Rutschman,BAL,OF,5.1,2.1,HOU 11 BAL 5,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-04-30,Matt Vierling,DET,OF,4.1,3.0,DET 5 ATL 2,5.0,2.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-5 | 2B, K, 2 RBI | vs ATL (away)"
-2026-04-30,Byron Buxton,MIN,OF,3.8,3.0,TOR 1 MIN 7,4.0,2.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-4 | HR, 2B, RBI | vs TOR (home)"
-2026-04-30,Chris Bassitt,BAL,P,5.0,1.6,HOU 11 BAL 5,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-04-30,Shea Langeliers,ATH,OF,4.0,2.4,KC 3 ATH 6,4.0,2.0,3.0,0.0,1.0,0.0,0.0,,,,,"3-4 | 3 2B, RBI, 2 R | vs KC (home)"
-2026-04-30,Tyler Freeman,COL,OF,3.5,3.0,COL 4 CIN 6,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-4 | HR, 2 RBI, R | vs CIN (away)"
-2026-04-30,Alec Burleson,STL,OF,3.9,2.4,STL 10 PIT 5,5.0,1.0,3.0,0.0,3.0,0.0,1.0,,,,,"3-5 | K, 3 RBI, R | vs PIT (away)"
-2026-04-30,TJ Friedl,CIN,OF,3.4,3.0,COL 4 CIN 6,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,"1-4 | HR, K, 2 RBI | vs COL (home)"
-2026-04-30,Bryan Reynolds,PIT,OF,3.1,2.9,STL 10 PIT 5,4.0,1.0,2.0,0.0,2.0,1.0,1.0,,,,,"2-4 | 2 2B, BB, K | vs STL (home)"
-2026-04-30,Jordan Walker,STL,OF,3.5,2.3,STL 10 PIT 5,5.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-5 | HR, K, 3 RBI | vs PIT (away)"
-2026-04-30,Justin Crawford,PHI,OF,3.4,3.0,SF 5 PHI 6,4.0,0.0,1.0,0.0,0.0,0.0,0.0,,,,,1-4 | 3B | vs SF (home)
-2026-04-30,Nathaniel Lowe,CIN,OF,3.1,3.0,COL 4 CIN 6,3.0,2.0,2.0,1.0,1.0,1.0,0.0,,,,,"2-3 | HR, 2B, BB | vs COL (home)"
-2026-04-30,Spencer Steer,CIN,OF,3.3,3.0,COL 4 CIN 6,3.0,1.0,2.0,0.0,2.0,1.0,0.0,,,,,"2-3 | 2B, BB, 2 RBI | vs COL (home)"
-2026-04-30,Darell Hernaiz,ATH,OF,3.1,3.0,KC 3 ATH 6,4.0,0.0,3.0,0.0,2.0,0.0,0.0,,,,,3-4 | 2 RBI | vs KC (home)
-2026-05-01,Julio Rodriguez,SEA,OF,6.0,3.0,KC 7 SEA 6,4.0,2.0,2.0,2.0,4.0,0.0,2.0,,,,,"2-4 | 2 HR, 2 K, 4 RBI | vs KC (home)"
-2026-05-01,Kazuma Okamoto,TOR,OF,5.7,3.0,TOR 7 MIN 3,4.0,3.0,2.0,2.0,3.0,1.0,0.0,,,,,"2-4 | 2 HR, BB, 3 RBI | vs MIN (away)"
-2026-05-01,Chase DeLauter,CLE,OF,5.4,2.7,CLE 8 ATH 5,4.0,1.0,4.0,0.0,2.0,1.0,0.0,,,,,"4-4 | 2 2B, BB, 2 RBI | vs ATH (away)"
-2026-05-01,Jordan Walker,STL,OF,5.7,2.2,LAD 2 STL 7,4.0,2.0,4.0,0.0,2.0,0.0,0.0,,,,,"4-4 | 2 2B, 2 RBI, 2 R | vs LAD (home)"
-2026-05-01,William Contreras,MIL,OF,5.0,2.5,MIL 6 WSH 1,5.0,1.0,4.0,0.0,3.0,0.0,0.0,,,,,"4-5 | 3 RBI, R | vs WSH (away)"
-2026-05-01,Bryson Stott,PHI,OF,4.6,3.0,PHI 6 MIA 5,3.0,2.0,1.0,1.0,3.0,1.0,0.0,,,,,"1-3 | HR, BB, 3 RBI | vs MIA (away)"
-2026-05-01,Jarren Duran,BOS,OF,4.4,3.0,HOU 1 BOS 3,4.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-4 | HR, 3 RBI, R | vs HOU (home)"
-2026-05-01,Bryan Reynolds,PIT,OF,4.4,2.7,CIN 1 PIT 9,4.0,2.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-4 | HR, 3B, BB | vs CIN (home)"
-2026-05-01,Rhys Hoskins,CLE,OF,4.6,3.0,CLE 8 ATH 5,4.0,1.0,2.0,1.0,3.0,1.0,2.0,,,,,"2-4 | HR, 2B, BB | vs ATH (away)"
-2026-05-01,Brent Rooker,ATH,OF,4.1,3.0,CLE 8 ATH 5,5.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, R | vs CLE (home)"
-2026-05-01,Otto Lopez,MIA,OF,4.1,2.9,PHI 6 MIA 5,5.0,2.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-5 | 2B, 2 RBI, 2 R | vs PHI (home)"
-2026-05-01,Geraldo Perdomo,ARI,OF,3.9,3.0,AZ 5 CHC 6,5.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-5 | HR, K, 3 RBI | vs CHC (away)"
-2026-05-01,Salvador Perez,KC,OF,3.7,3.0,KC 7 SEA 6,4.0,2.0,2.0,0.0,2.0,0.0,1.0,,,,,"2-4 | 2 2B, K, 2 RBI | vs SEA (away)"
-2026-05-01,Byron Buxton,MIN,OF,3.6,3.0,TOR 7 MIN 3,4.0,1.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-4 | HR, BB, 2 RBI | vs TOR (home)"
-2026-05-01,Mauricio Dubon,ATL,OF,3.9,3.0,ATL 8 COL 6,5.0,1.0,2.0,0.0,3.0,0.0,0.0,,,,,"2-5 | 3B, 3 RBI, R | vs COL (away)"
-2026-05-01,Michael Harris II,ATL,OF,3.9,2.6,ATL 8 COL 6,1.0,1.0,1.0,1.0,2.0,0.0,0.0,,,,,"1-1 | HR, 2 RBI, R | vs COL (away)"
-2026-05-01,Carlos Correa,HOU,OF,3.6,3.0,HOU 1 BOS 3,5.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-5 | HR, 2B, RBI | vs BOS (away)"
-2026-05-01,Vinnie Pasquantino,KC,OF,3.4,3.0,KC 7 SEA 6,5.0,2.0,2.0,1.0,2.0,0.0,2.0,,,,,"2-5 | HR, 2 K, 2 RBI | vs SEA (away)"
-2026-05-01,Munetaka Murakami,CWS,OF,3.5,2.4,CWS 8 SD 2,3.0,1.0,1.0,1.0,3.0,2.0,0.0,,,,,"1-3 | HR, 2 BB, 3 RBI | vs SD (away)"
-2026-05-01,Ben Rice,NYY,OF,3.9,1.9,BAL 2 NYY 7,5.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, R | vs BAL (home)"
-2026-05-02,Cody Bellinger,NYY,OF,8.5,3.0,BAL 4 NYY 9,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Drake Baldwin,ATL,OF,6.3,2.2,ATL 9 COL 1,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Shea Langeliers,ATH,OF,5.7,2.3,CLE 14 ATH 6,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Ian Happ,CHC,OF,4.8,3.0,ARI 0 CHC 2,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Konnor Griffin,PIT,OF,4.4,3.0,CIN 7 PIT 17,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Dillon Dingler,DET,OF,4.3,2.7,TEX 1 DET 5,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Trent Grisham,NYY,OF,4.0,3.0,BAL 4 NYY 9,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Oswald Peraza,LAA,OF,3.7,3.0,NYM 3 LAA 4,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Christian Walker,HOU,OF,4.2,2.4,HOU 6 BOS 3,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Marcell Ozuna,PIT,OF,4.3,3.0,CIN 7 PIT 17,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Brice Matthews,HOU,OF,4.2,3.0,HOU 6 BOS 3,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Ryan O'Hearn,PIT,OF,3.8,2.6,CIN 7 PIT 17,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Kazuma Okamoto,TOR,OF,3.4,3.0,TOR 11 MIN 4,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Lenyn Sosa,TOR,OF,3.8,3.0,TOR 11 MIN 4,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Nathaniel Lowe,CIN,OF,3.4,2.9,CIN 7 PIT 17,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Max Meyer,MIA,P,7.8,0.0,PHI 0 MIA 4,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Brandon Valenzuela,TOR,OF,3.2,3.0,TOR 11 MIN 4,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Myles Straw,TOR,OF,3.4,3.0,TOR 11 MIN 4,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Austin Riley,ATL,OF,3.1,3.0,ATL 9 COL 1,,,,,,,,,,,,auto-scraped (box score backfill pending)
-2026-05-02,Emerson Hancock,SEA,P,7.2,0.0,KC 3 SEA 2,,,,,,,,,,,,auto-scraped (box score backfill pending)
+date,player_name,team_actual,position,real_score,card_boost,game_result,ab,r,h,hr,rbi,bb,so,ip,er,k_pitching,decision,notes,ops_at_slate,iso_at_slate
+2026-03-25,Austin Wells,NYY,C,1.2,,SF 0 NYY 7,3.0,1.0,2.0,0.0,0.0,1.0,0.0,,,,,2-for-3 | vs SF (away),1.417,0.000
+2026-03-25,Ben Rice,NYY,1B,0.2,,SF 0 NYY 7,4.0,1.0,1.0,0.0,0.0,1.0,2.0,,,,,Minimal contribution | vs SF (away),0.650,0.000
+2026-03-25,Camilo Doval,NYY,P,1.1,,SF 0 NYY 7,,,,,,,,1.0,0.0,0.0,ND,1 IP scoreless in 9th | vs SF (away),,
+2026-03-25,Cody Bellinger,NYY,OF,0.2,,SF 0 NYY 7,5.0,1.0,1.0,0.0,0.0,0.0,2.0,,,,,Bad day at plate | vs SF (away),0.400,0.000
+2026-03-25,Giancarlo Stanton,NYY,DH,1.7,,SF 0 NYY 7,4.0,1.0,2.0,0.0,1.0,0.0,1.0,,,,,First Yankee hit of season | vs SF (away),1.000,0.000
+2026-03-25,JT Brubaker,SF,P,1.8,,SF 0 NYY 7,,,,,,,,2.0,0.0,2.0,ND,~1 IP relief scoreless | vs NYY (home),,
+2026-03-25,Jake Bird,NYY,P,0.8,,SF 0 NYY 7,,,,,,,,0.2,0.0,1.0,ND,0.2 IP scoreless relief | vs SF (away),,
+2026-03-25,Jazz Chisholm Jr.,NYY,3B,0.9,,SF 0 NYY 7,3.0,1.0,1.0,0.0,0.0,0.0,0.0,,,,,HBP single SB scored on error | vs SF (away),0.833,0.000
+2026-03-25,Jose Caballero,NYY,SS,1.0,,SF 0 NYY 7,4.0,1.0,1.0,0.0,1.0,0.0,0.0,,,,,RBI double; first ABS challenge | vs SF (away),0.500,0.000
+2026-03-25,Logan Webb,SF,P,0.3,,SF 0 NYY 7,,,,,,,,5.0,6.0,7.0,L,5 IP 9H 6ER 7R - got shelled | vs NYY (home),,
+2026-03-25,Luis Arraez,SF,DH,0.3,,SF 0 NYY 7,3.0,0.0,1.0,0.0,0.0,1.0,0.0,,,,,Bad day at plate | vs NYY (home),0.833,0.000
+2026-03-25,Max Fried,NYY,P,6.0,,SF 0 NYY 7,,,,,,,,6.1,0.0,4.0,W,6.1 IP 2H 0ER 1BB 4K - dominant opening day | vs SF (away),,
+2026-03-25,Ryan McMahon,NYY,3B,2.2,,SF 0 NYY 7,3.0,1.0,1.0,0.0,2.0,1.0,2.0,,,,,2-RBI single to center | vs SF (away),0.833,0.000
+2026-03-25,Trent Grisham,NYY,OF,2.0,,SF 0 NYY 7,5.0,0.0,1.0,0.0,2.0,0.0,1.0,,,,,2-run triple 105.7mph EV | vs SF (away),0.800,0.400
+2026-03-26,Alec Burleson,STL,OF,5.0,,STL 9 TB 7,4.0,2.0,3.0,1.0,2.0,1.0,0.0,,,,,432ft go-ahead 2-run HR in 8-run 6th | vs TB (home),2.300,0.750
+2026-03-26,Andrew Abbott,CIN,P,4.6,,CIN 0 BOS 3,,,,,,,,6.0,0.0,4.0,ND,6 IP 7H 0ER 1BB 4K - no run support | vs BOS (home),,
+2026-03-26,Andy Pages,LAD,OF,5.3,,LAD 8 AZ 2,4.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,Go-ahead 3-run HR 400ft + diving catch | vs AZ (home),1.750,0.750
+2026-03-26,Brandon Lowe,PIT,2B,5.1,,NYM 11 PIT 7,4.0,2.0,2.0,2.0,3.0,0.0,0.0,,,,,2 HR off Peralta in Pirates debut | vs NYM (away),2.500,1.500
+2026-03-26,Chase DeLauter,CLE,OF,5.3,,SEA 4 CLE 6,5.0,3.0,3.0,2.0,2.0,0.0,1.0,,,,,2 HR in MLB debut (422ft/111.1mph) - historic | vs SEA (away),2.400,1.200
+2026-03-26,Cristopher Sánchez,PHI,P,6.8,,PHI 5 TEX 3,,,,,,,,6.0,0.0,10.0,W,vs TEX (home),,
+2026-03-26,Dominic Canzone,SEA,OF,4.3,,SEA 4 CLE 6,4.0,2.0,2.0,2.0,2.0,0.0,0.0,,,,,2 solo HR (418ft + 444ft/109.3mph) | vs CLE (home),2.500,1.500
+2026-03-26,Garrett Crochet,BOS,P,5.8,,CIN 0 BOS 3,,,,,,,,6.0,0.0,8.0,W,6 IP 3H 0ER 2BB 8K | vs CIN (away),,
+2026-03-26,Jacob Misiorowski,MIL,P,4.2,,MIL 14 CWS 2,,,,,,,,5.0,1.0,11.0,W,5 IP 2H 1ER 3BB 11K franchise record - 101.1mph | vs CWS (home),,
+2026-03-26,Joe Ryan,MIN,P,5.6,,BAL 2 MIN 1,,,,,,,,5.1,0.0,7.0,ND,5.1 IP 1H 0ER 2BB 7K - dominant but lost | vs BAL (away),,
+2026-03-26,José Soriano,LAA,P,5.6,,HOU 0 LAA 3,,,,,,,,6.0,0.0,7.0,W,vs HOU (away),,
+2026-03-26,Kevin McGonigle,DET,3B,4.9,,SD 2 DET 8,5.0,2.0,4.0,0.0,2.0,0.0,0.0,,,,,4-for-5 w/2 2B in MLB debut - youngest since Griffey | vs SD (away),2.000,0.400
+2026-03-26,Tarik Skubal,DET,P,6.0,,SD 2 DET 8,,,,,,,,6.0,0.0,6.0,W,6 IP 3H 0ER 0BB 6K | vs SD (away),,
+2026-03-26,Trevor Rogers,BAL,P,5.9,,BAL 2 MIN 1,,,,,,,,7.0,0.0,5.0,W,7 IP 3H 0ER 4BB 5K - 3 double plays | vs MIN (home),,
+2026-03-27,Andrés Giménez,TOR,2B,5.9,,TOR 3 ATH 2,3.0,0.0,2.0,0.0,3.0,1.0,0.0,,,,,vs ATH (home),2.083,0.666
+2026-03-27,Cam Schlittler,NYY,P,6.1,,SF 0 NYY 3,,,,,,,,5.1,0.0,8.0,W,5.1 IP 1H 0ER 0BB 8K - MLB debut 68 pitches | vs SF (away),,
+2026-03-27,Chris Sale,ATL,P,5.2,,ATL 6 KC 0,,,,,,,,6.0,0.0,6.0,W,6 IP 3H 0ER 3BB 6K - 88 pitches | vs KC (home),,
+2026-03-27,George Kirby,SEA,P,4.4,,SEA 5 CLE 1,,,,,,,,6.0,1.0,6.0,W,6 IP 2H 1ER 2BB 6K - 90 pitches | vs CLE (home),,
+2026-03-27,Giancarlo Stanton,NYY,DH,2.3,1.8,SF 0 NYY 3,4.0,1.0,2.0,1.0,1.0,0.0,1.0,,,,,414ft HR to left off Butto + K in 1st AB | vs SF (away),1.375,0.375
+2026-03-27,Kevin Gausman,TOR,P,6.6,,TOR 3 ATH 2,,,,,,,,6.0,1.0,11.0,ND,6 IP 1H 1ER 0BB 11K - Blue Jays OD record | vs ATH (home),,
+2026-03-27,Kyle Tucker,LAD,OF,2.6,2.0,LAD 5 AZ 4,3.0,1.0,1.0,0.0,1.0,1.0,2.0,,,,,Go-ahead RBI single 8th + RBI double 7th + SB | vs AZ (home),0.873,0.143
+2026-03-27,Luke Raley,SEA,OF,2.5,1.6,SEA 5 CLE 1,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,2-run HR 390ft off Holderman in 6th | vs CLE (home),1.250,0.750
+2026-03-27,Michael King,SD,P,4.1,,SD 2 DET 5,,,,,,,,5.0,0.0,6.0,ND,5 IP 1H 0ER(1 unearned) 4BB 6K | vs DET (home),,
+2026-03-27,Mike Trout,LAA,OF,3.2,,HOU 2 LAA 6,4.0,1.0,3.0,1.0,1.0,1.0,0.0,,,,,3-for-4 1BB solo HR - career first back-to-back HR games | vs HOU (away),2.467,1.000
+2026-03-27,Mookie Betts,LAD,SS,4.2,2.5,LAD 5 AZ 4,4.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,3-run HR to center off R. Nelson | vs AZ (home),0.958,0.375
+2026-03-27,Randy Arozarena,SEA,OF,1.6,3.0,SEA 5 CLE 1,1.0,2.0,0.0,0.0,0.0,3.0,0.0,,,,,2+ BB 1R 1SB 1 OF assist - walks/baserunning | vs CLE (home),0.900,0.200
+2026-03-27,Sandy Alcantara,MIA,P,5.7,,MIA 2 COL 1,,,,,,,,7.0,0.0,5.0,W,7 IP 4H 0ER(1 unearned) 2BB 5K - 6th OD start | vs COL (home),,
+2026-03-27,Shea Langeliers,ATH,C,5.4,,TOR 3 ATH 2,4.0,2.0,3.0,2.0,2.0,0.0,1.0,,,,,2 HR off two different pitchers (Gausman + Hoffman) | vs TOR (away),3.000,1.500
+2026-03-28,Christian Walker,HOU,1B,2.6,3.0,HOU 11 LAA 9,4.0,1.0,2.0,0.0,1.0,1.0,1.0,,,,,RBI single in 6th + double; part of comeback | vs LAA (home),0.917,0.200
+2026-03-28,Ezequiel Tovar,COL,SS,2.9,3.0,MIA 4 COL 3,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,2-run HR in 4th (1st of season) | vs MIA (away),0.875,0.375
+2026-03-28,Garrett Mitchell,MIL,OF,3.6,3.0,MIL 6 CWS 1,4.0,1.0,2.0,0.0,2.0,1.0,1.0,,,,,2 singles 2 SB 2 RBI + BB | vs CWS (home),1.025,0.000
+2026-03-28,JJ Wetherholt,STL,2B,4.5,1.2,STL 6 TB 5,5.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,Walk-off 2-run single in 10th + SB | vs TB (home),0.967,0.334
+2026-03-28,Jake Meyers,HOU,OF,3.0,3.0,HOU 11 LAA 9,5.0,2.0,2.0,0.0,2.0,0.0,1.0,,,,,2-run double in 6th during 8-run rally + SB | vs LAA (home),0.708,0.125
+2026-03-28,Jorge Soler,LAA,DH,3.2,3.0,HOU 11 LAA 9,2.0,1.0,1.0,1.0,2.0,3.0,1.0,,,,,Solo HR; part of Angels early 3-0 lead | vs HOU (away),0.855,0.273
+2026-03-28,Luis Robert Jr.,NYM,OF,5.5,1.1,NYM 4 PIT 2,4.0,1.0,1.0,1.0,3.0,1.0,0.0,,,,,Walk-off 3-run HR in 11th | vs PIT (home),1.250,0.375
+2026-03-28,Nolan Schanuel,LAA,1B,3.2,2.5,HOU 11 LAA 9,5.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,3-run HR in 9th (2nd HR of season) | vs HOU (away),1.169,0.461
+2026-03-28,Oswald Peraza,LAA,SS,3.4,3.0,HOU 11 LAA 9,4.0,2.0,3.0,1.0,1.0,0.0,1.0,,,,,HR + 2 singles; 3-for-5ish | vs HOU (away),1.053,0.272
+2026-03-28,Owen Caissie,MIA,OF,3.8,1.8,MIA 4 COL 3,4.0,0.0,3.0,0.0,1.0,0.0,0.0,,,,,3-for-4 w/2B go-ahead RBI single in 8th | vs COL (home),1.250,0.250
+2026-03-28,Royce Lewis,MIN,SS,4.1,3.0,BAL 1 MIN 4,3.0,2.0,1.0,1.0,2.0,1.0,1.0,,,,,2-run HR off Bradish + BB + SB | vs BAL (away),1.229,0.600
+2026-03-28,Shea Langeliers,ATH,C,5.7,0.5,TOR 8 ATH 7,4.0,1.0,2.0,1.0,4.0,1.0,1.0,,,,,Grand slam 420ft in 7th - 3rd HR in 2 games | vs TOR (away),2.417,1.125
+2026-03-28,Will Smith,LAD,C,3.8,1.6,LAD 3 AZ 2,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,Go-ahead 2-run HR in 8th on his birthday | vs AZ (home),1.091,0.545
+2026-03-28,Wilyer Abreu,BOS,OF,3.4,3.0,CIN 6 BOS 5,5.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,Game-tying solo HR in 9th + RBI double in 7th | vs CIN (away),1.111,0.445
+2026-03-29,Alex Bregman,CHC,3B,4.0,3.0,CHC 3 WSH 6,4.0,2.0,2.0,2.0,2.0,0.0,0.0,,,,,2 solo HRs (4th and 8th) - first HRs as a Cub | vs WSH (home),0.978,0.461
+2026-03-29,Andrew McCutchen,TEX,DH,4.6,3.0,PHI 3 TEX 8,4.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,3-run HR in 4th for 5-0 lead - first HR with Rangers | vs PHI (away),1.444,0.556
+2026-03-29,Brandon Nimmo,TEX,OF,3.7,3.0,PHI 3 TEX 8,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,2-run HR 410ft off Luzardo - first HR as Ranger | vs PHI (away),1.012,0.250
+2026-03-29,Brendan Donovan,SEA,2B,4.7,2.3,SEA 8 CLE 0,3.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,3-run HR line drive over wall + 2 HBP | vs CLE (home),1.485,0.500
+2026-03-29,Christian Yelich,MIL,OF,5.2,1.3,MIL 9 CWS 7,1.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,Pinch-hit 3-run HR 421ft 111.1mph EV - first career PH HR | vs CWS (home),1.536,0.300
+2026-03-29,Colson Montgomery,CWS,SS,6.3,3.0,MIL 9 CWS 7,3.0,1.0,2.0,1.0,5.0,1.0,0.0,,,,,Grand slam 405ft 103.6mph EV + RBI single | vs MIL (away),1.017,0.300
+2026-03-29,Eugenio Suárez,CIN,3B,5.4,3.0,CIN 3 BOS 2,3.0,1.0,1.0,1.0,3.0,1.0,1.0,,,,,vs BOS (home),0.648,0.250
+2026-03-29,Isaac Paredes,HOU,3B,3.5,3.0,HOU 9 LAA 7,5.0,1.0,2.0,0.0,2.0,0.0,1.0,,,,,Go-ahead 2-RBI double in 8th on full count | vs LAA (home),0.653,0.187
+2026-03-29,Jordan Walker,STL,OF,5.4,3.0,STL 7 TB 11,4.0,3.0,3.0,1.0,3.0,0.0,1.0,,,,,3-run HR + double; batting .400 thru 3 games | vs TB (home),1.400,0.500
+2026-03-29,Owen Caissie,MIA,OF,4.6,1.1,MIA 4 COL 3,2.0,1.0,1.0,1.0,2.0,0.0,0.0,,,,,Pinch-hit walk-off 2-run HR 393ft 107.9mph EV | vs COL (home),1.500,0.500
+2026-03-29,Tyler O'Neill,BAL,OF,3.9,3.0,BAL 8 MIN 6,3.0,2.0,1.0,1.0,3.0,1.0,0.0,,,,,3-run HR 391ft 109mph + walk + OF assist | vs MIN (home),1.158,0.428
+2026-03-29,Wilyer Abreu,BOS,OF,4.8,1.8,CIN 3 BOS 2,4.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,2-run HR in 4th + single + double; 6-for-13 series | vs CIN (away),1.539,0.615
+2026-03-29,Yandy Díaz,TB,1B,7.5,1.9,STL 7 TB 11,6.0,2.0,5.0,0.0,4.0,0.0,0.0,,,,,vs STL (away),1.213,0.062
+2026-03-29,Zach Neto,LAA,SS,3.8,2.9,HOU 9 LAA 7,2.0,2.0,1.0,1.0,2.0,3.0,0.0,,,,,2-run HR to left in 4th | vs HOU (away),1.067,0.467
+2026-03-30,Austin Hays,CWS,OF,3.3,3.0,MIA 4 CWS 9,5.0,1.0,1.0,1.0,3.0,0.0,4.0,,,,,3-run HR | vs MIA (away),0.667,0.267
+2026-03-30,Colt Keith,DET,2B,2.8,3.0,AZ 9 DET 6,5.0,1.0,2.0,0.0,2.0,0.0,2.0,,,,,2 doubles 2 RBI | vs AZ (away),1.143,0.214
+2026-03-30,Corbin Carroll,AZ,OF,5.9,3.0,AZ 9 DET 6,4.0,2.0,2.0,1.0,4.0,1.0,1.0,,,,,3-run HR + triple = 4 RBI | vs DET (home),0.894,0.333
+2026-03-30,Ezequiel Tovar,COL,SS,4.0,2.9,TOR 5 COL 14,6.0,2.0,3.0,0.0,3.0,0.0,1.0,,,,,3 hits 3 RBI + SB in 14-5 blowout | vs TOR (away),0.944,0.278
+2026-03-30,Gunnar Henderson,BAL,SS,3.0,3.0,BAL 2 TEX 5,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,Solo HR + hit; 2 errors in field | vs TEX (home),0.653,0.187
+2026-03-30,Jackson Merrill,SD,OF,2.6,3.0,SD 2 SF 3,4.0,1.0,1.0,1.0,2.0,0.0,0.0,,,,,2-run HR | vs SF (home),0.717,0.267
+2026-03-30,Jose Altuve,HOU,2B,5.7,3.0,HOU 8 BOS 1,4.0,4.0,4.0,2.0,2.0,1.0,0.0,,,,,4-for-? 2 solo HRs - 15th career multi-HR game | vs BOS (home),1.389,0.412
+2026-03-30,Kyle Isbel,KC,OF,4.5,3.0,KC 3 MIN 1,3.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,2-run HR + SB | vs MIN (home),1.100,0.300
+2026-03-30,Mauricio Dubón,ATL,OF,3.4,3.0,ATL 4 ATH 0,4.0,0.0,3.0,0.0,3.0,0.0,1.0,,,,,vs ATH (home),0.955,0.100
+2026-03-30,Miguel Vargas,CWS,3B,6.2,3.0,MIA 4 CWS 9,4.0,2.0,2.0,1.0,6.0,0.0,0.0,,,,,Grand slam + RBI single + sac fly = 6 RBI | vs MIA (away),0.913,0.230
+2026-03-30,Steven Kwan,CLE,OF,3.6,3.0,LAD 2 CLE 4,5.0,1.0,3.0,0.0,1.0,0.0,1.0,,,,,2+ hits 2 RBI + SB | vs LAD (away),0.682,0.046
+2026-03-30,TJ Rumfield,COL,OF,3.0,3.0,TOR 5 COL 14,5.0,1.0,3.0,0.0,2.0,0.0,1.0,,,,,3 hits incl 2B in blowout | vs TOR (away),1.081,0.286
+2026-03-30,William Contreras,MIL,C,3.9,2.1,MIL 2 TB 3,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,2-run HR | vs TB (home),1.021,0.333
+2026-03-30,Yordan Alvarez,HOU,DH,3.1,2.2,HOU 8 BOS 1,5.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,2-run HR | vs BOS (home),1.222,0.389
+2026-03-31,Ben Rice,NYY,1B,3.1,3.0,SEA 0 NYY 5,2.0,2.0,2.0,0.0,1.0,2.0,0.0,,,,,2B + BB + BB | vs SEA (away),0.971,0.143
+2026-03-31,Carlos Correa,HOU,SS,3.0,3.0,HOU 9 BOS 2,3.0,2.0,2.0,0.0,2.0,1.0,1.0,,,,,2 hits 2 RBI | vs BOS (home),0.733,0.044
+2026-03-31,Corey Seager,TEX,SS,3.4,2.8,BAL 5 TEX 8,4.0,2.0,2.0,1.0,2.0,1.0,1.0,,,,,Solo HR in 9th + RBI single | vs BAL (away),1.125,0.334
+2026-03-31,Danny Jansen,TEX,C,5.1,3.0,BAL 5 TEX 8,5.0,1.0,3.0,1.0,3.0,0.0,1.0,,,,,3-run HR + double + single | vs BAL (away),0.923,0.307
+2026-03-31,Jacob Wilson,ATH,SS,2.9,3.0,ATL 2 ATH 5,4.0,0.0,2.0,0.0,2.0,0.0,0.0,,,,,2B + hit 2 RBI | vs ATL (away),0.476,0.096
+2026-03-31,Jake Bauers,MIL,1B,3.1,3.0,MIL 6 TB 2,4.0,2.0,2.0,1.0,1.0,0.0,0.0,,,,,Solo HR + SB | vs TB (home),0.948,0.316
+2026-03-31,Jung Hoo Lee,SF,OF,4.2,3.0,SD 3 SF 9,5.0,0.0,3.0,0.0,3.0,0.0,0.0,,,,,2-run 2B + RBI single | vs SD (away),0.689,0.167
+2026-03-31,Logan Webb,SF,P,3.7,3.0,SD 3 SF 9,,,,,,,,6.0,3.0,5.0,W,6 IP 3H 3ER 4BB 5K - got run support | vs SD (away),,
+2026-03-31,Max Muncy,LAD,3B,2.9,3.0,LAD 4 CLE 1,3.0,2.0,2.0,1.0,1.0,1.0,0.0,,,,,Solo HR 410ft | vs CLE (home),1.169,0.272
+2026-03-31,Oneil Cruz,PIT,SS,5.7,3.0,CIN 3 PIT 8,4.0,3.0,3.0,2.0,3.0,0.0,1.0,,,,,2 HR (444ft + 403ft) 3 RBI | vs CIN (away),0.927,0.333
+2026-03-31,Shohei Ohtani,LAD,DH,5.8,3.0,LAD 4 CLE 1,3.0,0.0,1.0,0.0,0.0,2.0,1.0,6.0,0.0,6.0,W,Two-way: 6 IP 1H 0ER 3BB 6K pitching + 1-for-3 2BB batting | vs CLE (home),0.655,0.000
+2026-03-31,Taylor Ward,BAL,OF,4.6,3.0,BAL 5 TEX 8,5.0,1.0,4.0,0.0,2.0,0.0,1.0,,,,,4-for-5 w/2-run 2B in 9th | vs TEX (home),0.741,0.050
+2026-03-31,Willy Adames,SF,SS,5.5,3.0,SD 3 SF 9,5.0,2.0,4.0,1.0,2.0,0.0,0.0,,,,,4-for-5 w/HR + 2 doubles (near cycle) | vs SD (away),0.800,0.200
+2026-03-31,Yordan Alvarez,HOU,DH,4.2,1.8,HOU 9 BOS 2,3.0,2.0,2.0,1.0,2.0,1.0,0.0,,,,,HR + 2B | vs BOS (home),1.441,0.524
+2026-04-01,Ben Rice,NYY,1B,4.3,2.1,NYY 5 SEA 3,3.0,2.0,2.0,1.0,2.0,1.0,0.0,,,,,vs SEA (away),1.289,0.353
+2026-04-01,Carlos Correa,HOU,SS,3.9,2.8,HOU 6 BOS 4,4.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,vs BOS (home),0.811,0.148
+2026-04-01,Drake Baldwin,ATL,C,5.0,2.4,ATL 5 ATH 1,3.0,1.0,2.0,0.0,4.0,1.0,0.0,,,,,vs ATH (home),1.196,0.455
+2026-04-01,Freddy Peralta,NYM,P,4.7,1.7,STL 2 NYM 1,,,,,,,,5.1,1.0,7.0,ND,vs STL (away),,
+2026-04-01,Gavin Williams,CLE,P,7.8,1.6,CLE 4 LAD 1,,,,,,,,7.0,0.0,10.0,W,vs LAD (away),,
+2026-04-01,Jonathan India,KC,2B,4.3,3.0,KC 13 MIN 9,5.0,1.0,2.0,1.0,5.0,0.0,1.0,,,,,vs MIN (home),0.650,0.200
+2026-04-01,Josh Bell,MIN,1B,3.7,3.0,KC 13 MIN 9,3.0,3.0,1.0,1.0,3.0,2.0,1.0,,,,,vs KC (away),0.914,0.333
+2026-04-01,Justin Crawford,PHI,OF,3.7,3.0,PHI 6 WSH 5,5.0,0.0,3.0,0.0,1.0,0.0,1.0,,,,,vs WSH (home),0.915,0.059
+2026-04-01,Kyle Isbel,KC,OF,5.2,1.8,KC 13 MIN 9,4.0,3.0,4.0,1.0,2.0,0.0,0.0,,,,,vs MIN (home),1.571,0.429
+2026-04-01,Liam Hicks,MIA,C,5.4,1.8,MIA 10 CWS 0,4.0,2.0,3.0,1.0,4.0,0.0,0.0,,,,,vs CWS (home),1.659,0.666
+2026-04-01,Nico Hoerner,CHC,2B,3.7,3.0,CHC 6 LAA 2,5.0,1.0,3.0,0.0,1.0,0.0,1.0,,,,,vs LAA (home),0.885,0.182
+2026-04-01,Oneil Cruz,PIT,SS,4.5,2.3,PIT 8 CIN 3,5.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,vs CIN (away),1.029,0.392
+2026-04-01,Sandy Alcantara,MIA,P,9.5,,MIA 10 CWS 0,,,,,,,,9.0,0.0,7.0,W,vs CWS (home),,
+2026-04-01,Zac Gallen,AZ,P,4.5,3.0,AZ 1 DET 0,,,,,,,,6.0,0.0,2.0,W,vs DET (home),,
+2026-04-02,Austin Riley,ATL,3B,2.2,3.0,AZ 2 ATL 17,3.0,1.0,1.0,0.0,2.0,1.0,1.0,,,,,2-run double in 8-run 5th | vs AZ (away),0.649,0.042
+2026-04-02,Casey Schmitt,SF,3B,2.5,3.0,SF 7 NYM 2,3.0,0.0,3.0,0.0,1.0,1.0,0.0,,,,,2 hits 2 RBI | vs NYM (home),0.678,0.045
+2026-04-02,Cole Ragans,KC,P,5.3,3.0,KC 1 MIN 5,,,,,,,,6.0,0.0,8.0,L,6 IP 4H 1ER 1BB 8K - outdueled by Bradley despite strong outing | vs MIN (home),,
+2026-04-02,Jordan Lawlar,AZ,SS,2.1,3.0,AZ 2 ATL 17,2.0,1.0,1.0,1.0,1.0,0.0,1.0,,,,,Solo HR in 3rd - first career HR in 126 PA | vs ATL (home),0.956,0.223
+2026-04-02,Josh Bell,MIN,1B,2.0,2.4,KC 1 MIN 5,3.0,2.0,1.0,1.0,1.0,1.0,1.0,,,,,Back-to-back HR with Clemens in 9th | vs KC (away),1.067,0.445
+2026-04-02,Kody Clemens,MIN,2B,2.6,3.0,KC 1 MIN 5,3.0,2.0,2.0,1.0,1.0,1.0,0.0,,,,,2 hits 2 RBI + HR in 9th | vs KC (away),0.857,0.250
+2026-04-02,Luis Arraez,SF,2B,2.8,3.0,SF 7 NYM 2,5.0,2.0,2.0,0.0,1.0,0.0,1.0,,,,,3-for-4 2 RBI | vs NYM (home),0.762,0.108
+2026-04-02,Matt Chapman,SF,3B,2.0,3.0,SF 7 NYM 2,5.0,1.0,2.0,0.0,1.0,0.0,0.0,,,,,HR + walk | vs NYM (home),0.670,0.148
+2026-04-02,Matt Olson,ATL,1B,5.6,3.0,AZ 2 ATL 17,5.0,3.0,3.0,1.0,3.0,1.0,1.0,,,,,HR + 2 doubles + RBI single; 8-run 5th inning | vs AZ (away),0.938,0.250
+2026-04-02,Matt Wallner,MIN,OF,1.7,3.0,KC 1 MIN 5,4.0,1.0,1.0,1.0,1.0,0.0,1.0,,,,,HR in 9th to break game open | vs KC (away),0.704,0.261
+2026-04-02,Mauricio Dubón,ATL,OF,2.3,2.5,AZ 2 ATL 17,4.0,3.0,2.0,1.0,1.0,1.0,0.0,,,,,Solo HR + hit | vs AZ (away),1.097,0.190
+2026-04-02,Michael Harris II,ATL,OF,1.8,3.0,AZ 2 ATL 17,6.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,2-run double in 5th + BB | vs AZ (away),0.620,0.138
+2026-04-02,Rafael Devers,SF,3B,1.9,3.0,SF 7 NYM 2,5.0,1.0,2.0,1.0,1.0,0.0,1.0,,,,,2 hits 1 RBI | vs NYM (home),0.740,0.148
+2026-04-02,Taj Bradley,MIN,P,4.8,,KC 1 MIN 5,,,,,,,,6.0,0.0,3.0,W,7 IP 1ER 9K quality start - outdueled Ragans | vs KC (away),,
+2026-04-03,Aaron Judge,NYY,OF,5.6,3.0,NYY 8 MIA 2,3.0,2.0,2.0,1.0,3.0,1.0,1.0,,,,,2 HR (solo 430ft + 3-run 445ft) 3-for-4 1BB - 4 RBI | vs MIA (home),0.786,0.334
+2026-04-03,CJ Abrams,WSH,SS,5.0,2.2,WSH 6 LAD 13,5.0,1.0,2.0,1.0,4.0,0.0,1.0,,,,,3-run HR + 2 singles; 3-for-4 in losing effort | vs LAD (home),0.821,0.231
+2026-04-03,Chase DeLauter,CLE,OF,5.1,1.9,CLE 4 CHC 1,4.0,1.0,3.0,1.0,3.0,0.0,0.0,,,,,3-for-4 w/HR + double + SB; continued hot streak from debut | vs CHC (home),1.293,0.577
+2026-04-03,Gunnar Henderson,BAL,SS,4.4,3.0,PIT 5 BAL 4,5.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,3-run HR in 4th + RBI double; only 9 drafts | vs PIT (away),0.803,0.267
+2026-04-03,Lawrence Butler,ATH,OF,5.3,3.0,ATH 11 HOU 4,5.0,2.0,3.0,1.0,4.0,0.0,1.0,,,,,Grand slam 415ft in 5th + single + double; only 2 drafts | vs HOU (home),0.690,0.177
+2026-04-03,Marcelo Mayer,BOS,SS,4.2,3.0,BOS 5 SD 2,2.0,2.0,2.0,1.0,2.0,0.0,0.0,,,,,2-run HR in 5th + single; only 1 draft | vs SD (home),1.015,0.353
+2026-04-03,Marcus Semien,NYM,2B,4.5,3.0,SF 3 NYM 10,5.0,1.0,3.0,1.0,3.0,0.0,1.0,,,,,3-for-5 w/HR + double + SB; only 1 draft | vs SF (away),0.660,0.143
+2026-04-03,Max Muncy,LAD,3B,4.6,3.0,WSH 6 LAD 13,5.0,1.0,1.0,0.0,0.0,0.0,2.0,,,,,Solo HR 405ft + RBI double | vs WSH (away),0.812,0.158
+2026-04-03,Sean Burke,CWS,P,5.4,2.9,CWS 5 TOR 4,,,,,,,,6.0,1.0,7.0,ND,7 IP 2H 0ER 1BB 8K - dominant; only 6 drafts | vs TOR (home),,
+2026-04-03,Shohei Ohtani,LAD,DH,4.9,2.6,WSH 6 LAD 13,5.0,1.0,2.0,1.0,4.0,0.0,2.0,,,,,2-run HR + RBI single; 2-for-4 1BB | vs WSH (away),0.754,0.131
+2026-04-03,Sonny Gray,BOS,P,4.1,3.0,BOS 5 SD 2,,,,,,,,6.0,2.0,3.0,W,6 IP 4H 1ER 2BB 7K - most drafted 3x at 1.9k | vs SD (home),,
+2026-04-03,Spencer Steer,CIN,3B,4.4,3.0,TEX 3 CIN 5,4.0,2.0,2.0,1.0,2.0,0.0,1.0,,,,,Solo HR + RBI triple + SB; only 1 draft | vs TEX (away),0.541,0.190
+2026-04-03,Tristan Gray,MIN,3B,5.0,2.3,MIN 10 TB 4,2.0,1.0,1.0,1.0,5.0,1.0,0.0,,,,,2-run HR + 2 singles 3 RBI; only 2 drafts | vs TB (home),1.156,0.363
+2026-04-03,Tyler Stephenson,CIN,C,4.1,3.0,TEX 3 CIN 5,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,2-run HR in 3rd + single; only 2 drafts | vs TEX (away),0.575,0.177
+2026-04-04,Andy Pages,LAD,OF,4.8,1.4,WSH 5 LAD 10,5.0,2.0,3.0,1.0,3.0,0.0,1.0,,,,,vs WSH (away),1.349,0.333
+2026-04-04,Christian Walker,HOU,1B,4.5,2.3,ATH 0 HOU 11,5.0,3.0,3.0,1.0,2.0,1.0,1.0,,,,,vs ATH (away),1.042,0.281
+2026-04-04,Cody Bellinger,NYY,OF,3.5,3.0,NYY 9 MIA 7,3.0,1.0,1.0,1.0,3.0,1.0,0.0,,,,,vs MIA (home),0.900,0.214
+2026-04-04,Freddie Freeman,LAD,OF,4.6,2.9,WSH 5 LAD 10,5.0,0.0,2.0,0.0,4.0,0.0,1.0,,,,,vs WSH (away),0.801,0.273
+2026-04-04,Garrett Mitchell,MIL,OF,6.1,1.9,KC 2 MIL 5,4.0,0.0,1.0,0.0,1.0,0.0,1.0,,,,,vs KC (away),0.991,0.273
+2026-04-04,Jesús Luzardo,PHI,P,6.5,1.4,COL 1 PHI 2,,,,,,,,6.2,1.0,11.0,W,vs COL (away),,
+2026-04-04,Joey Loperfido,HOU,OF,3.8,3.0,ATH 0 HOU 11,4.0,2.0,3.0,0.0,2.0,2.0,1.0,,,,,vs ATH (away),0.940,0.136
+2026-04-04,Jordan Walker,STL,OF,6.8,2.8,DET 11 STL 6,4.0,1.0,3.0,1.0,5.0,0.0,1.0,,,,,vs DET (away),0.960,0.297
+2026-04-04,Munetaka Murakami,CWS,OF,3.9,2.9,CWS 6 TOR 3,3.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,vs TOR (home),1.032,0.429
+2026-04-04,Shane Baz,BAL,P,4.1,3.0,PIT 3 BAL 2,,,,,,,,5.2,1.0,5.0,ND,vs PIT (away),,
+2026-04-04,Steven Matz,TB,P,5.9,1.8,MIN 1 TB 7,,,,,,,,6.0,1.0,8.0,W,vs MIN (away),,
+2026-04-04,Vladimir Guerrero Jr.,TOR,1B,3.3,3.0,CWS 6 TOR 3,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,vs CWS (away),0.822,0.107
+2026-04-04,Xavier Edwards,MIA,SS,3.5,2.8,NYY 9 MIA 7,4.0,2.0,3.0,0.0,1.0,1.0,0.0,,,,,vs NYY (away),1.133,0.166
+2026-04-04,Zach McKinstry,DET,OF,3.9,3.0,DET 11 STL 6,4.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,vs STL (home),0.688,0.188
+2026-04-05,Brent Rooker,ATH,OF,9.8,3.0,ATH 12 HOU 10,4.0,2.0,2.0,2.0,6.0,1.0,1.0,,,,,multi-HR monster game — highest RS of season at 2 drafts ghost; possible 2 HR 5 RBI | vs HOU (home),0.609,0.177
+2026-04-05,CJ Kayfus,CLE,OF,4.0,3.0,CLE 0 CHC 1,2.0,2.0,2.0,1.0,2.0,0.0,0.0,,,,,vs CHC (home),0.853,0.286
+2026-04-05,Cam Smith,HOU,3B,3.8,3.0,ATH 12 HOU 10,5.0,0.0,2.0,0.0,3.0,1.0,1.0,,,,,vs ATH (away),0.885,0.212
+2026-04-05,Cole Young,SEA,SS,5.0,2.5,LAA 8 SEA 7,4.0,2.0,1.0,1.0,3.0,1.0,0.0,,,,,strong day for SEA prospect at 6 drafts | vs LAA (away),0.889,0.278
+2026-04-05,Corbin Carroll,AZ,OF,4.6,2.1,AZ 6 ATL 5,4.0,2.0,3.0,0.0,1.0,0.0,0.0,,,,,strong day; most popular HV performer 1.6k drafts | vs ATL (home),1.066,0.343
+2026-04-05,Davis Martin,CWS,P,5.5,2.5,CWS 3 TOR 0,,,,,,,,6.0,0.0,6.0,W,quality start ~6 IP 1ER 7K | vs TOR (home),,
+2026-04-05,Drake Baldwin,ATL,C,6.0,2.2,AZ 6 ATL 5,5.0,1.0,3.0,1.0,4.0,0.0,0.0,,,,,HR + 3 RBI — ghost player at 50 drafts | vs AZ (away),1.003,0.325
+2026-04-05,Jackson Merrill,SD,OF,4.7,3.0,BOS 6 SD 8,5.0,3.0,3.0,1.0,2.0,0.0,0.0,,,,,solid multi-hit game at 1 draft | vs BOS (away),0.763,0.219
+2026-04-05,James Wood,WSH,OF,4.0,3.0,WSH 6 LAD 8,4.0,2.0,1.0,1.0,3.0,1.0,1.0,,,,,vs LAD (home),0.572,0.225
+2026-04-05,Maikel Garcia,KC,2B,3.8,3.0,KC 5 MIL 8,5.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,vs MIL (home),0.910,0.152
+2026-04-05,Manny Machado,SD,3B,5.2,3.0,BOS 6 SD 8,4.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,multi-hit game with HR | vs BOS (away),0.824,0.185
+2026-04-05,Masataka Yoshida,BOS,DH,5.2,3.0,BOS 6 SD 8,4.0,0.0,3.0,0.0,3.0,0.0,0.0,,,,,multi-hit multi-RBI game at 1 draft | vs SD (home),0.859,0.154
+2026-04-05,Mickey Moniak,COL,OF,4.2,3.0,COL 4 PHI 1,4.0,2.0,2.0,2.0,2.0,0.0,1.0,,,,,vs PHI (home),1.333,0.667
+2026-04-05,Ryan O'Hearn,PIT,1B,5.0,1.9,PIT 8 BAL 2,5.0,1.0,2.0,1.0,4.0,0.0,1.0,,,,,productive day at low ownership | vs BAL (home),1.159,0.333
+2026-04-05,Slade Cecconi,CLE,P,6.3,3.0,CLE 0 CHC 1,,,,,,,,6.0,0.0,6.0,ND,~7 IP 1ER 8K dominant start; top pitcher April 5 | vs CHC (home),,
+2026-04-05,Tyler Soderstrom,ATH,C,5.5,3.0,ATH 12 HOU 10,4.0,3.0,1.0,0.0,3.0,2.0,1.0,,,,,solid multi-hit game part of OAK ghost stack | vs HOU (home),0.649,0.121
+2026-04-05,Xavier Edwards,MIA,SS,3.7,3.0,NYY 6 MIA 7,4.0,0.0,2.0,0.0,3.0,0.0,0.0,,,,,vs NYY (away),1.147,0.176
+2026-04-06,Brady House,WSH,3B,4.9,3.0,WSH 9 STL 6,5.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,part of WSH big inning; 2 drafts; rank 2 lineup stacked WSH | vs STL (home),0.983,0.250
+2026-04-06,Bryce Harper,PHI,1B,5.0,3.0,SF 4 PHI 6,4.0,1.0,3.0,0.0,3.0,1.0,0.0,,,,,multi-hit in PHI road win; 13 drafts | vs SF (away),0.698,0.225
+2026-04-06,Carter Jensen,KC,C,3.1,3.0,CLE 2 KC 4,4.0,2.0,2.0,1.0,1.0,0.0,1.0,,,,,vs CLE (away),0.838,0.292
+2026-04-06,Dalton Rushing,LAD,C,4.7,2.2,TOR 2 LAD 14,4.0,3.0,4.0,2.0,2.0,0.0,0.0,,,,,LAD blowout; backup catcher 1 draft; slotted slot 5 in rank 1 | vs TOR (away),2.367,1.000
+2026-04-06,Freddie Freeman,LAD,1B,4.0,2.3,TOR 2 LAD 14,4.0,2.0,2.0,1.0,3.0,1.0,1.0,,,,,multi-hit in LAD blowout; appeared in 8 of 12 top lineups | vs TOR (away),0.882,0.309
+2026-04-06,James Wood,WSH,OF,5.5,3.0,WSH 9 STL 6,3.0,2.0,2.0,1.0,3.0,2.0,0.0,,,,,ghost player (3 drafts) multi-hit game with HR; WSH big win | vs STL (home),0.722,0.279
+2026-04-06,Jo Adell,LAA,OF,3.1,3.0,LAA 6 ATL 2,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,vs ATL (home),0.628,0.071
+2026-04-06,Jonathan India,KC,2B,4.3,2.9,CLE 2 KC 4,4.0,1.0,2.0,1.0,3.0,0.0,2.0,,,,,productive in KC road win; 1 draft | vs CLE (away),0.808,0.214
+2026-04-06,José Soriano,LAA,P,8.2,0.0,LAA 6 ATL 2,,,,,,,,8.0,1.0,10.0,W,dominant start in LAA win; 142 drafts but no boost — best pitcher RS of the day | vs ATL (home),,
+2026-04-06,Luke Keaschall,MIN,2B,3.7,3.0,MIN 7 DET 3,3.0,2.0,1.0,1.0,2.0,2.0,1.0,,,,,vs DET (home),0.581,0.103
+2026-04-06,Matt Chapman,SF,3B,3.6,3.0,SF 4 PHI 6,4.0,1.0,2.0,0.0,2.0,0.0,1.0,,,,,vs PHI (home),0.755,0.167
+2026-04-06,TJ Rumfield,COL,OF,3.2,2.9,COL 9 HOU 7,4.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,vs HOU (home),1.053,0.272
+2026-04-06,Teoscar Hernández,LAD,OF,5.2,3.0,TOR 2 LAD 14,5.0,2.0,2.0,1.0,4.0,1.0,1.0,,,,,LAD blowout winner; only 3 drafts at +3.0x — pure ghost HV | vs TOR (away),0.948,0.206
+2026-04-06,Troy Johnston,COL,1B,4.5,3.0,COL 9 HOU 7,5.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,COL high-scoring win vs HOU; 4 drafts | vs HOU (home),0.955,0.267
+2026-04-06,Victor Caratini,MIN,C,3.3,3.0,MIN 7 DET 3,4.0,0.0,2.0,0.0,3.0,0.0,0.0,,,,,vs DET (home),0.602,0.000
+2026-04-06,Willson Contreras,BOS,1B,5.0,3.0,BOS 6 MIL 8,3.0,1.0,3.0,1.0,2.0,1.0,0.0,,,,,strong individual game in BOS loss; 1 draft | vs MIL (home),0.850,0.206
+2026-04-06,Zack Littell,WSH,P,3.7,3.0,WSH 9 STL 6,,,,,,,,5.0,1.0,6.0,ND,quality start; 1.5k drafts at +3.0x but env supported (WSH home win) | vs STL (home),,
+2026-04-07,Alex Freeland,LAD,OF,3.3,3.0,TOR 1 LAD 4,4.0,2.0,4.0,0.0,1.0,0.0,0.0,,,,,vs TOR (away) | vs TOR (away),0.707,0.185
+2026-04-07,Amed Rosario,NYY,SS,7.3,3.0,NYY 5 ATH 3,4.0,2.0,2.0,2.0,4.0,0.0,1.0,,,,,vs ATH (home) | vs ATH (home),1.173,0.600
+2026-04-07,Curtis Mead,WSH,3B,4.8,3.0,WSH 6 STL 7,4.0,1.0,3.0,1.0,2.0,0.0,1.0,,,,,vs STL (home) | vs STL (home),1.079,0.334
+2026-04-07,Daniel Susac,SF,C,4.1,3.0,SF 6 PHI 0,4.0,1.0,3.0,0.0,2.0,0.0,0.0,,,,,vs PHI (home) | vs PHI (home),2.018,0.286
+2026-04-07,Gunnar Henderson,BAL,SS,4.0,2.5,CWS 2 BAL 4,4.0,1.0,2.0,1.0,2.0,1.0,2.0,,,,,vs CWS (away) | vs CWS (away),0.889,0.312
+2026-04-07,Jakob Marsee,MIA,OF,2.9,3.0,MIA 3 CIN 6,4.0,2.0,2.0,0.0,0.0,1.0,0.0,,,,,vs CIN (home) | vs CIN (home),0.459,0.071
+2026-04-07,James Wood,WSH,OF,3.8,2.2,WSH 6 STL 7,4.0,3.0,2.0,1.0,1.0,1.0,1.0,,,,,vs STL (home) | vs STL (home),0.820,0.320
+2026-04-07,Jorge Soler,LAA,DH,3.4,3.0,LAA 2 ATL 7,1.0,1.0,1.0,1.0,2.0,0.0,0.0,,,,,vs ATL (home) | vs ATL (home),0.730,0.170
+2026-04-07,Matt Chapman,SF,3B,3.0,2.8,SF 6 PHI 0,4.0,1.0,3.0,0.0,1.0,0.0,1.0,,,,,vs PHI (home) | vs PHI (home),0.838,0.174
+2026-04-07,Matt McLain,CIN,SS,3.6,3.0,MIA 3 CIN 6,5.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,vs MIA (away) | vs MIA (away),0.670,0.072
+2026-04-07,Moisés Ballesteros,CHC,C,3.5,3.0,TB 2 CHC 9,4.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,vs TB (away) | vs TB (away),0.592,0.125
+2026-04-07,Nathan Church,STL,OF,3.2,3.0,WSH 6 STL 7,2.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,vs WSH (away) | vs WSH (away),0.422,0.107
+2026-04-07,Nathan Eovaldi,TEX,P,3.4,3.0,TEX 3 SEA 2,,,,,,,,6.0,2.0,7.0,W,vs SEA (home) | vs SEA (home),,
+2026-04-07,Pete Crow-Armstrong,CHC,OF,4.0,3.0,TB 2 CHC 9,5.0,3.0,3.0,1.0,1.0,0.0,0.0,,,,,vs TB (away) | vs TB (away),0.638,0.093
+2026-04-07,Sandy Alcantara,MIA,P,7.5,0.0,MIA 3 CIN 6,,,,,,,,8.1,2.0,6.0,ND,vs CIN (home) | vs CIN (home),,
+2026-04-07,Shane Smith,CWS,P,2.8,3.0,CWS 2 BAL 4,,,,,,,,3.2,0.0,8.0,ND,vs BAL (home) | vs BAL (home),,
+2026-04-07,Willi Castro,COL,OF,5.4,3.0,COL 5 HOU 1,4.0,1.0,3.0,1.0,3.0,0.0,1.0,,,,,vs HOU (home) | vs HOU (home),0.718,0.150
+2026-04-08,Alec Burleson,STL,OF,4.6,2.8,WSH 1 STL 6,4.0,1.0,3.0,0.0,3.0,1.0,0.0,,,,,vs WSH (away),0.786,0.113
+2026-04-08,Angel Martínez,CLE,SS,6.9,3.0,CLE 10 KC 2,5.0,1.0,4.0,1.0,4.0,0.0,1.0,,,,,vs KC (home),0.895,0.173
+2026-04-08,Corbin Carroll,AZ,OF,4.2,1.9,NYM 2 AZ 7,5.0,1.0,3.0,0.0,2.0,0.0,0.0,,,,,vs NYM (away),1.098,0.357
+2026-04-08,Edouard Julien,COL,2B,3.6,3.0,COL 9 HOU 1,4.0,2.0,2.0,0.0,2.0,1.0,0.0,,,,,vs HOU (home),0.624,0.043
+2026-04-08,Gleyber Torres,DET,2B,2.8,3.0,MIN 8 DET 6,5.0,2.0,2.0,0.0,2.0,0.0,1.0,,,,,vs MIN (away),0.711,0.091
+2026-04-08,Griffin Conine,MIA,OF,3.5,3.0,MIA 7 CIN 4,4.0,2.0,2.0,1.0,2.0,0.0,1.0,,,,,vs CIN (home),1.041,0.350
+2026-04-08,Matt Olson,ATL,1B,3.0,2.9,LAA 2 ATL 8,4.0,1.0,1.0,1.0,2.0,1.0,1.0,,,,,vs LAA (away),0.948,0.300
+2026-04-08,Michael Lorenzen,COL,P,3.5,3.0,COL 9 HOU 1,,,,,,,,5.2,1.0,4.0,W,vs HOU (home),,
+2026-04-08,Nick Castellanos,SD,OF,3.1,3.0,PIT 2 SD 8,3.0,1.0,1.0,0.0,2.0,1.0,0.0,,,,,vs PIT (away),0.711,0.130
+2026-04-08,Nico Hoerner,CHC,2B,4.1,2.3,TB 2 CHC 6,5.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,vs TB (away),1.001,0.215
+2026-04-08,Rafael Devers,SF,3B,5.1,3.0,SF 5 PHI 0,4.0,1.0,2.0,1.0,4.0,0.0,1.0,,,,,vs PHI (home),0.638,0.140
+2026-04-08,Ryne Nelson,AZ,P,5.0,1.7,NYM 2 AZ 7,,,,,,,,5.2,1.0,5.0,W,vs NYM (away),,
+2026-04-08,Sal Stewart,CIN,3B,4.5,2.3,MIA 7 CIN 4,4.0,2.0,2.0,1.0,2.0,0.0,0.0,,,,,vs MIA (away),1.154,0.317
+2026-04-08,Shohei Ohtani,LAD,DH,4.4,1.7,TOR 4 LAD 3,3.0,0.0,0.0,0.0,0.0,1.0,2.0,6.0,0.0,2.0,ND,vs TOR (away),0.896,0.222
+2026-04-08,Taylor Ward,BAL,OF,5.1,2.5,CWS 3 BAL 5,5.0,1.0,4.0,0.0,2.0,0.0,0.0,,,,,vs CWS (away),1.038,0.191
+2026-04-08,Tyler Mahle,SF,P,4.6,3.0,SF 5 PHI 0,,,,,,,,5.2,0.0,6.0,ND,vs PHI (home),,
+2026-04-08,Zach Agnos,COL,2B,3.4,3.0,COL 9 HOU 1,,,,,,,,3.1,0.0,2.0,SV,vs HOU (home),,
+2026-04-09,Agustín Ramírez,MIA,C,2.0,3.0,MIA 8 CIN 1,5.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,vs CIN (home) | vs CIN (home),0.729,0.114
+2026-04-09,Anthony Kay,CWS,P,4.4,0.6,KC 0 CWS 2,,,,,,,,5.2,0.0,6.0,W,vs KC (away) | vs KC (away),,
+2026-04-09,Brenton Doyle,COL,OF,2.7,3.0,SD 7 COL 3,4.0,1.0,2.0,1.0,1.0,1.0,0.0,,,,,vs SD (away) | vs SD (away),0.525,0.100
+2026-04-09,Brooks Lee,MIN,SS,2.8,3.0,MIN 3 DET 1,1.0,0.0,1.0,0.0,2.0,0.0,0.0,,,,,vs DET (home) | vs DET (home),0.436,0.000
+2026-04-09,Gabriel Moreno,AZ,C,3.3,3.0,NYM 1 AZ 7,2.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,vs NYM (away) | vs NYM (away),0.751,0.128
+2026-04-09,Jack Flaherty,DET,P,3.2,2.1,MIN 3 DET 1,,,,,,,,5.2,1.0,6.0,ND,vs MIN (away) | vs MIN (away),,
+2026-04-09,Jaden Hill,COL,P,2.1,3.0,SD 7 COL 3,,,,,,,,1.2,0.0,2.0,ND,vs SD (away) | vs SD (away),,
+2026-04-09,Javier Sanoja,MIA,SS,2.9,2.6,MIA 8 CIN 1,4.0,0.0,3.0,0.0,2.0,0.0,1.0,,,,,vs CIN (home) | vs CIN (home),0.924,0.094
+2026-04-09,Jeffrey Springs,ATH,P,7.3,,NYY 0 ATH 1,,,,,,,,7.0,0.0,6.0,W,vs NYY (away) | vs NYY (away),,
+2026-04-09,Josh Bell,MIN,1B,3.5,2.4,MIN 3 DET 1,4.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,vs DET (home) | vs DET (home),1.065,0.317
+2026-04-09,Manny Machado,SD,3B,2.0,3.0,SD 7 COL 3,4.0,1.0,1.0,0.0,1.0,1.0,1.0,,,,,vs COL (home) | vs COL (home),0.734,0.131
+2026-04-09,Max Muncy,LAD,3B,2.1,2.9,,,,,,,,,,,,,No LAD game on Apr 9 (off day) — DNP,0.623,0.081
+2026-04-09,Mick Abel,MIN,P,4.6,3.0,MIN 3 DET 1,,,,,,,,6.0,0.0,6.0,ND,vs DET (home) | vs DET (home),,
+2026-04-09,Nolan McLean,NYM,P,5.6,,NYM 1 AZ 7,,,,,,,,6.1,2.0,8.0,L,vs AZ (home) | vs AZ (home),,
+2026-04-09,Owen Caissie,MIA,OF,5.0,2.1,MIA 8 CIN 1,4.0,2.0,3.0,0.0,3.0,0.0,1.0,,,,,vs CIN (home) | vs CIN (home),1.003,0.294
+2026-04-09,Ryan Weathers,NYY,P,6.6,0.5,NYY 0 ATH 1,,,,,,,,8.0,1.0,7.0,L,vs ATH (home) | vs ATH (home),,
+2026-04-09,Xander Bogaerts,SD,SS,7.6,3.0,SD 7 COL 3,6.0,2.0,2.0,1.0,4.0,0.0,1.0,,,,,vs COL (home) | vs COL (home),0.670,0.148
+2026-04-10,Andy Pages,LAD,OF,7.2,1.6,LAD 8 TEX 7,3.0,2.0,3.0,1.0,4.0,1.0,0.0,,,,,vs TEX (home) | vs TEX (home),1.257,0.327
+2026-04-10,Brandon Valenzuela,TOR,C,4.3,3.0,TOR 10 MIN 4,4.0,2.0,2.0,1.0,2.0,0.0,1.0,,,,,vs MIN (home) | vs MIN (home),0.750,0.250
+2026-04-10,Bryan Reynolds,PIT,OF,3.4,3.0,PIT 2 CHC 0,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,vs CHC (away) | vs CHC (away),0.794,0.204
+2026-04-10,Corey Seager,TEX,SS,3.9,2.9,LAD 8 TEX 7,5.0,1.0,1.0,1.0,3.0,0.0,3.0,,,,,vs LAD (away) | vs LAD (away),0.810,0.255
+2026-04-10,Davis Schneider,TOR,2B,3.5,3.0,TOR 10 MIN 4,3.0,2.0,2.0,0.0,2.0,1.0,1.0,,,,,vs MIN (home) | vs MIN (home),1.007,0.235
+2026-04-10,Dustin May,STL,P,5.0,3.0,STL 3 BOS 2,,,,,,,,6.0,1.0,4.0,W,vs BOS (home) | vs BOS (home),,
+2026-04-10,Gavin Sheets,SD,OF,7.5,3.0,SD 5 COL 2,4.0,2.0,2.0,2.0,4.0,0.0,2.0,,,,,vs COL (home) | vs COL (home),0.785,0.256
+2026-04-10,Jake Bauers,MIL,1B,5.5,3.0,WSH 7 MIL 3,3.0,1.0,2.0,1.0,3.0,1.0,0.0,,,,,vs WSH (home) | vs WSH (home),0.770,0.250
+2026-04-10,James Wood,WSH,OF,4.2,2.0,WSH 7 MIL 3,5.0,1.0,4.0,0.0,1.0,0.0,1.0,,,,,vs MIL (away) | vs MIL (away),0.930,0.303
+2026-04-10,Jorge Soler,LAA,DH,4.8,2.6,LAA 10 CIN 2,5.0,2.0,2.0,1.0,4.0,0.0,2.0,,,,,vs CIN (away) | vs CIN (away),0.859,0.280
+2026-04-10,Max Muncy,LAD,3B,9.6,3.0,LAD 8 TEX 7,5.0,5.0,4.0,3.0,3.0,0.0,0.0,,,,,vs TEX (home) | vs TEX (home),0.946,0.285
+2026-04-10,Randy Arozarena,SEA,OF,4.4,3.0,SEA 9 HOU 6,4.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,vs HOU (home) | vs HOU (home),0.803,0.125
+2026-04-10,Ronald Acuña Jr.,ATL,OF,3.4,3.0,ATL 11 CLE 5,5.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,vs CLE (home) | vs CLE (home),0.650,0.111
+2026-04-10,Ryan Jeffers,MIN,C,5.5,3.0,TOR 10 MIN 4,3.0,1.0,3.0,1.0,3.0,0.0,0.0,,,,,vs TOR (away) | vs TOR (away),0.856,0.147
+2026-04-10,Vladimir Guerrero Jr.,TOR,1B,3.6,3.0,TOR 10 MIN 4,5.0,2.0,3.0,0.0,1.0,0.0,0.0,,,,,vs MIN (home) | vs MIN (home),0.864,0.131
+2026-04-10,Walker Buehler,SD,P,5.9,3.0,SD 5 COL 2,,,,,,,,6.0,0.0,4.0,ND,vs COL (home) | vs COL (home),,
+2026-04-10,Willy Adames,SF,SS,3.5,3.0,SF 6 BAL 3,5.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,vs BAL (away) | vs BAL (away),0.849,0.254
+2026-04-11,Bo Bichette,NYM,SS,4.4,3.0,ATH 11 NYM 6,3.0,1.0,2.0,1.0,3.0,2.0,1.0,,,,,vs ATH (home) | vs ATH (home),0.628,0.078
+2026-04-11,Brandon Nimmo,TEX,OF,6.2,2.8,LAD 6 TEX 3,4.0,2.0,3.0,2.0,3.0,0.0,0.0,,,,,vs LAD (away) | vs LAD (away),1.053,0.254
+2026-04-11,Cam Smith,HOU,3B,4.8,3.0,SEA 8 HOU 7,5.0,1.0,4.0,0.0,2.0,0.0,1.0,,,,,vs SEA (away) | vs SEA (away),0.940,0.245
+2026-04-11,J.P. Crawford,SEA,SS,5.4,3.0,SEA 8 HOU 7,3.0,2.0,2.0,0.0,3.0,2.0,0.0,,,,,vs HOU (home) | vs HOU (home),0.680,0.044
+2026-04-11,Jeremiah Jackson,BAL,SS,4.3,3.0,BAL 6 SF 2,4.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,vs SF (home) | vs SF (home),0.678,0.111
+2026-04-11,Jose Caballero,NYY,SS,4.3,3.0,TB 5 NYY 4,5.0,0.0,2.0,0.0,3.0,0.0,2.0,,,,,vs TB (away) | vs TB (away),0.451,0.044
+2026-04-11,José Ramírez,CLE,3B,3.9,3.0,CLE 6 ATL 0,4.0,2.0,2.0,1.0,1.0,1.0,1.0,,,,,vs ATL (away) | vs ATL (away),0.610,0.158
+2026-04-11,Julio Rodriguez,SEA,OF,3.9,3.0,SEA 8 HOU 7,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,vs HOU (home) | vs HOU (home),0.503,0.069
+2026-04-11,Kyle Schwarber,PHI,DH,4.6,3.0,PHI 4 AZ 3,4.0,1.0,1.0,1.0,3.0,0.0,2.0,,,,,vs AZ (home) | vs AZ (home),0.850,0.291
+2026-04-11,Mickey Moniak,COL,OF,6.5,3.0,SD 9 COL 5,4.0,2.0,3.0,2.0,4.0,0.0,1.0,,,,,vs SD (away) | vs SD (away),1.113,0.500
+2026-04-11,Oneil Cruz,PIT,SS,4.6,2.0,PIT 4 CHC 3,5.0,1.0,4.0,0.0,0.0,1.0,0.0,,,,,vs CHC (away) | vs CHC (away),1.018,0.273
+2026-04-11,Ramón Laureano,SD,OF,6.1,3.0,SD 9 COL 5,3.0,3.0,2.0,1.0,3.0,2.0,0.0,,,,,vs COL (home) | vs COL (home),0.833,0.231
+2026-04-11,Ranger Suarez,BOS,P,5.7,3.0,BOS 7 STL 1,,,,,,,,6.0,0.0,6.0,W,vs STL (away) | vs STL (away),,
+2026-04-11,Riley Greene,DET,OF,5.8,3.0,DET 6 MIA 1,3.0,2.0,2.0,1.0,4.0,1.0,0.0,,,,,vs MIA (home) | vs MIA (home),0.674,0.123
+2026-04-11,Taylor Trammell,HOU,OF,4.4,3.0,SEA 8 HOU 7,4.0,1.0,2.0,0.0,3.0,1.0,2.0,,,,,vs SEA (away) | vs SEA (away),1.417,0.250
+2026-04-11,Teoscar Hernández,LAD,OF,4.9,2.6,LAD 6 TEX 3,4.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,vs TEX (home) | vs TEX (home),0.858,0.225
+2026-04-11,Tyler Soderstrom,ATH,C,7.1,2.8,ATH 11 NYM 6,5.0,2.0,3.0,2.0,5.0,0.0,0.0,,,,,vs NYM (away) | vs NYM (away),0.736,0.200
+2026-04-12,Brandon Lowe,PIT,2B,6.3,3.0,CHC 7 PIT 6,4.0,2.0,2.0,2.0,5.0,1.0,2.0,,,,,vs CHC (away) | vs CHC (away),0.927,0.347
+2026-04-12,Brayan Bello,BOS,P,3.6,3.0,STL 3 BOS 9,,,,,,,,6.2,2.0,2.0,W,vs STL (away) | vs STL (away),,
+2026-04-12,Brice Turang,MIL,2B,6.0,2.0,MIL 6 WSH 8,4.0,3.0,3.0,2.0,2.0,1.0,0.0,,,,,vs WSH (home) | vs WSH (home),1.058,0.319
+2026-04-12,Chandler Simpson,TB,OF,3.8,3.0,TB 5 NYY 4,4.0,2.0,3.0,0.0,1.0,0.0,0.0,,,,,vs NYY (home) | vs NYY (home),0.923,0.071
+2026-04-12,Colson Montgomery,CWS,SS,4.7,3.0,KC 5 CWS 6,3.0,2.0,2.0,1.0,2.0,0.0,0.0,,,,,vs KC (away) | vs KC (away),0.720,0.218
+2026-04-12,Dillon Dingler,DET,C,3.7,3.0,DET 8 MIA 2,4.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,vs MIA (home) | vs MIA (home),0.830,0.227
+2026-04-12,Elly De La Cruz,CIN,SS,3.9,2.6,CIN 6 LAA 9,5.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,vs LAA (home) | vs LAA (home),0.924,0.282
+2026-04-12,Gary Sánchez,MIL,C,4.4,2.8,MIL 6 WSH 8,2.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,vs WSH (home) | vs WSH (home),1.247,0.545
+2026-04-12,Jarren Duran,BOS,OF,3.5,3.0,STL 3 BOS 9,4.0,2.0,1.0,0.0,3.0,1.0,2.0,,,,,vs STL (away) | vs STL (away),0.563,0.065
+2026-04-12,Jorge Mateo,ATL,SS,3.7,3.0,ATL 13 CLE 1,4.0,2.0,4.0,0.0,1.0,0.0,0.0,,,,,vs CLE (home) | vs CLE (home),1.233,0.266
+2026-04-12,Luke Raley,SEA,OF,3.5,3.0,SEA 6 HOU 1,5.0,1.0,3.0,0.0,2.0,0.0,0.0,,,,,vs HOU (home) | vs HOU (home),0.867,0.298
+2026-04-12,Mauricio Dubón,ATL,OF,3.6,2.9,ATL 13 CLE 1,4.0,2.0,3.0,0.0,2.0,0.0,0.0,,,,,vs CLE (home) | vs CLE (home),0.934,0.210
+2026-04-12,Trea Turner,PHI,SS,3.6,3.0,PHI 3 AZ 4,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,vs AZ (home) | vs AZ (home),0.664,0.111
+2026-04-12,Trevor Story,BOS,SS,4.1,3.0,STL 3 BOS 9,5.0,1.0,4.0,0.0,2.0,0.0,0.0,,,,,vs STL (away) | vs STL (away),0.461,0.091
+2026-04-12,Tristan Gray,MIN,3B,4.4,2.3,TOR 2 MIN 8,3.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,vs TOR (away) | vs TOR (away),0.937,0.318
+2026-04-12,Ty France,SD,1B,4.2,3.0,SD 7 COL 2,3.0,3.0,3.0,1.0,1.0,0.0,0.0,,,,,vs COL (home) | vs COL (home),0.946,0.285
+2026-04-12,Willson Contreras,BOS,1B,5.8,2.8,STL 3 BOS 9,5.0,1.0,4.0,1.0,3.0,0.0,0.0,,,,,vs STL (away) | vs STL (away),0.957,0.207
+2026-04-14,Byron Buxton,MIN,OF,5.9,3.0,BOS 0 MIN 6,5.0,4.0,4.0,2.0,2.0,0.0,1.0,,,,,"4-5 | 2 HR, K, 2 RBI | vs BOS (home)",0.768,0.216
+2026-04-14,Dominic Smith,ATL,1B,6.7,2.1,ATL 6 MIA 5,4.0,1.0,3.0,0.0,4.0,,,,,,,3-for-4 | RBI single in 2nd + bases-clearing 2B in 8th | vs MIA,1.099,0.289
+2026-04-14,JJ Wetherholt,STL,2B,5.1,3.0,CLE 5 STL 6,4.0,2.0,2.0,2.0,3.0,0.0,1.0,,,,,"2-4 | 2 HR, K, 3 RBI | vs CLE (home)",0.723,0.154
+2026-04-14,Edmundo Sosa,PHI,2B,4.8,3.0,CHC 10 PHI 4,4.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-4 | HR, 2B, 3 RBI | vs CHC (home)",0.956,0.294
+2026-04-14,Mick Abel,MIN,P,7.7,0.8,BOS 0 MIN 6,,,,,,,,7.0,0.0,10,W,7 IP 0 ER 10K W | vs BOS (home),,
+2026-04-14,Carson Kelly,CHC,C,4.3,3.0,CHC 10 PHI 4,4.0,2.0,2.0,1.0,3.0,1.0,0.0,,,,,"2-4 | HR, BB, 3 RBI | vs PHI (away)",0.922,0.134
+2026-04-14,Xander Bogaerts,SD,SS,4.3,3.0,SEA 1 SD 4,4.0,0.0,3.0,0.0,3.0,0.0,0.0,,,,,3-4 | 3 RBI | vs SEA (home),0.730,0.127
+2026-04-14,Hunter Goodman,COL,C,4.0,3.0,COL 6 HOU 7,5.0,2.0,2.0,2.0,2.0,0.0,3.0,,,,,"2-5 | 2 HR, 3 K, 2 RBI | vs HOU (away)",0.808,0.221
+2026-04-14,Ildemaro Vargas,ARI,3B,4.4,2.3,AZ 4 BAL 3,5.0,1.0,1.0,1.0,3.0,0.0,2.0,,,,,"1-5 | HR, 2 K, 3 RBI | vs BAL (away)",1.076,0.286
+2026-04-14,Alex Bregman,CHC,3B,3.8,3.0,CHC 10 PHI 4,5.0,0.0,3.0,0.0,3.0,0.0,1.0,,,,,"3-5 | K, 3 RBI | vs PHI (away)",0.659,0.100
+2026-04-14,José Ramírez,CLE,3B,3.6,3.0,CLE 5 STL 6,4.0,2.0,2.0,1.0,1.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs STL (away)",0.722,0.189
+2026-04-14,Ben Williamson,TB,3B,4.3,3.0,TB 8 CWS 5,3.0,2.0,2.0,0.0,3.0,1.0,1.0,,,,,"2-3 | 2 2B, BB, K | vs CWS (away)",0.694,0.083
+2026-04-14,Christian Walker,HOU,1B,4.0,2.4,COL 6 HOU 7,4.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-4 | HR, 2 RBI, 2 R | vs COL (home)",0.983,0.281
+2026-04-14,Jake Bauers,MIL,1B,4.0,2.5,TOR 9 MIL 7,4.0,1.0,1.0,1.0,3.0,1.0,1.0,,,,,"1-4 | HR, BB, K | vs TOR (home)",0.869,0.320
+2026-04-14,Everson Pereira,CWS,OF,3.3,3.0,TB 8 CWS 5,4.0,1.0,1.0,1.0,3.0,0.0,2.0,,,,,"1-4 | HR, 2 K, 3 RBI | vs TB (home)",0.886,0.350
+2026-04-14,Munetaka Murakami,CWS,OF,3.2,3.0,TB 8 CWS 5,3.0,2.0,1.0,1.0,2.0,2.0,0.0,,,,,"1-3 | HR, 2 BB, 2 RBI | vs TB (home)",0.787,0.277
+2026-04-14,Ryan Vilade,TB,OF,3.6,3.0,TB 8 CWS 5,5.0,3.0,3.0,0.0,1.0,0.0,1.0,,,,,"3-5 | 2B, K, RBI | vs CWS (away)",0.616,0.053
+2026-04-14,Vladimir Guerrero Jr.,TOR,1B,3.1,3.0,TOR 9 MIL 7,5.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,"2-5 | 2B, 2 RBI, R | vs MIL (away)",0.891,0.120
+2026-04-14,CJ Abrams,WSH,SS,4.2,1.7,WSH 5 PIT 4,4.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-4 | HR, 2B, 2 RBI | vs PIT (away)",1.121,0.339
+2026-04-14,Francisco Lindor,NYM,SS,3.1,3.0,NYM 1 LAD 2,4.0,1.0,2.0,1.0,1.0,0.0,1.0,,,,,"2-4 | HR, K, RBI | vs LAD (away)",0.607,0.112
+2026-04-15,Sal Stewart,CIN,3B,7.8,2.1,SF 3 CIN 8,4.0,2.0,2.0,2.0,6.0,0.0,1.0,,,,,"2-4 | 2 HR, K, 6 RBI | vs SF (home)",1.160,0.403
+2026-04-15,Adrian Del Castillo,ARI,C,7.4,2.4,AZ 8 BAL 5,5.0,1.0,2.0,1.0,5.0,0.0,0.0,,,,,"2-5 | HR, 3B, 5 RBI | vs BAL (away)",0.770,0.154
+2026-04-15,Nico Hoerner,CHC,2B,6.5,2.2,CHC 11 PHI 2,5.0,2.0,3.0,1.0,5.0,0.0,0.0,,,,,"3-5 | HR, 5 RBI, 2 R | vs PHI (away)",0.917,0.183
+2026-04-15,Dalton Rushing,LAD,C,5.6,1.5,NYM 2 LAD 8,4.0,2.0,2.0,1.0,4.0,0.0,2.0,,,,,"2-4 | HR, 2B, 2 K | vs NYM (home)",1.909,0.824
+2026-04-15,Shohei Ohtani,LAD,P,5.7,1.8,NYM 2 LAD 8,,,,,,,,6.0,1.0,10,W,6 IP 1 ER 10K W | pitcher-only start (hit in shoulder prev game) | vs NYM (home),,
+2026-04-15,Trevor Story,BOS,SS,5.3,3.0,BOS 9 MIN 5,4.0,1.0,2.0,1.0,5.0,1.0,0.0,,,,,"2-4 | HR, 2B, BB | vs MIN (away)",0.560,0.130
+2026-04-15,Luke Raley,SEA,OF,5.1,2.8,SEA 6 SD 7,5.0,2.0,4.0,1.0,2.0,0.0,1.0,,,,,"4-5 | HR, 2B, K | vs SD (away)",1.035,0.305
+2026-04-15,Jeremiah Jackson,BAL,SS,4.7,2.6,AZ 8 BAL 5,5.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-5 | HR, K, 3 RBI | vs AZ (home)",0.949,0.264
+2026-04-15,Jackson Merrill,SD,OF,4.4,2.3,SEA 6 SD 7,5.0,1.0,2.0,0.0,2.0,0.0,1.0,,,,,"2-5 | 2B, K, 2 RBI | vs SEA (home)",0.784,0.203
+2026-04-15,Mike Trout,LAA,OF,4.0,2.1,LAA 4 NYY 5,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, K, 2 RBI | vs NYY (away)",0.945,0.313
+2026-04-15,Matt Shaw,CHC,3B,4.8,3.0,CHC 11 PHI 2,4.0,3.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-4 | 3 2B, 2 RBI, 3 R | vs PHI (away)",0.732,0.204
+2026-04-15,José Caballero,NYY,SS,3.9,3.0,LAA 4 NYY 5,3.0,1.0,1.0,0.0,2.0,1.0,0.0,,,,,"1-3 | 2B, BB, 2 RBI | vs LAA (home)",0.543,0.119
+2026-04-15,Shea Langeliers,ATH,C,3.7,2.4,TEX 5 ATH 6,5.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-5 | HR, 2B, 2 RBI | vs TEX (home)",0.960,0.305
+2026-04-15,Jake Burger,TEX,3B,3.6,2.6,TEX 5 ATH 6,2.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,"1-2 | HR, K, 3 RBI | vs ATH (away)",0.805,0.267
+2026-04-15,Corey Seager,TEX,SS,3.5,2.9,TEX 5 ATH 6,3.0,2.0,1.0,1.0,2.0,1.0,1.0,,,,,"1-3 | HR, BB, K | vs ATH (away)",0.774,0.250
+2026-04-15,Ryan Kreidler,MIN,SS,3.5,3.0,BOS 9 MIN 5,3.0,1.0,1.0,1.0,3.0,1.0,2.0,,,,,"1-3 | HR, BB, 2 K | vs BOS (home)",0.977,0.545
+2026-04-15,Junior Caminero,TB,3B,3.3,3.0,TB 8 CWS 3,4.0,2.0,1.0,1.0,2.0,1.0,1.0,,,,,"1-4 | HR, BB, K | vs CWS (away)",0.757,0.172
+2026-04-15,Jacob Wilson,ATH,SS,3.2,3.0,TEX 5 ATH 6,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-4 | HR, 2 RBI, R | vs TEX (home)",0.602,0.084
+2026-04-15,Dansby Swanson,CHC,SS,3.2,3.0,CHC 11 PHI 2,5.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-5 | HR, 2 RBI, 2 R | vs PHI (away)",0.764,0.217
+2026-04-16,Parker Messick,CLE,P,8.1,,BAL 2 CLE 4,,,,,,,,8.1,0.0,9,W,8.1 IP 0 ER 9K W | no-hit bid broken up in 9th by Taveras | vs BAL (home),,
+2026-04-16,Brandon Sproat,MIL,P,5.8,3.0,TOR 1 MIL 2,,,,,,,,6.2,1,6,ND,"6.2 IP, ER, 6 K, BB | vs TOR (home)",,
+2026-04-16,Oswald Peraza,LAA,SS,5.8,3.0,LAA 11 NYY 4,4.0,2.0,2.0,1.0,3.0,1.0,1.0,,,,,"2-4 | HR, 2B, BB | vs NYY (away)",0.903,0.289
+2026-04-16,Jo Adell,LAA,OF,5.6,3.0,LAA 11 NYY 4,4.0,3.0,2.0,1.0,4.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs NYY (away)",0.781,0.123
+2026-04-16,Riley Greene,DET,OF,5.4,3.0,KC 9 DET 10,4.0,2.0,3.0,0.0,2.0,1.0,1.0,,,,,"3-4 | 2 2B, BB, K | vs KC (home)",0.736,0.129
+2026-04-16,Salvador Perez,KC,C,5.4,3.0,KC 9 DET 10,4.0,1.0,2.0,1.0,4.0,0.0,2.0,,,,,"2-4 | HR, 2 K, 4 RBI | vs DET (away)",0.545,0.155
+2026-04-16,Chase Dollander,COL,P,5.3,0.6,COL 3 HOU 2,,,,,,,,5.1,0,9,W,"5.1 IP, 0 ER, 9 K, 2 BB | vs HOU (away)",,
+2026-04-16,Josh Jung,TEX,3B,5.0,3.0,TEX 9 ATH 6,5.0,2.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-5 | HR, 2B, 2 RBI | vs ATH (away)",0.709,0.123
+2026-04-16,Nick Kurtz,ATH,1B,4.7,3.0,TEX 9 ATH 6,4.0,0.0,2.0,0.0,3.0,1.0,0.0,,,,,"2-4 | 2B, BB, 3 RBI | vs TEX (home)",0.685,0.096
+2026-04-16,José Ramírez,CLE,3B,4.1,2.8,BAL 2 CLE 4,3.0,2.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-3 | HR, BB, 2 RBI | vs BAL (home)",0.756,0.210
+2026-04-16,Ezequiel Duran,TEX,2B,3.8,3.0,TEX 9 ATH 6,4.0,2.0,2.0,0.0,2.0,1.0,0.0,,,,,"2-4 | 2B, BB, 2 RBI | vs ATH (away)",0.693,0.125
+2026-04-16,Marcell Ozuna,PIT,DH,3.8,3.0,WSH 8 PIT 7,4.0,1.0,1.0,1.0,3.0,1.0,1.0,,,,,"1-4 | HR, BB, K | vs WSH (home)",0.413,0.073
+2026-04-16,Bobby Witt Jr.,KC,SS,3.6,3.0,KC 9 DET 10,5.0,3.0,3.0,0.0,1.0,0.0,2.0,,,,,"3-5 | 2 2B, 2 K, RBI | vs DET (away)",0.708,0.069
+2026-04-16,Giancarlo Stanton,NYY,DH,3.3,3.0,LAA 11 NYY 4,4.0,1.0,1.0,1.0,2.0,0.0,0.0,,,,,"1-4 | HR, 2 RBI, R | vs LAA (home)",0.742,0.136
+2026-04-16,Jacob Wilson,ATH,SS,3.3,3.0,TEX 9 ATH 6,5.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,"2-5 | 2 RBI, R, SB | vs TEX (home)",0.615,0.079
+2026-04-16,Dillon Dingler,DET,C,3.2,2.6,KC 9 DET 10,5.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-5 | HR, 2B, 2 RBI | vs KC (home)",0.933,0.283
+2026-04-16,Everson Pereira,CWS,OF,3.0,2.7,TB 5 CWS 3,3.0,1.0,2.0,1.0,1.0,1.0,0.0,,,,,"2-3 | HR, BB, RBI | vs TB (home)",1.099,0.435
+2026-04-16,Hunter Goodman,COL,C,2.9,3.0,COL 3 HOU 2,3.0,1.0,2.0,1.0,1.0,1.0,1.0,,,,,"2-3 | HR, 2B, BB | vs HOU (away)",0.853,0.257
+2026-04-16,Jacob Lopez,ATH,P,2.8,3.0,TEX 9 ATH 6,,,,,,,,5.0,2,5,ND,"5.0 IP, 2 ER, 5 K, 4 BB | vs TEX (home)",,
+2026-04-13,Aaron Judge,NYY,OF,5.2,2.4,LAA 10 NYY 11,5.0,2.0,2.0,2.0,3.0,0.0,1.0,,,,,"2-5 | 2 HR, K, 3 RBI | vs LAA (home)",0.883,0.317
+2026-04-13,Agustín Ramírez,MIA,C,6.6,3.0,MIA 10 ATL 4,4.0,2.0,3.0,1.0,4.0,1.0,0.0,,,,,"3-4 | HR, BB, 4 RBI | vs ATL (away)",0.731,0.133
+2026-04-13,Brandon Lowe,PIT,2B,5.8,2.3,WSH 5 PIT 16,5.0,2.0,3.0,1.0,5.0,0.0,0.0,,,,,"3-5 | HR, HBP, 5 RBI | vs WSH (home)",1.015,0.371
+2026-04-13,Brandon Marsh,PHI,OF,4.5,3.0,CHC 7 PHI 13,4.0,2.0,3.0,0.0,2.0,1.0,0.0,,,,,"3-4 | 2B, BB, 2 RBI | vs CHC (home)",0.815,0.178
+2026-04-13,Bryan Reynolds,PIT,OF,5.3,2.8,WSH 5 PIT 16,4.0,1.0,3.0,0.0,4.0,0.0,1.0,,,,,"3-4 | 3B, HBP, K | vs WSH (home)",0.859,0.194
+2026-04-13,Kyle Schwarber,PHI,DH,6.1,2.6,CHC 7 PHI 13,3.0,4.0,2.0,2.0,3.0,1.0,0.0,,,,,"2-3 | 2 HR, BB, HBP | vs CHC (home)",1.026,0.382
+2026-04-13,Mike Trout,LAA,OF,8.0,3.0,LAA 10 NYY 11,5.0,3.0,2.0,2.0,5.0,0.0,0.0,,,,,"2-5 | 2 HR, 5 RBI, 3 R | vs NYY (away)",0.883,0.259
+2026-04-13,Nathan Eovaldi,TEX,P,6.7,1.4,TEX 8 ATH 1,,,,,,,,7.0,0,7,W,"7.0 IP, 0 ER, 7 K, 2 BB | vs ATH (away)",,
+2026-04-13,Trent Grisham,NYY,OF,7.7,3.0,LAA 10 NYY 11,3.0,2.0,2.0,2.0,5.0,0.0,0.0,,,,,"2-3 | 2 HR, 5 RBI, 2 R | vs LAA (home)",0.698,0.187
+2026-04-17,Max Muncy,LAD,OF,5.6,3.0,LAD 7 COL 1,4.0,2.0,3.0,2.0,3.0,0.0,1.0,,,,,"3-4 | 2 HR, 2B, K | vs COL (away)",0.894,0.302
+2026-04-17,Munetaka Murakami,CWS,OF,5.3,3.0,CWS 9 ATH 2,5.0,2.0,3.0,1.0,4.0,0.0,2.0,,,,,"3-5 | HR, 2 K, 4 RBI | vs ATH (away)",0.838,0.277
+2026-04-17,Otto Lopez,MIA,OF,4.6,2.9,MIL 7 MIA 5,5.0,2.0,3.0,1.0,2.0,0.0,2.0,,,,,"3-5 | HR, 3B, 2 K | vs MIL (home)",0.983,0.236
+2026-04-17,Austin Riley,ATL,OF,4.5,3.0,ATL 9 PHI 0,5.0,2.0,2.0,2.0,4.0,0.0,3.0,,,,,"2-5 | 2 HR, 3 K, 4 RBI | vs PHI (away)",0.734,0.173
+2026-04-17,Heliot Ramos,SF,OF,4.5,3.0,SF 10 WSH 5,4.0,1.0,1.0,1.0,4.0,1.0,0.0,,,,,"1-4 | HR, BB, 4 RBI | vs WSH (away)",0.578,0.072
+2026-04-17,Moises Ballesteros,CHC,OF,4.1,3.0,NYM 4 CHC 12,2.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-2 | HR, 3 RBI, R | vs NYM (home)",1.034,0.250
+2026-04-17,Ivan Herrera,STL,OF,4.1,3.0,STL 9 HOU 4,4.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-4 | HR, HBP, 3 RBI | vs HOU (away)",0.746,0.136
+2026-04-17,Jeremiah Jackson,BAL,OF,4.3,2.3,BAL 6 CLE 4,4.0,1.0,1.0,1.0,3.0,0.0,2.0,,,,,"1-4 | HR, 2 K, 3 RBI | vs CLE (away)",0.923,0.283
+2026-04-17,Ranger Suarez,BOS,P,7.7,0.4,DET 0 BOS 1,,,,,,,,8.0,0.0,4,ND,8 IP 0 ER 4K ND | walk-off BOS win in extras | vs DET (home),,
+2026-04-17,Ben Rice,NYY,OF,4.2,2.0,KC 2 NYY 4,4.0,2.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, K, 2 RBI | vs KC (home)",1.205,0.407
+2026-04-17,Garrett Mitchell,MIL,OF,3.8,2.6,MIL 7 MIA 5,4.0,0.0,2.0,0.0,3.0,1.0,2.0,,,,,"2-4 | 2B, BB, 2 K | vs MIA (away)",0.883,0.155
+2026-04-17,Matt Chapman,SF,OF,3.4,3.0,SF 10 WSH 5,5.0,1.0,3.0,0.0,3.0,0.0,1.0,,,,,"3-5 | K, 3 RBI, R | vs WSH (away)",0.738,0.114
+2026-04-17,Vinnie Pasquantino,KC,OF,3.3,3.0,KC 2 NYY 4,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-4 | HR, 2 RBI, R | vs NYY (away)",0.549,0.120
+2026-04-18,Cody Bellinger,NYY,OF,6.2,3.0,KC 4 NYY 13,4.0,2.0,3.0,2.0,5.0,1.0,0.0,,,,,"3-4 | 2 HR, BB, 5 RBI | vs KC (home)",0.820,0.178
+2026-04-18,Corbin Carroll,ARI,OF,6.4,2.0,TOR 2 AZ 6,3.0,2.0,1.0,1.0,4.0,1.0,0.0,,,,,"1-3 | HR, BB, 4 RBI | vs TOR (home)",1.018,0.309
+2026-04-18,Troy Johnston,COL,1B,5.1,3.0,LAD 3 COL 4,4.0,1.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-4 | 2 2B, K, 2 RBI | vs LAD (home)",0.851,0.187
+2026-04-18,Heliot Ramos,SF,OF,5.0,3.0,SF 7 WSH 6,5.0,2.0,3.0,1.0,2.0,1.0,1.0,,,,,"3-5 | HR, 2B, BB | vs WSH (away)",0.682,0.121
+2026-04-18,Carson Kelly,CHC,C,4.7,3.0,NYM 2 CHC 4,1.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-1 | HR, 3 RBI, R | vs NYM (home)",0.970,0.180
+2026-04-18,Nick Kurtz,ATH,1B,4.3,3.0,CWS 6 ATH 7,3.0,1.0,2.0,1.0,2.0,3.0,0.0,,,,,"2-3 | HR, 3 BB, 2 RBI | vs CWS (home)",0.797,0.133
+2026-04-18,Amed Rosario,NYY,SS,4.2,3.0,KC 4 NYY 13,5.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, 2 R | vs KC (home)",0.837,0.286
+2026-04-18,Kyle Tucker,LAD,OF,4.1,3.0,LAD 3 COL 4,5.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-5 | HR, 2 RBI, R | vs COL (away)",0.759,0.143
+2026-04-18,Cedric Mullins,TB,OF,4.6,3.0,TB 8 PIT 7,5.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-5 | HR, K, 3 RBI | vs PIT (away)",0.489,0.135
+2026-04-18,Ryan O'Hearn,PIT,1B,4.2,2.6,TB 8 PIT 7,3.0,2.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-3 | HR, BB, K | vs TB (home)",0.960,0.214
+2026-04-18,Brayan Rocchio,CLE,SS,4.4,3.0,BAL 2 CLE 4,3.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-3 | HR, 3 RBI, R | vs BAL (home)",0.735,0.175
+2026-04-18,Yusei Kikuchi,LAA,P,4.9,1.9,SD 4 LAA 1,,,,,,,,6.0,0,8,ND,"6.0 IP, 0 ER, 8 K, BB | vs SD (home)",,
+2026-04-18,Brice Turang,MIL,2B,4.6,1.8,MIL 5 MIA 2,3.0,1.0,2.0,1.0,3.0,2.0,0.0,,,,,"2-3 | HR, 2 BB, 3 RBI | vs MIA (away)",1.016,0.283
+2026-04-18,Kerry Carpenter,DET,OF,3.3,3.0,DET 4 BOS 1,3.0,1.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-3 | HR, BB, K | vs BOS (away)",0.773,0.237
+2026-04-18,Jonny DeLuca,TB,OF,3.5,3.0,TB 8 PIT 7,4.0,2.0,2.0,0.0,2.0,0.0,0.0,,,,,"2-4 | 2B, 2 RBI, 2 R | vs PIT (away)",0.858,0.225
+2026-04-18,J.C. Escarra,NYY,OF,3.8,3.0,KC 4 NYY 13,4.0,2.0,2.0,0.0,3.0,0.0,0.0,,,,,"2-4 | 3B, 2B, 3 RBI | vs KC (home)",0.516,0.158
+2026-04-18,German Marquez,SD,P,4.4,1.6,SD 4 LAA 1,,,,,,,,5.2,0,5,ND,"5.2 IP, 0 ER, 5 K, 2 BB | vs LAA (away)",,
+2026-04-18,Cole Young,SEA,OF,3.1,3.0,TEX 3 SEA 7,3.0,1.0,2.0,0.0,2.0,1.0,1.0,,,,,"2-3 | BB, K, 2 RBI | vs TEX (home)",0.727,0.135
+2026-04-18,Dominic Canzone,SEA,OF,3.7,3.0,TEX 3 SEA 7,4.0,1.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-4 | 2B, K, 2 RBI | vs TEX (home)",0.810,0.234
+2026-04-18,James Wood,WSH,OF,3.9,1.9,SF 7 WSH 6,3.0,3.0,1.0,1.0,2.0,2.0,1.0,,,,,"1-3 | HR, 2 BB, HBP | vs SF (home)",0.955,0.314
+2026-04-17,Daniel Schneemann,CLE,SS,5.4,3.0,BAL 6 CLE 4,4.0,,2.0,1.0,4.0,,,,,,,2-for-4 | grand slam (407ft) in 7th | 4 RBI | vs BAL (home),0.916,0.250
+2026-04-17,Colson Montgomery,CWS,SS,3.0,3.0,CWS 9 ATH 2,4.0,0.0,2.0,0.0,2.0,1.0,2.0,,,,,"2-4 | 2B, BB, 2 K | vs ATH (away)",0.677,0.191
+2026-04-17,Spencer Horwitz,PIT,1B,3.2,3.0,TB 1 PIT 5,3.0,,3.0,,1.0,,,,,,,3-for-3 | RBI double (perfect 10-for-10 career vs Martinez) | vs TB (home),0.750,0.102
+2026-04-17,Nolan Arenado,ARI,3B,3.2,3.0,TOR 3 AZ 6,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-4 | HR, 2 RBI, R | vs TOR (home)",0.605,0.149
+2026-04-17,Andrew Benintendi,CWS,OF,3.1,3.0,CWS 9 ATH 2,6.0,2.0,3.0,0.0,1.0,0.0,1.0,,,,,"3-6 | 2 2B, K, RBI | vs ATH (away)",0.604,0.129
+2026-04-17,Luisangel Acuna,CWS,2B,7.4,0.0,CWS 9 ATH 2,4.0,2.0,2.0,0.0,1.0,1.0,2.0,,,,,"2-4 | 2B, BB, 2 K | vs ATH (away)",0.453,0.018
+2026-04-20,Max Muncy,LAD,3B,5.6,2.8,LAD 12 COL 3,4.0,4.0,4.0,2.0,2.0,1.0,0.0,,,,,"4-4 | 2 HR, BB, 2 RBI | vs COL (away)",1.008,0.329
+2026-04-20,Vladimir Guerrero Jr.,TOR,1B,4.9,2.8,TOR 5 LAA 2,4.0,2.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-4 | HR, K, 2 RBI | vs LAA (away)",0.930,0.134
+2026-04-20,Isaac Paredes,HOU,3B,4.5,3,HOU 9 CLE 2,5.0,,3.0,2.0,2.0,,,,,,,3-for-5 | 2 solo HR (1st 2 HRs of 2026 season) | vs CLE (away),0.697,0.147
+2026-04-20,Christian Walker,HOU,1B,4.7,2.6,HOU 9 CLE 2,5.0,3.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-5 | HR, 2B, K | vs CLE (away)",0.903,0.262
+2026-04-20,Leody Taveras,BAL,OF,4.3,3,BAL 7 KC 5,5.0,1.0,1.0,1.0,4.0,0.0,1.0,,,,,"1-5 | HR, K, 4 RBI | vs KC (away)",0.998,0.204
+2026-04-20,Miguel Rojas,LAD,SS,4,3,LAD 12 COL 3,3.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-3 | HR, 2 RBI, R | vs COL (away)",0.950,0.147
+2026-04-20,Carlos Cortes,ATH,OF,4,3,ATH 6 SEA 4,5.0,,4.0,1.0,,,,,,,,4-for-5 | solo HR | vs SEA (away),0.965,0.215
+2026-04-20,Riley Greene,DET,OF,3.5,3,DET 6 BOS 8,3.0,1.0,2.0,0.0,2.0,2.0,0.0,,,,,"2-3 | 2B, 2 BB, 2 RBI | vs BOS (away)",0.760,0.125
+2026-04-20,Drake Baldwin,ATL,C,4.1,2.1,ATL 9 WSH 4,4.0,2.0,2.0,0.0,2.0,1.0,0.0,,,,,"2-4 | 2B, BB, 2 RBI | vs WSH (away)",0.887,0.197
+2026-04-20,Josh Naylor,SEA,1B,3.3,3,ATH 6 SEA 4,4.0,,3.0,,1.0,,,,,,,3-for-4 | RBI double in 1st | vs ATH (home),0.520,0.093
+2026-04-20,Dansby Swanson,CHC,SS,3.2,3,PHI 1 CHC 5,4.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,"1-4 | HR, K, 3 RBI | vs PHI (home)",0.733,0.219
+2026-04-20,Sal Stewart,CIN,3B,4,2,CIN 6 TB 1,4.0,2.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, 2B, K | vs TB (away)",1.027,0.350
+2026-04-20,Carlos Correa,HOU,SS,3.4,3,HOU 9 CLE 2,5.0,1.0,3.0,0.0,2.0,0.0,2.0,,,,,"3-5 | 2 K, 2 RBI, R | vs CLE (away)",0.734,0.100
+2026-04-20,Matt Olson,ATL,1B,3.4,2.4,ATL 9 WSH 4,4.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-4 | HR, 3 RBI, R | vs WSH (away)",0.954,0.311
+2026-04-20,Samuel Basallo,BAL,C,3.6,3,BAL 7 KC 5,3.0,1.0,2.0,0.0,2.0,2.0,0.0,,,,,"2-3 | 2 BB, 2 RBI, R | vs KC (away)",0.592,0.150
+2026-04-20,Masyn Winn,STL,SS,2.9,3,STL 3 MIA 5,3.0,1.0,2.0,0.0,1.0,0.0,1.0,,,,,"2-3 | 3B, K, RBI | vs MIA (away)",0.725,0.137
+2026-04-20,Seth Lugo,KC,P,6.8,,BAL 7 KC 5,,,,,,,,7.0,0,7,ND,"7.0 IP, 0 ER, 7 K, 4 BB | vs BAL (home)",,
+2026-04-20,Carlos Narváez,BOS,C,2.8,3,DET 6 BOS 8,3.0,1.0,2.0,0.0,1.0,1.0,0.0,,,,,"2-3 | 2B, BB, RBI | vs DET (home)",0.542,0.043
+2026-04-19,Dillon Dingler,DET,C,7.1,2.7,DET 6 BOS 2,5.0,1.0,4.0,1.0,4.0,0.0,0.0,,,,,"4-5 | HR, 2B, 4 RBI | vs BOS (away)",0.983,0.301
+2026-04-19,TJ Friedl,CIN,OF,4.9,3,CIN 7 MIN 4,5.0,0.0,2.0,0.0,3.0,0.0,1.0,,,,,"2-5 | 2B, K, 3 RBI | vs MIN (away)",0.434,0.013
+2026-04-19,Masyn Winn,STL,SS,4.9,3,STL 7 HOU 5,5.0,1.0,3.0,0.0,3.0,0.0,2.0,,,,,"3-5 | 2B, 2 K, 3 RBI | vs HOU (away)",0.671,0.111
+2026-04-19,Walbert Urena,LAA,P,4.7,3,SD 2 LAA 1,,,,,,,,6.0,2.0,8,L,6 IP 2 ER 8K L | vs SD (home),,
+2026-04-19,Mickey Moniak,COL,OF,4.8,2.7,LAD 6 COL 9,5.0,2.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, 2 R | vs LAD (home)",0.960,0.382
+2026-04-19,Taylor Ward,BAL,OF,4.0,3,BAL 4 CLE 8,5.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, R | vs CLE (away)",0.843,0.160
+2026-04-19,Edouard Julien,COL,2B,4.7,3,LAD 6 COL 9,5.0,1.0,3.0,0.0,3.0,0.0,0.0,,,,,"3-5 | 2B, 3 RBI, R | vs LAD (home)",0.707,0.093
+2026-04-19,Nathan Lukes,TOR,OF,3.8,3,TOR 10 AZ 4,5.0,1.0,3.0,0.0,3.0,0.0,0.0,,,,,"3-5 | 2 2B, 3 RBI, R | vs AZ (away)",0.506,0.048
+2026-04-19,Brayan Rocchio,CLE,SS,3.9,3,BAL 4 CLE 8,4.0,0.0,3.0,0.0,3.0,0.0,1.0,,,,,"3-4 | K, 3 RBI | vs BAL (home)",0.777,0.164
+2026-04-19,Vladimir Guerrero Jr.,TOR,1B,3.7,3,TOR 10 AZ 4,5.0,2.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-5 | 2B, K, 2 RBI | vs AZ (away)",0.865,0.103
+2026-04-19,Kazuma Okamoto,TOR,OF,3.9,3,TOR 10 AZ 4,4.0,2.0,2.0,1.0,3.0,1.0,2.0,,,,,"2-4 | HR, 2B, BB | vs AZ (away)",0.658,0.143
+2026-04-19,Miguel Vargas,CWS,3B,3.8,3,CWS 7 ATH 4,3.0,2.0,2.0,1.0,2.0,2.0,0.0,,,,,"2-3 | HR, 2 BB, 2 RBI | vs ATH (away)",0.675,0.187
+2026-04-19,Kyle Schwarber,PHI,DH,4.0,2.6,ATL 4 PHI 2,4.0,1.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-4 | HR, 2B, BB | vs ATL (home)",0.936,0.333
+2026-04-19,Trent Grisham,NYY,OF,3.8,3,KC 0 NYY 7,4.0,1.0,2.0,1.0,3.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs KC (home)",0.669,0.181
+2026-04-21,Elly De La Cruz,CIN,OF,6.8,2.7,TB 6 CIN 12,6.0,,3.0,2.0,5.0,,,,,,,3-for-6 | 2 HR (2-run in 1st + solo in 9th) | 5 RBI | 6th career multi-HR game | vs TB (home),0.914,0.295
+2026-04-21,Luis Garcia Jr.,WSH,OF,5.8,3.0,ATL 4 WSH 11,5.0,1.0,4.0,0.0,3.0,0.0,0.0,,,,,"4-5 | 2B, 3 RBI, R | vs ATL (home)",0.648,0.117
+2026-04-21,Luis Gil,NYY,P,4.9,3.0,NYY 4 BOS 0,,,,,,,,6.1,0.0,2,W,6.1 IP 0 ER W (shutout) | vs BOS (away),,
+2026-04-21,Giancarlo Stanton,NYY,OF,4.5,3.0,NYY 4 BOS 0,4.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-4 | HR, 2B, K | vs BOS (away)",0.724,0.165
+2026-04-21,Chase DeLauter,CLE,OF,4.5,2.8,HOU 5 CLE 8,4.0,1.0,1.0,0.0,3.0,1.0,0.0,,,,,"1-4 | 3B, BB, 3 RBI | vs HOU (home)",0.828,0.285
+2026-04-21,Colson Montgomery,CWS,OF,4.3,2.9,CWS 11 AZ 5,5.0,2.0,2.0,1.0,3.0,0.0,2.0,,,,,"2-5 | HR, 2B, 2 K | vs AZ (away)",0.823,0.287
+2026-04-21,Francisco Lindor,NYM,OF,4.2,3.0,MIN 5 NYM 3,3.0,1.0,1.0,1.0,3.0,1.0,1.0,,,,,"1-3 | HR, BB, K | vs MIN (home)",0.642,0.132
+2026-04-21,Adley Rutschman,BAL,OF,4.0,3.0,BAL 5 KC 6,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, K, 2 RBI | vs KC (away)",0.948,0.237
+2026-04-21,Coby Mayo,BAL,OF,3.9,3.0,BAL 5 KC 6,3.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-3 | HR, 3 RBI, R | vs KC (away)",0.508,0.088
+2026-04-21,Jakob Marsee,MIA,OF,3.3,3.0,STL 5 MIA 3,4.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-4 | HR, HBP, RBI | vs STL (home)",0.567,0.088
+2026-04-21,Luke Keaschall,MIN,OF,3.3,3.0,MIN 5 NYM 3,4.0,0.0,2.0,0.0,2.0,0.0,1.0,,,,,"2-4 | K, 2 RBI, SB | vs NYM (away)",0.557,0.067
+2026-04-21,Nathan Church,STL,OF,3.6,3.0,STL 5 MIA 3,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-4 | HR, 2 RBI, R | vs MIA (away)",0.646,0.134
+2026-04-21,Sam Antonacci,CWS,OF,3.9,3.0,CWS 11 AZ 5,5.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3B, 3 RBI | vs AZ (away)",0.749,0.239
+2026-04-21,Curtis Mead,WSH,OF,3.8,3.0,ATL 4 WSH 11,2.0,2.0,1.0,1.0,3.0,1.0,1.0,,,,,"1-2 | HR, BB, K | vs ATL (home)",0.772,0.261
+2026-04-21,Seiya Suzuki,CHC,OF,3.1,3.0,PHI 4 CHC 7,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, HBP, K | vs PHI (home)",0.755,0.103
+2026-04-21,Alec Burleson,STL,OF,3.3,2.6,STL 5 MIA 3,4.0,1.0,2.0,0.0,2.0,0.0,1.0,,,,,"2-4 | 2B, K, 2 RBI | vs MIA (away)",0.803,0.166
+2026-04-21,Munetaka Murakami,CWS,OF,3.1,2.6,CWS 11 AZ 5,5.0,2.0,3.0,1.0,1.0,1.0,0.0,,,,,"3-5 | HR, BB, RBI | vs AZ (away)",0.978,0.350
+2026-04-21,Cal Raleigh,SEA,OF,2.8,3.0,ATH 5 SEA 2,3.0,1.0,2.0,1.0,1.0,1.0,0.0,,,,,"2-3 | HR, BB, RBI | vs ATH (home)",0.599,0.156
+2026-04-22,Nolan Arenado,ARI,OF,6.6,3.0,CWS 7 AZ 11,4.0,3.0,4.0,1.0,3.0,1.0,0.0,,,,,"4-4 | HR, BB, 3 RBI | vs CWS (home)",0.724,0.175
+2026-04-22,Ildemaro Vargas,ARI,OF,7.4,2.2,CWS 7 AZ 11,5.0,2.0,2.0,2.0,5.0,0.0,1.0,,,,,"2-5 | 2 HR, K, 5 RBI | vs CWS (home)",1.079,0.333
+2026-04-22,Nolan Schanuel,LAA,OF,5.8,3.0,TOR 3 LAA 7,4.0,2.0,2.0,1.0,4.0,0.0,1.0,,,,,"2-4 | HR, 2B, K | vs TOR (home)",0.688,0.141
+2026-04-22,Michael Harris II,ATL,OF,5.0,3.0,ATL 8 WSH 6,4.0,2.0,2.0,2.0,3.0,0.0,0.0,,,,,"2-4 | 2 HR, 3 RBI, 2 R | vs WSH (away)",0.880,0.247
+2026-04-22,Daylen Lile,WSH,OF,4.8,3.0,ATL 8 WSH 6,5.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 2B, 3 RBI | vs ATL (home)",0.770,0.155
+2026-04-22,Amed Rosario,NYY,OF,4.6,3.0,NYY 4 BOS 1,1.0,1.0,1.0,1.0,4.0,0.0,0.0,,,,,"1-1 | HR, 4 RBI, R | vs BOS (away)",0.880,0.306
+2026-04-22,Cal Raleigh,SEA,OF,4.4,3.0,ATH 4 SEA 5,5.0,2.0,3.0,1.0,1.0,0.0,1.0,,,,,"3-5 | HR, 2B, K | vs ATH (home)",0.667,0.188
+2026-04-22,Patrick Bailey,SF,OF,4.3,3.0,LAD 0 SF 3,3.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-3 | HR, 3 RBI, R | vs LAD (home)",0.429,0.052
+2026-04-22,Pete Crow-Armstrong,CHC,OF,3.9,3.0,PHI 2 CHC 7,4.0,0.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-4 | 2B, K, 2 RBI | vs PHI (home)",0.633,0.086
+2026-04-22,Tyler Mahle,SF,P,6.7,0.9,LAD 0 SF 3,,,,,,,,7.0,0,5,W,"7.0 IP, 0 ER, 5 K, 2 BB | vs LAD (home)",,
+2026-04-22,Hunter Goodman,COL,OF,3.8,3.0,SD 3 COL 8,4.0,2.0,3.0,1.0,1.0,1.0,1.0,,,,,"3-4 | HR, 2 2B, BB | vs SD (home)",0.880,0.276
+2026-04-22,Geraldo Perdomo,ARI,OF,3.8,3.0,CWS 7 AZ 11,4.0,1.0,3.0,0.0,1.0,1.0,1.0,,,,,"3-4 | 2 3B, BB, K | vs CWS (home)",0.782,0.156
+2026-04-22,Carter Jensen,KC,OF,3.8,3.0,BAL 8 KC 6,3.0,2.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-3 | HR, BB, 2 RBI | vs BAL (home)",0.919,0.290
+2026-04-22,Shohei Ohtani,LAD,OF,4.8,1.8,LAD 0 SF 3,4.0,0.0,0.0,0.0,0.0,0.0,1.0,,,,,0-4 | K | vs SF (away),0.854,0.214
+2026-04-22,Josh Jung,TEX,OF,3.8,3.0,PIT 8 TEX 4,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, K, 2 RBI | vs PIT (home)",0.883,0.223
+2026-04-22,Corbin Carroll,ARI,OF,4.5,1.9,CWS 7 AZ 11,4.0,2.0,3.0,0.0,1.0,1.0,0.0,,,,,"3-4 | 3B, BB, RBI | vs CWS (home)",1.023,0.298
+2026-04-22,Yordan Alvarez,HOU,OF,4.6,1.7,HOU 2 CLE 0,4.0,1.0,3.0,1.0,2.0,0.0,0.0,,,,,"3-4 | HR, 2 RBI, R | vs CLE (away)",1.245,0.432
+2026-04-22,Miguel Vargas,CWS,OF,3.4,3.0,CWS 7 AZ 11,4.0,3.0,2.0,1.0,1.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs AZ (away)",0.767,0.241
+2026-04-22,Munetaka Murakami,CWS,OF,3.7,2.4,CWS 7 AZ 11,5.0,1.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-5 | HR, K, 2 RBI | vs AZ (away)",1.026,0.366
+2026-04-22,Luis Campusano,SD,OF,3.6,3.0,SD 3 COL 8,4.0,2.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-4 | HR, 2 2B, RBI | vs COL (away)",1.052,0.334
+2026-04-23,Ozzie Albies,ATL,OF,5.8,3.0,ATL 7 WSH 2,4.0,2.0,3.0,1.0,4.0,0.0,1.0,,,,,"3-4 | HR, K, 4 RBI | vs WSH (away)",0.817,0.178
+2026-04-23,Bo Bichette,NYM,OF,5.8,3.0,MIN 8 NYM 10,5.0,2.0,3.0,0.0,3.0,0.0,2.0,,,,,"3-5 | 2B, 2 K, 3 RBI | vs MIN (home)",0.584,0.076
+2026-04-23,Brandon Marsh,PHI,OF,5.8,3.0,PHI 7 CHC 8,4.0,2.0,3.0,2.0,3.0,1.0,1.0,,,,,"3-4 | 2 HR, BB, K | vs CHC (away)",0.829,0.200
+2026-04-23,Ryan Jeffers,MIN,OF,5.7,2.9,MIN 8 NYM 10,3.0,1.0,1.0,1.0,4.0,2.0,1.0,,,,,"1-3 | HR, 2 BB, K | vs NYM (away)",0.888,0.216
+2026-04-23,Mickey Moniak,COL,OF,6.2,2.3,SD 10 COL 8,5.0,3.0,4.0,2.0,2.0,0.0,1.0,,,,,"4-5 | 2 HR, K, 2 RBI | vs SD (home)",1.097,0.426
+2026-04-23,Gavin Sheets,SD,OF,5.1,3.0,SD 10 COL 8,2.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-2 | HR, 3 RBI, R | vs COL (away)",0.733,0.240
+2026-04-23,Brett Baty,NYM,OF,5.1,3.0,MIN 8 NYM 10,4.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-4 | HR, K, 3 RBI | vs MIN (home)",0.588,0.113
+2026-04-23,Michael Busch,CHC,OF,4.8,3.0,PHI 7 CHC 8,6.0,1.0,2.0,1.0,4.0,0.0,2.0,,,,,"2-6 | HR, 2 K, 4 RBI | vs PHI (home)",0.568,0.088
+2026-04-23,Seiya Suzuki,CHC,OF,4.2,3.0,PHI 7 CHC 8,4.0,2.0,3.0,1.0,1.0,2.0,0.0,,,,,"3-4 | HR, 2 BB, RBI | vs PHI (home)",0.980,0.213
+2026-04-23,Xander Bogaerts,SD,OF,4.3,2.8,SD 10 COL 8,3.0,3.0,2.0,1.0,2.0,2.0,0.0,,,,,"2-3 | HR, 2 BB, 2 RBI | vs COL (away)",0.810,0.155
+2026-04-23,Miguel Andujar,SD,OF,3.9,3.0,SD 10 COL 8,5.0,0.0,2.0,0.0,3.0,0.0,2.0,,,,,"2-5 | 2B, 2 K, 3 RBI | vs COL (away)",0.789,0.123
+2026-04-23,Corey Seager,TEX,OF,3.8,2.9,PIT 1 TEX 6,4.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-4 | HR, K, 3 RBI | vs PIT (home)",0.765,0.241
+2026-04-23,TJ Rumfield,COL,OF,3.6,3.0,SD 10 COL 8,4.0,1.0,2.0,0.0,2.0,1.0,0.0,,,,,"2-4 | 2 2B, BB, 2 RBI | vs SD (home)",0.749,0.165
+2026-04-23,Tyler Glasnow,LAD,P,9.0,0.0,LAD 3 SF 0,,,,,,,,8.0,0,9,W,"8.0 IP, 0 ER, 9 K, BB | vs SF (away)",,
+2026-04-23,Riley Greene,DET,OF,3.7,2.8,MIL 4 DET 5,3.0,1.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-3 | HR, BB, K | vs MIL (home)",0.840,0.155
+2026-04-23,Evan Carter,TEX,OF,3.5,3.0,PIT 1 TEX 6,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, K, 2 RBI | vs PIT (home)",0.729,0.176
+2026-04-23,Michael Harris II,ATL,OF,3.6,2.7,ATL 7 WSH 2,4.0,0.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-4 | 2B, 2 RBI | vs WSH (away)",0.921,0.247
+2026-04-23,Troy Johnston,COL,OF,3.2,3.0,SD 10 COL 8,4.0,0.0,3.0,0.0,2.0,1.0,0.0,,,,,"3-4 | BB, 2 RBI | vs SD (home)",0.862,0.156
+2026-04-23,Dansby Swanson,CHC,OF,3.1,3.0,PHI 7 CHC 8,5.0,0.0,2.0,0.0,2.0,0.0,0.0,,,,,2-5 | 2 RBI | vs PHI (home),0.719,0.193
+2026-04-23,Ramon Laureano,SD,OF,3.5,2.3,SD 10 COL 8,6.0,0.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-6 | 3B, K, 2 RBI | vs COL (away)",0.804,0.220
+2026-04-24,Dansby Swanson,CHC,OF,7.1,3.0,CHC 6 LAD 4,3.0,2.0,2.0,1.0,4.0,0.0,1.0,,,,,"2-3 | HR, 3B, HBP | vs LAD (away)",0.802,0.244
+2026-04-24,Nathaniel Lowe,CIN,OF,7.0,3.0,DET 8 CIN 9,5.0,3.0,2.0,2.0,3.0,0.0,0.0,,,,,"2-5 | 2 HR, 3 RBI, 3 R | vs DET (home)",0.847,0.257
+2026-04-24,Adley Rutschman,BAL,OF,7.1,2.9,BOS 3 BAL 10,5.0,2.0,3.0,2.0,6.0,0.0,0.0,,,,,"3-5 | 2 HR, 6 RBI, 2 R | vs BOS (home)",1.115,0.349
+2026-04-24,Carlos Cortes,ATH,OF,5.7,3.0,ATH 8 TEX 1,4.0,2.0,2.0,2.0,4.0,0.0,0.0,,,,,"2-4 | 2 HR, 4 RBI, 2 R | vs TEX (away)",1.028,0.286
+2026-04-24,Matt McLain,CIN,OF,6.0,3.0,DET 8 CIN 9,4.0,2.0,2.0,2.0,4.0,1.0,0.0,,,,,"2-4 | 2 HR, BB, 4 RBI | vs DET (home)",0.688,0.117
+2026-04-24,Jazz Chisholm Jr.,NYY,OF,5.4,3.0,NYY 12 HOU 4,4.0,3.0,3.0,1.0,4.0,1.0,1.0,,,,,"3-4 | HR, BB, K | vs HOU (away)",0.637,0.124
+2026-04-24,Angel Martinez,CLE,OF,5.4,3.0,CLE 8 TOR 6,4.0,2.0,2.0,2.0,4.0,0.0,2.0,,,,,"2-4 | 2 HR, 2 K, 4 RBI | vs TOR (away)",0.870,0.257
+2026-04-24,Konnor Griffin,PIT,OF,5.3,3.0,PIT 6 MIL 0,4.0,1.0,3.0,1.0,3.0,0.0,0.0,,,,,"3-4 | HR, 3 RBI, R | vs MIL (away)",0.587,0.100
+2026-04-24,Junior Caminero,TB,OF,5.0,3.0,MIN 2 TB 6,4.0,2.0,2.0,2.0,3.0,0.0,0.0,,,,,"2-4 | 2 HR, 3 RBI, 2 R | vs MIN (home)",0.891,0.270
+2026-04-24,Michael Lorenzen,COL,P,5.5,1.7,COL 4 NYM 3,,,,,,,,7.0,1,3,W,"7.0 IP, ER, 3 K, 0 BB | vs NYM (away)",,
+2026-04-24,Will Smith,LAD,OF,3.9,3.0,CHC 6 LAD 4,4.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,"1-4 | HR, K, 3 RBI | vs CHC (home)",0.729,0.126
+2026-04-24,Jonathan Aranda,TB,OF,4.0,2.6,MIN 2 TB 6,4.0,2.0,2.0,2.0,2.0,0.0,1.0,,,,,"2-4 | 2 HR, K, 2 RBI | vs MIN (home)",0.849,0.247
+2026-04-24,Samuel Basallo,BAL,OF,3.8,3.0,BOS 3 BAL 10,5.0,1.0,4.0,1.0,1.0,0.0,0.0,,,,,"4-5 | HR, 2B, RBI | vs BOS (home)",0.722,0.189
+2026-04-24,Xavier Edwards,MIA,OF,3.6,3.0,MIA 9 SF 4,4.0,1.0,3.0,0.0,1.0,1.0,0.0,,,,,"3-4 | 2B, BB, RBI | vs SF (away)",0.909,0.133
+2026-04-24,Kerry Carpenter,DET,OF,3.5,3.0,DET 8 CIN 9,2.0,1.0,1.0,1.0,2.0,0.0,0.0,,,,,"1-2 | HR, 2 RBI, R | vs CIN (away)",0.821,0.279
+2026-04-24,Andres Gimenez,TOR,OF,3.5,2.9,CLE 8 TOR 6,4.0,0.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-4 | 2B, 2 RBI | vs CLE (home)",0.783,0.178
+2026-04-24,Josh Naylor,SEA,OF,3.4,3.0,SEA 3 STL 2,3.0,2.0,1.0,1.0,1.0,1.0,2.0,,,,,"1-3 | HR, BB, 2 K | vs STL (away)",0.591,0.115
+2026-04-24,Gunnar Henderson,BAL,OF,3.7,2.6,BOS 3 BAL 10,5.0,3.0,3.0,1.0,1.0,0.0,1.0,,,,,"3-5 | HR, K, RBI | vs BOS (home)",0.759,0.270
+2026-04-24,Ronald Acuna Jr.,ATL,OF,3.4,3.0,PHI 3 ATL 5,3.0,1.0,1.0,1.0,2.0,2.0,0.0,,,,,"1-3 | HR, 2 BB, 2 RBI | vs PHI (home)",0.713,0.128
+2026-04-24,Brooks Lee,MIN,OF,3.4,3.0,MIN 2 TB 6,4.0,1.0,3.0,1.0,1.0,0.0,1.0,,,,,"3-4 | HR, 2B, K | vs TB (away)",0.760,0.175
+2026-04-26,Manny Machado,SD,OF,6.1,3.0,SD 7 AZ 12,5.0,2.0,2.0,2.0,5.0,0.0,1.0,,,,,"2-5 | 2 HR, K, 5 RBI | vs AZ (away)",0.690,0.154
+2026-04-26,Lane Thomas,KC,OF,7.0,3.0,LAA 9 KC 11,6.0,2.0,3.0,1.0,3.0,0.0,1.0,,,,,"3-6 | HR, K, 3 RBI | vs LAA (home)",0.661,0.076
+2026-04-26,Ildemaro Vargas,ARI,OF,6.9,1.9,SD 7 AZ 12,5.0,3.0,3.0,1.0,4.0,0.0,1.0,,,,,"3-5 | HR, 3B, 2B | vs SD (home)",1.105,0.355
+2026-04-26,Christian Walker,HOU,OF,5.8,2.5,NYY 4 HOU 7,4.0,1.0,3.0,1.0,4.0,0.0,1.0,,,,,"3-4 | HR, 2B, K | vs NYY (home)",0.946,0.282
+2026-04-26,Casey Schmitt,SF,OF,4.8,2.9,MIA 3 SF 6,3.0,2.0,1.0,1.0,3.0,1.0,1.0,,,,,"1-3 | HR, BB, K | vs MIA (home)",0.891,0.247
+2026-04-26,Gleyber Torres,DET,OF,4.8,3.0,DET 8 CIN 3,5.0,3.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-5 | HR, K, 2 RBI | vs CIN (away)",0.712,0.080
+2026-04-26,Carlos Cortes,ATH,OF,4.5,2.9,ATH 2 TEX 1,4.0,0.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-4 | 3B, 2 RBI | vs TEX (away)",1.122,0.312
+2026-04-26,Isaac Paredes,HOU,OF,4.5,3.0,NYY 4 HOU 7,4.0,3.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-4 | HR, 3 RBI, 3 R | vs NYY (home)",0.711,0.151
+2026-04-26,Tim Tawa,ARI,OF,4.1,3.0,SD 7 AZ 12,4.0,1.0,1.0,1.0,4.0,0.0,1.0,,,,,"1-4 | HR, K, 4 RBI | vs SD (home)",0.502,0.122
+2026-04-26,Zach Neto,LAA,OF,4.0,3.0,LAA 9 KC 11,5.0,2.0,3.0,0.0,2.0,1.0,1.0,,,,,"3-5 | 2 2B, BB, K | vs KC (away)",0.803,0.200
+2026-04-26,Jesus Sanchez,TOR,OF,4.0,3.0,CLE 2 TOR 4,3.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-3 | HR, 3 RBI, R | vs CLE (home)",0.771,0.190
+2026-04-26,Spencer Torkelson,DET,OF,3.9,3.0,DET 8 CIN 3,4.0,1.0,3.0,1.0,1.0,1.0,1.0,,,,,"3-4 | HR, 2 2B, BB | vs CIN (away)",0.836,0.236
+2026-04-26,Jose Quintana,COL,P,3.7,3.0,COL 3 NYM 0,,,,,,,,,,,,auto-scraped (box score backfill pending),,
+2026-04-26,Kerry Carpenter,DET,OF,3.5,3.0,DET 8 CIN 3,5.0,1.0,2.0,0.0,2.0,0.0,1.0,,,,,"2-5 | 3B, 2B, K | vs CIN (away)",0.852,0.289
+2026-04-26,Lourdes Gurriel Jr.,ARI,OF,3.4,3.0,SD 7 AZ 12,4.0,0.0,2.0,0.0,2.0,1.0,1.0,,,,,"2-4 | 2B, BB, K | vs SD (home)",0.359,0.042
+2026-04-26,Jung Hoo Lee,SF,OF,3.4,3.0,MIA 3 SF 6,5.0,2.0,4.0,0.0,0.0,0.0,0.0,,,,,"4-5 | 3B, 2 R | vs MIA (home)",0.833,0.162
+2026-04-26,Bobby Witt Jr.,KC,OF,3.3,3.0,LAA 9 KC 11,5.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-5 | HR, 3B, 2 RBI | vs LAA (home)",0.790,0.128
+2026-04-26,Kyle Harrison,MIL,P,7.5,0.2,PIT 0 MIL 5,,,,,,,,6.0,0,12,W,"6.0 IP, 0 ER, 12 K, BB | vs PIT (home)",,
+2026-04-26,Jac Caglianone,KC,OF,3.4,3.0,LAA 9 KC 11,2.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,"1-2 | HR, K, 2 RBI | vs LAA (home)",0.769,0.162
+2026-04-26,Luis Campusano,SD,OF,3.5,2.6,SD 7 AZ 12,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-4 | HR, 2B, 2 RBI | vs AZ (away)",1.145,0.400
+2026-04-25,Sal Stewart,CIN,OF,7.0,2.0,DET 2 CIN 9,4.0,1.0,3.0,1.0,5.0,1.0,0.0,,,,,"3-4 | HR, BB, 5 RBI | vs DET (home)",1.024,0.323
+2026-04-25,Bryce Harper,PHI,OF,5.6,2.9,PHI 8 ATL 5,3.0,2.0,2.0,0.0,4.0,1.0,0.0,,,,,"2-3 | BB, 4 RBI, 2 R | vs ATL (away)",0.877,0.250
+2026-04-25,Nathan Church,STL,OF,5.9,3.0,SEA 11 STL 9,4.0,2.0,2.0,2.0,4.0,0.0,0.0,,,,,"2-4 | 2 HR, 4 RBI, 2 R | vs SEA (home)",0.760,0.206
+2026-04-25,Julio Rodriguez,SEA,OF,4.6,3.0,SEA 11 STL 9,6.0,2.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-6 | HR, K, 2 RBI | vs STL (away)",0.669,0.083
+2026-04-25,Nasim Nunez,WSH,OF,5.0,3.0,WSH 6 CWS 3,4.0,0.0,2.0,0.0,4.0,1.0,2.0,,,,,"2-4 | BB, 2 K, 4 RBI | vs CWS (away)",0.505,0.012
+2026-04-25,Willson Contreras,BOS,OF,4.4,3.0,BOS 17 BAL 1,4.0,2.0,2.0,1.0,5.0,1.0,1.0,,,,,"2-4 | HR, BB, K | vs BAL (away)",0.804,0.185
+2026-04-25,Cole Young,SEA,OF,4.2,3.0,SEA 11 STL 9,4.0,3.0,3.0,1.0,1.0,0.0,1.0,,,,,"3-4 | HR, 2B, HBP | vs STL (away)",0.740,0.143
+2026-04-25,Salvador Perez,KC,OF,4.0,3.0,LAA 1 KC 12,5.0,2.0,3.0,1.0,2.0,0.0,1.0,,,,,"3-5 | HR, K, 2 RBI | vs LAA (home)",0.555,0.147
+2026-04-25,Casey Schmitt,SF,OF,4.2,3.0,MIA 2 SF 6,3.0,1.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-3 | HR, 2B, BB | vs MIA (home)",0.854,0.218
+2026-04-25,Kazuma Okamoto,TOR,OF,3.7,3.0,CLE 3 TOR 5,3.0,2.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-3 | HR, BB, K | vs CLE (home)",0.743,0.182
+2026-04-25,Ben Williamson,TB,OF,4.0,3.0,MIN 1 TB 6,4.0,1.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-4 | 3B, 2B, 2 RBI | vs MIN (home)",0.700,0.101
+2026-04-25,Josh Jung,TEX,OF,3.7,2.7,ATH 3 TEX 4,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,"1-4 | HR, K, 2 RBI | vs ATH (home)",0.894,0.241
+2026-04-25,Austin Wells,NYY,OF,3.9,3.0,NYY 8 HOU 3,3.0,1.0,2.0,1.0,2.0,2.0,0.0,,,,,"2-3 | HR, 2 BB, 2 RBI | vs HOU (away)",0.635,0.109
+2026-04-25,Jose Caballero,NYY,OF,3.6,3.0,NYY 8 HOU 3,5.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-5 | HR, RBI, R | vs HOU (away)",0.746,0.150
+2026-04-25,Carlos Correa,HOU,OF,3.5,3.0,NYY 8 HOU 3,3.0,2.0,2.0,1.0,1.0,1.0,0.0,,,,,"2-3 | HR, 2B, BB | vs NYY (home)",0.796,0.139
+2026-04-25,Max Muncy,LAD,OF,3.5,2.6,CHC 4 LAD 12,1.0,1.0,1.0,1.0,2.0,2.0,0.0,,,,,"1-1 | HR, 2 BB, 2 RBI | vs CHC (home)",1.027,0.333
+2026-04-25,Jose Fernandez,ARI,OF,3.2,3.0,SD 6 AZ 4,4.0,1.0,2.0,0.0,2.0,0.0,0.0,,,,,"2-4 | 2B, 2 RBI, R | vs SD (home)",0.782,0.125
+2026-04-25,Kevin McGonigle,DET,OF,3.3,2.8,DET 2 CIN 9,5.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-5 | HR, 2B, RBI | vs CIN (away)",0.963,0.206
+2026-04-25,Seiya Suzuki,CHC,OF,3.3,2.8,CHC 4 LAD 12,4.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-4 | HR, RBI, R | vs LAD (away)",1.003,0.237
+2026-04-25,Ozzie Albies,ATL,OF,3.2,2.8,PHI 8 ATL 5,5.0,1.0,3.0,0.0,1.0,0.0,0.0,,,,,"3-5 | 2 2B, RBI, R | vs PHI (home)",0.858,0.182
+2026-04-13,Jake Burger,TEX,3B,6.0,3.0,TEX 8 ATH 1,4.0,2.0,2.0,2.0,4.0,1.0,1.0,,,,,"2-4 | 2 HR, BB, K | vs ATH (away)",0.771,0.246
+2026-04-13,Jeremiah Jackson,BAL,SS,7.4,3.0,AZ 7 BAL 9,4.0,2.0,3.0,2.0,5.0,0.0,0.0,,,,,"3-4 | 2 HR, 5 RBI, 2 R | vs AZ (home)",0.871,0.227
+2026-04-13,Josh Naylor,SEA,1B,6.6,3.0,HOU 2 SEA 6,4.0,2.0,2.0,2.0,5.0,0.0,0.0,,,,,"2-4 | 2 HR, 5 RBI, 2 R | vs HOU (home)",0.436,0.095
+2026-04-13,Nolan Arenado,ARI,3B,6.2,3.0,AZ 7 BAL 9,4.0,2.0,2.0,2.0,5.0,0.0,1.0,,,,,"2-4 | 2 HR, K, 5 RBI | vs BAL (away)",0.547,0.129
+2026-04-13,Pete Alonso,BAL,1B,4.7,3.0,AZ 7 BAL 9,3.0,2.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-3 | HR, 2B, BB | vs AZ (home)",0.691,0.164
+2026-04-27,Moises Ballesteros,CHC,OF,5.6,3.0,CHC 7 SD 9,4.0,1.0,1.0,1.0,4.0,0.0,0.0,,,,,"1-4 | HR, 4 RBI, R | vs SD (away)",1.145,0.323
+2026-04-27,Ty France,SD,OF,6.0,3.0,CHC 7 SD 9,3.0,1.0,2.0,0.0,4.0,1.0,0.0,,,,,"2-3 | 3B, 2B, BB | vs CHC (home)",0.999,0.352
+2026-04-27,Wilber Dotel,PIT,P,4.6,3.0,STL 4 PIT 2,,,,,,,,4.0,0,3,HOLD,"4.0 IP, 0 ER, 3 K, 0 BB | vs STL (home)",,
+2026-04-27,Kody Clemens,MIN,OF,5.2,3.0,SEA 4 MIN 11,5.0,1.0,2.0,1.0,5.0,0.0,1.0,,,,,"2-5 | HR, K, 5 RBI | vs SEA (home)",0.646,0.177
+2026-04-27,Munetaka Murakami,CWS,OF,4.9,2.5,LAA 7 CWS 8,4.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-4 | HR, 3 RBI, R | vs LAA (home)",0.965,0.349
+2026-04-27,Liam Hicks,MIA,OF,4.2,2.4,MIA 4 LAD 5,4.0,1.0,1.0,1.0,3.0,0.0,2.0,,,,,"1-4 | HR, 2 K, 3 RBI | vs LAD (away)",0.894,0.233
+2026-04-27,Ranger Suarez,BOS,P,8.9,0.0,BOS 5 TOR 0,,,,,,,,8.0,0,10,W,"8.0 IP, 0 ER, 10 K, BB | vs TOR (away)",,
+2026-04-27,Ryan Vilade,TB,OF,3.9,3.0,TB 3 CLE 2,4.0,0.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-4 | K, 2 RBI | vs CLE (away)",0.806,0.062
+2026-04-27,Aaron Judge,NYY,OF,3.9,2.3,NYY 4 TEX 2,3.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-3 | HR, 2 2B, HBP | vs TEX (away)",1.010,0.369
+2026-04-27,Andrew Benintendi,CWS,OF,3.2,3.0,LAA 7 CWS 8,4.0,1.0,1.0,0.0,3.0,0.0,1.0,,,,,"1-4 | 2B, K, 3 RBI | vs LAA (home)",0.634,0.175
+2026-04-27,Jorge Soler,LAA,OF,3.2,2.8,LAA 7 CWS 8,4.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-4 | HR, 3 RBI, R | vs CWS (away)",0.801,0.242
+2026-04-27,Kyle Tucker,LAD,OF,3.0,3.0,MIA 4 LAD 5,5.0,0.0,1.0,0.0,2.0,0.0,1.0,,,,,"1-5 | K, 2 RBI | vs MIA (home)",0.684,0.128
+2026-04-27,Ryan Jeffers,MIN,OF,3.3,2.5,SEA 4 MIN 11,4.0,2.0,2.0,0.0,2.0,1.0,0.0,,,,,"2-4 | BB, 2 RBI, 2 R | vs SEA (home)",0.879,0.183
+2026-04-27,Trevor Larnach,MIN,OF,2.9,3.0,SEA 4 MIN 11,4.0,1.0,2.0,0.0,1.0,1.0,1.0,,,,,"2-4 | 3B, BB, K | vs SEA (home)",0.816,0.138
+2026-04-27,Manny Machado,SD,OF,2.8,3.0,CHC 7 SD 9,4.0,3.0,3.0,0.0,0.0,0.0,0.0,,,,,"3-4 | 2 2B, 3 R | vs CHC (home)",0.742,0.168
+2026-04-27,Shohei Ohtani,LAD,OF,3.4,1.7,MIA 4 LAD 5,5.0,2.0,3.0,0.0,1.0,0.0,1.0,,,,,"3-5 | 2B, K, RBI | vs MIA (home)",0.898,0.222
+2026-04-27,Seiya Suzuki,CHC,OF,2.7,2.7,CHC 7 SD 9,4.0,2.0,2.0,1.0,1.0,0.0,1.0,,,,,"2-4 | HR, K, RBI | vs SD (away)",0.990,0.254
+2026-04-27,Daniel Schneemann,CLE,OF,2.9,2.8,TB 3 CLE 2,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,"1-4 | HR, K, 2 RBI | vs TB (home)",0.978,0.272
+2026-04-27,Teoscar Hernandez,LAD,OF,2.5,2.9,MIA 4 LAD 5,2.0,0.0,1.0,0.0,2.0,2.0,1.0,,,,,"1-2 | 2 BB, K, 2 RBI | vs MIA (home)",0.729,0.170
+2026-04-27,Cal Raleigh,SEA,OF,2.4,3.0,SEA 4 MIN 11,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,"1-4 | HR, K, 2 RBI | vs MIN (away)",0.707,0.214
+2026-04-28,Elly De La Cruz,CIN,OF,7.3,2.3,COL 2 CIN 7,4.0,2.0,3.0,1.0,4.0,0.0,1.0,,,,,"3-4 | HR, K, 4 RBI | vs COL (home)",0.952,0.299
+2026-04-28,Josh Naylor,SEA,OF,5.7,3.0,SEA 7 MIN 1,5.0,1.0,3.0,1.0,4.0,0.0,0.0,,,,,"3-5 | HR, 4 RBI, R | vs MIN (away)",0.644,0.129
+2026-04-28,Bobby Witt Jr.,KC,OF,4.7,3.0,KC 4 ATH 1,5.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-5 | HR, 3 RBI, R | vs ATH (away)",0.801,0.150
+2026-04-28,Julio Rodriguez,SEA,OF,4.4,3.0,SEA 7 MIN 1,5.0,2.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-5 | 3 2B, 2 RBI, 2 R | vs MIN (away)",0.688,0.099
+2026-04-28,Edouard Julien,COL,OF,4.1,3.0,COL 2 CIN 7,4.0,1.0,3.0,1.0,2.0,1.0,1.0,,,,,"3-4 | HR, BB, K | vs CIN (away)",0.842,0.141
+2026-04-28,Pete Crow-Armstrong,CHC,OF,3.9,3.0,CHC 8 SD 3,4.0,2.0,1.0,1.0,3.0,1.0,2.0,,,,,"1-4 | HR, BB, 2 K | vs SD (away)",0.648,0.098
+2026-04-28,Trea Turner,PHI,OF,3.6,3.0,SF 0 PHI 7,5.0,2.0,4.0,0.0,1.0,0.0,1.0,,,,,"4-5 | K, RBI, 2 R | vs SF (home)",0.696,0.119
+2026-04-28,Sal Frelick,MIL,OF,3.6,3.0,AZ 2 MIL 13,2.0,3.0,2.0,1.0,1.0,1.0,0.0,,,,,"2-2 | HR, BB, RBI | vs AZ (home)",0.636,0.096
+2026-04-28,Tyler Black,MIL,OF,3.6,3.0,AZ 2 MIL 13,5.0,1.0,3.0,0.0,3.0,0.0,0.0,,,,,"3-5 | 3 RBI, R | vs AZ (home)",0.847,0.077
+2026-04-28,Ryan O'Hearn,PIT,OF,3.4,2.6,STL 11 PIT 7,4.0,2.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-4 | HR, K, 3 RBI | vs STL (home)",0.925,0.192
+2026-04-28,Alec Burleson,STL,OF,3.5,2.7,STL 11 PIT 7,4.0,2.0,2.0,0.0,3.0,1.0,2.0,,,,,"2-4 | 2 2B, BB, 2 K | vs PIT (away)",0.762,0.154
+2026-04-28,Jesus Luzardo,PHI,P,7.5,0.1,SF 0 PHI 7,,,,,,,,7.0,0,8,W,"7.0 IP, 0 ER, 8 K, 0 BB | vs SF (home)",,
+2026-04-28,Nolan Gorman,STL,OF,3.1,3.0,STL 11 PIT 7,4.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,"1-4 | HR, K, 3 RBI | vs PIT (away)",0.655,0.147
+2026-04-28,Jordan Walker,STL,OF,3.5,2.4,STL 11 PIT 7,4.0,1.0,2.0,0.0,3.0,0.0,1.0,,,,,"2-4 | K, 3 RBI, R | vs PIT (away)",0.905,0.264
+2026-04-28,Shohei Ohtani,LAD,OF,4.1,1.6,MIA 2 LAD 1,,,,,,,,,,,,auto-scraped (box score backfill pending),0.898,0.222
+2026-04-28,Byron Buxton,MIN,OF,3.0,3.0,SEA 7 MIN 1,5.0,1.0,2.0,1.0,1.0,0.0,1.0,,,,,"2-5 | HR, K, RBI | vs SEA (home)",0.770,0.237
+2026-04-28,Dansby Swanson,CHC,OF,3.1,2.6,CHC 8 SD 3,1.0,0.0,1.0,0.0,2.0,0.0,0.0,,,,,"1-1 | 2B, 2 RBI, SB | vs SD (away)",0.783,0.225
+2026-04-28,Bo Bichette,NYM,OF,2.8,3.0,WSH 0 NYM 8,2.0,1.0,1.0,1.0,2.0,1.0,0.0,,,,,"1-2 | HR, BB, 2 RBI | vs WSH (home)",0.607,0.094
+2026-04-28,William Contreras,MIL,OF,2.7,3.0,AZ 2 MIL 13,4.0,2.0,2.0,0.0,2.0,1.0,0.0,,,,,"2-4 | BB, 2 RBI, 2 R | vs AZ (home)",0.736,0.116
+2026-04-28,Cole Young,SEA,OF,2.7,3.0,SEA 7 MIN 1,4.0,1.0,3.0,0.0,1.0,0.0,0.0,,,,,"3-4 | RBI, R | vs MIN (away)",0.759,0.129
+2026-04-29,Hunter Goodman,COL,OF,5.4,3.0,COL 13 CIN 2,4.0,4.0,3.0,2.0,3.0,1.0,0.0,,,,,"3-4 | 2 HR, BB, 3 RBI | vs CIN (away)",0.932,0.318
+2026-04-29,Cole Young,SEA,OF,4.9,2.9,SEA 5 MIN 3,4.0,1.0,2.0,0.0,3.0,0.0,0.0,,,,,"2-4 | 2B, 3 RBI, R | vs MIN (away)",0.777,0.134
+2026-04-29,Nolan Arenado,ARI,OF,4.6,2.9,AZ 6 MIL 2,3.0,1.0,1.0,1.0,3.0,1.0,0.0,,,,,"1-3 | HR, BB, 3 RBI | vs MIL (away)",0.787,0.179
+2026-04-29,Brett Sullivan,COL,OF,4.8,3.0,COL 13 CIN 2,4.0,1.0,3.0,0.0,3.0,1.0,0.0,,,,,"3-4 | 2 2B, BB, 3 RBI | vs CIN (away)",0.741,0.133
+2026-04-29,Curtis Mead,WSH,OF,4.8,3.0,WSH 14 NYM 2,5.0,4.0,4.0,1.0,2.0,0.0,0.0,,,,,"4-5 | HR, 2B, HBP | vs NYM (away)",0.798,0.258
+2026-04-29,Matt Olson,ATL,OF,5.1,2.0,DET 3 ATL 4,4.0,1.0,2.0,1.0,2.0,0.0,1.0,,,,,"2-4 | HR, K, 2 RBI | vs DET (home)",1.017,0.330
+2026-04-29,Lawrence Butler,ATH,OF,3.9,3.0,KC 2 ATH 5,4.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,"1-4 | HR, K, 3 RBI | vs KC (home)",0.568,0.121
+2026-04-29,Matt Shaw,CHC,OF,3.9,3.0,CHC 5 SD 4,4.0,2.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-4 | HR, 2B, RBI | vs SD (away)",0.849,0.206
+2026-04-29,Ozzie Albies,ATL,OF,3.7,2.6,DET 3 ATL 4,3.0,2.0,1.0,1.0,2.0,1.0,0.0,,,,,"1-3 | HR, BB, 2 RBI | vs DET (home)",0.897,0.216
+2026-04-29,Pete Crow-Armstrong,CHC,OF,3.4,3.0,CHC 5 SD 4,4.0,1.0,1.0,1.0,3.0,0.0,1.0,,,,,"1-4 | HR, K, 3 RBI | vs SD (away)",0.669,0.121
+2026-04-29,Brady House,WSH,OF,3.6,3.0,WSH 14 NYM 2,5.0,1.0,1.0,1.0,4.0,1.0,2.0,,,,,"1-5 | HR, BB, 2 K | vs NYM (away)",0.652,0.144
+2026-04-29,Gavin Williams,CLE,P,8.2,0.0,TB 1 CLE 3,,,,,,,,7.2,0,9,W,"7.2 IP, 0 ER, 9 K, 0 BB | vs TB (home)",,
+2026-04-29,Nick Castellanos,SD,OF,3.5,3.0,CHC 5 SD 4,2.0,2.0,1.0,1.0,2.0,1.0,1.0,,,,,"1-2 | HR, BB, K | vs CHC (home)",0.493,0.109
+2026-04-29,Juan Soto,NYM,OF,3.2,3.0,WSH 14 NYM 2,5.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-5 | HR, 2B, RBI | vs WSH (home)",0.967,0.218
+2026-04-29,Brooks Lee,MIN,OF,3.2,3.0,SEA 5 MIN 3,4.0,0.0,2.0,0.0,2.0,0.0,1.0,,,,,"2-4 | K, 2 RBI, SB | vs SEA (home)",0.749,0.179
+2026-04-29,Nathan Eovaldi,TEX,P,6.6,0.3,NYY 0 TEX 3,,,,,,,,7.0,0,7,W,"7.0 IP, 0 ER, 7 K, BB | vs NYY (home)",,
+2026-04-29,Luis Severino,ATH,P,6.1,0.3,KC 2 ATH 5,,,,,,,,7.0,1,8,W,"7.0 IP, ER, 8 K, 2 BB | vs KC (home)",,
+2026-04-29,CJ Abrams,WSH,OF,3.1,2.4,WSH 14 NYM 2,4.0,0.0,3.0,0.0,2.0,1.0,1.0,,,,,"3-4 | 2B, BB, K | vs NYM (away)",0.918,0.238
+2026-04-29,James Wood,WSH,OF,3.4,2.0,WSH 14 NYM 2,5.0,3.0,2.0,0.0,3.0,1.0,2.0,,,,,"2-5 | 2B, BB, 2 K | vs NYM (away)",0.959,0.311
+2026-04-29,J.P. Crawford,SEA,OF,3.1,3.0,SEA 5 MIN 3,3.0,1.0,2.0,1.0,1.0,2.0,0.0,,,,,"2-3 | HR, 2 BB, RBI | vs MIN (away)",0.679,0.113
+2026-04-30,William Contreras,MIL,OF,7.2,3.0,AZ 1 MIL 13,4.0,3.0,4.0,1.0,4.0,1.0,0.0,,,,,"4-4 | HR, 2B, BB | vs AZ (home)",0.795,0.144
+2026-04-30,Kyle Schwarber,PHI,OF,6.2,2.6,SF 5 PHI 6,4.0,2.0,4.0,1.0,2.0,1.0,0.0,,,,,"4-4 | HR, 2 2B, BB | vs SF (home)",0.976,0.370
+2026-04-30,Jeremiah Jackson,BAL,OF,5.5,2.7,HOU 11 BAL 5,4.0,0.0,0.0,0.0,0.0,0.0,2.0,,,,,0-4 | 2 K | vs HOU (home),0.768,0.210
+2026-04-30,CJ Abrams,WSH,OF,5.5,2.3,WSH 5 NYM 4,3.0,1.0,2.0,1.0,3.0,1.0,1.0,,,,,"2-3 | HR, BB, K | vs NYM (away)",0.961,0.260
+2026-04-30,MJ Melendez,NYM,OF,4.9,3.0,WSH 5 NYM 4,2.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-2 | HR, 3 RBI, R | vs WSH (home)",1.061,0.310
+2026-04-30,Maikel Garcia,KC,OF,4.6,3.0,KC 3 ATH 6,5.0,2.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-5 | HR, 2 2B, RBI | vs ATH (away)",0.783,0.168
+2026-04-30,Adley Rutschman,BAL,OF,5.1,2.1,HOU 11 BAL 5,,,,,,,,,,,,auto-scraped (box score backfill pending),1.067,0.305
+2026-04-30,Matt Vierling,DET,OF,4.1,3.0,DET 5 ATL 2,5.0,2.0,3.0,0.0,2.0,0.0,1.0,,,,,"3-5 | 2B, K, 2 RBI | vs ATL (away)",0.657,0.145
+2026-04-30,Byron Buxton,MIN,OF,3.8,3.0,TOR 1 MIN 7,4.0,2.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-4 | HR, 2B, RBI | vs TOR (home)",0.810,0.252
+2026-04-30,Chris Bassitt,BAL,P,5.0,1.6,HOU 11 BAL 5,,,,,,,,,,,,auto-scraped (box score backfill pending),,
+2026-04-30,Shea Langeliers,ATH,OF,4.0,2.4,KC 3 ATH 6,4.0,2.0,3.0,0.0,1.0,0.0,0.0,,,,,"3-4 | 3 2B, RBI, 2 R | vs KC (home)",0.974,0.264
+2026-04-30,Tyler Freeman,COL,OF,3.5,3.0,COL 4 CIN 6,4.0,1.0,2.0,1.0,2.0,0.0,0.0,,,,,"2-4 | HR, 2 RBI, R | vs CIN (away)",0.712,0.071
+2026-04-30,Alec Burleson,STL,OF,3.9,2.4,STL 10 PIT 5,5.0,1.0,3.0,0.0,3.0,0.0,1.0,,,,,"3-5 | K, 3 RBI, R | vs PIT (away)",0.801,0.168
+2026-04-30,TJ Friedl,CIN,OF,3.4,3.0,COL 4 CIN 6,4.0,1.0,1.0,1.0,2.0,0.0,1.0,,,,,"1-4 | HR, K, 2 RBI | vs COL (home)",0.549,0.093
+2026-04-30,Bryan Reynolds,PIT,OF,3.1,2.9,STL 10 PIT 5,4.0,1.0,2.0,0.0,2.0,1.0,1.0,,,,,"2-4 | 2 2B, BB, K | vs STL (home)",0.764,0.131
+2026-04-30,Jordan Walker,STL,OF,3.5,2.3,STL 10 PIT 5,5.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-5 | HR, K, 3 RBI | vs PIT (away)",0.906,0.268
+2026-04-30,Justin Crawford,PHI,OF,3.4,3.0,SF 5 PHI 6,4.0,0.0,1.0,0.0,0.0,0.0,0.0,,,,,1-4 | 3B | vs SF (home),0.700,0.100
+2026-04-30,Nathaniel Lowe,CIN,OF,3.1,3.0,COL 4 CIN 6,3.0,2.0,2.0,1.0,1.0,1.0,0.0,,,,,"2-3 | HR, 2B, BB | vs COL (home)",1.027,0.366
+2026-04-30,Spencer Steer,CIN,OF,3.3,3.0,COL 4 CIN 6,3.0,1.0,2.0,0.0,2.0,1.0,0.0,,,,,"2-3 | 2B, BB, 2 RBI | vs COL (home)",0.772,0.217
+2026-04-30,Darell Hernaiz,ATH,OF,3.1,3.0,KC 3 ATH 6,4.0,0.0,3.0,0.0,2.0,0.0,0.0,,,,,3-4 | 2 RBI | vs KC (home),0.674,0.077
+2026-05-01,Julio Rodriguez,SEA,OF,6.0,3.0,KC 7 SEA 6,4.0,2.0,2.0,2.0,4.0,0.0,2.0,,,,,"2-4 | 2 HR, 2 K, 4 RBI | vs KC (home)",0.733,0.138
+2026-05-01,Kazuma Okamoto,TOR,OF,5.7,3.0,TOR 7 MIN 3,4.0,3.0,2.0,2.0,3.0,1.0,0.0,,,,,"2-4 | 2 HR, BB, 3 RBI | vs MIN (away)",0.743,0.202
+2026-05-01,Chase DeLauter,CLE,OF,5.4,2.7,CLE 8 ATH 5,4.0,1.0,4.0,0.0,2.0,1.0,0.0,,,,,"4-4 | 2 2B, BB, 2 RBI | vs ATH (away)",0.896,0.238
+2026-05-01,Jordan Walker,STL,OF,5.7,2.2,LAD 2 STL 7,4.0,2.0,4.0,0.0,2.0,0.0,0.0,,,,,"4-4 | 2 2B, 2 RBI, 2 R | vs LAD (home)",0.956,0.275
+2026-05-01,William Contreras,MIL,OF,5.0,2.5,MIL 6 WSH 1,5.0,1.0,4.0,0.0,3.0,0.0,0.0,,,,,"4-5 | 3 RBI, R | vs WSH (away)",0.828,0.138
+2026-05-01,Bryson Stott,PHI,OF,4.6,3.0,PHI 6 MIA 5,3.0,2.0,1.0,1.0,3.0,1.0,0.0,,,,,"1-3 | HR, BB, 3 RBI | vs MIA (away)",0.579,0.100
+2026-05-01,Jarren Duran,BOS,OF,4.4,3.0,HOU 1 BOS 3,4.0,1.0,1.0,1.0,3.0,0.0,0.0,,,,,"1-4 | HR, 3 RBI, R | vs HOU (home)",0.511,0.106
+2026-05-01,Bryan Reynolds,PIT,OF,4.4,2.7,CIN 1 PIT 9,4.0,2.0,2.0,1.0,2.0,1.0,1.0,,,,,"2-4 | HR, 3B, BB | vs CIN (home)",0.819,0.170
+2026-05-01,Rhys Hoskins,CLE,OF,4.6,3.0,CLE 8 ATH 5,4.0,1.0,2.0,1.0,3.0,1.0,2.0,,,,,"2-4 | HR, 2B, BB | vs ATH (away)",0.751,0.165
+2026-05-01,Brent Rooker,ATH,OF,4.1,3.0,CLE 8 ATH 5,5.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, R | vs CLE (home)",0.509,0.152
+2026-05-01,Otto Lopez,MIA,OF,4.1,2.9,PHI 6 MIA 5,5.0,2.0,3.0,0.0,2.0,0.0,0.0,,,,,"3-5 | 2B, 2 RBI, 2 R | vs PHI (home)",0.875,0.171
+2026-05-01,Geraldo Perdomo,ARI,OF,3.9,3.0,AZ 5 CHC 6,5.0,1.0,2.0,1.0,3.0,0.0,1.0,,,,,"2-5 | HR, K, 3 RBI | vs CHC (away)",0.764,0.159
+2026-05-01,Salvador Perez,KC,OF,3.7,3.0,KC 7 SEA 6,4.0,2.0,2.0,0.0,2.0,0.0,1.0,,,,,"2-4 | 2 2B, K, 2 RBI | vs SEA (away)",0.615,0.161
+2026-05-01,Byron Buxton,MIN,OF,3.6,3.0,TOR 7 MIN 3,4.0,1.0,2.0,1.0,2.0,1.0,0.0,,,,,"2-4 | HR, BB, 2 RBI | vs TOR (home)",0.845,0.268
+2026-05-01,Mauricio Dubon,ATL,OF,3.9,3.0,ATL 8 COL 6,5.0,1.0,2.0,0.0,3.0,0.0,0.0,,,,,"2-5 | 3B, 3 RBI, R | vs COL (away)",0.767,0.158
+2026-05-01,Michael Harris II,ATL,OF,3.9,2.6,ATL 8 COL 6,1.0,1.0,1.0,1.0,2.0,0.0,0.0,,,,,"1-1 | HR, 2 RBI, R | vs COL (away)",0.927,0.245
+2026-05-01,Carlos Correa,HOU,OF,3.6,3.0,HOU 1 BOS 3,5.0,1.0,3.0,1.0,1.0,0.0,0.0,,,,,"3-5 | HR, 2B, RBI | vs BOS (away)",0.811,0.153
+2026-05-01,Vinnie Pasquantino,KC,OF,3.4,3.0,KC 7 SEA 6,5.0,2.0,2.0,1.0,2.0,0.0,2.0,,,,,"2-5 | HR, 2 K, 2 RBI | vs SEA (away)",0.631,0.176
+2026-05-01,Munetaka Murakami,CWS,OF,3.5,2.4,CWS 8 SD 2,3.0,1.0,1.0,1.0,3.0,2.0,0.0,,,,,"1-3 | HR, 2 BB, 3 RBI | vs SD (away)",0.967,0.345
+2026-05-01,Ben Rice,NYY,OF,3.9,1.9,BAL 2 NYY 7,5.0,1.0,2.0,1.0,3.0,0.0,0.0,,,,,"2-5 | HR, 3 RBI, R | vs BAL (home)",1.169,0.398
+2026-05-02,Cody Bellinger,NYY,OF,8.5,3.0,BAL 4 NYY 9,,,,,,,,,,,,auto-scraped (box score backfill pending),0.855,0.207
+2026-05-02,Drake Baldwin,ATL,OF,6.3,2.2,ATL 9 COL 1,,,,,,,,,,,,auto-scraped (box score backfill pending),0.913,0.210
+2026-05-02,Shea Langeliers,ATH,OF,5.7,2.3,CLE 14 ATH 6,,,,,,,,,,,,auto-scraped (box score backfill pending),1.017,0.291
+2026-05-02,Ian Happ,CHC,OF,4.8,3.0,ARI 0 CHC 2,,,,,,,,,,,,auto-scraped (box score backfill pending),0.890,0.271
+2026-05-02,Konnor Griffin,PIT,OF,4.4,3.0,CIN 7 PIT 17,,,,,,,,,,,,auto-scraped (box score backfill pending),0.714,0.130
+2026-05-02,Dillon Dingler,DET,OF,4.3,2.7,TEX 1 DET 5,,,,,,,,,,,,auto-scraped (box score backfill pending),0.825,0.238
+2026-05-02,Trent Grisham,NYY,OF,4.0,3.0,BAL 4 NYY 9,,,,,,,,,,,,auto-scraped (box score backfill pending),0.675,0.198
+2026-05-02,Oswald Peraza,LAA,OF,3.7,3.0,NYM 3 LAA 4,,,,,,,,,,,,auto-scraped (box score backfill pending),0.850,0.194
+2026-05-02,Christian Walker,HOU,OF,4.2,2.4,HOU 6 BOS 3,,,,,,,,,,,,auto-scraped (box score backfill pending),0.963,0.268
+2026-05-02,Marcell Ozuna,PIT,OF,4.3,3.0,CIN 7 PIT 17,,,,,,,,,,,,auto-scraped (box score backfill pending),0.550,0.111
+2026-05-02,Brice Matthews,HOU,OF,4.2,3.0,HOU 6 BOS 3,,,,,,,,,,,,auto-scraped (box score backfill pending),0.727,0.200
+2026-05-02,Ryan O'Hearn,PIT,OF,3.8,2.6,CIN 7 PIT 17,,,,,,,,,,,,auto-scraped (box score backfill pending),0.888,0.171
+2026-05-02,Kazuma Okamoto,TOR,OF,3.4,3.0,TOR 11 MIN 4,,,,,,,,,,,,auto-scraped (box score backfill pending),0.770,0.219
+2026-05-02,Lenyn Sosa,TOR,OF,3.8,3.0,TOR 11 MIN 4,,,,,,,,,,,,auto-scraped (box score backfill pending),0.515,0.091
+2026-05-02,Nathaniel Lowe,CIN,OF,3.4,2.9,CIN 7 PIT 17,,,,,,,,,,,,auto-scraped (box score backfill pending),0.991,0.339
+2026-05-02,Max Meyer,MIA,P,7.8,0.0,PHI 0 MIA 4,,,,,,,,,,,,auto-scraped (box score backfill pending),,
+2026-05-02,Brandon Valenzuela,TOR,OF,3.2,3.0,TOR 11 MIN 4,,,,,,,,,,,,auto-scraped (box score backfill pending),0.680,0.210
+2026-05-02,Myles Straw,TOR,OF,3.4,3.0,TOR 11 MIN 4,,,,,,,,,,,,auto-scraped (box score backfill pending),0.806,0.163
+2026-05-02,Austin Riley,ATL,OF,3.1,3.0,ATL 9 COL 1,,,,,,,,,,,,auto-scraped (box score backfill pending),0.633,0.141
+2026-05-02,Emerson Hancock,SEA,P,7.2,0.0,KC 3 SEA 2,,,,,,,,,,,,auto-scraped (box score backfill pending),,

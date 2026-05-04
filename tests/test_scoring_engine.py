@@ -1,12 +1,14 @@
 """Tests for the scoring engine using known HV player data."""
 
+import pytest
+
 from app.models.player import Player, PlayerStats, PlayerGameLog
 from app.services.scoring_engine import (
     score_pitcher,
     score_batter,
     score_ace_status,
     score_pitcher_k_rate,
-    score_power_profile,
+    score_offensive_profile,
     score_hot_streak,
 )
 
@@ -35,22 +37,66 @@ def test_k_rate_below_floor():
     assert result.score == 0
 
 
-def test_power_profile_slugger():
+def test_offensive_profile_slugger():
+    """Judge-tier slugger: high OPS + saturated Statcast signals → ~max."""
     stats = PlayerStats(
         id=1, player_id=1, season=2026,
-        pa=200, hr=15, iso=0.280, barrel_pct=14.0,
+        pa=200, hr=15, ops=0.985, x_woba=0.420,
+        avg_exit_velocity=94.0, hard_hit_pct=58.0, barrel_pct=18.0,
     )
-    result = score_power_profile(stats, 25.0)
-    assert result.score >= 20.0
+    result = score_offensive_profile(stats, 40.0)
+    assert result.score >= 36.0
+    assert result.name == "offensive_profile"
 
 
-def test_power_profile_no_power():
+def test_offensive_profile_high_ops_contact_hitter():
+    """Arraez-tier contact hitter: high OPS, weak Statcast power.
+
+    Pre-V13.1 (kinematics-only): ~6/40.  V13.1 OPS-anchored: 12-16/40.
+    The contact hitter must be visibly competitive once env conditions favor
+    them (V12 EV multiplier × good env_factor closes the rest of the gap).
+    """
     stats = PlayerStats(
         id=1, player_id=1, season=2026,
-        pa=200, hr=1, iso=0.050, barrel_pct=2.0,
+        pa=200, hr=2, ops=0.830, x_woba=0.330,
+        avg_exit_velocity=87.0, hard_hit_pct=32.0, barrel_pct=5.0,
     )
-    result = score_power_profile(stats, 25.0)
-    assert result.score <= 8.0
+    result = score_offensive_profile(stats, 40.0)
+    assert 11.0 <= result.score <= 17.0
+
+
+def test_offensive_profile_low_ops():
+    """Below-floor OPS (<0.700) + weak Statcast = bottom of pool."""
+    stats = PlayerStats(
+        id=1, player_id=1, season=2026,
+        pa=200, hr=1, ops=0.620, x_woba=0.290,
+        avg_exit_velocity=84.0, hard_hit_pct=28.0, barrel_pct=2.0,
+    )
+    result = score_offensive_profile(stats, 40.0)
+    assert result.score <= 5.0
+
+
+def test_offensive_profile_strict_raises_on_missing_ops():
+    """Strict semantics: OPS is required, even if Statcast is fully populated."""
+    stats = PlayerStats(
+        id=1, player_id=1, season=2026,
+        pa=200, hr=15, ops=None, x_woba=0.420,
+        avg_exit_velocity=94.0, hard_hit_pct=58.0, barrel_pct=18.0,
+    )
+    with pytest.raises(RuntimeError, match="OPS is None"):
+        score_offensive_profile(stats, 40.0)
+
+
+def test_offensive_profile_ops_only_when_no_statcast():
+    """Call-up with OPS but no Savant row yet — scores from OPS alone."""
+    stats = PlayerStats(
+        id=1, player_id=1, season=2026,
+        pa=60, ops=0.875, x_woba=None,
+        avg_exit_velocity=None, hard_hit_pct=None, barrel_pct=None,
+    )
+    result = score_offensive_profile(stats, 40.0)
+    # OPS=0.875 → (0.875-0.700)/(0.950-0.700) = 0.70 → 0.70 × 40 = 28.0
+    assert 27.0 <= result.score <= 29.0
 
 
 def test_hot_streak_three_multi_hit():

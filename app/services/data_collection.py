@@ -626,7 +626,7 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
             slg = _safe_float(s.get("slg", ""))
             if slg is not None and ps.avg is not None:
                 # ISO = SLG − AVG. Power-profile trait depends on this; before
-                # V10.0 ps.iso was never populated and power_profile silently
+                # V10.0 ps.iso was never populated and offensive_profile silently
                 # lost its 7-point ISO component for every batter.
                 ps.iso = round(slg - ps.avg, 3)
 
@@ -792,6 +792,111 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
                 logger.info(
                     "Pitcher %s (mlb_id=%d): backfilled %d %d game-log rows "
                     "for recent_form trait",
+                    player.name, mlb_id, log_count, prior_season,
+                )
+
+    # Batter most-recent-actual fallback (V13.1): symmetric with the pitcher
+    # IP=0 branch above.  When a position player has no current-season PA
+    # (returning from IL, opening-week roster move, just acquired), the
+    # offensive_profile trait scorer needs OPS to score them.  Their own
+    # prior-season OPS is the most recent factual signal available — not a
+    # league-average default.  Mirrors the pitcher block so the same
+    # "live data with full context, including recent player performance"
+    # directive applies on both sides of the ball.  True rookies with no
+    # prior-season PA either: (a) trip the strict assertion in
+    # run_fetch_player_stats (named in logs, pipeline crashes loud per
+    # policy), or (b) get excluded by the DNP filter (`is_player_scoreable`)
+    # if they have no Statcast row either.  No fallback to defaults.
+    is_batter_record = (ps.pa is not None and ps.pa > 0)
+    is_pitcher_position = (player.position or "").upper() in ("P", "SP", "RP")
+    if not is_batter_record and not is_pitcher_position:
+        prior_season = settings.current_season - 1
+        prior_data = await get_player_stats(mlb_id, prior_season)
+        prior_people = prior_data.get("people", [])
+        if prior_people:
+            prior_groups = prior_people[0].get("stats", [])
+            # 1) Season hitting aggregate → OPS/AVG/ISO + counting stats.
+            for group in prior_groups:
+                if (
+                    group.get("type", {}).get("displayName") == "season"
+                    and group.get("group", {}).get("displayName") == "hitting"
+                ):
+                    splits = group.get("splits", [])
+                    if not splits:
+                        continue
+                    s = splits[0].get("stat", {})
+                    prior_pa = s.get("plateAppearances", 0) or 0
+                    if prior_pa <= 0:
+                        continue
+                    ps.pa = prior_pa
+                    ps.ab = s.get("atBats", 0)
+                    ps.hits = s.get("hits", 0)
+                    ps.hr = s.get("homeRuns", 0)
+                    ps.rbi = s.get("rbi", 0)
+                    ps.sb = s.get("stolenBases", 0)
+                    ps.bb = s.get("baseOnBalls", 0)
+                    ps.so = s.get("strikeOuts", 0)
+                    ps.avg = _safe_float(s.get("avg", ""))
+                    ps.ops = _safe_float(s.get("ops", ""))
+                    prior_slg = _safe_float(s.get("slg", ""))
+                    if prior_slg is not None and ps.avg is not None:
+                        ps.iso = round(prior_slg - ps.avg, 3)
+                    if ps.games is None or ps.games == 0:
+                        ps.games = s.get("gamesPlayed", 0)
+                    logger.info(
+                        "Batter %s (mlb_id=%d): no %d PA yet, using %d aggregate "
+                        "OPS=%s AVG=%s ISO=%s",
+                        player.name, mlb_id, settings.current_season,
+                        prior_season, ps.ops, ps.avg, ps.iso,
+                    )
+                    break
+
+            # 2) Prior-season gameLog → recent_form / hot_streak trait inputs.
+            log_count = 0
+            for group in prior_groups:
+                if group.get("type", {}).get("displayName") != "gameLog":
+                    continue
+                if group.get("group", {}).get("displayName") != "hitting":
+                    continue
+                for split in group.get("splits", [])[:10]:
+                    game_date_str = split.get("date", "")
+                    if not game_date_str:
+                        continue
+                    gd = date.fromisoformat(game_date_str)
+                    gs = split.get("stat", {})
+
+                    existing = (
+                        db.query(PlayerGameLog)
+                        .filter_by(player_id=player.id, game_date=gd)
+                        .first()
+                    )
+                    if existing:
+                        continue
+
+                    opp = split.get("opponent", {}).get("abbreviation", "")
+                    log = PlayerGameLog(
+                        player_id=player.id,
+                        game_date=gd,
+                        opponent=opp,
+                        source="mlb_api",
+                        ab=gs.get("atBats", 0),
+                        hits=gs.get("hits", 0),
+                        hr=gs.get("homeRuns", 0),
+                        rbi=gs.get("rbi", 0),
+                        bb=gs.get("baseOnBalls", 0),
+                        so=gs.get("strikeOuts", 0),
+                        sb=gs.get("stolenBases", 0),
+                        ip=float(gs.get("inningsPitched", "0") or 0),
+                        er=gs.get("earnedRuns", 0),
+                        k_pitching=gs.get("strikeOuts", 0),
+                        decision=gs.get("decision", ""),
+                    )
+                    db.add(log)
+                    log_count += 1
+            if log_count:
+                logger.info(
+                    "Batter %s (mlb_id=%d): backfilled %d %d game-log rows "
+                    "for recent_form / hot_streak traits",
                     player.name, mlb_id, log_count, prior_season,
                 )
 

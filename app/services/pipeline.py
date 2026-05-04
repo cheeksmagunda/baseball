@@ -289,6 +289,54 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
             "active-roster vs probable-pitcher mismatch."
         )
 
+    # Strict assertion (V13.1): every RotoWire-projected batter MUST have OPS
+    # in PlayerStats — anchor sub-signal for `score_offensive_profile`.  Mirrors
+    # the pitcher ERA/WHIP/K9 check above.  A batter missing OPS would either
+    # be silently dropped by the DNP filter (`is_player_scoreable`) or, if the
+    # filter were bypassed, crash `score_offensive_profile`.  Fail here with
+    # the specific gap so logs are actionable.
+    #
+    # Scope: only batters with `batting_order is not None`.  These are the
+    # RotoWire-confirmed/expected lineup players we actually score; anyone
+    # with `batting_order is None` (bench / unavailable) is excluded
+    # downstream by `is_player_scoreable` regardless.  The
+    # `fetch_player_season_stats` prior-season fallback should have already
+    # populated OPS for IL returnees with current-season PA=0 — if we get
+    # here with OPS still None, the player has no MLB hitting record at all
+    # (true rookie debut), and the pipeline crashes loud per policy.
+    remaining_game_ids = {
+        g.id for g in games if is_game_remaining(g.game_status)
+    }
+    batter_missing: list[str] = []
+    for sp in slate_players:
+        if sp.batting_order is None:
+            continue
+        if sp.game_id not in remaining_game_ids:
+            continue
+        player = sp.player
+        if player is None:
+            continue
+        if (player.position or "").upper() in PITCHER_POSITIONS:
+            continue
+        ps = (
+            db.query(PlayerStats)
+            .filter_by(player_id=player.id, season=game_date.year)
+            .first()
+        )
+        if ps is None or ps.ops is None:
+            ops_val = ps.ops if ps else "no_row"
+            batter_missing.append(
+                f"{sp.team} #{sp.batting_order} {player.name} (mlb_id={player.mlb_id}) ops={ops_val}"
+            )
+    if batter_missing:
+        raise RuntimeError(
+            "Batter OPS enrichment incomplete after stage 2:\n  "
+            + "\n  ".join(batter_missing)
+            + "\nEvery RotoWire-projected batter must have OPS in PlayerStats — "
+            "no fallbacks. Investigate /people/{mlb_id} stats hydrate or the "
+            "prior-season hitting fallback path used for current-season PA=0 returners."
+        )
+
     # Fetch team batting and pitching stats for all teams on the slate.
     if slate:
         await enrich_slate_game_team_stats(db, slate, game_date.year)

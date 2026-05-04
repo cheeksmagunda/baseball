@@ -27,14 +27,14 @@ class PitcherWeights:
 
 @dataclass
 class BatterWeights:
-    power_profile: float = 40.0
+    offensive_profile: float = 40.0
     recent_form: float = 25.0
     hot_streak: float = 25.0
     speed_component: float = 10.0
 
     @property
     def total_max(self) -> float:
-        return self.power_profile + self.recent_form + self.hot_streak + self.speed_component
+        return self.offensive_profile + self.recent_form + self.hot_streak + self.speed_component
 
 
 @dataclass

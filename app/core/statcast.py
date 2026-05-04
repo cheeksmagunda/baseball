@@ -153,7 +153,7 @@ def _batter_expected_stats_table(season: int) -> pd.DataFrame:
     contact-quality leading indicators.  See MLB Glossary on xwOBA:
     https://www.mlb.com/glossary/statcast/expected-woba
 
-    Used for the batter `power_profile` trait — xwOBA is more predictive
+    Used for the batter `offensive_profile` trait — xwOBA is more predictive
     than realised wOBA for forward-looking RS estimation, especially on
     small samples.
     """
