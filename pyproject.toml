@@ -13,8 +13,6 @@ dependencies = [
     "pandas>=2.2",
     "numpy>=1.26",
     "redis[hiredis]>=5.0",
-    "scikit-learn>=1.5",
-    "joblib>=1.4",
     "tenacity>=8.2",
     "pybaseball>=2.2",
     "beautifulsoup4>=4.12",
@@ -51,4 +49,4 @@ check_untyped_defs = true
 ignore_missing_imports = true
 # SQLAlchemy's relationship() and mapped_column() use complex metaclasses that
 # mypy cannot model well without the sqlalchemy2-stubs plugin.  Exclude models.
-exclude = ["app/models/", "app/seed\\.py", "scripts/"]
+exclude = ["app/models/", "scripts/"]
