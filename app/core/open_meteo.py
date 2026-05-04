@@ -21,6 +21,8 @@ from datetime import date
 import httpx
 import tenacity
 
+from app.core.logging_config import tracing_event_hook
+
 logger = logging.getLogger(__name__)
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -30,8 +32,14 @@ ARCHIVE_URL  = "https://archive-api.open-meteo.com/v1/archive"
 _TIMEOUT = httpx.Timeout(connect=4.0, read=10.0, write=5.0, pool=4.0)
 
 # Module-level client — reused for HTTP keep-alive.  See mlb_api.py for
-# rationale.  Closed by app/main.py's lifespan handler at shutdown.
-_CLIENT = httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True)
+# rationale.  `tracing_event_hook` injects the active correlation ID as
+# `X-Request-ID` on every outbound call.  Closed by app/main.py's lifespan
+# handler at shutdown.
+_CLIENT = httpx.AsyncClient(
+    timeout=_TIMEOUT,
+    follow_redirects=True,
+    event_hooks={"request": [tracing_event_hook]},
+)
 
 
 async def aclose() -> None:

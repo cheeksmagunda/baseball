@@ -1,7 +1,7 @@
 """Static audit: the T-65 live pipeline must not leak banned signals.
 
 The live pipeline (app/services/*, app/routers/*, app/core/*) is architecturally
-forbidden from reading four categories of signal:
+forbidden from reading five categories of signal:
 
   1. Historical outcomes (post-slate truth): `real_score`, `total_value`,
      `is_highest_value`, `is_most_popular`, `is_most_drafted_3x`.
@@ -13,6 +13,12 @@ forbidden from reading four categories of signal:
   4. Historical data file paths: the four /data/ files (historical_players,
      historical_winning_drafts, hv_player_game_stats, historical_slate_results)
      must never be opened or referenced in live runtime code.
+  5. Cross-boundary imports of `scripts/*` modules into `app/*` runtime —
+     scripts may read historical CSVs or perform offline backfill / analysis,
+     and pulling them in at runtime risks importing those reads.  A single
+     allowlist entry exists for `scripts.refresh_statcast.main`, the live
+     Baseball Savant bulk-load wired into the T-65 pipeline, which fetches
+     from Savant URLs only and never opens /data/ files.
 
 Only scripts/ may read historical-outcome fields or the /data/ files.  No live
 runtime code should reference any of these symbols or file paths.
@@ -46,6 +52,16 @@ RUNTIME_DIRS = [
 #     for display, PUT ingests post-game results.  Neither is on the T-65 path.
 EXEMPT_FILES = {
     REPO_ROOT / "app" / "routers" / "slates.py",
+}
+
+# `from scripts.X import …` is banned in app/ except for a hand-checked
+# allowlist.  Anything else risks pulling a script-only historical read into
+# the live runtime via a transitive import.  Each entry is a fully-qualified
+# scripts module name.
+ALLOWED_SCRIPTS_IMPORTS = {
+    # Live Baseball Savant bulk-load — fetches from Savant URLs only and
+    # never opens /data/ files.  Wired into pipeline.py::_refresh_statcast.
+    "scripts.refresh_statcast",
 }
 
 # Banned attribute reads: any `.field` access.  The auditor checks for the
@@ -126,6 +142,32 @@ def scan_file_for_data_refs(path: Path) -> list[tuple[int, str, str]]:
     return violations
 
 
+_SCRIPTS_IMPORT_RE = re.compile(
+    r"^\s*(?:from\s+(scripts(?:\.[a-zA-Z_][a-zA-Z0-9_]*)+)\s+import\b"
+    r"|import\s+(scripts(?:\.[a-zA-Z_][a-zA-Z0-9_]*)+)\b)"
+)
+
+
+def scan_file_for_scripts_imports(path: Path) -> list[tuple[int, str, str]]:
+    """Return (line_no, module, line) for any scripts.* import that is not
+    in ALLOWED_SCRIPTS_IMPORTS.  Imports inside docstrings/comments are
+    filtered out by the leading-whitespace-then-`import` regex match."""
+    violations: list[tuple[int, str, str]] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return violations
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        m = _SCRIPTS_IMPORT_RE.match(raw)
+        if not m:
+            continue
+        module = m.group(1) or m.group(2)
+        if module in ALLOWED_SCRIPTS_IMPORTS:
+            continue
+        violations.append((lineno, module, raw.strip()))
+    return violations
+
+
 def scan_file(path: Path) -> list[tuple[int, str, str]]:
     """Return (line_no, field, line) for each suspicious read."""
     violations: list[tuple[int, str, str]] = []
@@ -161,6 +203,10 @@ def main() -> int:
                 total_violations.append((py_file, lineno, field, line))
             for lineno, stem, line in scan_file_for_data_refs(py_file):
                 total_violations.append((py_file, lineno, stem, line))
+            for lineno, module, line in scan_file_for_scripts_imports(py_file):
+                total_violations.append(
+                    (py_file, lineno, f"scripts-import:{module}", line)
+                )
 
     print(f"Scanned {files_scanned} runtime files under:")
     for d in RUNTIME_DIRS:

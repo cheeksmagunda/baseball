@@ -29,6 +29,8 @@ import httpx
 import tenacity
 from bs4 import BeautifulSoup
 
+from app.core.logging_config import tracing_event_hook
+
 logger = logging.getLogger(__name__)
 
 _URL = "https://www.rotowire.com/baseball/daily-lineups.php"
@@ -42,8 +44,14 @@ _USER_AGENT = (
 _TIMEOUT = httpx.Timeout(connect=5.0, read=20.0, write=10.0, pool=5.0)
 
 # Module-level client — reused for HTTP keep-alive.  See mlb_api.py for
-# rationale.  Closed by app/main.py's lifespan handler at shutdown.
-_CLIENT = httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True)
+# rationale.  `tracing_event_hook` injects the active correlation ID as
+# `X-Request-ID` on every outbound call.  Closed by app/main.py's lifespan
+# handler at shutdown.
+_CLIENT = httpx.AsyncClient(
+    timeout=_TIMEOUT,
+    follow_redirects=True,
+    event_hooks={"request": [tracing_event_hook]},
+)
 
 
 async def aclose() -> None:

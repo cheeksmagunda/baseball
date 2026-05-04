@@ -729,82 +729,99 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
 
 
 async def run_full_pipeline(db: Session, game_date: date) -> dict:
-    """Full pipeline: fetch schedule → populate rosters → fetch stats → score → rank."""
-    logger.info("Full pipeline START for %s", game_date)
-    fetch_result = await run_fetch(db, game_date)
+    """Full pipeline: fetch schedule → populate rosters → fetch stats → score → rank.
 
-    # Mid-slate cold-start guard: when the app redeploys after the day's first
-    # pitch, some games are already Live/Final. Every downstream enrichment and
-    # scoring stage filters to is_game_remaining, so surface an explicit,
-    # diagnosable error here if fewer than MIN_GAMES_REPRESENTED games remain.
-    # Otherwise the failure would surface as a cryptic ValueError deep inside
-    # _enforce_composition during the filter strategy run.
-    slate = db.query(Slate).filter_by(date=game_date).first()
-    if slate:
-        all_games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
-        remaining = [g for g in all_games if is_game_remaining(g.game_status)]
-        if len(remaining) < MIN_GAMES_REPRESENTED:
-            raise RuntimeError(
-                f"Insufficient remaining games ({len(remaining)} of {len(all_games)}) "
-                f"for {game_date} — T-65 aborted. Slate already active and too few "
-                "games have yet to start."
-            )
+    Mints a fresh correlation ID at entry so every log line and outbound
+    HTTP request inside this T-65 fire shares the same ID — distributed
+    tracing without an OpenTelemetry SDK.  The slate monitor runs as a
+    background asyncio task so FastAPI middleware never sets request_id
+    for it; this is the only place it gets one.  The token is reset in
+    `finally` so the monitor's between-pipeline idle logs don't keep the
+    stale ID.
+    """
+    from app.core.logging_config import request_id_var, set_pipeline_run_id
 
-    # Clear stale roster so every T-65 run starts with a fresh snapshot.
-    # Explicit cascade order because SQLite doesn't enforce FK constraints by default.
-    if slate:
-        sp_ids = [r for (r,) in db.query(SlatePlayer.id).filter(SlatePlayer.slate_id == slate.id)]
-        if sp_ids:
-            ps_ids = [r for (r,) in db.query(PlayerScore.id).filter(PlayerScore.slate_player_id.in_(sp_ids))]
-            if ps_ids:
-                db.query(ScoreBreakdown).filter(ScoreBreakdown.player_score_id.in_(ps_ids)).delete(synchronize_session=False)
-            db.query(PlayerScore).filter(PlayerScore.slate_player_id.in_(sp_ids)).delete(synchronize_session=False)
-        db.query(SlatePlayer).filter(SlatePlayer.slate_id == slate.id).delete(synchronize_session=False)
-        db.commit()
+    rid, token = set_pipeline_run_id()
+    try:
+        logger.info("Full pipeline START for %s (correlation_id=%s)", game_date, rid)
+        fetch_result = await run_fetch(db, game_date)
 
-    # Auto-populate SlatePlayer records from MLB API boxscores
-    roster_result = {"added": 0, "skipped": 0}
-    if slate:
-        roster_result = await populate_slate_players(db, slate)
+        # Mid-slate cold-start guard: when the app redeploys after the day's first
+        # pitch, some games are already Live/Final. Every downstream enrichment and
+        # scoring stage filters to is_game_remaining, so surface an explicit,
+        # diagnosable error here if fewer than MIN_GAMES_REPRESENTED games remain.
+        # Otherwise the failure would surface as a cryptic ValueError deep inside
+        # _enforce_composition during the filter strategy run.
+        slate = db.query(Slate).filter_by(date=game_date).first()
+        if slate:
+            all_games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+            remaining = [g for g in all_games if is_game_remaining(g.game_status)]
+            if len(remaining) < MIN_GAMES_REPRESENTED:
+                raise RuntimeError(
+                    f"Insufficient remaining games ({len(remaining)} of {len(all_games)}) "
+                    f"for {game_date} — T-65 aborted. Slate already active and too few "
+                    "games have yet to start."
+                )
 
-    stats_result = await run_fetch_player_stats(db, game_date)
+        # Clear stale roster so every T-65 run starts with a fresh snapshot.
+        # Explicit cascade order because SQLite doesn't enforce FK constraints by default.
+        if slate:
+            sp_ids = [r for (r,) in db.query(SlatePlayer.id).filter(SlatePlayer.slate_id == slate.id)]
+            if sp_ids:
+                ps_ids = [r for (r,) in db.query(PlayerScore.id).filter(PlayerScore.slate_player_id.in_(sp_ids))]
+                if ps_ids:
+                    db.query(ScoreBreakdown).filter(ScoreBreakdown.player_score_id.in_(ps_ids)).delete(synchronize_session=False)
+                db.query(PlayerScore).filter(PlayerScore.slate_player_id.in_(sp_ids)).delete(synchronize_session=False)
+            db.query(SlatePlayer).filter(SlatePlayer.slate_id == slate.id).delete(synchronize_session=False)
+            db.commit()
 
-    if slate:
-        # Enrich series context (series wins, recent L10 form) for batter env Group D.
-        # Fail loudly under the no-fallback rule — a silent failure here would
-        # leave Group D signals NULL and downstream env scoring would treat
-        # that as neutral, corrupting the EV formula.
-        await enrich_slate_game_series_context(db, slate)
+        # Auto-populate SlatePlayer records from MLB API boxscores
+        roster_result = {"added": 0, "skipped": 0}
+        if slate:
+            roster_result = await populate_slate_players(db, slate)
 
-        # Enrich Vegas lines (moneyline + O/U) for pitcher/batter env scoring.
-        # Raises RuntimeError if BO_ODDS_API_KEY is missing or the API fails —
-        # no fallback per "no fallbacks ever" rule.
-        await enrich_slate_game_vegas_lines(db, slate)
+        stats_result = await run_fetch_player_stats(db, game_date)
 
-        # Enrich weather (temperature + wind) from Open-Meteo.
-        # Raises RuntimeError if any game's weather cannot be fetched.
-        from app.services.data_collection import enrich_slate_game_weather
-        await enrich_slate_game_weather(db, slate)
+        if slate:
+            # Enrich series context (series wins, recent L10 form) for batter env Group D.
+            # Fail loudly under the no-fallback rule — a silent failure here would
+            # leave Group D signals NULL and downstream env scoring would treat
+            # that as neutral, corrupting the EV formula.
+            await enrich_slate_game_series_context(db, slate)
 
-    # Statcast bulk-load from Baseball Savant. Upserts kinematics + xStats
-    # onto PlayerStats by mlb_id, so it must run AFTER populate_slate_players
-    # + run_fetch_player_stats (which create the Player rows it keys on) and
-    # BEFORE run_score_slate (which reads the columns it populates).
-    # Raises RuntimeError on any failure — Savant is public + always live, so
-    # a non-zero exit is a real connectivity / schema problem, not flakiness.
-    await _refresh_statcast()
+            # Enrich Vegas lines (moneyline + O/U) for pitcher/batter env scoring.
+            # Raises RuntimeError if BO_ODDS_API_KEY is missing or the API fails —
+            # no fallback per "no fallbacks ever" rule.
+            await enrich_slate_game_vegas_lines(db, slate)
 
-    scores = run_score_slate(db, game_date)
-    logger.info("Full pipeline COMPLETE for %s — %d players scored", game_date, len(scores))
+            # Enrich weather (temperature + wind) from Open-Meteo.
+            # Raises RuntimeError if any game's weather cannot be fetched.
+            from app.services.data_collection import enrich_slate_game_weather
+            await enrich_slate_game_weather(db, slate)
 
-    return {
-        "date": game_date.isoformat(),
-        "schedule": fetch_result,
-        "rosters": roster_result,
-        "stats": stats_result,
-        "scored_players": len(scores),
-        "top_5": [
-            {"name": s.player_name, "score": s.total_score}
-            for s in scores[:5]
-        ],
-    }
+        # Statcast bulk-load from Baseball Savant. Upserts kinematics + xStats
+        # onto PlayerStats by mlb_id, so it must run AFTER populate_slate_players
+        # + run_fetch_player_stats (which create the Player rows it keys on) and
+        # BEFORE run_score_slate (which reads the columns it populates).
+        # Raises RuntimeError on any failure — Savant is public + always live, so
+        # a non-zero exit is a real connectivity / schema problem, not flakiness.
+        await _refresh_statcast()
+
+        scores = run_score_slate(db, game_date)
+        logger.info("Full pipeline COMPLETE for %s — %d players scored", game_date, len(scores))
+
+        return {
+            "date": game_date.isoformat(),
+            "schedule": fetch_result,
+            "rosters": roster_result,
+            "stats": stats_result,
+            "scored_players": len(scores),
+            "top_5": [
+                {"name": s.player_name, "score": s.total_score}
+                for s in scores[:5]
+            ],
+        }
+    finally:
+        # Reset so the slate monitor's between-pipeline log lines don't
+        # carry a stale correlation ID into the next idle period.
+        request_id_var.reset(token)
