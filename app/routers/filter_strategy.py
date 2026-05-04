@@ -247,6 +247,7 @@ def _build_response(lineup_result, candidates) -> FilterOptimizeResponse:
             moneyline=sg.moneyline,
             vegas_total=sg.vegas_total,
             opp_starter_era=sg.opp_starter_era,
+            own_team_ops=sg.own_team_ops,
         )
         for sg in sc.stackable_games
     ]
@@ -460,6 +461,7 @@ def classify_slate_endpoint(games: list[GameEnvironment] = []):
             moneyline=sg.moneyline,
             vegas_total=sg.vegas_total,
             opp_starter_era=sg.opp_starter_era,
+            own_team_ops=sg.own_team_ops,
         )
         for sg in result.stackable_games
     ]

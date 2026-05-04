@@ -67,6 +67,7 @@ class StackableGameOut(BaseModel):
     moneyline: int | None = None
     vegas_total: float | None = None
     opp_starter_era: float | None = None
+    own_team_ops: float | None = None
 
 
 class SlateClassificationOut(BaseModel):

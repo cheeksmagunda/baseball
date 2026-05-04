@@ -198,6 +198,56 @@ class TestSlateClassification:
         assert result.blowout_games == 0
         assert result.stackable_games == []
 
+    def test_path3_catastrophic_opp_sp_with_strong_offense(self):
+        """PATH 3: opp_SP_ERA ≥ 6.5 + own_team_OPS ≥ 0.760 unlocks 2-batter
+        cap on the favored side, even when ML/OU don't satisfy PATH 1 or 2.
+        Example: ARI@CHC with Merrill Kelly (9.95 ERA) — CHC was capped at 1
+        pre-V13.3 but its 0.78 OPS lineup feasted in actual outcome data."""
+        games = [{
+            "home_team": "CHC", "away_team": "ARI",
+            "home_moneyline": -174, "away_moneyline": 146,
+            "vegas_total": 7.5,
+            "home_starter_era": 6.0, "away_starter_era": 9.95,
+            "home_team_ops": 0.783, "away_team_ops": 0.716,
+        }]
+        result = classify_slate(5, games=games)
+        chc_entries = [s for s in result.stackable_games if s.favored_team == "CHC"]
+        ari_entries = [s for s in result.stackable_games if s.favored_team == "ARI"]
+        assert len(chc_entries) == 1, "CHC should be PATH 3 stack-eligible"
+        assert chc_entries[0].is_blowout_favorite is False, "PATH 3 must not earn STACK_BONUS"
+        assert chc_entries[0].own_team_ops == 0.783
+        assert chc_entries[0].opp_starter_era == 9.95
+        # ARI fails PATH 3: opp SP ERA 6.0 is below 6.5 threshold AND ARI OPS 0.716 < 0.760
+        assert ari_entries == [], "ARI should not qualify (opp SP ERA only 6.0)"
+
+    def test_path3_below_era_floor_not_stackable(self):
+        """PATH 3 must NOT fire when opp SP ERA is below 6.5, even with strong offense."""
+        games = [{
+            "home_team": "NYY", "away_team": "BAL",
+            "home_moneyline": -162, "away_moneyline": 136,
+            "vegas_total": 8.5,
+            "home_starter_era": 2.39, "away_starter_era": 5.79,  # 5.79 < 6.5
+            "home_team_ops": 0.785, "away_team_ops": 0.700,
+        }]
+        result = classify_slate(5, games=games)
+        assert result.stackable_games == [], (
+            "5.79 ERA is below the conservative 6.5 PATH 3 floor"
+        )
+
+    def test_path3_below_ops_floor_not_stackable(self):
+        """PATH 3 must NOT fire when own team OPS is below 0.760, even vs awful SP."""
+        games = [{
+            "home_team": "BOS", "away_team": "HOU",
+            "home_moneyline": -124, "away_moneyline": 106,
+            "vegas_total": 9.0,
+            "home_starter_era": 2.77, "away_starter_era": 7.63,
+            "home_team_ops": 0.671, "away_team_ops": 0.730,  # both < 0.760
+        }]
+        result = classify_slate(5, games=games)
+        assert result.stackable_games == [], (
+            "Bad SP doesn't help if neither lineup is above-average"
+        )
+
     def test_pitcher_day(self):
         games = [
             {

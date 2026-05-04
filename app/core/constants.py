@@ -97,27 +97,39 @@ BLOWOUT_MIN_GAMES_FOR_STACK_DAY = 1  # 1+ blowout game → stack day eligible
 # even then a MINI-stack (two teammates) captures most of the correlation
 # edge without the correlated-downside tail.
 #
-# A team is stack-eligible if its game satisfies EITHER:
+# A team is stack-eligible if its game satisfies ANY of:
 #
-#   PATH 1 (BLOWOUT FAVORITE — favored side only):
+#   PATH 1 (BLOWOUT FAVORITE — favored side only, earns STACK_BONUS):
 #     moneyline ≤ STACK_ELIGIBILITY_MONEYLINE  AND
 #     Vegas O/U ≥ STACK_ELIGIBILITY_VEGAS_TOTAL
 #
-#   PATH 2 (EXTREME SHOOTOUT — both sides eligible):
+#   PATH 2 (EXTREME SHOOTOUT — both sides eligible, no bonus):
 #     Vegas O/U ≥ STACK_ELIGIBILITY_SHOOTOUT_TOTAL
+#
+#   PATH 3 (CATASTROPHIC OPPOSING STARTER — favored side only, no bonus):
+#     opposing starter season ERA ≥ STACK_ELIGIBILITY_PATH3_OPP_SP_ERA  AND
+#     own team season OPS ≥ STACK_ELIGIBILITY_PATH3_OWN_TEAM_OPS
 #
 # PATH 1 captures predictable blowouts (favorite scores; opposing pitcher
 # shelled).  PATH 2 captures Coors-class shootouts where both lineups
 # project to feast regardless of which side wins — those games are
 # "glaringly obvious" run environments where mini-stacking either side
-# is well-supported by Vegas.
+# is well-supported by Vegas.  PATH 3 catches the case Vegas missed: a
+# capable lineup facing a starter whose ERA flags genuine blow-up risk
+# (Strider just back from IL, a season-debut SP, a journeyman on a hot
+# bad stretch).  A 6.5+ ERA SP on a starter who has survived 30+ IP is
+# rare enough that the gate fires on roughly 1 in 3 slates and adds <0.5
+# new stack-eligible teams per slate on average.  No STACK_BONUS — the
+# bonus stays gated to PATH 1 where Vegas itself priced the favorite.
 #
 # All other teams fall back to the one-batter-per-team default.  A heavy
 # favorite in a low-scoring pitcher's duel (-220 with O/U 7.0) is NOT
-# stack-eligible — fails both paths.
+# stack-eligible — fails all three paths.
 STACK_ELIGIBILITY_MONEYLINE = -200     # favorite threshold (PATH 1)
 STACK_ELIGIBILITY_VEGAS_TOTAL = 9.0    # min O/U paired with ML in PATH 1
 STACK_ELIGIBILITY_SHOOTOUT_TOTAL = 10.5  # min O/U for ML-agnostic shootout PATH 2
+STACK_ELIGIBILITY_PATH3_OPP_SP_ERA = 6.5   # opp starter ERA floor for PATH 3
+STACK_ELIGIBILITY_PATH3_OWN_TEAM_OPS = 0.760  # own team OPS floor for PATH 3 (above-avg offense)
 
 # Caps applied downstream of the stack-eligibility gate.  MAX=2 is the
 # deliberate mini-stack ceiling — never more than two teammates in a
@@ -159,9 +171,12 @@ ROOKIE_PITCHER_IP_THRESHOLD = 5.0 # pitchers: < this much career MLB IP
 
 
 def is_stack_eligible_game(
-    moneyline: int | None, vegas_total: float | None
+    moneyline: int | None,
+    vegas_total: float | None,
+    opp_starter_era: float | None = None,
+    own_team_ops: float | None = None,
 ) -> bool:
-    """True if a game qualifies for mini-stacking via either path.
+    """True if a game qualifies for mini-stacking via any of three paths.
 
     PATH 1 (blowout favorite, favored side only): the caller's `moneyline`
     must clear STACK_ELIGIBILITY_MONEYLINE AND O/U must clear
@@ -173,9 +188,19 @@ def is_stack_eligible_game(
     pass the favored team's moneyline (or either side); only the O/U
     threshold matters.
 
-    Unknown O/U returns False (no fallback).  Unknown moneyline only
-    fails PATH 1; PATH 2 still evaluates O/U-only.
+    PATH 3 (catastrophic opposing starter, favored side only): the
+    opposing starter's season ERA must clear STACK_ELIGIBILITY_PATH3_OPP_SP_ERA
+    AND the own team's season OPS must clear STACK_ELIGIBILITY_PATH3_OWN_TEAM_OPS.
+    Both gates required — a bad SP only matters if the lineup can capitalize.
+    Caller is responsible for evaluating only the side facing the bad SP.
+
+    Unknown O/U returns False on PATH 1/2 (no fallback).  PATH 3 ignores O/U
+    but requires both opp_starter_era and own_team_ops to be supplied.
     """
+    if (opp_starter_era is not None and own_team_ops is not None
+            and opp_starter_era >= STACK_ELIGIBILITY_PATH3_OPP_SP_ERA
+            and own_team_ops >= STACK_ELIGIBILITY_PATH3_OWN_TEAM_OPS):
+        return True
     if vegas_total is None:
         return False
     if vegas_total >= STACK_ELIGIBILITY_SHOOTOUT_TOTAL:
