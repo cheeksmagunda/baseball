@@ -179,15 +179,32 @@ def _celsius_to_f(c: float) -> float:
 
 
 def _extract_hour(data: dict, target_utc_hour: int) -> dict:
-    """Pick the hourly reading closest to target_utc_hour."""
-    hourly    = data.get("hourly", {})
-    times     = hourly.get("time", [])
-    temps     = hourly.get("temperature_2m", [])
-    speeds    = hourly.get("wind_speed_10m", [])
-    directions = hourly.get("wind_direction_10m", [])
+    """Pick the hourly reading closest to target_utc_hour.
+
+    Raises RuntimeError on any missing key so a vendor schema change
+    surfaces with the actual cause.  Previously used `.get(..., {})` /
+    `.get(..., [])` chains that silently substituted empty containers,
+    leading to misleading "no hourly time data" errors when the real
+    failure was a missing `temperature_2m` / `wind_speed_10m` array.
+    """
+    if "hourly" not in data:
+        raise RuntimeError(
+            "Open-Meteo response missing `hourly` key — vendor schema drift."
+        )
+    hourly = data["hourly"]
+    for required in ("time", "temperature_2m", "wind_speed_10m", "wind_direction_10m"):
+        if required not in hourly:
+            raise RuntimeError(
+                f"Open-Meteo response missing `hourly.{required}` array — "
+                "vendor schema drift."
+            )
+    times      = hourly["time"]
+    temps      = hourly["temperature_2m"]
+    speeds     = hourly["wind_speed_10m"]
+    directions = hourly["wind_direction_10m"]
 
     if not times:
-        raise RuntimeError("Open-Meteo response contains no hourly time data.")
+        raise RuntimeError("Open-Meteo response contains an empty `time` array.")
 
     best_idx, best_diff = 0, 999
     for i, t in enumerate(times):

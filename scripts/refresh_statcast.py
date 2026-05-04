@@ -413,12 +413,14 @@ def refresh_team_catcher_framing(db: Session, season: int) -> int:
     which exits non-zero so the slate monitor calls `lineup_cache.mark_failed()`.
     Per CLAUDE.md "fail loud, never fallback" — Savant is fully public and
     always live; a network or schema failure is a real problem that must be
-    fixed, not silently swallowed.  The framing adjustment is small (±5% on
-    pitcher k_rate) but the system shouldn't lie about which signals fired.
+    fixed, not silently swallowed.  V13.0 bumped the framing k_rate
+    adjustment from ±5% to ±12% so this is now a material signal: zero
+    framing updates means every pitcher silently scores against neutral
+    framing, masking the K-rate trait surface that V13.0 explicitly grew.
+    main() raises on framing_updates == 0 to enforce that.
 
-    Returns the count of upserted team rows.  Zero updates is acceptable
-    (early-season corner case, no team rows yet); only an actual fetch /
-    parse failure aborts.
+    Returns the count of upserted team rows.  In mid-season the page always
+    has 30 rows (one per team).  Zero is schema drift or a Savant outage.
     """
     df = _team_catcher_framing_table(season)
 
@@ -495,10 +497,15 @@ def main() -> int:
         pitcher_updates, pitcher_xstats_updates,
         framing_updates,
     )
-    # Sanity floor: kinematics + xStats must update SOMETHING.  Framing is
-    # tolerated at 0 (Savant team-scrape can fail without breaking us; a
-    # team-framing miss just means the V10.8 framing adjustment falls
-    # through to neutral for that slate cycle).
+    # Sanity floor: every Statcast leaderboard MUST populate something.
+    # Per the no-fallbacks rule: a zero-update count is schema drift or a
+    # Savant outage, never an "acceptable empty" event.  Specifically:
+    #  - kinematics floors gate the trait scorers (whiff%, chase%, exit velo)
+    #  - xStats floors gate offensive_profile (xwOBA) and pitcher era_whip (xERA)
+    #  - framing gates the V13.0 ±12% k_rate adjustment (every team has 30
+    #    rows in mid-season; zero means the embedded JSON parse drifted)
+    # All five must be > 0 for a clean refresh.  Return 1 on any zero so the
+    # caller (T-65 pipeline) raises and /optimize returns 503.
     if batter_updates == 0 or pitcher_updates == 0:
         logger.error(
             "Statcast refresh produced zero updates on one or both kinematics "
@@ -510,6 +517,15 @@ def main() -> int:
             "Statcast xStats refresh produced zero updates — inspect Savant "
             "expected-stats column names (est_woba, est_ba, est_slg, xera) and "
             "Player.mlb_id coverage."
+        )
+        return 1
+    if framing_updates == 0:
+        logger.error(
+            "Statcast team catcher framing produced zero updates — Savant page "
+            "schema drift (embedded `data` JSON variable parse failed silently) "
+            "or unknown team_id mapping.  V13.0 calibrated the pitcher k_rate "
+            "trait against ±12 %% framing adjustments; zero rows means every "
+            "pitcher silently scores against neutral framing."
         )
         return 1
     return 0

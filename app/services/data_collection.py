@@ -418,7 +418,18 @@ async def _ensure_probable_starters_present(db: Session, slate: Slate) -> int:
             )
         pitch_hand = person.get("pitchHand", {}).get("code")
         bat_side = person.get("batSide", {}).get("code")
-        position = person.get("primaryPosition", {}).get("abbreviation") or "P"
+        # Probable starters MUST come back from MLB /people with a
+        # primaryPosition (always P/SP/RP for an announced starter).  An
+        # `or "P"` default would silently classify a non-pitcher as a pitcher
+        # if the API contract changes — fail loud instead per the
+        # no-fallbacks rule.
+        position = person.get("primaryPosition", {}).get("abbreviation")
+        if not position:
+            raise RuntimeError(
+                f"MLB API /people/{mlb_id} returned no primaryPosition for the "
+                f"{team} probable starter on {game.home_team}@{game.away_team}.  "
+                "Cannot proceed without a known position."
+            )
 
         norm = normalize_name(full_name)
         player = Player(
@@ -734,7 +745,16 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats:
                     bb=gs.get("baseOnBalls", 0),
                     so=gs.get("strikeOuts", 0),
                     sb=gs.get("stolenBases", 0),
-                    ip=float(gs.get("inningsPitched", "0") or 0),
+                    # gameLog rows exist for both hitters (no IP) and pitchers
+                    # (IP > 0).  MLB API returns "inningsPitched": "0" for
+                    # position-player rows so the default is correct; for
+                    # pitching rows the API always populates this field.
+                    # The `or 0` redundancy was removed — `float("0")` is 0.0
+                    # already, and propagating None into float() is a real
+                    # schema-drift signal that must surface as a TypeError
+                    # (caught by the gather() exception path) rather than
+                    # silently coercing to 0.
+                    ip=float(gs.get("inningsPitched", "0")),
                     er=gs.get("earnedRuns", 0),
                     k_pitching=gs.get("strikeOuts", 0),
                     decision=gs.get("decision", ""),
@@ -855,7 +875,16 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats:
                         bb=gs.get("baseOnBalls", 0),
                         so=gs.get("strikeOuts", 0),
                         sb=gs.get("stolenBases", 0),
-                        ip=float(gs.get("inningsPitched", "0") or 0),
+                        # gameLog rows exist for both hitters (no IP) and pitchers
+                    # (IP > 0).  MLB API returns "inningsPitched": "0" for
+                    # position-player rows so the default is correct; for
+                    # pitching rows the API always populates this field.
+                    # The `or 0` redundancy was removed — `float("0")` is 0.0
+                    # already, and propagating None into float() is a real
+                    # schema-drift signal that must surface as a TypeError
+                    # (caught by the gather() exception path) rather than
+                    # silently coercing to 0.
+                    ip=float(gs.get("inningsPitched", "0")),
                         er=gs.get("earnedRuns", 0),
                         k_pitching=gs.get("strikeOuts", 0),
                         decision=gs.get("decision", ""),
@@ -899,7 +928,13 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats:
                     if not splits:
                         continue
                     s = splits[0].get("stat", {})
-                    prior_pa = s.get("plateAppearances", 0) or 0
+                    # `or 0` redundancy removed — `s.get(..., 0)` already
+                    # defaults to 0 for missing keys.  The remaining
+                    # `<=0` guard is the real check (skip the prior-season
+                    # backfill if the player didn't accumulate any PA last
+                    # year; the strict assertion downstream then surfaces
+                    # them by name as a true rookie / debut).
+                    prior_pa = s.get("plateAppearances", 0)
                     if prior_pa <= 0:
                         continue
                     ps.pa = prior_pa
@@ -960,7 +995,16 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats:
                         bb=gs.get("baseOnBalls", 0),
                         so=gs.get("strikeOuts", 0),
                         sb=gs.get("stolenBases", 0),
-                        ip=float(gs.get("inningsPitched", "0") or 0),
+                        # gameLog rows exist for both hitters (no IP) and pitchers
+                    # (IP > 0).  MLB API returns "inningsPitched": "0" for
+                    # position-player rows so the default is correct; for
+                    # pitching rows the API always populates this field.
+                    # The `or 0` redundancy was removed — `float("0")` is 0.0
+                    # already, and propagating None into float() is a real
+                    # schema-drift signal that must surface as a TypeError
+                    # (caught by the gather() exception path) rather than
+                    # silently coercing to 0.
+                    ip=float(gs.get("inningsPitched", "0")),
                         er=gs.get("earnedRuns", 0),
                         k_pitching=gs.get("strikeOuts", 0),
                         decision=gs.get("decision", ""),

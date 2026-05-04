@@ -103,9 +103,17 @@ async def get_team_pitching_stats(team_id: int, season: int) -> dict:
 
 
 async def search_player(name: str) -> list[dict]:
-    """Search for a player by name."""
+    """Search for a player by name.
+
+    Raises KeyError if the MLB API response shape changes (no `people` key).
+    Previously returned `[]` silently — caller `resolve_mlb_id` raised on
+    empty results, but the diagnostic mis-attributed schema drift to "0
+    matching players".  Direct `data["people"]` indexing fails loud with
+    the actual cause so ops investigates the API change rather than
+    chasing a phantom name-mismatch.
+    """
     data = await _get("/people/search", {"names": name, "sportId": 1})
-    return data.get("people", [])
+    return data["people"]
 
 
 # MLB team ID mapping (2026 — these are stable across seasons)
