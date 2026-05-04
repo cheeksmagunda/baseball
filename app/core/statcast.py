@@ -24,8 +24,40 @@ import logging
 from functools import lru_cache
 
 import pandas as pd
+import requests
+import tenacity
 
 logger = logging.getLogger(__name__)
+
+# Split (connect, read) timeout — connect must be short so a slow DNS doesn't
+# eat the whole budget intended for the read.  Matches the standard set by
+# the async clients (mlb_api, odds_api, open_meteo, rotowire).
+_SAVANT_TIMEOUT = (4.0, 15.0)
+
+
+@tenacity.retry(
+    stop=tenacity.stop_after_attempt(4),
+    wait=tenacity.wait_random_exponential(multiplier=1, max=8),
+    retry=tenacity.retry_if_exception_type(requests.RequestException),
+    reraise=True,
+)
+def _savant_get(url: str, headers: dict[str, str] | None = None) -> str:
+    """Fetch a Savant URL with full-jitter exponential backoff.
+
+    pybaseball wraps its own retries for the leaderboard endpoints it
+    supports, but the three custom scrapes below (IVB, swing-take, framing)
+    bypass pybaseball and need the same resilience standard as the rest of
+    the live-data clients (CLAUDE.md "Live data resiliency").  All retries
+    exhausted → raises so the T-65 pipeline crashes loud per no-fallbacks.
+    """
+    resp = requests.get(
+        url,
+        headers=headers,
+        timeout=_SAVANT_TIMEOUT,
+        allow_redirects=True,
+    )
+    resp.raise_for_status()
+    return str(resp.text)
 
 
 def _col(df: pd.DataFrame, *names: str) -> str | None:
@@ -85,25 +117,21 @@ def _pitcher_movement_table(season: int) -> pd.DataFrame:
     Raises on non-200 / parse error so the caller fails loudly.
     """
     import csv
-    import io
-
-    import requests
 
     url = (
         "https://baseballsavant.mlb.com/leaderboard/pitch-movement"
         f"?year={season}&team=&min_pitches=q&pitch_type=FF&hand=&csv=true"
     )
-    resp = requests.get(url, timeout=20)
-    resp.raise_for_status()
+    text = _savant_get(url)
     # Savant prepends a UTF-8 BOM ("﻿\"year\"") on the first column header.
-    text = resp.text
     rows = list(csv.DictReader(io.StringIO(text)))
     df = pd.DataFrame(rows)
     # Strip the BOM/quote wrapping from the first column name if present.
     df.columns = [c.lstrip("﻿").strip('"') for c in df.columns]
     logger.info(
         "Statcast pitcher movement (IVB): %d rows for season=%d (pitch_type=FF)",
-        len(df), season,
+        len(df),
+        season,
     )
     return df
 
@@ -127,20 +155,15 @@ def _pitcher_swing_take_table(season: int) -> pd.DataFrame:
     Caller joins to the percentile-ranks table by `player_id`.  Raises on
     non-200 / parse error so the caller fails loudly.
     """
-    import requests
-
     url = (
         "https://baseballsavant.mlb.com/leaderboard/custom"
         f"?year={season}&type=pitcher&filter=&min=0"
         "&selections=pitches,whiff_percent,oz_swing_percent"
         "&chart=false&csv=true"
     )
-    resp = requests.get(url, timeout=20)
-    resp.raise_for_status()
-    df = pd.read_csv(io.StringIO(resp.text))
-    logger.info(
-        "Statcast pitcher swing-take: %d rows for season=%d", len(df), season
-    )
+    text = _savant_get(url)
+    df = pd.read_csv(io.StringIO(text))
+    logger.info("Statcast pitcher swing-take: %d rows for season=%d", len(df), season)
     return df
 
 
@@ -203,20 +226,16 @@ def _team_catcher_framing_table(season: int) -> pd.DataFrame:
     import json
     import re
 
-    import requests
-
     url = (
         "https://baseballsavant.mlb.com/leaderboard/catcher-framing"
         f"?year={season}&team=&min=q&type=Cat"
     )
-    resp = requests.get(
+    text = _savant_get(
         url,
         headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
-        timeout=20,
     )
-    resp.raise_for_status()
     # Embedded JSON pattern: `data = [...];`
-    match = re.search(r"\bdata\s*=\s*(\[.*?\]);", resp.text, re.DOTALL)
+    match = re.search(r"\bdata\s*=\s*(\[.*?\]);", text, re.DOTALL)
     if not match:
         raise RuntimeError(
             "Savant catcher-framing leaderboard: embedded `data` JSON variable not "

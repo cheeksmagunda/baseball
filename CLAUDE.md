@@ -151,7 +151,8 @@ The strict raises stay theoretical only because the data layer fetches reliably.
 | The Odds API | `app/core/odds_api.py` | 4 | random_exponential, max=8s | 4s | 15s |
 | Open-Meteo | `app/core/open_meteo.py` | 4 | random_exponential, max=6s | 4s | 10s |
 | RotoWire | `app/core/rotowire.py` | 5 | random_exponential, max=8s | 5s | 20s |
-| Baseball Savant | bulk via `pybaseball` (`scripts/refresh_statcast.py`) | n/a | n/a | n/a | n/a |
+| Baseball Savant (pybaseball) | bulk via `pybaseball` (`scripts/refresh_statcast.py`) | n/a | n/a | n/a | n/a |
+| Baseball Savant (raw scrapes) | `app/core/statcast.py::_savant_get` | 4 | random_exponential, max=8s | 4s | 15s |
 
 Concurrency is capped at 20 simultaneous MLB API requests (`asyncio.Semaphore`) so the T-65 ~260-request burst doesn't trigger rate limits. RotoWire treats `200 OK` with zero parsed games as a transient CDN-warmup failure and retries (the only HTML scrape on the path; HTML can be partial without a status code change). Every client follows redirects (`follow_redirects=True`) so a vendor moving an endpoint behind a 301 doesn't crash the pipeline.
 
