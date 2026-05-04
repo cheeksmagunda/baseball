@@ -230,7 +230,12 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict[str, int]:
             full_name = person.get("fullName", "")
             mlb_id = person.get("id")
             pos_info = entry.get("position", {})
-            position = pos_info.get("abbreviation", "DH")
+            position = pos_info.get("abbreviation")
+            if not position:
+                raise RuntimeError(
+                    f"MLB API roster entry for mlb_id={mlb_id} on team {team} "
+                    "is missing position.abbreviation — cannot assign position"
+                )
             status = entry.get("status", {}).get("code", "A")
 
             if not full_name or not mlb_id:
@@ -385,7 +390,7 @@ async def _ensure_probable_starters_present(db: Session, slate: Slate) -> int:
     added = 0
     for mlb_id, team, game, side in needed:
         person = by_mlb_id[mlb_id]
-        full_name = person.get("fullName") or ""
+        full_name = person.get("fullName")
         if not full_name:
             raise RuntimeError(
                 f"MLB API /people/{mlb_id} returned empty fullName for the "
@@ -710,7 +715,11 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats 
     is_pitcher_record = (
         (ps.ip is not None and ps.ip > 0) or ps.era is not None
     )
-    if not is_pitcher_record and (player.position or "").upper() in ("P", "SP", "RP"):
+    if player.position is None:
+        raise RuntimeError(
+            f"Player id={player.id} ({player.name}) has no position — data integrity error"
+        )
+    if not is_pitcher_record and player.position.upper() in ("P", "SP", "RP"):
         prior_season = settings.current_season - 1
         prior_data = await get_player_stats(mlb_id, prior_season)
         prior_people = prior_data.get("people", [])

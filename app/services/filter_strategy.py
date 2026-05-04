@@ -16,18 +16,18 @@ Internal helpers:
   _smart_slot_assignment — sort-by-EV, assign multipliers desc
   _compute_dnp_adjustment, _compute_stack_eligible_teams, _team_batter_cap
 
-EV formula (V12.3):
+EV formula (V13):
     filter_ev = env_factor × volatility_amplifier × trait_factor
               × stack_bonus × dnp_adj × 100
 
-    env_factor: floor 0.20 (V12.1), pitcher ceiling 1.40 (V12), batter 1.30
+    env_factor: floor 0.20, pitcher ceiling 1.55 (V13), batter 1.30
     volatility_amplifier: env-conditional, batters only
     trait_factor: 0.85-1.15
     stack_bonus: 1.0 / 1.20 (PATH 1 blowout-fav teams only)
-    dnp_adj: 0.70 / 0.93 / 1.0
+    dnp_adj: 0.70 / 1.0 (no unknown case — DNP filter excludes batting_order=None)
 
 Composition: builds variants 0P-5P, returns highest slot-weighted total EV.
-Slot 1 (2.0×) goes to the highest-EV PLAYER regardless of position.
+Display: pitcher(s) first by EV desc, then batters by EV desc.
 
 Stacking (is_stack_eligible_game): PATH 1 (ML≤-200 AND O/U≥9.0, favored
 side only, earns STACK_BONUS) OR PATH 2 (O/U≥10.5, both sides, no bonus).
@@ -806,10 +806,9 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
 
     Five multiplicative terms:
       1. env_factor          — PRIMARY: game conditions.  Pitchers cap at
-                               PITCHER_ENV_MODIFIER_CEILING (1.20), batters
-                               at ENV_MODIFIER_CEILING (1.30) — asymmetric
-                               because pitcher outcomes are 1-player-dependent
-                               and saturate trivially.
+                               PITCHER_ENV_MODIFIER_CEILING (1.55, V13), batters
+                               at ENV_MODIFIER_CEILING (1.30) — asymmetric:
+                               pitcher mean RS is 38% higher than batter mean RS.
       2. volatility_amplifier— Boom-bust hitter amplifier.  Env-CONDITIONAL:
                                amplifies env in good matchups, penalises in
                                bad.  Pitchers always 1.0 (no recent_form_cv).

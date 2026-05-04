@@ -327,6 +327,31 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
     return {"fetched": fetched, "failed": failed}
 
 
+def _build_team_framing_lookup(
+    db: Session, games: list[SlateGame], season: int
+) -> dict[str, float]:
+    """Return {team_abbr: framing_runs} for every team in games.
+
+    Used by score_pitcher_k_rate's catcher-framing adjustment.  Empty dict
+    when TeamSeasonStats hasn't been populated yet (first slate before
+    refresh_statcast.py has run); the scoring engine falls through to no-op.
+    """
+    from app.models.player import TeamSeasonStats as _TSS
+
+    teams = {g.home_team.upper() for g in games} | {g.away_team.upper() for g in games}
+    if not teams:
+        return {}
+    result: dict[str, float] = {}
+    for row in (
+        db.query(_TSS)
+        .filter(_TSS.team.in_(teams), _TSS.season == season)
+        .all()
+    ):
+        if row.framing_runs is not None:
+            result[row.team.upper()] = row.framing_runs
+    return result
+
+
 def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
     """Stage 3: Score all players for a slate and store results."""
     logger.info("Pipeline stage 3: scoring players for %s", game_date)
@@ -349,25 +374,7 @@ def run_score_slate(db: Session, game_date: date) -> list[PlayerScoreResult]:
         game_lookup[g.home_team] = g
         game_lookup[g.away_team] = g
 
-    # Team framing-runs lookup for the catcher-framing adjustment in
-    # score_pitcher_k_rate.  Single SQL query, keyed by team abbreviation.
-    # Empty dict when TeamSeasonStats hasn't been populated yet (first slate
-    # before refresh_statcast.py has run); the framing adjustment falls
-    # through to no-op.
-    from app.models.player import TeamSeasonStats as _TSS
-    teams_in_slate = {g.home_team.upper() for g in games} | {g.away_team.upper() for g in games}
-    team_framing_lookup: dict[str, float] = {}
-    if teams_in_slate:
-        for row in (
-            db.query(_TSS)
-            .filter(
-                _TSS.team.in_(teams_in_slate),
-                _TSS.season == game_date.year,
-            )
-            .all()
-        ):
-            if row.framing_runs is not None:
-                team_framing_lookup[row.team.upper()] = row.framing_runs
+    team_framing_lookup = _build_team_framing_lookup(db, games, game_date.year)
 
     # Ensure idempotency: remove any scores from a prior run of this slate.
     slate_player_ids = [sp.id for sp in slate_players]
@@ -495,20 +502,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
     # Classify the slate (Filter 1)
     slate_class = classify_slate(len(games), game_dicts)
 
-    # Build team framing-runs lookup for the pitcher k_rate catcher-framing adjustment.
-    # Mirrors the same block in run_score_slate so scoring is consistent between
-    # the T-65 path and this manual post-slate endpoint.
-    from app.models.player import TeamSeasonStats as _TSS
-    teams_in_slate = {g.home_team.upper() for g in games} | {g.away_team.upper() for g in games}
-    team_framing_lookup: dict[str, float] = {}
-    if teams_in_slate:
-        for row in (
-            db.query(_TSS)
-            .filter(_TSS.team.in_(teams_in_slate), _TSS.season == game_date.year)
-            .all()
-        ):
-            if row.framing_runs is not None:
-                team_framing_lookup[row.team.upper()] = row.framing_runs
+    team_framing_lookup = _build_team_framing_lookup(db, games, game_date.year)
 
     # Build candidates from slate players
     slate_players = (
