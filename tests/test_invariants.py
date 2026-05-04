@@ -233,6 +233,8 @@ class TestConstantRankStability:
         "TRAIT_MODIFIER_CEILING",
         # Context multiplier (DNP penalties were removed in strict-mode pass)
         "STACK_BONUS",
+        # V13.3 — rookie env cap
+        "ROOKIE_ENV_MODIFIER_CEILING",
     ]
 
     TAU_FLOOR = 0.78

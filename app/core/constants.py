@@ -169,6 +169,17 @@ MIN_GAMES_REPRESENTED = 2        # pipeline-level data-sufficiency guard (not a 
 ROOKIE_GAMES_THRESHOLD = 3        # batters: < this many career MLB games
 ROOKIE_PITCHER_IP_THRESHOLD = 5.0 # pitchers: < this much career MLB IP
 
+# V13.3 (May 2026): tighten the rookie-pitcher gate.  A pitcher with
+# current-season IP=0 AND prior-season IP < this threshold has too thin
+# a sample for the recent-stats fallback to be reliable.  Trevor McDonald
+# (SF, 2026-05-04) had 3 IP / 0.00 ERA / 0.33 WHIP from a single 2024
+# start — the strict pipeline trusted those numbers at face value, which
+# combined with V13's underdog-peak ML reward saturated his env_factor
+# and pushed him to top-EV pitcher.  Forcing rookie-track for thin-prior
+# pitchers makes the rookie env ceiling apply (1.10), removing the
+# "underdog spot starter" trap.
+PITCHER_FALLBACK_MIN_PRIOR_IP = 30.0
+
 
 def is_stack_eligible_game(
     moneyline: int | None,
@@ -271,6 +282,18 @@ ENV_MODIFIER_CEILING = 1.30
 # 2P+ shapes that the audit shows actually win more often.
 PITCHER_ENV_MODIFIER_CEILING = 1.55
 
+# V13.3 (May 2026): rookie-track players have NO MLB quality signal — their
+# trait_factor is fixed at 1.0 (neutral) by design, so EV is purely
+# env-driven.  Without a separate ceiling they can saturate to the full
+# pitcher (1.55) or batter (1.30) cap whenever env aligns — which is
+# common for rookies because underdog teams are exactly where debutants
+# get the ball, and V13's "underdog peak ML" reward saturates env for
+# unproven pitchers in their typical context.  Cap rookie env just above
+# neutral so unproven players cannot beat established trait-rated players
+# on env alone.  Floor unchanged at ENV_MODIFIER_FLOOR (rookies in bad
+# matchups still hit the floor).
+ROOKIE_ENV_MODIFIER_CEILING = 1.10
+
 # Trait modifier bounds — SECONDARY EV signal.
 # Range: 0.85–1.15 (1.35x swing) — season stats (K/9, ISO, barrel%, ERA, WHIP,
 # recent form) provide fine-grained differentiation within the same env tier.
@@ -299,8 +322,31 @@ PITCHER_ANCHOR_SLOT = 1              # legacy constant — Slot 1 index, used in
 # Blowout game stack bonus (4-term EV formula)
 # Applied in _compute_base_ev() when a player's team is the favored side
 # in a blowout game (moneyline <= BLOWOUT_MONEYLINE_THRESHOLD).
+#
+# V13.3 (May 2026): lowered 1.20 → 1.10 after a 40-slate manual audit of
+# slot-1 winners showed 0/40 came from a stacked-team batter — the
+# slot-1 winner is consistently a pitcher (62.5%) or an elite OF/DH
+# (27.5%) on a non-stack team.  The 20% bonus was overweighting
+# stack-eligible-team batters into top-EV without empirical support.
+# 10% still recognises positive correlation upside without dominating
+# the lineup vs non-stack elites.
 # ---------------------------------------------------------------------------
-STACK_BONUS = 1.20  # 20% EV bonus for players on blowout-game teams
+STACK_BONUS = 1.10  # 10% EV bonus for players on blowout-game teams (V13.3)
+
+# V13.3 (May 2026): position-volume multiplier for batters.  Catchers win
+# 0% of slot-1 spots in 40 historical slates (rest days, pinch-hits,
+# pulls — ~3.0 PAs/game vs 4.2 for OF).  2B/SS win 0% of slot-1 too
+# (lower OPS distributions).  Apply a small structural haircut so an
+# elite-OPS catcher cannot outscore a non-catcher with the same trait
+# in the same env.  Default 1.0 for OF / 1B / 3B / DH / P (pitchers
+# bypass this term — they have their own pitcher_ev_ceiling).
+# Reads via .get(position.upper(), 1.0) so unknown positions default to
+# no penalty rather than crashing.
+POSITION_VOLUME_MULTIPLIER = {
+    "C": 0.90,
+    "2B": 0.95,
+    "SS": 0.95,
+}
 
 # ---------------------------------------------------------------------------
 # Strict-mode (May 2026): no league-average DEFAULT_* fallbacks.  The pipeline

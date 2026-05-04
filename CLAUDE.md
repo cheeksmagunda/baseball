@@ -762,6 +762,63 @@ The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each
 
 **Stacking** is still capped at 2 batters per team AND 2 per game and only fires on overwhelmingly clear game scripts.
 
+### V13.3 Position-Volume Haircut + Rookie Env Cap + Stack Bonus Recalibration (May 4)
+
+V13.3 ships four targeted changes from a 40-slate manual audit of slot-1 winners against the live EV math, triggered by user complaints that the optimizer kept defaulting to the same Cubs catcher (Moisés Ballesteros) and a thin-sample SF spot starter (Trevor McDonald, 3 career-recent IP). No structural rewrites — composition, stacking gates, V13 ML curves, trait weights, T-65 timing all unchanged.
+
+**Audit findings (40 rank-1 slot-1 winners across 2026-03-25 → 2026-05-03):**
+
+| Position | Slot-1 wins | % | Avg HV RS | Notes |
+|---|---|---|---|---|
+| **P** | **25** | **62.5%** | 5.43 | Dominant slot-1 winner |
+| OF | 7 | 17.5% | 4.28 | Volume + slot-mult work together |
+| DH | 4 | 10.0% | 3.97 | Ohtani 7× alone |
+| 1B | 3 | 7.5% | 4.17 | |
+| 3B | 1 | 2.5% | 4.18 | |
+| **C** | **0** | **0%** | 4.47 | Catchers HV-flag at 5.4% but never anchor |
+| 2B | 0 | 0% | 4.51 | |
+| SS | 0 | 0% | 4.12 | |
+
+Catchers, 2B, SS: 0/40 slot-1 wins. Catchers get ~30% fewer PAs (rest days, pinch-hits, late pulls — 3.0 PA/game vs 4.2 for OF). 2B/SS have lower OPS distributions. The pre-V13.3 EV math treated all batter positions equally, so an elite-OPS catcher in a stack-eligible game (Ballesteros at CHC -215 / O/U 11.5) topped the EV table over OF/1B/DH and even pitchers.
+
+**Rookie diagnosis (Trevor McDonald, SF, 2026-05-04):** Career 4 G / 18 IP. 2026 zero stats; 2025 zero stats; 2024 single 3-IP start (0.00 ERA / 0.33 WHIP). The combined-IP rookie gate (`ROOKIE_PITCHER_IP_THRESHOLD = 5.0`) flagged him `is_rookie_track=True` after the prior-season fallback returned empty for 2025. Rookie-track scoring sets `trait_factor = 1.0` (neutral) by design. But pre-V13.3 the env_factor was uncapped for rookies — and SF as mild underdog (+116) put him in V13's "underdog peak" ML zone (+1.0), Oracle is pitcher-friendly, O/U was 8.0 (low total bonus) → env_factor saturated near 1.55 (the regular pitcher cap), giving rookie-track McDonald an EV of ~140+ that beat established starters. Underdog teams routinely start unproven pitchers, so V13's underdog ML reward systematically promoted rookies into the lineup — exactly the wrong outcome.
+
+**Four changes:**
+
+**1. `POSITION_VOLUME_MULTIPLIER`** (new) — `app/core/constants.py`. Position-keyed dict applied as a final EV multiplier in `_compute_base_ev`. C: 0.90, 2B: 0.95, SS: 0.95, default 1.0 for OF / 1B / 3B / DH. Pitchers bypass entirely (their own asymmetric env ceiling already handles pitcher-vs-batter EV). Catcher EV is now 10% lower than OF EV in matched env+trait. This is structural (volume math, not fitted), justified by 0% slot-1 wins for catchers/MI in the 40-slate audit.
+
+**2. `ROOKIE_ENV_MODIFIER_CEILING = 1.10`** (new) — `app/core/constants.py`. `_compute_base_ev` selects this ceiling instead of `PITCHER_ENV_MODIFIER_CEILING` (1.55) or `ENV_MODIFIER_CEILING` (1.30) when `candidate.is_rookie_track`. Rookie env_factor now caps just above neutral; an unproven player can't beat a trait-rated player on env alone. The floor stays at `ENV_MODIFIER_FLOOR` (rookies in bad matchups still hit it). `is_rookie_track` is plumbed through `PlayerScoreResult` → `FilteredCandidate` so both `candidate_resolver.py` and `pipeline.py::run_filter_strategy_from_slate` carry it.
+
+**3. `PITCHER_FALLBACK_MIN_PRIOR_IP = 30.0`** (new) — `app/core/constants.py`. Replaces `ROOKIE_PITCHER_IP_THRESHOLD = 5.0` as the rookie-track gate in `data_collection.py`. After the current+prior season fetch, any pitcher with combined IP < 30 is flagged rookie-track. The 5.0 IP threshold caught true debutants but let thin-sample spot starters (6-25 prior IP) slip through with face-value ERA/WHIP/K9. The 30 IP threshold is the "stable-sample" floor — below it, the recent-stats fallback is too noisy to trust.
+
+**4. `STACK_BONUS = 1.10`** (was 1.20) — `app/core/constants.py`. The 40-slate audit shows 0/40 slot-1 winners came from a stacked-team batter — slot-1 winners are pitchers (62.5%) or non-stack OF/DH elites (27.5%). The 20% stack bonus was overweighting stack-eligible-team batters into top-EV without empirical support. 10% still recognises positive correlation upside without dominating the lineup. Existing `tests/test_filter_strategy.py::test_blowout_stack_bonus_applied` continues to pass — it imports `STACK_BONUS` and uses the live value.
+
+**V13.3 explicitly does NOT change:**
+- Trait band 0.85-1.15 (initial Tier 1 hypothesis was wrong — widening would help Ballesteros, who already maxes at 1.15)
+- `ROOKIE_NEUTRAL_SCORE = 57.5` (unchanged — Ballesteros isn't rookie-track; the rookie cap fix targets the right population)
+- V13 ML curves (audit-driven, n=6 small-sample tail not re-litigated)
+- Composition (still V12 multi-pitcher 0P-5P chooser)
+- Stack-eligibility rules (PATH 1 + PATH 2 unchanged)
+- Anti-correlation guard, per-team caps, per-game caps
+- T-65 timing model, no-fallbacks rule, no-historical-bleed rule
+
+**Tests added** (tests/test_filter_strategy.py::TestV133PositionAndRookie):
+- Catcher EV < OF EV in matched context (precise multiplier check)
+- 2B / SS get the smaller 0.95 haircut
+- Pitchers bypass position multiplier
+- Rookie pitcher env saturates at 1.10
+- Non-rookie pitcher env still saturates at 1.55
+- Rookie pitcher loses to veteran in matched env (regression on the McDonald case)
+- Rookie batter env also capped at 1.10
+
+`ROOKIE_ENV_MODIFIER_CEILING` added to invariant perturbation targets in `tests/test_invariants.py`. 203 tests pass post-V13.3 (was 194; +9 new: 7 V133 + 2 perturbation cells).
+
+**Expected operational effect:**
+- Slot-1 leans toward pitchers more often (matching 62.5% historical reality)
+- Catchers slot 3-5 instead of slot 1; Ballesteros may still appear (legitimately .978 OPS) but at lower-multiplier slots
+- Rookie pitchers in underdog contexts no longer top-EV — established arms reclaim those slots
+- Stack-eligible games still produce correlated picks but with 10% bonus, not 20% — non-stack elites compete
+
 ### V13.0 Pipeline Audit Pass — ML Curves Inverted, Asymmetric Ceiling Widened, Wind Direction Refined, Framing Bumped (May 2)
 
 V13.0 ships five calibration changes from a fresh 38-slate / 1140-batter / 244-pitcher audit of every active signal against `is_highest_value` and `real_score` outcomes.  No structural changes (composition, stack rules, slot logic, anti-correlation, no-fallbacks all unchanged from V12.2).  This was a pipeline-strengthening pass triggered by an external data-scientist writeup; most of the writeup's claims either (a) validated V12.2, (b) contradicted our 38-slate audit (Vegas O/U for batters re-confirmed flat: 54%/51%/47%/46%/48% across the full quartile range incl. 10.5+ shootouts), or (c) relied on forbidden inputs (`card_boost`, popularity).  Five items were genuine miscalibrations:
@@ -1085,18 +1142,22 @@ section headers above for context.  None of those sections describe
   rebalanced trait weights to remove env double-counting.  Documented
   in the V12.x section at the top of this file.
 
-### Active behavior summary (V13.0 — read this, not the changelog)
+### Active behavior summary (V13.3 — read this, not the changelog)
 
 EV formula (`_compute_base_ev` in `app/services/filter_strategy.py`):
 ```
 filter_ev = env_factor × volatility_amplifier × trait_factor
-          × stack_bonus × dnp_adj × 100
+          × stack_bonus × dnp_adj × position_mult × 100
 
-env_factor:        floor 0.20, pitcher ceiling 1.55, batter ceiling 1.30  (V13)
+env_factor:        floor 0.20  (V13.3 ceilings — first match wins)
+                   rookie ceiling 1.10  (rookie-track players, V13.3)
+                   pitcher ceiling 1.55 (non-rookie pitchers, V13)
+                   batter ceiling 1.30  (non-rookie batters)
 volatility_amplifier: 1 + cv × 0.20 × (env − 0.5) × 2  (batters only)
 trait_factor:      floor 0.85, ceiling 1.15
-stack_bonus:       1.0 / 1.20 (PATH 1 blowout-fav teams only)
+stack_bonus:       1.0 / 1.10 (PATH 1 blowout-fav teams only, V13.3 — was 1.20)
 dnp_adj:           0.70 (confirmed-bad) / 0.93 (unknown) / 1.0 (known order)
+position_mult:     1.0 default; C 0.90, 2B 0.95, SS 0.95 (V13.3, batters only)
 ```
 
 Pitcher env ML curve (V13 — inverted from V12's "mild fav peak"):

@@ -63,6 +63,10 @@ class PlayerScoreResult:
     position: str
     total_score: float
     traits: list[TraitResult]
+    # V13.3: surfaced from PlayerStats.is_rookie_track so downstream EV
+    # math can apply ROOKIE_ENV_MODIFIER_CEILING without re-querying the
+    # stats row.  Set by score_player based on the resolved stats.
+    is_rookie_track: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -594,6 +598,7 @@ def score_rookie(player: Player) -> PlayerScoreResult:
         position=player.position,
         total_score=ROOKIE_NEUTRAL_SCORE,
         traits=[],
+        is_rookie_track=True,
     )
 
 
