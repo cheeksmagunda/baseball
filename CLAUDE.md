@@ -2,36 +2,12 @@
 
 ## General Engineering Principles
 
-These four principles (adapted from Karpathy's observations on common LLM coding pitfalls) apply to every change in this repo. They bias toward caution over speed — use judgment on trivial tasks.
-
 ### 1. Think Before Coding
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
-- State assumptions explicitly. If uncertain, ask.
+- State assumptions explicitly.
 - If multiple interpretations exist, present them — don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
 
-### 2. Simplicity First
-**Minimum code that solves the problem. Nothing speculative.**
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-The test: "Would a senior engineer call this overcomplicated?" If yes, simplify.
-
-### 3. Surgical Changes
-**Touch only what you must. Clean up only your own mess.**
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it — don't delete it.
-- Remove imports/variables/functions that YOUR changes orphaned. Don't remove pre-existing dead code unless asked.
-
-The test: every changed line should trace directly to the user's request.
-
-### 4. Goal-Driven Execution
+### 2. Goal-Driven Execution
 **Define success criteria. Loop until verified.**
 
 Transform tasks into verifiable goals:
@@ -184,7 +160,7 @@ Missing Vegas data corrupts the EV formula and produces suboptimal lineups. The 
 **Historical stats from CSV/DB must NEVER be used as a direct input feature, normalization anchor, or baseline weight in the live daily pipeline.**
 
 This means:
-- `total_value`, `card_boost`, `drafts`, and leaderboard flags from `historical_players.csv` are **never** EV inputs — they're retrospective outcome labels only.
+- `total_value` and leaderboard flags from `historical_players.csv` are **never** EV inputs — they're retrospective outcome labels only. (`card_boost` and `drafts` were dropped from the historical CSVs entirely; they're not relevant to pipeline calibration.)
 - Past slate real scores and total values cannot feed forward into prediction or scoring.
 - If a scoring baseline is needed, derive it from archetypal expectations (league-average defaults in `constants.py`) or conditional variables (pre-game conditions), not past performance.
 
@@ -195,7 +171,7 @@ This means:
 
 **Why?** Using historical RS or leaderboard outcomes as predictive inputs creates data leakage — you'd be learning from outcomes that weren't knowable before the draft. The condition matrix in earlier versions (`RS_CONDITION_MATRIX`) was removed in V9.0 for exactly this reason.
 
-**ABSOLUTE RULE: Do not create scripts that analyse historical outcome data.** Scripts that read `real_score`, `total_value`, `is_highest_value`, `is_most_popular`, `is_most_drafted_3x`, or `drafts` for any calibration, training, or threshold-recommendation purpose are forbidden — even if they only write to stdout. They create a feedback loop risk: analysis outputs inform constant edits, which moves the scoring model toward historical outcomes, which is exactly the data leakage the architecture is designed to prevent. Calibration is done manually by Claude reading the files directly.
+**Calibration scripts are permitted.** Scripts in `/scripts/` may read historical outcome columns (`real_score`, `total_value`, `is_highest_value`, `is_most_popular`, `is_most_drafted_3x`, `drafts`) for calibration, threshold tuning, and analysis purposes. The hard rule is the runtime separation: `app/` (the live pipeline) must never read these columns. The CI gate `scripts/audit_live_isolation.py` enforces this isolation — banned outcome fields are scanned in `app/` only, and `scripts/` is exempt. Calibration outputs inform constant edits in `app/core/constants.py` and `app/core/weights.py` by hand.
 
 ### What historical data IS for: calibration
 
@@ -210,7 +186,7 @@ The historical data captures outcomes of those same conditions:
 - `historical_slate_results.json` (game objects, including env fields once populated) — what the game context actually looked like. Ground truth on game conditions.
 - `historical_players.csv` — real_score and HV/MP/3X flags. Outcome labels to measure prediction quality against.
 
-The calibration loop is **manual**: Claude reads `historical_players.csv` and `historical_slate_results.json` directly, joins on (date, team), reasons about whether the live pipeline's signals would have rated each condition favorably and whether players in those conditions actually scored well, and edits `app/core/constants.py` directly when a threshold is clearly miscalibrated.  No script ever reads outcome columns (`real_score`, HV flags, `drafts`, `total_value`).
+The calibration loop runs two ways: (a) manual — Claude reads the CSVs directly and edits `app/core/constants.py` / `app/core/weights.py` when a threshold is clearly miscalibrated; (b) scripted — calibration scripts in `/scripts/` may read outcome columns (`real_score`, HV flags, `drafts`, `total_value`) and produce threshold-tuning analysis. Either way the edits to constants are reviewed by hand before commit. The hard rule remains: `app/` (the live pipeline) never reads outcome columns.
 
 ## Architecture Overview
 
@@ -342,22 +318,24 @@ Current coverage (as of 2026-04-21): **28 slates, 2026-03-25 → 2026-04-21**. A
 
 | File | Role | Current size | Contents |
 |---|---|---|---|
-| `historical_players.csv` | Outcome labels | 1013 rows / 28 dates | Master player ledger: real_score, card_boost, drafts, leaderboard flags (HV/MP/3X). **Null `real_score` / `total_value` = DNP/scratch.** Avg ~36 rows/date (range 22–56). |
+| `historical_players.csv` | Outcome labels | 1013 rows / 28 dates | Master player ledger: real_score, total_value, leaderboard flags (HV/MP/3X). **Null `real_score` / `total_value` = DNP/scratch.** Avg ~36 rows/date (range 22–56). `card_boost` and `drafts` were dropped — not relevant to pipeline calibration. |
 | `historical_winning_drafts.csv` | Outcome labels | 985 rows / 28 dates | Top-ranked lineups per date (5 rows per lineup). 3–12 ranks captured per date; target is 20. |
 | `historical_slate_results.json` | Calibration ground truth | 28 entries | Per-date game context: game results and scores. Game objects can be extended with env condition fields (Vegas lines, ERA/K9/WHIP/hand, team OPS/K%, bullpen ERA, series context, weather) when needed for manual calibration analysis. Cross-reference with historical_players.csv by (date, team). |
 | `hv_player_game_stats.csv` | Calibration ground truth | 446 rows / 28 dates | Actual box scores for every Highest-Value player appearance. Batting (ab, r, h, hr, rbi, bb, so) and pitching (ip, er, k_pitching, decision) coexist — blanks = not applicable. |
 
 ## Env Scoring Calibration
 
-The env scoring thresholds in `app/core/constants.py` (BATTER_ENV_VEGAS_FLOOR, ERA floors/ceilings, etc.) are set by reasoning, not automation.
+The env scoring thresholds in `app/core/constants.py` (BATTER_ENV_VEGAS_FLOOR, ERA floors/ceilings, etc.) are tuned via two paths: manual reasoning and calibration scripts.
 
-**ABSOLUTE RULE: No automated calibration or training scripts.** Do not create scripts that read historical outcome data (real_score, HV flags, drafts, total_value) and produce threshold recommendations, condition matrices, or any analysis intended to inform scoring parameters. This is a one-way door to data leakage. Any such script that is accidentally run could start a feedback loop where post-game outcomes corrupt pre-game scoring logic.
+**Calibration scripts are permitted in `/scripts/`.** Scripts may read historical outcome columns (`real_score`, `total_value`, `is_highest_value`, `is_most_popular`, `is_most_drafted_3x`, `drafts`) and produce threshold recommendations, condition analyses, bucket audits, and any other quantitative output intended to inform scoring parameters. The output is reviewed by hand and edits to `app/core/constants.py` / `app/core/weights.py` are made deliberately — calibration scripts do not auto-apply changes. The hard separation is: `app/` (the live pipeline) never reads outcome columns. Calibration analysis lives in `scripts/`.
 
-**How calibration is done:** Manually, by Claude reading `historical_players.csv` and `historical_slate_results.json` directly and reasoning about whether conditions correlate with outcomes. The question is: *when the live pipeline would have rated a condition favorably, did players in those conditions actually score well?* The answer is evaluated by inspection, not by script. If a threshold is clearly miscalibrated (e.g., O/U > 9.5 is favored but RS distribution shows no difference vs mid-range), edit `app/core/constants.py` directly.
+**How calibration is done:** Either by Claude reading `historical_players.csv` and `historical_slate_results.json` directly and reasoning about correlations, or by writing a calibration script in `/scripts/` that joins outcome columns against the live signals and reports per-bucket HV-rates / mean RS. The question is the same: *when the live pipeline would have rated a condition favorably, did players in those conditions actually score well?* If a threshold is clearly miscalibrated, edit `app/core/constants.py` directly.
 
-**The only permitted script in `/scripts/` that touches `/data/`:** `backfill_slate_results_and_hv_stats.py` — fetches from the MLB Stats API to fill missing box scores and game results. It reads and writes `/data/` files only; it does not touch the live pipeline or DB, and it does not use outcome data as inputs to any scoring logic.
+**Other permitted scripts in `/scripts/`:**
+- `backfill_slate_results_and_hv_stats.py` — fetches from the MLB Stats API to fill missing box scores and game results in `/data/`.
+- Calibration / audit / threshold-recommendation scripts — read `/data/` outcome columns, write analysis to stdout or files in `/tmp/` or `/scripts/output/`. Never touch `app/`.
 
-**CI gate:** `scripts/audit_live_isolation.py` — static grep-based scan of `app/` for banned outcome fields (`real_score`, `total_value`, `is_highest_value`, `is_most_popular`, `is_most_drafted_3x`) in runtime code paths. Run before every deploy.
+**CI gate:** `scripts/audit_live_isolation.py` — static grep-based scan of `app/` for banned outcome fields (`real_score`, `total_value`, `is_highest_value`, `is_most_popular`, `is_most_drafted_3x`) in runtime code paths. The scan covers `app/` only; `scripts/` is exempt by design. Run before every deploy.
 
 ## Ingesting New Slate Data
 
@@ -366,14 +344,13 @@ New slates are ingested **manually by appending rows** to the four files above �
 ### Per-slate ingest checklist
 
 - [ ] Append player rows to `historical_players.csv`
-  - Columns: `date, player_name, team, position, real_score, card_boost, drafts, total_value, is_highest_value, is_most_popular, is_most_drafted_3x`
+  - Columns: `date, player_name, team, position, real_score, total_value, is_highest_value, is_most_popular, is_most_drafted_3x`
   - One row per player per slate day. Most Popular + Most Drafted 3x leaderboards are mandatory; Highest Value is optional (set `is_highest_value=1` only if captured).
   - A player in multiple leaderboards = one row with multiple flags set.
-  - `total_value = real_score × (2 + card_boost)` — verify manually for each row.
-  - `card_boost` blank if no boost card; `"—"` in the UI = 0.0.
-  - `drafts`: total draft count shown on the platform (e.g., "1.5k" → 1500).
+  - `total_value` is the platform-displayed boosted value (`real_score × (2 + card_boost)` on the platform). `card_boost` itself is not stored — only the post-boost `total_value` is persisted.
+  - `drafts` (raw draft count) is no longer captured. The boolean `is_most_popular` and `is_most_drafted_3x` flags carry the leaderboard signal needed for calibration.
 - [ ] Append winning-lineup rows to `historical_winning_drafts.csv`
-  - Columns: `date, winner_rank, slot_index, player_name, team, position, real_score, slot_mult, card_boost`
+  - Columns: `date, winner_rank, slot_index, player_name, team, position, real_score, slot_mult`
   - 5 rows per lineup (one per slot 1–5). Target top-20 ranks → 100 rows/day, but capture what is available.
   - `slot_mult`: 2.0 (slot 1), 1.8, 1.6, 1.4, 1.2 (slot 5).
 - [ ] Append slate envelope to `historical_slate_results.json`
@@ -381,17 +358,13 @@ New slates are ingested **manually by appending rows** to the four files above �
   - Required fields: `date`, `game_count`, `games` (may be `[]`), `season_stage` ("regular-season"), `source` ("screenshot_ingest"), `saved_at` (ISO timestamp), `notes` (free text capturing ghost wins, boost traps, 3x busts, crowd overreactions — the V2 strategy validation raw material).
   - Per-game shape when scores are captured: `{"home": "NYY", "away": "BOS", "home_score": 5, "away_score": 2, "winner": "NYY", "loser": "BOS", "winner_score": 5, "loser_score": 2}`.
 - [ ] Append HV box-score rows to `hv_player_game_stats.csv`
-  - Columns: `date, player_name, team_actual, position, real_score, card_boost, game_result, ab, r, h, hr, rbi, bb, so, ip, er, k_pitching, decision, notes`
+  - Columns: `date, player_name, team_actual, position, real_score, game_result, ab, r, h, hr, rbi, bb, so, ip, er, k_pitching, decision, notes`
   - One row per Highest-Value-leaderboard player appearance. Batters fill the `ab…so` columns; pitchers fill `ip/er/k_pitching/decision`. Leave non-applicable columns blank.
   - `game_result`: free-form ("SF 0 NYY 7"). `notes`: short summary ("2-for-3 | vs SF (away)").
 
 ### Platform → CSV column mapping (historical_players.csv)
 
-| Platform table | "Value" (1st) | "Multiplier" | "Drafts" | "Value" (2nd) |
-|---|---|---|---|---|
-| Most Popular | `real_score` | `card_boost` | `drafts` | — |
-| Highest Value | `real_score` | `card_boost` | `drafts` (HV leaderboard count) | `total_value` (verify vs formula) |
-| Most Drafted 3x | `real_score` | `card_boost` | `drafts` | — |
+The platform UI shows `Value`, `Multiplier`, `Drafts`, and a second `Value` (post-boost) column. We persist only `real_score` (the first Value) and `total_value` (the post-boost Value, when available). The `Multiplier` (card_boost) and `Drafts` columns are not stored — they don't inform pipeline calibration.
 
 ### Reloading the database after ingest
 
@@ -405,15 +378,15 @@ Old historical-into-DB seed paths (`app/seed.py`, the `draft_lineups` / `draft_s
 
 ```
 # historical_players.csv
-2026-04-09,Aaron Judge,NYY,OF,-0.7,2.3,3900,-3.01,0,1,0
-2026-04-09,Mick Abel,BAL,P,4.6,3.0,1700,23.0,0,1,1
+2026-04-09,Aaron Judge,NYY,OF,-0.7,-3.01,0,1,0
+2026-04-09,Mick Abel,BAL,P,4.6,23.0,0,1,1
 
 # historical_winning_drafts.csv
-2026-04-09,1,1,Mick Abel,BAL,P,4.6,2.0,3.0
-2026-04-09,1,2,Seth Lugo,KC,P,4.1,1.8,0.0
+2026-04-09,1,1,Mick Abel,BAL,P,4.6,2.0
+2026-04-09,1,2,Seth Lugo,KC,P,4.1,1.8
 
 # hv_player_game_stats.csv
-2026-03-25,Austin Wells,NYY,C,1.2,,SF 0 NYY 7,3.0,1.0,2.0,0.0,0.0,1.0,0.0,,,,,2-for-3 | vs SF (away)
+2026-03-25,Austin Wells,NYY,C,1.2,SF 0 NYY 7,3.0,1.0,2.0,0.0,0.0,1.0,0.0,,,,,2-for-3 | vs SF (away)
 ```
 
 ---
@@ -430,28 +403,24 @@ This section documents best practices for accurate, repeatable historical data i
 1. Extract all players from three leaderboards: Most Popular (MP), Highest Value (HV), Most Drafted 3x (3X)
 2. Build a dict keyed by `(player_name_normalized, team_abbreviation)`
 3. For each unique player, merge all occurrences:
-   - Use the best-quality data source (HV > MP > 3X for real_score, card_boost)
-   - Take the maximum `drafts` count from any source
+   - Use the best-quality data source (HV > MP > 3X for real_score and total_value)
    - Set flags: `is_highest_value=1` if in HV list, `is_most_popular=1` if in MP, `is_most_drafted_3x=1` if in 3X
 4. Output one row per unique (name, team) pair with combined flags
 
 **Python example:**
 ```python
-players = {}  # (name, team) -> {rs, boost, drafts, is_hv, is_mp, is_3x}
+players = {}  # (name, team) -> {rs, total_value, is_hv, is_mp, is_3x}
 for source, source_list in [("HV", hv_players), ("MP", mp_players), ("3X", _3x_players)]:
     for p in source_list:
         key = (p["name"], p["team"])
         if key not in players:
             players[key] = {**p, "is_hv": 0, "is_mp": 0, "is_3x": 0}
-        else:
-            # Merge: keep best RS/boost, max drafts
-            if source == "HV":
-                players[key]["is_hv"] = 1
-            elif source == "MP":
-                players[key]["is_mp"] = 1
-            elif source == "3X":
-                players[key]["is_3x"] = 1
-            players[key]["drafts"] = max(players[key]["drafts"], p["drafts"])
+        if source == "HV":
+            players[key]["is_hv"] = 1
+        elif source == "MP":
+            players[key]["is_mp"] = 1
+        elif source == "3X":
+            players[key]["is_3x"] = 1
 ```
 
 **Verification:**
@@ -494,9 +463,9 @@ batters.sort(key=lambda p: p["rs"], reverse=True)
 
 slot_mults = [2.0, 1.8, 1.6, 1.4, 1.2]
 output_rows = []
-output_rows.append((pitcher["name"], pitcher["team"], "P", 1, pitcher["rs"], pitcher["boost"], slot_mults[0]))
+output_rows.append((pitcher["name"], pitcher["team"], "P", 1, pitcher["rs"], slot_mults[0]))
 for slot, batter in enumerate(batters, start=2):
-    output_rows.append((batter["name"], batter["team"], "OF", slot, batter["rs"], batter["boost"], slot_mults[slot - 1]))
+    output_rows.append((batter["name"], batter["team"], "OF", slot, batter["rs"], slot_mults[slot - 1]))
 ```
 
 ### 4. Game Result Inference (HV Game Stats)
@@ -522,9 +491,7 @@ Before appending rows to CSV files, verify:
 - [ ] **Player names:** All normalized (accent removal: Á→A, é→e, ó→o)
 - [ ] **Teams:** All 3-letter MLB abbreviations (BAL, BOS, LAD, NYY, etc.)
 - [ ] **Real scores:** Extracted accurately (negative values allowed for poor performance)
-- [ ] **Card boosts:** Numeric values or blank (null → no boost; "—" → 0.0; "2.3x" → 2.3)
-- [ ] **Draft counts:** Correctly converted ("1.5k" → 1500, not 150 or 15000)
-- [ ] **Formulas:** `total_value = real_score × (2 + card_boost)` verified for each row
+- [ ] **Total value:** Platform-displayed post-boost value, blank if not captured
 - [ ] **Leaderboard lineups:** Exactly 5 players per lineup, pitcher in slot 1 (or documented alternative)
 - [ ] **Game results:** 14+ games, all teams valid, scores non-negative
 - [ ] **Flags:** Assigned correctly after deduplication (one row per player, multiple flags possible)
@@ -555,7 +522,6 @@ python scripts/validate_ingest.py --date 2026-04-17
 This script checks:
 - All three CSV files have the new date in lockstep (count match)
 - No duplicate (date, player_name, team) in historical_players.csv
-- All `total_value` formulas are correct (RS × (2 + boost))
 - All `slot_mult` values are in {2.0, 1.8, 1.6, 1.4, 1.2}
 - Pitcher count in historical_winning_drafts.csv = 1 per lineup (4 per date)
 - Flag counts are consistent (HV + MP + 3X ≤ total unique players)
@@ -564,7 +530,7 @@ This script checks:
 **Exit codes:**
 - 0: All checks passed, safe to reseed
 - 1: Warnings (e.g., unusual values) — review before proceeding
-- 2: Errors (e.g., duplicates, formula failures) — fix and rerun
+- 2: Errors (e.g., duplicates, structural issues) — fix and rerun
 
 ### 8. Estimated Row Counts Per Slate
 
@@ -590,9 +556,9 @@ If captured lineups < 4 or unique players < 20, flag the ingest as incomplete an
 
 **Step 2 — Build historical_players.csv rows:**
 ```
-2026-04-17,Tyler Glasnow,LAD,P,6.4,0.0,2100,12.8,0,1,0
-2026-04-17,Ranger Suarez,PHI,P,7.7,0.4,54,18.48,1,0,0
-2026-04-17,Max Muncy,LAD,OF,5.6,3.0,1,28.0,1,0,0
+2026-04-17,Tyler Glasnow,LAD,P,6.4,12.8,0,1,0
+2026-04-17,Ranger Suarez,PHI,P,7.7,18.48,1,0,0
+2026-04-17,Max Muncy,LAD,OF,5.6,28.0,1,0,0
 ```
 
 **Step 3 — Build historical_winning_drafts.csv rows:**

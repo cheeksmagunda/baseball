@@ -12,7 +12,7 @@ import io
 CSV_PATH = "/home/user/baseball/data/hv_player_game_stats.csv"
 
 COLS = [
-    "date", "player_name", "team_actual", "position", "real_score", "card_boost",
+    "date", "player_name", "team_actual", "position", "real_score",
     "game_result", "ab", "r", "h", "hr", "rbi", "bb", "so",
     "ip", "er", "k_pitching", "decision", "notes"
 ]

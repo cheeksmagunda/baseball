@@ -303,37 +303,6 @@ def _team_key_normalize(key: str) -> str:
     return key
 
 
-def _extract_display_drafts(p: dict, fallback: int = 0) -> int:
-    """
-    Parse the 'Drafts' value from p['displayStats'] (the platform-displayed count).
-    Handles the 'k' suffix on big counts (e.g. '2.9k' -> 2900).
-
-    For HV section players this is the leaderboard count (drafts where this
-    player WAS the HV); for MP/3X it's total drafts. Manual ingest captures
-    these displayed values, not the raw `count` field (which for HV is the
-    player's total draft appearances — a different metric).
-    """
-    for ds in p.get("displayStats", []):
-        if ds.get("label") == "Drafts":
-            v = ds.get("value")
-            if isinstance(v, str):
-                s = v.lower().strip()
-                if s.endswith("k"):
-                    try:
-                        return int(round(float(s[:-1]) * 1000))
-                    except ValueError:
-                        return fallback
-                try:
-                    return int(s)
-                except ValueError:
-                    return fallback
-            try:
-                return int(v)
-            except (TypeError, ValueError):
-                return fallback
-    return fallback
-
-
 def _away_home_result(g: dict) -> str:
     """Format game_result as '{away} {away_score} {home} {home_score}',
     matching the manual ingest convention (e.g. 'KC 0 NYY 7' — away team
@@ -445,12 +414,13 @@ def parse_players(stats_payload: dict, player_info: dict[int, dict],
                   target_date: str) -> list[dict]:
     """
     historical_players.csv columns:
-      date, player_name, team, position, real_score, card_boost, drafts,
-      total_value, is_highest_value, is_most_popular, is_most_drafted_3x
+      date, player_name, team, position, real_score, total_value,
+      is_highest_value, is_most_popular, is_most_drafted_3x
 
     Dedup by (player_name, team), merging flags from HV/MP/3X sections.
     real_score is rounded to 1 dp to match the platform display + manual ingest;
-    total_value is recomputed from the rounded RS so the formula reproduces.
+    total_value is computed from real_score and the per-row card_boost (boost
+    itself is not persisted — only the post-boost value).
     """
     by_key: dict[tuple[str, str], dict] = {}
 
@@ -474,7 +444,6 @@ def parse_players(stats_payload: dict, player_info: dict[int, dict],
 
             real_score = _round_dp(float(p["value"]), 1)
             boost = float(p["multiplierBonus"])
-            drafts = _extract_display_drafts(p)
             total_value = _round_dp(real_score * (BASE_SLOT_MULT + boost), 2)
             position = _position_for(pl["id"], player_info)
 
@@ -485,19 +454,13 @@ def parse_players(stats_payload: dict, player_info: dict[int, dict],
                     "team": team,
                     "position": position,
                     "real_score": real_score,
-                    "card_boost": boost,
-                    "drafts": drafts,
                     "total_value": total_value,
                     "is_highest_value": 0,
                     "is_most_popular": 0,
                     "is_most_drafted_3x": 0,
                 }
             else:
-                # Same player in multiple sections — keep the largest drafts
-                # number (MP/3X generally show the bigger total-drafts count;
-                # HV-only shows the smaller leaderboard count).
                 row = by_key[key]
-                row["drafts"] = max(row["drafts"], drafts)
                 if abs(row["real_score"] - real_score) > 0.05:
                     log.warning(f"    {name} ({team}): real_score drift "
                                 f"{row['real_score']} vs {real_score}")
@@ -512,7 +475,7 @@ def parse_winning_drafts(entries: list[dict], player_info: dict[int, dict],
     """
     historical_winning_drafts.csv columns:
       date, winner_rank, slot_index, player_name, team, position,
-      real_score, slot_mult, card_boost
+      real_score, slot_mult
     """
     rows = []
     missing_teams: set[int] = set()
@@ -540,7 +503,6 @@ def parse_winning_drafts(entries: list[dict], player_info: dict[int, dict],
                 "position": _position_for(pid, player_info),
                 "real_score": _round_dp(float(player["value"]), 1),
                 "slot_mult": slot_mult,
-                "card_boost": _round_dp(float(player.get("multiplierBonus", 0)), 1),
             })
     if missing_teams:
         log.warning(f"  no team_key for teamIds: {sorted(missing_teams)}")
@@ -590,8 +552,8 @@ def parse_hv_stats_blank(stats_payload: dict, player_info: dict[int, dict],
                          target_date: str, games_envelope: dict) -> list[dict]:
     """
     hv_player_game_stats.csv columns:
-      date, player_name, team_actual, position, real_score, card_boost,
-      game_result, ab, r, h, hr, rbi, bb, so, ip, er, k_pitching, decision, notes
+      date, player_name, team_actual, position, real_score, game_result,
+      ab, r, h, hr, rbi, bb, so, ip, er, k_pitching, decision, notes
 
     Populates identifying fields + game_result (player-team-first format,
     matching manual ingest convention) and leaves per-player batting/pitching
@@ -619,7 +581,6 @@ def parse_hv_stats_blank(stats_payload: dict, player_info: dict[int, dict],
                 "team_actual": team,
                 "position": _position_for(pl["id"], player_info),
                 "real_score": _round_dp(float(p["value"]), 1),
-                "card_boost": float(p["multiplierBonus"]),
                 "game_result": _away_home_result(team_to_game.get(team)),
                 "ab": "", "r": "", "h": "", "hr": "", "rbi": "", "bb": "", "so": "",
                 "ip": "", "er": "", "k_pitching": "", "decision": "",

@@ -26,7 +26,6 @@ SLATE_RESULTS = DATA / "historical_slate_results.json"
 HV_STATS = DATA / "hv_player_game_stats.csv"
 
 VALID_SLOT_MULTS = {2.0, 1.8, 1.6, 1.4, 1.2}
-BASE_MULTIPLIER = 2.0
 
 errors: list[str] = []
 warnings: list[str] = []
@@ -73,25 +72,7 @@ def check_players(target_date: str) -> list[dict]:
             err(f"Duplicate (player_name, team) in historical_players.csv: {key}")
         seen_keys.add(key)
 
-        # total_value formula check
         rs_raw = row.get("real_score", "").strip()
-        boost_raw = row.get("card_boost", "").strip()
-        tv_raw = row.get("total_value", "").strip()
-
-        if rs_raw and boost_raw and tv_raw:
-            try:
-                rs = float(rs_raw)
-                boost = float(boost_raw) if boost_raw not in ("", "—") else 0.0
-                tv = float(tv_raw)
-                expected = rs * (BASE_MULTIPLIER + boost)
-                if abs(expected - tv) > 0.02:
-                    err(
-                        f"{row['player_name']} ({row['team']}): total_value mismatch "
-                        f"— got {tv}, expected {expected:.2f} "
-                        f"(rs={rs}, boost={boost})"
-                    )
-            except ValueError:
-                warn(f"{row['player_name']}: non-numeric rs/boost/tv — skipping formula check")
 
         # real_score range check
         if rs_raw:

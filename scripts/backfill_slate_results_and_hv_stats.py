@@ -40,7 +40,7 @@ HISTORICAL_PLAYERS = DATA_DIR / "historical_players.csv"
 
 HV_FIELDNAMES = [
     "date", "player_name", "team_actual", "position",
-    "real_score", "card_boost", "game_result",
+    "real_score", "game_result",
     "ab", "r", "h", "hr", "rbi", "bb", "so",
     "ip", "er", "k_pitching", "decision", "notes",
 ]
@@ -134,7 +134,6 @@ def load_hv_leaderboard_players() -> list[dict]:
                     "team": row["team"],
                     "position": row["position"],
                     "real_score": row["real_score"],
-                    "card_boost": row["card_boost"],
                 })
     return out
 
@@ -222,7 +221,6 @@ def _build_hv_row(hv: dict, game: dict, box_player: dict) -> dict | None:
         "team_actual": hv["team"],
         "position": hv["position"],
         "real_score": hv["real_score"],
-        "card_boost": hv["card_boost"],
         "game_result": _game_result_str(game),
     })
 
