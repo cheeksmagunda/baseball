@@ -52,6 +52,7 @@ def _make_candidate(
     is_in_blowout_game: bool = False,
     is_rookie_track: bool = False,
     traits: list | None = None,
+    predicted_ownership_bucket: str | None = None,
 ) -> FilteredCandidate:
     return FilteredCandidate(
         player_name=name,
@@ -66,6 +67,7 @@ def _make_candidate(
         batting_order=batting_order if not is_pitcher else None,
         is_in_blowout_game=is_in_blowout_game,
         is_rookie_track=is_rookie_track,
+        predicted_ownership_bucket=predicted_ownership_bucket,
     )
 
 
@@ -382,6 +384,16 @@ class TestBatterEnvScore:
         with pytest.raises(RuntimeError, match="missing required live signals"):
             compute_batter_env_score()
 
+    def test_strict_raises_on_missing_weather(self):
+        """Strict-mode hardened (May 5): weather inputs are required.
+        Open-Meteo serves every park; a None wind/temp means a vendor
+        outage or app misconfiguration, not a legitimate missing-data event."""
+        base = _baseline_batter_env_kwargs()
+        for weather_field in ("wind_speed_mph", "wind_direction", "temperature_f"):
+            kwargs = {**base, weather_field: None}
+            with pytest.raises(RuntimeError, match=weather_field):
+                compute_batter_env_score(**kwargs)
+
     def test_dead_signals_no_longer_score(self):
         """V12 deletes vegas_total, opp_bullpen_era, opp_starter_k_per_9,
         series_*, team_l10_wins, opp_team_rest_days from the env score.
@@ -597,6 +609,84 @@ class TestV133PositionAndRookie:
         ev = _compute_base_ev(rookie_b)
         # Batter doesn't have stack/dnp/volatility extras, so cap-driven max ≤ 1.10
         assert ev <= ROOKIE_ENV_MODIFIER_CEILING * 100.0 + 1e-6
+
+
+# ===================================================================
+# 7c. Leverage / Contrarian Edge (V14)
+# ===================================================================
+# These tests pin the contrarian behavior into the suite so future
+# refactors cannot silently reverse it.  See STRATEGY_AUDIT_2026-05.md:
+# 92.5% of historical winning lineups contained at least one HV player
+# not on the Most Popular leaderboard.
+
+class TestLeverageFactor:
+    def test_sleeper_outranks_consensus_at_identical_performance(self):
+        """Two candidates with identical env+trait scores should rank with
+        the predicted-sleeper above the predicted-consensus pick.  This is
+        the central contrarian invariant."""
+        consensus = _make_candidate(
+            name="Consensus", team="NYY",
+            total_score=70.0, env_score=0.7,
+            predicted_ownership_bucket="top_decile",
+        )
+        sleeper = _make_candidate(
+            name="Sleeper", team="KC",
+            total_score=70.0, env_score=0.7,
+            predicted_ownership_bucket="bottom_decile",
+        )
+        ev_consensus = _compute_base_ev(consensus)
+        ev_sleeper = _compute_base_ev(sleeper)
+        assert ev_sleeper > ev_consensus, (
+            f"Sleeper EV ({ev_sleeper:.2f}) should exceed consensus EV "
+            f"({ev_consensus:.2f}) at identical env+trait — contrarian invariant"
+        )
+
+    def test_leverage_band_matches_constants(self):
+        """Range checks: top_decile = 0.85x, bottom_decile = 1.20x, mid = 1.0x."""
+        from app.core.constants import LEVERAGE_FACTORS
+
+        baseline = _make_candidate(predicted_ownership_bucket="mid")
+        top = _make_candidate(predicted_ownership_bucket="top_decile")
+        bot = _make_candidate(predicted_ownership_bucket="bottom_decile")
+
+        ev_base = _compute_base_ev(baseline)
+        ev_top = _compute_base_ev(top)
+        ev_bot = _compute_base_ev(bot)
+
+        assert ev_top == pytest.approx(ev_base * LEVERAGE_FACTORS["top_decile"], rel=1e-3)
+        assert ev_bot == pytest.approx(ev_base * LEVERAGE_FACTORS["bottom_decile"], rel=1e-3)
+
+    def test_none_bucket_is_neutral(self):
+        """A missing popularity prediction must NOT corrupt EV — falls back
+        to neutral 1.0 multiplier (only place a default is acceptable)."""
+        none_pred = _make_candidate(predicted_ownership_bucket=None)
+        mid_pred = _make_candidate(predicted_ownership_bucket="mid")
+        ev_none = _compute_base_ev(none_pred)
+        ev_mid = _compute_base_ev(mid_pred)
+        assert ev_none == pytest.approx(ev_mid, rel=1e-6)
+
+    def test_leverage_cannot_rescue_weak_candidate(self):
+        """Multiplicative structure ensures a weak performance projection
+        is not elevated to the top just because the player is a sleeper.
+        A high-env consensus pick must still rank above a low-env sleeper."""
+        weak_sleeper = _make_candidate(
+            name="WeakSleeper", total_score=20.0, env_score=0.2,
+            predicted_ownership_bucket="bottom_decile",
+        )
+        strong_consensus = _make_candidate(
+            name="StrongConsensus", total_score=85.0, env_score=0.85,
+            predicted_ownership_bucket="top_decile",
+        )
+        assert _compute_base_ev(strong_consensus) > _compute_base_ev(weak_sleeper)
+
+    def test_leverage_factor_recorded_on_candidate(self):
+        """Diagnostic: the leverage_factor used in EV computation is stored
+        on the candidate after _compute_base_ev returns, so the response
+        payload can surface it for the user."""
+        c = _make_candidate(predicted_ownership_bucket="bottom_decile")
+        _compute_base_ev(c)
+        assert c.leverage_factor == 1.20
+
 
 # ===================================================================
 # 8. Composition Enforcement

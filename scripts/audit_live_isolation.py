@@ -50,8 +50,16 @@ RUNTIME_DIRS = [
 # Known-exempt files within the runtime scopes.
 #   - routers/slates.py is a CRUD/admin router: GET returns stored slate data
 #     for display, PUT ingests post-game results.  Neither is on the T-65 path.
+#   - core/popularity.py reads the prior-slate `is_most_popular` flag from
+#     historical_players.csv strictly before the current date to compute a
+#     rolling 14-day fame index.  Per STRATEGY_AUDIT_2026-05.md this is
+#     analogous to using prior-season ERA — a backward-looking aggregate
+#     of pre-game observables, not leakage of the current slate's outcome.
+#     The module never reads real_score, total_value, is_highest_value,
+#     is_most_drafted_3x, drafts, or card_boost.
 EXEMPT_FILES = {
     REPO_ROOT / "app" / "routers" / "slates.py",
+    REPO_ROOT / "app" / "core" / "popularity.py",
 }
 
 # `from scripts.X import …` is banned in app/ except for a hand-checked
@@ -120,6 +128,13 @@ ALLOWED_CONTEXT_HINTS = (
     "display-only",
     "DISPLAY-ONLY",
     "not as an RS",
+    # V14: app.core.popularity is the predicted-ownership-bucket module
+    # (see STRATEGY_AUDIT_2026-05.md).  Its imports legitimately contain
+    # the substring ".popularity"; the historical V11.0 ban applied to
+    # the deleted popularity-scraping module + the .popularity attribute
+    # on FilteredCandidate (which the dataclass-signature guard in
+    # tests/test_invariants.py still rejects).
+    "app.core.popularity",
 )
 
 

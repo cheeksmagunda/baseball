@@ -88,6 +88,8 @@ from app.core.constants import (
     # V13.3 — rookie env cap + position-volume haircut
     ROOKIE_ENV_MODIFIER_CEILING,
     POSITION_VOLUME_MULTIPLIER,
+    # V14 — leverage / contrarian-edge scoring
+    LEVERAGE_FACTORS,
 )
 from app.core.utils import BASE_MULTIPLIER, graduated_scale
 
@@ -611,16 +613,24 @@ def compute_batter_env_score(
     by `_compute_dnp_adjustment` to distinguish "lineup not yet published"
     from "confirmed not starting".
     """
-    # Strict-mode precondition (May 2026): every live batter env signal must
-    # be present.  RotoWire DNP filter ensures batting_order; Vegas/MLB/weather
-    # enrichment provides the rest.  A None here means upstream filter or
-    # enrichment broke.  unknown_count is preserved at 0 for back-compat.
+    # Strict-mode precondition (May 2026, hardened May 5): every live batter
+    # env signal must be present.  RotoWire DNP filter ensures batting_order;
+    # Vegas / MLB / weather enrichment provides the rest.  A None here means
+    # upstream filter or enrichment broke.  Weather is included because the
+    # CLAUDE.md "Weather, Vegas, and team stats are NOT exceptions to strict
+    # mode" rule applies — Open-Meteo serves every park on every slate; a
+    # missing wind/temp is a vendor outage or app misconfiguration, not a
+    # legitimate missing-data event.  unknown_count is preserved at 0 for
+    # back-compat.
     _required = {
         "opp_pitcher_era": opp_pitcher_era,
         "opp_starter_whip": opp_starter_whip,
         "park_team": park_team,
         "team_moneyline": team_moneyline,
         "batting_order": batting_order,
+        "wind_speed_mph": wind_speed_mph,
+        "wind_direction": wind_direction,
+        "temperature_f": temperature_f,
     }
     _missing = [k for k, v in _required.items() if v is None]
     if _missing:
@@ -773,17 +783,24 @@ class FilteredCandidate:
     """A player card that has passed through the resolver into the optimizer.
 
     ========================================================================
-    STRUCTURAL ISOLATION: card_boost, drafts, and popularity are NEVER
-    present on this dataclass.  Trying to construct a FilteredCandidate
-    with any of those kwargs raises TypeError — enforced by
-    tests/test_invariants.py and scripts/audit_live_isolation.py.  None
-    of those signals is knowable pre-draft, so none belongs in the
-    pre-draft EV path.
+    STRUCTURAL ISOLATION: card_boost, drafts, real_score, total_value, and
+    direct popularity counts are NEVER present on this dataclass.  Trying
+    to construct a FilteredCandidate with any of those kwargs raises
+    TypeError — enforced by tests/test_invariants.py and
+    scripts/audit_live_isolation.py.  None of those signals is knowable
+    pre-draft, so none belongs in the pre-draft EV path.
+
+    `predicted_ownership_bucket` is a discrete label (top_decile,
+    upper_mid, mid, lower_mid, bottom_decile) produced by
+    app/core/popularity.py from public pre-game signals.  It is NOT a
+    raw count, NOT an outcome label, and NOT card_boost.  See
+    STRATEGY_AUDIT_2026-05.md for the architectural carve-out.
     ========================================================================
 
     EV is computed from pre-game signals only:
-      env_score   — Vegas O/U, opposing ERA/bullpen, park, weather, platoon, batting order
-      total_score — season-level trait quality (K/9, ISO, barrel%, speed, recent form)
+      env_score    — Vegas O/U, opposing ERA/bullpen, park, weather, platoon, batting order
+      total_score  — season-level trait quality (K/9, ISO, barrel%, speed, recent form)
+      ownership    — predicted bucket from team market, fame, batting order, season stats
     """
     player_name: str
     team: str
@@ -818,8 +835,20 @@ class FilteredCandidate:
     # on env alone.  Sourced from PlayerScoreResult.is_rookie_track.
     is_rookie_track: bool = False
 
+    # V14 — predicted-ownership bucket from app/core/popularity.py.
+    # One of {top_decile, upper_mid, mid, lower_mid, bottom_decile} or None.
+    # Drives leverage_factor in _compute_base_ev: heavily-owned consensus
+    # picks pay 0.85, predicted sleepers earn 1.20, every other bucket
+    # interpolates linearly through 1.00 at "mid".  None falls back to
+    # neutral 1.0 (no leverage adjustment) — the only place a None
+    # default is acceptable, because the leverage signal is genuinely
+    # additive and a missing prediction must not corrupt a valid
+    # performance projection the way a missing ERA would.
+    predicted_ownership_bucket: str | None = None
+
     # Computed by the optimizer
     filter_ev: float = 0.0
+    leverage_factor: float = 1.0  # set by _compute_base_ev for diagnostics
 
 
 @dataclass
@@ -866,11 +895,16 @@ def _compute_dnp_adjustment(candidate: FilteredCandidate) -> float:
 def _compute_base_ev(candidate: FilteredCandidate) -> float:
     """Compute the EV ranking signal for one candidate.
 
-    V11.0 "Filter, Not Forecast" — EV is built exclusively from pre-game
-    signals.  No RS data, no historical outcomes, no ownership counts,
-    NO POPULARITY SIGNALS.  Predict high-value performers; ignore the crowd.
+    V14 "Leverage-Aware EV" — EV is built from pre-game signals only.
+    No RS data, no historical outcomes, no card_boost, no raw draft
+    counts.  Predicted ownership bucket (a deterministic function of
+    public pre-game observables — see app/core/popularity.py) DOES enter
+    via leverage_factor: among players with comparable performance
+    projections, the one the field is less likely to draft is preferred,
+    because 92.5% of historical winning lineups contained at least one
+    HV player not on the Most Popular leaderboard.
 
-    Five multiplicative terms:
+    Six multiplicative terms:
       1. env_factor          — PRIMARY: game conditions.  Pitchers cap at
                                PITCHER_ENV_MODIFIER_CEILING (1.55, V13), batters
                                at ENV_MODIFIER_CEILING (1.30) — asymmetric:
@@ -881,12 +915,16 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
       3. trait_factor        — SECONDARY: intrinsic player quality (Statcast
                                kinematics + ERA/K9/WHIP for SP; exit-velo +
                                hard-hit% + barrel% for batters).  0.85–1.15.
-      4. stack_bonus         — 1.20 if PATH 1 blowout-favorite team, else 1.0.
-      5. dnp_adj             — Confirmed-bad 0.70 / unknown 0.93 / known 1.0.
+      4. leverage_factor     — V14: contrarian-edge multiplier from predicted
+                               ownership bucket.  Range [0.85, 1.20], deliberately
+                               narrower than the env swing so leverage acts as a
+                               tiebreaker, not an override.
+      5. stack_bonus         — 1.20 if PATH 1 blowout-favorite team, else 1.0.
+      6. dnp_adj             — Confirmed-bad 0.70 / unknown 0.93 / known 1.0.
 
     Formula:
         base_ev = env_factor × volatility_amplifier × trait_factor
-                  × stack_bonus × dnp_adj × 100
+                  × leverage_factor × stack_bonus × dnp_adj × 100
     """
     raw_env = max(candidate.env_score, 0.0)
     # V10.6 (April 28-29 evaluation): asymmetric env ceiling — pitchers cap at
@@ -965,10 +1003,18 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
             (candidate.position or "").upper(), 1.0
         )
 
+    # V14 — leverage_factor.  None bucket (popularity prediction unavailable)
+    # falls back to neutral 1.0; the leverage signal is genuinely additive
+    # and a missing prediction must not corrupt a valid performance
+    # projection.  Stored on the candidate for diagnostic exposure.
+    leverage_factor = LEVERAGE_FACTORS.get(candidate.predicted_ownership_bucket, 1.0)
+    candidate.leverage_factor = leverage_factor
+
     return (
         env_factor
         * volatility_amplifier
         * trait_factor
+        * leverage_factor
         * stack_bonus
         * dnp_adj
         * position_mult

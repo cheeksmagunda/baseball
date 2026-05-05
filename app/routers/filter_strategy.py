@@ -212,6 +212,8 @@ def _build_lineup_out(result) -> FilterLineupOut:
             filter_ev=round(s.candidate.filter_ev, 2),
             expected_slot_value=s.expected_slot_value,
             game_id=s.candidate.game_id,
+            predicted_ownership_bucket=s.candidate.predicted_ownership_bucket,
+            leverage_factor=round(s.candidate.leverage_factor, 3),
             breakdowns=_traits_to_breakdowns(s.candidate.traits),
         ))
     return FilterLineupOut(
@@ -237,6 +239,8 @@ def _build_response(lineup_result, candidates) -> FilterOptimizeResponse:
             is_two_way_pitcher=c.is_two_way_pitcher,
             filter_ev=round(c.filter_ev, 2),
             game_id=c.game_id,
+            predicted_ownership_bucket=c.predicted_ownership_bucket,
+            leverage_factor=round(c.leverage_factor, 3),
             breakdowns=_traits_to_breakdowns(c.traits),
         ))
     sc = lineup_result.slate_classification
@@ -287,7 +291,7 @@ async def build_and_cache_lineups(db: Session, slate_date: date | None = None) -
     game_dicts = [g.model_dump() for g in games]
     slate_class = classify_slate(len(games), game_dicts)
 
-    candidates = await resolve_candidates(cards, games, db)
+    candidates = await resolve_candidates(cards, games, db, slate_date=active_date)
     if not candidates:
         logger.warning("build_and_cache_lineups: no matching players found, skipping cache warm")
         return None
@@ -512,7 +516,7 @@ async def diagnostics(db: Session = Depends(get_db)):
 
     game_dicts = [g.model_dump() for g in games]
     slate_class = classify_slate(len(games), game_dicts)
-    candidates = await resolve_candidates(cards, games, db)
+    candidates = await resolve_candidates(cards, games, db, slate_date=active_date)
 
     # Quick EV computation for diagnostics (without full optimization)
     from app.services.filter_strategy import _compute_base_ev

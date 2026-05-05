@@ -1555,6 +1555,21 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
             f"on {slate.date}: {', '.join(null_moneylines)}"
         )
 
+    # Vegas total (O/U) is also a primary env input — pitcher env penalises
+    # high totals, batter env scoring previously consumed it (still surfaced
+    # in stack_eligibility PATH 1 / PATH 2).  A None here is a vendor
+    # outage, not a valid state.
+    null_totals = [
+        f"{g.home_team} vs {g.away_team}"
+        for g in games
+        if g.vegas_total is None
+    ]
+    if null_totals:
+        raise RuntimeError(
+            f"Vegas lines: vegas_total (O/U) not populated for {len(null_totals)} game(s) "
+            f"on {slate.date}: {', '.join(null_totals)}"
+        )
+
     db.commit()
     logger.info(
         "Vegas lines enriched for %d of %d games on %s",

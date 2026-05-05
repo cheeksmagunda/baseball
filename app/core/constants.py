@@ -576,6 +576,112 @@ SCORING_CHASE_PCT_CEILING = 38.0     # % — elite o-swing generator
 ET_TO_UTC_OFFSET_HOURS = 4
 
 # ---------------------------------------------------------------------------
+# Leverage / contrarian-edge scoring (V14, May 2026 — STRATEGY_AUDIT_2026-05.md)
+#
+# The pre-V14 EV ranking was popularity-blind: two players with identical
+# env+trait scores were ranked interchangeably regardless of whether one
+# was on every entrant's roster and the other was overlooked.  The 40-slate
+# audit shows 92.5% of winning Real Sports lineups contained at least one
+# Highest Value player who was NOT on the Most Popular leaderboard, and
+# popular HVs and sleeper HVs score essentially identically (mean RS 4.44
+# vs 4.39).  Performance-prediction parity, ownership disparity → leverage
+# is where the contest-winning edge lives.
+#
+# The leverage signal is computed from a deterministic, rule-based predictor
+# (app/core/popularity.py) that consumes only publicly-observable pre-game
+# inputs (team market, season-to-date star status, batting order, current
+# stats, rolling 14-day Most Popular history).  It does NOT consume raw
+# historical `drafts` counts, `card_boost`, `total_value`, or any RS outcome
+# label.  See app/core/popularity.py for the model and the audit doc for
+# the empirical case.
+# ---------------------------------------------------------------------------
+
+# Predicted ownership bucket → leverage multiplier in _compute_base_ev.
+# Range [0.85, 1.20] is deliberately narrower than the env factor swing
+# (~7.75x for pitchers, ~6.5x for batters) so leverage acts as a tiebreaker
+# among comparable performance projections, never an override of poor env.
+LEVERAGE_FACTORS = {
+    "top_decile":    0.85,   # heavily-owned consensus picks → discount
+    "upper_mid":     0.92,
+    "mid":           1.00,   # neutral
+    "lower_mid":     1.08,
+    "bottom_decile": 1.20,   # predicted sleepers → premium
+}
+
+# Bucket boundaries (drafts thresholds) — quantile-derived from the 40-slate
+# corpus.  Used in the popularity predictor's final mapping and in the
+# offline calibration script.  Not consumed at runtime; stored here so the
+# numbers in popularity.py and constants.py never drift apart.
+LEVERAGE_BUCKET_DRAFT_THRESHOLDS = {
+    "top_decile":    5000,   # >= 5000 drafts
+    "upper_mid":     2000,   # 2000 - 4999
+    "mid":            500,   # 500 - 1999
+    "lower_mid":      100,   # 100 - 499
+    "bottom_decile":    0,   # < 100
+}
+
+# Team market tier — drives one of four families of popularity features.
+# Tier 1 = national following (top of every casual fan's mind), tier 4 =
+# low-draft-volume markets the field consistently overlooks.  Sourced from
+# public MLB market-size and TV-rights distribution data, NOT from the
+# historical drafts column.  Static; updated once per offseason.
+TEAM_MARKET_TIER = {
+    # Tier 1 — national-television regulars, premium markets
+    "NYY": 1, "LAD": 1, "BOS": 1, "CHC": 1, "PHI": 1, "NYM": 1,
+    # Tier 2 — large markets, strong regional followings
+    "ATL": 2, "STL": 2, "SF": 2, "HOU": 2, "TOR": 2, "SD": 2, "SEA": 2,
+    # Tier 3 — mid-market
+    "TEX": 3, "MIN": 3, "BAL": 3, "CLE": 3, "MIL": 3, "DET": 3,
+    "ARI": 3, "CIN": 3, "WSH": 3, "LAA": 3,
+    # Tier 4 — small-market, persistently under-drafted
+    "KC": 4, "PIT": 4, "MIA": 4, "ATH": 4, "COL": 4, "TB": 4, "CWS": 4,
+}
+
+# Star-player allowlist — players whose name recognition consistently drives
+# ownership independent of current-slate matchup signals.  Sourced from
+# 2025 All-Star rosters, MVP/Cy Young top-5 voting, and Silver Slugger /
+# Gold Glove winners.  NOT sourced from the drafts column.  Updated once
+# per offseason.  Names stored in the same normalised form used by
+# app.core.utils.find_player_by_name (accent-stripped, lowercased).
+STAR_PLAYER_FLAGS = frozenset({
+    # 2025 MVP top-5 (each league)
+    "aaron judge", "shohei ohtani", "jose ramirez", "bobby witt jr",
+    "juan soto", "freddie freeman", "francisco lindor", "mookie betts",
+    "ketel marte", "yordan alvarez",
+    # 2025 Cy Young top-5
+    "tarik skubal", "garrett crochet", "paul skenes", "chris sale",
+    "zack wheeler", "logan webb", "tyler glasnow", "blake snell",
+    "yoshinobu yamamoto", "max fried",
+    # Returning stars / household names (multi-time All-Stars, perennial fame)
+    "mike trout", "manny machado", "fernando tatis jr", "ronald acuna jr",
+    "vladimir guerrero jr", "rafael devers", "kyle tucker", "corey seager",
+    "bryce harper", "trea turner", "carlos correa", "jose altuve",
+    "matt olson", "pete alonso", "alex bregman", "anthony rizzo",
+    "salvador perez", "nolan arenado", "marcell ozuna", "william contreras",
+    "gunnar henderson", "elly de la cruz", "wyatt langford",
+    "jackson chourio", "jackson holliday", "jackson merrill",
+    # Pitchers with crossover fame
+    "spencer strider", "jacob degrom", "shane mcclanahan", "corbin burnes",
+    "kevin gausman", "freddy peralta", "framber valdez", "george kirby",
+    "logan gilbert", "dylan cease", "joe ryan", "ranger suarez",
+    "aaron nola", "sonny gray", "justin verlander", "clayton kershaw",
+})
+
+# Rolling fame index window — number of trailing days over which to count
+# Most Popular leaderboard appearances when scoring a candidate's "field
+# attention" feature.  14 days is two weeks of slate cadence — long enough
+# to capture true breakout buzz, short enough to age out noise.
+LEVERAGE_FAME_INDEX_DAYS = 14
+
+# Star-status threshold for currently-elite season stats — players above
+# these without any historical leaderboard fame still get the star flag.
+# Rationale: we don't want to fade a 0.950 OPS hitter just because he had
+# a quiet 2025; the field WILL notice 1.0+ OPS / sub-2.50 ERA.
+LEVERAGE_STAR_BATTER_OPS = 0.900
+LEVERAGE_STAR_PITCHER_ERA = 3.00
+
+
+# ---------------------------------------------------------------------------
 # Startup self-check: validate that all scoring constants are in sensible ranges.
 # This runs once at import time (cheap, all in-memory) and raises AssertionError
 # loudly if a constant edit produces an incoherent configuration — e.g., a
@@ -636,6 +742,23 @@ def _validate_constants() -> None:
     # Stacking thresholds: shootout total must be higher than the PATH 1 total
     assert STACK_ELIGIBILITY_SHOOTOUT_TOTAL > STACK_ELIGIBILITY_VEGAS_TOTAL, (
         f"Shootout total ({STACK_ELIGIBILITY_SHOOTOUT_TOTAL}) must exceed PATH 1 total ({STACK_ELIGIBILITY_VEGAS_TOTAL})"
+    )
+
+    # Leverage band must straddle 1.0 and the bottom_decile premium must
+    # exceed the top_decile discount (otherwise contrarian ranking is
+    # silently disabled).
+    assert LEVERAGE_FACTORS["top_decile"] < 1.0 < LEVERAGE_FACTORS["bottom_decile"], (
+        f"LEVERAGE_FACTORS band must straddle 1.0: {LEVERAGE_FACTORS}"
+    )
+    assert LEVERAGE_FACTORS["mid"] == 1.0, (
+        f"LEVERAGE_FACTORS['mid'] must be neutral (1.0): {LEVERAGE_FACTORS['mid']}"
+    )
+    # Every team in PARK_HR_FACTORS must have a market tier — missing a
+    # team would silently default that team's players to 'mid' bucket and
+    # mute the leverage signal for them.
+    missing_tier = set(PARK_HR_FACTORS.keys()) - set(TEAM_MARKET_TIER.keys())
+    assert not missing_tier, (
+        f"TEAM_MARKET_TIER missing teams present in PARK_HR_FACTORS: {sorted(missing_tier)}"
     )
 
 

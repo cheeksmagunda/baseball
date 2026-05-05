@@ -166,6 +166,23 @@ class TestSignalIsolation:
                 total_score=50.0, env_score=0.5, sharp_score=80.0,  # type: ignore[call-arg]
             )
 
+    def test_predicted_ownership_bucket_is_allowed(self):
+        """V14: predicted_ownership_bucket is a discrete LABEL produced from
+        public pre-game observables (team market, fame, batting order, season
+        stats).  It is explicitly NOT card_boost, NOT a raw drafts count, and
+        NOT an outcome label.  STRATEGY_AUDIT_2026-05.md carves it out as
+        analogous to using prior-season ERA — backward-looking aggregate of
+        publicly visible facts, not leakage of the current slate's outcome.
+        """
+        c = FilteredCandidate(
+            player_name="x", team="NYY", position="OF",
+            total_score=50.0, env_score=0.5,
+            predicted_ownership_bucket="bottom_decile",
+        )
+        assert c.predicted_ownership_bucket == "bottom_decile"
+        # Confirm it's a string label, never a count.
+        assert isinstance(c.predicted_ownership_bucket, str)
+
 
 # ---------------------------------------------------------------------------
 # 2. Schema contract — FilteredCandidate must not declare banned fields

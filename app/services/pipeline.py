@@ -33,6 +33,7 @@ from app.services.data_collection import (
     enrich_slate_game_series_context,
     enrich_slate_game_vegas_lines,
 )
+from app.core.popularity import predict_popularity_bucket, predict_rookie_popularity_bucket
 from app.services.filter_strategy import (
     FilteredCandidate,
     build_batter_env_kwargs,
@@ -613,6 +614,22 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
         .filter_by(slate_id=slate.id)
         .all()
     )
+
+    # Batch-load PlayerStats for popularity prediction (V14).  One query for
+    # the whole slate, keyed by player_id.
+    player_ids_for_stats = [sp.player_id for sp in slate_players if sp.player_id]
+    stats_lookup_for_pop: dict[int, PlayerStats] = {}
+    if player_ids_for_stats:
+        stats_rows = (
+            db.query(PlayerStats)
+            .filter(
+                PlayerStats.player_id.in_(player_ids_for_stats),
+                PlayerStats.season == game_date.year,
+            )
+            .all()
+        )
+        stats_lookup_for_pop = {row.player_id: row for row in stats_rows}
+
     candidates = []
 
     for sp in slate_players:
@@ -685,6 +702,31 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
 
         # Store env_score on slate player for reference
         sp.env_score = env_score
+
+        # V14 — predict ownership bucket from public pre-game observables.
+        # Rookies route to predict_rookie_popularity_bucket; veterans go through
+        # the strict-precondition path that raises on missing OPS/ERA.
+        pop_stats = stats_lookup_for_pop.get(player.id)
+        is_rookie = pop_stats is not None and pop_stats.is_rookie_track
+        if is_rookie:
+            ownership_bucket = predict_rookie_popularity_bucket(
+                player_name=player.name,
+                team=player.team,
+                is_pitcher=is_pitcher,
+                batting_order=sp.batting_order,
+                as_of=game_date,
+            )
+        else:
+            ownership_bucket = predict_popularity_bucket(
+                player_name=player.name,
+                team=player.team,
+                is_pitcher=is_pitcher,
+                batting_order=sp.batting_order,
+                season_ops=pop_stats.ops if pop_stats is not None else None,
+                season_era=pop_stats.era if pop_stats is not None else None,
+                as_of=game_date,
+            )
+
         candidates.append(FilteredCandidate(
             player_name=player.name,
             team=player.team,
@@ -695,9 +737,11 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             game_id=game_id,
             is_pitcher=is_pitcher,
             is_rookie_track=result.is_rookie_track,
+            batting_order=sp.batting_order,
             series_team_wins=series_team_w,
             series_opp_wins=series_opp_w,
             team_l10_wins=team_l10,
+            predicted_ownership_bucket=ownership_bucket,
         ))
 
     db.commit()

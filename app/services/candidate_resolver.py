@@ -8,14 +8,18 @@ Stages:
      two-way pitchers, capture series context.
   3. Stage 2: assemble FilteredCandidate instances + emit health-check logs.
 
-V11.0: popularity scraping removed — the optimizer ranks purely on env +
-trait + context.  No FADE/TARGET/NEUTRAL classification, no sharp_score.
+V14: each candidate is annotated with a predicted ownership bucket from
+app/core/popularity.py.  The bucket drives leverage_factor in
+_compute_base_ev so the optimizer prefers, all else equal, the player
+the field is less likely to draft.  See STRATEGY_AUDIT_2026-05.md for
+the empirical case.
 
 Moved out of app/routers/filter_strategy.py so the router stays thin and
 this logic is independently testable.
 """
 
 import logging
+from datetime import date
 
 from sqlalchemy.orm import Session
 
@@ -23,8 +27,9 @@ from app.config import settings
 from app.core.constants import (
     PITCHER_POSITIONS,
 )
+from app.core.popularity import predict_popularity_bucket, predict_rookie_popularity_bucket
 from app.core.utils import find_players_by_name_team_batch
-from app.models.player import TeamSeasonStats
+from app.models.player import PlayerStats, TeamSeasonStats
 from app.schemas.filter_strategy import FilterCard, GameEnvironment
 from app.services.filter_strategy import (
     FilteredCandidate,
@@ -98,10 +103,18 @@ async def resolve_candidates(
     cards: list[FilterCard],
     games: list[GameEnvironment],
     db: Session,
+    slate_date: date | None = None,
 ) -> list[FilteredCandidate]:
     """Resolve cards into FilteredCandidates ready for the optimizer.
 
     See module docstring for the 3-stage flow.
+
+    Args:
+        slate_date: The date of the slate being resolved.  Required for
+            the rolling 14-day fame index in popularity prediction.
+            Defaults to today if not supplied (production callers always
+            pass the active slate date so the prediction is point-in-time
+            correct).
     """
     game_by_id, team_to_game = _build_game_lookup(games)
 
@@ -110,6 +123,7 @@ async def resolve_candidates(
     cards = [c for c in cards if c.player_name]
 
     _current_season = settings.current_season
+    as_of = slate_date or date.today()
 
     # Pre-build a team framing-runs lookup for the slate.  One SQL
     # query per slate, keyed by team abbreviation.  Pass into score_player so
@@ -143,6 +157,22 @@ async def resolve_candidates(
                 "pipeline data integrity error"
             )
         card_player_map[f"{card.player_name}|{card.team}"] = player
+
+    # Stage 0b: batch-load PlayerStats for popularity prediction (OPS / ERA).
+    # One query per slate, keyed by player_id.  PlayerStats may be absent for
+    # true rookies — popularity falls through to None values cleanly.
+    player_ids = [p.id for p in card_player_map.values()]
+    stats_lookup: dict[int, PlayerStats] = {}
+    if player_ids:
+        stats_rows = (
+            db.query(PlayerStats)
+            .filter(
+                PlayerStats.player_id.in_(player_ids),
+                PlayerStats.season == _current_season,
+            )
+            .all()
+        )
+        stats_lookup = {row.player_id: row for row in stats_rows}
 
     # Stage 1: synchronous per-card work — score + env.
     pre_candidates: list[dict] = []
@@ -241,22 +271,52 @@ async def resolve_candidates(
             "team_l10_wins": team_l10,
         })
 
-    # Stage 2: assemble FilteredCandidates.
+    # Stage 2: assemble FilteredCandidates + predict ownership bucket.
     candidates: list[FilteredCandidate] = []
+    bucket_distribution: dict[str, int] = {}
     for pre in pre_candidates:
         card = pre["card"]
         score_result = pre["score_result"]
+        player = pre["player"]
+        is_pitcher = pre["is_pitcher"]
+
+        stats = stats_lookup.get(player.id)
+        # Rookies get a separate popularity function — the traditional path
+        # raises on missing OPS/ERA (a non-rookie missing those is a real
+        # data-collection bug), but rookies have no traditional stats by
+        # definition.  Routing on PlayerStats.is_rookie_track matches the
+        # same predicate the trait engine uses (score_player → score_rookie).
+        is_rookie = stats is not None and stats.is_rookie_track
+        if is_rookie:
+            ownership_bucket = predict_rookie_popularity_bucket(
+                player_name=card.player_name,
+                team=card.team,
+                is_pitcher=is_pitcher,
+                batting_order=card.batting_order,
+                as_of=as_of,
+            )
+        else:
+            ownership_bucket = predict_popularity_bucket(
+                player_name=card.player_name,
+                team=card.team,
+                is_pitcher=is_pitcher,
+                batting_order=card.batting_order,
+                season_ops=stats.ops if stats is not None else None,
+                season_era=stats.era if stats is not None else None,
+                as_of=as_of,
+            )
+        bucket_distribution[ownership_bucket] = bucket_distribution.get(ownership_bucket, 0) + 1
 
         candidates.append(FilteredCandidate(
             player_name=card.player_name,
             team=card.team,
-            position=pre["player"].position,
+            position=player.position,
             total_score=score_result.total_score,
             env_score=pre["env_score"],
             env_factors=pre["env_factors"],
             env_unknown_count=pre.get("env_unknown_count", 0),
             game_id=pre["game_id"],
-            is_pitcher=pre["is_pitcher"],
+            is_pitcher=is_pitcher,
             is_two_way_pitcher=pre["is_two_way_pitcher"],
             is_rookie_track=score_result.is_rookie_track,
             traits=score_result.traits,
@@ -264,11 +324,13 @@ async def resolve_candidates(
             series_team_wins=pre.get("series_team_wins"),
             series_opp_wins=pre.get("series_opp_wins"),
             team_l10_wins=pre.get("team_l10_wins"),
+            predicted_ownership_bucket=ownership_bucket,
         ))
 
     logger.info(
-        "Candidate pool: %d cards in → %d candidates out (dropped: %d)",
+        "Candidate pool: %d cards in → %d candidates out (dropped: %d) | ownership: %s",
         len(cards), len(candidates), len(cards) - len(candidates),
+        bucket_distribution,
     )
 
     return candidates

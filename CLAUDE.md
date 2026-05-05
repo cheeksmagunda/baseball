@@ -785,6 +785,57 @@ Catchers, 2B, SS: 0/40 slot-1 wins. Catchers get ~30% fewer PAs (rest days, pinc
 - Rookie pitchers in underdog contexts no longer top-EV — established arms reclaim those slots
 - Stack-eligible games still produce correlated picks but with 10% bonus, not 20% — non-stack elites compete
 
+### V14 Leverage-Aware EV — Predicted-Ownership Bucket + Contrarian Edge (May 5)
+
+V14 closes the gap the audit doc names in `STRATEGY_AUDIT_2026-05.md`: the V12-V13 pipeline is a calibrated *performance predictor*, but Real Sports daily contests are won by *differentiation from the field*, not by raw mean projection.  The 40-slate corpus shows 92.5% of winning lineups contained at least one Highest Value player who was not on the Most Popular leaderboard, popular HVs and sleeper HVs score essentially identically (mean RS 4.44 vs 4.39), and Most Popular status is highly autocorrelated week-over-week (73.8% of MP appearances have at least one prior MP appearance in the trailing 14 days).  Together these say: the field's draft choices are tracking name recognition rather than performance, the gap is consistent, and a deterministic predictor on public pre-game observables can capture it without ever consuming `drafts` / `card_boost` / outcome labels as live inputs.
+
+**Mechanism** — one new multiplicative term in `_compute_base_ev`:
+
+```
+filter_ev = env_factor × volatility_amplifier × trait_factor
+          × leverage_factor × stack_bonus × dnp_adj × 100
+
+leverage_factor mapping (predicted_ownership_bucket → multiplier):
+    top_decile     → 0.85   (heavily-owned consensus picks: discount)
+    upper_mid      → 0.92
+    mid            → 1.00   (neutral)
+    lower_mid      → 1.08
+    bottom_decile  → 1.20   (predicted sleepers: premium)
+    None (unknown) → 1.00   (fallback to neutral — only acceptable default
+                              because the leverage signal is genuinely
+                              additive; missing prediction must not corrupt
+                              a valid performance projection)
+```
+
+The [0.85, 1.20] band is deliberately narrower than the env factor swing (~7.75x for pitchers, ~6.5x for batters) so leverage acts as a tiebreaker among players with comparable performance projections, never an override of poor env.  A weak performance projection is not elevated to the top of a lineup just because the player is a sleeper — the multiplicative structure ensures `_compute_base_ev` of `(env=0.2, trait=0.8, leverage=1.20)` stays well below `(env=0.85, trait=1.10, leverage=0.85)`.  The composition phase (`_enforce_composition`), per-team caps, anti-correlation guard, slot-1 = highest-EV-player rule, and stack-eligibility paths are all untouched.
+
+**Predicted-ownership bucket** — `app/core/popularity.py::predict_popularity_bucket`.  Deterministic rule-based classifier scoring four families of public pre-game observables to a 0-10 internal score, then mapping to one of five quantile-derived buckets.  No statistical model, no learned weights.  Inputs:
+
+1. **Team market tier** — `TEAM_MARKET_TIER` lookup in `app/core/constants.py`.  Tier 1 (NYY/LAD/BOS/CHC/PHI/NYM) → +3, tier 2 (ATL/STL/SF/HOU/TOR/SD/SEA) → +2, tier 3 (mid-market) → +1, tier 4 (KC/PIT/MIA/ATH/COL/TB/CWS) → 0.  Static; updated once per offseason.
+2. **Player fame** — `STAR_PLAYER_FLAGS` (returning All-Stars, MVP/CY top-5 voting, Silver Slugger / Gold Glove winners) → +3.  Or, if not a flagged star, current-season elite stats (OPS ≥ 0.900 / ERA ≤ 3.00) → +2 (only one of these fires per player to avoid double-counting).
+3. **Slate context** — top-3 batting order → +1.  Pitchers no batting order signal.
+4. **Rolling 14-day fame index** — count of prior Most Popular leaderboard appearances in the trailing 14 days from `historical_players.csv`.  ≥3 appearances → +2, ≥1 → +1.  This is the only input that touches historical data, and only the prior-slate `is_most_popular` flag from dates strictly before today.  Per the audit doc, this is analogous to using prior-season ERA — a backward-looking aggregate of pre-game observables, not leakage of the current slate's outcome.
+
+Bucket cutoffs (internal score → bucket): ≥8.0 = top_decile, ≥6.0 = upper_mid, ≥3.0 = mid, ≥1.5 = lower_mid, else bottom_decile.  Quantile-derived from the 40-slate corpus; re-tune via the standard manual-calibration discipline that governs every other constant in `app/core/constants.py`.
+
+**What V14 explicitly does not do**:
+- Does not consume `card_boost` (in-draft, unknowable pre-game).
+- Does not consume raw historical `drafts` counts (outcome label).
+- Does not consume `real_score`, `total_value`, `is_highest_value`, `is_most_drafted_3x`.
+- Does not introduce machine learning.
+- Does not change trait weights, env thresholds, stack-eligibility paths, asymmetric env ceilings, multi-pitcher composition search, or any V12/V13 calibration.
+- Does not gate behind a feature flag — leverage is live on the next pipeline run.
+
+**Architectural enforcement**:
+- `FilteredCandidate.predicted_ownership_bucket: str | None` — the new field is a discrete LABEL, not a count.  Confirmed by `tests/test_invariants.py::TestSignalIsolation::test_predicted_ownership_bucket_is_allowed`.  The dataclass continues to reject `card_boost`, `drafts`, `popularity`, `sharp_score` at construction time.
+- `app/core/popularity.py` is in `EXEMPT_FILES` of `scripts/audit_live_isolation.py` because it reads the prior-slate `is_most_popular` flag from `historical_players.csv`.  The exemption is bounded: the module never reads `real_score`, `total_value`, `is_highest_value`, `is_most_drafted_3x`, `drafts`, or `card_boost`, and only counts MP appearances strictly older than the current slate date.
+- New `TEAM_MARKET_TIER` validation in `_validate_constants()`: every team in `PARK_HR_FACTORS` must have a tier entry, otherwise the leverage signal silently mutes for that team.
+- `tests/test_filter_strategy.py::TestLeverageFactor` pins five contrarian invariants: sleeper outranks consensus at identical performance, leverage band matches `LEVERAGE_FACTORS`, None bucket is neutral, leverage cannot rescue a weak candidate, and `leverage_factor` is recorded on the candidate for response-payload diagnostics.
+
+**Diagnostic exposure** — every `FilterCandidateOut` and `FilterSlotOut` in the `/api/filter-strategy/optimize` response now carries `predicted_ownership_bucket` and `leverage_factor` so the user can inspect why a contrarian player was selected.  Distribution sampled on 2026-05-03 produced ~5% top-decile, ~26% bottom-decile across the candidate pool — a healthy shape for the contrarian signal to do real work.
+
+**Eval impact** — V14 has no offline backtest because the eval harness operates on `historical_slate_results.json` which has no per-slate ownership prediction column.  V14 ships on the architectural argument: forty slates of outcome data show 92.5% of winners contain at least one sleeper HV and the field consistently fades the same player profiles.  Live impact will surface over the next ~15 slates as more bottom_decile-bucket players flow into selected lineups.  Calibration cadence (manual constant review of `LEVERAGE_FACTORS` and the bucket cutoffs in `app/core/popularity.py`) follows the existing discipline; no automated training loop.
+
 ### V13.0 Pipeline Audit Pass — ML Curves Inverted, Asymmetric Ceiling Widened, Wind Direction Refined, Framing Bumped (May 2)
 
 V13.0 ships five calibration changes from a fresh 38-slate / 1140-batter / 244-pitcher audit of every active signal against `is_highest_value` and `real_score` outcomes.  No structural changes (composition, stack rules, slot logic, anti-correlation, no-fallbacks all unchanged from V12.2).  This was a pipeline-strengthening pass triggered by an external data-scientist writeup; most of the writeup's claims either (a) validated V12.2, (b) contradicted our 38-slate audit (Vegas O/U for batters re-confirmed flat: 54%/51%/47%/46%/48% across the full quartile range incl. 10.5+ shootouts), or (c) relied on forbidden inputs (`card_boost`, popularity).  Five items were genuine miscalibrations:
@@ -1108,12 +1159,12 @@ section headers above for context.  None of those sections describe
   rebalanced trait weights to remove env double-counting.  Documented
   in the V12.x section at the top of this file.
 
-### Active behavior summary (V13.3 — read this, not the changelog)
+### Active behavior summary (V14 — read this, not the changelog)
 
 EV formula (`_compute_base_ev` in `app/services/filter_strategy.py`):
 ```
 filter_ev = env_factor × volatility_amplifier × trait_factor
-          × stack_bonus × dnp_adj × position_mult × 100
+          × leverage_factor × stack_bonus × dnp_adj × position_mult × 100
 
 env_factor:        floor 0.20  (V13.3 ceilings — first match wins)
                    rookie ceiling 1.10  (rookie-track players, V13.3)
@@ -1121,10 +1172,18 @@ env_factor:        floor 0.20  (V13.3 ceilings — first match wins)
                    batter ceiling 1.30  (non-rookie batters)
 volatility_amplifier: 1 + cv × 0.20 × (env − 0.5) × 2  (batters only)
 trait_factor:      floor 0.85, ceiling 1.15
+leverage_factor:   0.85 (top_decile) → 1.20 (bottom_decile), 1.0 mid (V14)
 stack_bonus:       1.0 / 1.10 (PATH 1 blowout-fav teams only, V13.3 — was 1.20)
 dnp_adj:           0.70 (confirmed-bad) / 0.93 (unknown) / 1.0 (known order)
 position_mult:     1.0 default; C 0.90, 2B 0.95, SS 0.95 (V13.3, batters only)
 ```
+
+V14 leverage_factor pulls from `predicted_ownership_bucket` on the
+candidate (set by `app/core/popularity.py::predict_popularity_bucket`
+during `resolve_candidates`).  Bucket inputs: team market tier, fame
+flag / elite season stats, top-3 batting order, rolling 14-day Most
+Popular index from `historical_players.csv` for prior dates only.  See
+the V14 changelog above for the full mechanism and audit citation.
 
 Pitcher env ML curve (V13 — inverted from V12's "mild fav peak"):
 - Underdog (≥+100):    +1.0  ← peak (HV 37.7%)
@@ -1165,6 +1224,15 @@ double-counting:
 Card_boost / drafts / popularity / sharp_score: NEVER on
 `FilteredCandidate`, NEVER inputs to env or trait scoring.  Banned at
 the dataclass level; enforced by `scripts/audit_live_isolation.py`.
+
+V14 `predicted_ownership_bucket` IS allowed on `FilteredCandidate` — it
+is a discrete LABEL (one of top_decile / upper_mid / mid / lower_mid /
+bottom_decile) produced from public pre-game observables, NOT a count
+and NOT an outcome label.  See the V14 changelog for the audit
+carve-out.  `app/core/popularity.py` is `EXEMPT_FILES` in the audit
+script because it reads the prior-slate `is_most_popular` flag from
+`historical_players.csv`; the read is bounded to dates strictly before
+the current slate.
 
 Key functions:
 - `run_filter_strategy(candidates, slate_class) → FilterOptimizedLineup`
