@@ -178,6 +178,27 @@ def test_mark_failed_sets_flag():
     assert cache.pipeline_failed
 
 
+def test_mark_failed_records_reason():
+    cache = _make_cache()
+    cache.mark_failed("No odds for COL vs NYM on 2026-05-05")
+    assert cache.pipeline_failed
+    assert cache.failure_reason == "No odds for COL vs NYM on 2026-05-05"
+
+
+def test_mark_failed_without_reason_leaves_failure_reason_none():
+    cache = _make_cache()
+    cache.mark_failed()
+    assert cache.failure_reason is None
+
+
+def test_clear_resets_failure_reason():
+    cache = _make_cache()
+    cache.mark_failed("transient error")
+    cache.clear()
+    assert cache.failure_reason is None
+    assert not cache.pipeline_failed
+
+
 # ---------------------------------------------------------------------------
 # set_schedule
 # ---------------------------------------------------------------------------

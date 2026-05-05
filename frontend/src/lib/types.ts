@@ -52,8 +52,12 @@ export interface WaitInfo {
 
 export interface OptimizeStatus {
   ready: boolean;
-  phase: "no_slate" | "before_lock" | "generating" | "ready";
+  phase: "no_slate" | "before_lock" | "generating" | "ready" | "failed";
   first_pitch_utc: string | null;
   lock_time_utc: string | null;
   minutes_until_lock: number | null;
+  // Populated when phase === "failed": short summary of why the T-65 pipeline
+  // crashed. Surfaced in the ErrorState UI so the user knows picks aren't
+  // coming and can refresh after a redeploy.
+  error: string | null;
 }

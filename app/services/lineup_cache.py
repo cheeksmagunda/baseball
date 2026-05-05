@@ -64,6 +64,7 @@ class _LineupCache:
         self._is_frozen: bool = False             # True after T-65 freeze; blocks further writes
         self._first_pitch_utc: Optional[datetime] = None  # earliest game start (UTC)
         self._pipeline_failed: bool = False       # True if T-65 pipeline raised an exception
+        self._failure_reason: Optional[str] = None  # short error message for the UI when pipeline_failed
 
     # ---------- Redis helpers ----------
 
@@ -156,14 +157,27 @@ class _LineupCache:
         self._write_meta()
         logger.info("Lineup cache FROZEN — picks are locked until slate completion")
 
-    def mark_failed(self) -> None:
-        """Signal that the T-65 pipeline raised an exception. /optimize returns 503."""
+    def mark_failed(self, reason: str | None = None) -> None:
+        """Signal that the T-65 pipeline raised an exception. /optimize returns 503.
+
+        ``reason`` is a short human-readable message surfaced via /status and
+        rendered in the frontend error UI so users know the picks aren't coming
+        and can refresh after a redeploy. The full traceback still lands in
+        Railway logs via logger.exception in the caller — this is just the
+        single-line summary the UI needs.
+        """
         self._pipeline_failed = True
+        if reason is not None:
+            self._failure_reason = reason
         logger.error("Lineup cache marked FAILED — T-65 pipeline crashed, /optimize will return 503")
 
     @property
     def pipeline_failed(self) -> bool:
         return self._pipeline_failed
+
+    @property
+    def failure_reason(self) -> Optional[str]:
+        return self._failure_reason
 
     def restore_and_refreeze(self, first_pitch_utc: datetime) -> bool:
         """
@@ -296,6 +310,7 @@ class _LineupCache:
         self._is_frozen = False
         self._first_pitch_utc = None
         self._pipeline_failed = False
+        self._failure_reason = None
 
     def purge(self) -> None:
         """

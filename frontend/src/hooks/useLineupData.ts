@@ -16,9 +16,10 @@ const STATUS_POLL_INTERVAL_MS = 5_000;
 
 function statusToWaitInfo(status: OptimizeStatus): WaitInfo {
   // Map backend phases onto the frontend's WaitInfo shape. The "no_slate"
-  // backend phase shares the "initializing" UI state. The "ready" phase
-  // never reaches this function — callers gate on status.ready first — but
-  // we map it defensively to "generating" to satisfy the type checker.
+  // backend phase shares the "initializing" UI state. The "ready" and
+  // "failed" phases never reach this function — callers gate on status.ready
+  // and status.phase first — but we map them defensively to "generating" to
+  // satisfy the type checker.
   let phase: WaitInfo["phase"];
   if (status.phase === "before_lock" || status.phase === "generating") {
     phase = status.phase;
@@ -33,15 +34,31 @@ function statusToWaitInfo(status: OptimizeStatus): WaitInfo {
   };
 }
 
+function statusToError(status: OptimizeStatus): { status: number; message: string } {
+  // /optimize returns 503 when the cache is marked failed — mirror that here
+  // so the user sees a consistent error code regardless of which endpoint
+  // surfaced the failure.
+  return {
+    status: 503,
+    message:
+      status.error ??
+      "T-65 pipeline failed — picks unavailable. Please retry shortly.",
+  };
+}
+
 export function useLineupData(
   initialData: FilterOptimizeResponse | null = null,
   initialStatus: OptimizeStatus | null = null,
 ): UseLineupDataReturn {
   const [data, setData] = useState<FilterOptimizeResponse | null>(initialData);
   const [loading, setLoading] = useState(!initialData && !initialStatus);
-  const [error, setError] = useState<{ status: number; message: string } | null>(null);
+  const [error, setError] = useState<{ status: number; message: string } | null>(
+    initialStatus && initialStatus.phase === "failed" ? statusToError(initialStatus) : null,
+  );
   const [waitInfo, setWaitInfo] = useState<WaitInfo | null>(
-    initialStatus && !initialStatus.ready ? statusToWaitInfo(initialStatus) : null,
+    initialStatus && !initialStatus.ready && initialStatus.phase !== "failed"
+      ? statusToWaitInfo(initialStatus)
+      : null,
   );
 
   const abortRef = useRef<AbortController | null>(null);
@@ -89,6 +106,17 @@ export function useLineupData(
       if (status.ready) {
         clearTimer();
         await fetchPicks(controller.signal);
+        return;
+      }
+
+      // Pipeline crashed — surface the error and stop polling. A redeploy
+      // will bust the deploy_id'd cache and re-run the pipeline on the
+      // remaining games; the user can hit refresh to pick up new picks.
+      if (status.phase === "failed") {
+        clearTimer();
+        setWaitInfo(null);
+        setError(statusToError(status));
+        setLoading(false);
         return;
       }
 

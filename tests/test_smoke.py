@@ -443,6 +443,42 @@ class TestFilterStrategyRouter:
         assert body["ready"] is False
         assert body["minutes_until_lock"] > 0
 
+    def test_status_failed_takes_precedence_over_generating(self, fresh_cache):
+        """When the T-65 pipeline crashes, /status must report phase=failed
+        with the failure_reason, regardless of whether first_pitch is set.
+
+        Pre-fix, a crashed pipeline with first_pitch already published fell
+        into the "generating" branch — the frontend then polled /status
+        forever waiting for ready=true and never fetched /optimize (which
+        was returning 503 with the actual error). The page spun on
+        "Generating Today's Picks" indefinitely.
+        """
+        cache, _ = fresh_cache
+        # Pipeline ran (first_pitch was set), then crashed with a reason.
+        first_pitch = datetime.now(timezone.utc) + timedelta(minutes=10)
+        cache.set_schedule(first_pitch)
+        cache.mark_failed("No odds found for COL vs NYM on 2026-05-05")
+
+        client = TestClient(_build_test_app())
+        response = client.get("/api/filter-strategy/status")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["phase"] == "failed"
+        assert body["ready"] is False
+        assert body["error"] == "No odds found for COL vs NYM on 2026-05-05"
+
+    def test_status_failed_without_reason_has_default_error(self, fresh_cache):
+        """mark_failed() called without a reason — /status returns a generic
+        message rather than null so the UI always has something to show."""
+        cache, _ = fresh_cache
+        cache.mark_failed()
+
+        client = TestClient(_build_test_app())
+        response = client.get("/api/filter-strategy/status")
+        body = response.json()
+        assert body["phase"] == "failed"
+        assert body["error"] is not None and "pipeline failed" in body["error"].lower()
+
     def test_optimize_returns_425_before_lock(self, db_session, fresh_cache):
         cache, _ = fresh_cache
         far_future = datetime.now(timezone.utc) + timedelta(hours=24)

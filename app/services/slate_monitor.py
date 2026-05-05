@@ -364,7 +364,10 @@ async def targeted_slate_monitor(
                 "where init hung."
             )
             try:
-                lineup_cache.mark_failed()
+                lineup_cache.mark_failed(
+                    "Startup pipeline did not complete within 5 minutes — "
+                    "see Railway logs for the most recent STARTUP STEP line."
+                )
             except Exception:
                 logger.exception("mark_failed() itself raised — continuing anyway")
             return
@@ -521,13 +524,15 @@ async def targeted_slate_monitor(
                     refreshed_first_pitch = _get_first_pitch_utc(
                         db_refresh, monitor_date
                     )
-                except Exception:
+                except Exception as exc:
                     logger.exception(
                         "T-%d Phase 2b schedule refresh failed — marking "
                         "pipeline failed; /optimize will return 503.",
                         LOCK_MINUTES_BEFORE_PITCH,
                     )
-                    lineup_cache.mark_failed()
+                    lineup_cache.mark_failed(
+                        f"Schedule refresh at T-{LOCK_MINUTES_BEFORE_PITCH} failed: {exc}"
+                    )
                     return
                 finally:
                     db_refresh.close()
@@ -539,7 +544,10 @@ async def targeted_slate_monitor(
                         monitor_date,
                         LOCK_MINUTES_BEFORE_PITCH,
                     )
-                    lineup_cache.mark_failed()
+                    lineup_cache.mark_failed(
+                        f"No scheduled games found for {monitor_date} at "
+                        f"T-{LOCK_MINUTES_BEFORE_PITCH}."
+                    )
                     return
 
                 # <2 min drift is noise (schedule-string rounding); treat
@@ -591,7 +599,10 @@ async def targeted_slate_monitor(
                             first_pitch_utc.strftime("%H:%M"),
                         )
                     else:
-                        lineup_cache.mark_failed()
+                        lineup_cache.mark_failed(
+                            f"Lineup build at T-{LOCK_MINUTES_BEFORE_PITCH} "
+                            "returned no candidates — slate data missing."
+                        )
                         logger.error(
                             "T-%d lineup build returned nothing — no slate data "
                             "available. /optimize will return 503.",
@@ -618,7 +629,10 @@ async def targeted_slate_monitor(
                         "No fallback; /optimize will return 503.",
                         LOCK_MINUTES_BEFORE_PITCH,
                     )
-                    lineup_cache.mark_failed()
+                    lineup_cache.mark_failed(
+                        f"T-{LOCK_MINUTES_BEFORE_PITCH} pipeline crashed: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
             finally:
                 db.close()
 
@@ -649,7 +663,7 @@ async def targeted_slate_monitor(
             await _run_slate_cycle()
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
             logger.critical(
                 "T-65 monitor: unhandled exception escaped slate cycle — "
                 "marking pipeline failed so /optimize returns 503 instead "
@@ -657,7 +671,9 @@ async def targeted_slate_monitor(
                 exc_info=True,
             )
             try:
-                lineup_cache.mark_failed()
+                lineup_cache.mark_failed(
+                    f"Slate monitor crashed: {type(exc).__name__}: {exc}"
+                )
             except Exception:
                 logger.exception(
                     "mark_failed() itself raised — continuing anyway"

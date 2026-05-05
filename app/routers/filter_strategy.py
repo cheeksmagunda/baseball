@@ -318,12 +318,24 @@ def optimize_status():
       before_lock   — waiting for T-65 (pipeline hasn't run yet)
       generating    — T-65 has passed, pipeline is running (picks will unlock on freeze)
       ready         — picks are frozen and available
+      failed        — T-65 pipeline crashed; /optimize returns 503 and the
+                      frontend surfaces the error (a redeploy will bust the
+                      deploy_id'd cache and re-run the pipeline on remaining games)
     """
     first_pitch = lineup_cache.first_pitch_utc
     lock_time = lineup_cache.lock_time_utc
     now = datetime.now(timezone.utc)
+    error: str | None = None
 
-    if lineup_cache.is_frozen:
+    # Failure check goes FIRST. Otherwise a crashed pipeline with first_pitch set
+    # falls into the "generating" branch and the frontend spins forever — it
+    # only fetches /optimize (which would surface the 503) after /status reports
+    # ready=true, and ready stays false post-failure.
+    if lineup_cache.pipeline_failed:
+        phase = "failed"
+        minutes_until_lock = None
+        error = lineup_cache.failure_reason or "T-65 pipeline failed — see logs."
+    elif lineup_cache.is_frozen:
         phase = "ready"
         minutes_until_lock = None
     elif first_pitch is not None and lock_time is not None and now < lock_time:
@@ -342,6 +354,7 @@ def optimize_status():
         "first_pitch_utc": first_pitch.isoformat() if first_pitch else None,
         "lock_time_utc": lock_time.isoformat() if lock_time else None,
         "minutes_until_lock": minutes_until_lock,
+        "error": error,
     }
 
 
