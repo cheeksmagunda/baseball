@@ -1496,12 +1496,25 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
       - compute_pitcher_env_score()  Factor 5: Moneyline Win bonus
       - compute_batter_env_score()   Group A A1: Vegas O/U, A3: Moneyline
 
-    CRITICAL: Vegas lines are REQUIRED, never optional.
+    Vegas lines are REQUIRED inputs. The Odds API itself must be reachable
+    and authorised — quota exhaustion / 401 / network failure raises and
+    crashes the pipeline (no fallback to defaults).
 
-    Raises RuntimeError if BO_ODDS_API_KEY is not set, quota is exhausted,
-    or the request fails. There is no fallback to NULL moneylines. Missing Vegas
-    data corrupts the EV formula and produces suboptimal lineups. The T-65 pipeline
-    must crash loudly rather than proceed with degraded data.
+    Per-game tolerance for partial coverage (May 2026 mid-slate redeploy fix):
+    on any given slate the API may not return every individual game — usual
+    causes are bookmakers pulling lines on weather risk, doubleheader splits,
+    or sportsbook-specific odds gaps. Pre-fix, a single missing game crashed
+    the entire slate (no picks generated). Post-fix, when the API is reachable
+    but lines are missing for a SUBSET of games, those games are dropped from
+    the slate (their SlateGame + SlatePlayer rows deleted, so downstream env
+    scoring + candidate resolution never see them) and the pipeline continues
+    with the remaining games. If ALL games on the slate are missing odds,
+    that's a real Odds API failure and we still crash.
+
+    This is NOT a fallback in the no-fallback-policy sense: we never substitute
+    fake moneylines or default totals. We strictly shrink the slate to the games
+    we can score, and log a loud warning per dropped game so ops can see the
+    coverage gap.
 
     See CLAUDE.md section "Vegas Lines: Required, Never Optional" for full rationale.
     """
@@ -1527,14 +1540,19 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
     }
 
     updated = 0
+    games_to_drop: list[SlateGame] = []
     for game in games:
         key = (game.home_team.upper(), game.away_team.upper())
         odds = odds_lookup.get(key)
         if not odds:
-            raise RuntimeError(
-                f"No odds found for {game.home_team} vs {game.away_team} on {slate.date} — "
-                "pipeline cannot proceed without moneylines for all games."
+            logger.warning(
+                "Odds API returned no event for %s vs %s on %s — dropping from slate "
+                "(usual causes: bookmaker pulled lines on weather risk, late scheduling "
+                "change, or doubleheader split). Odds API returned %d events total.",
+                game.home_team, game.away_team, slate.date, len(odds_data),
             )
+            games_to_drop.append(game)
+            continue
 
         if odds.get("home_moneyline") is not None:
             game.home_moneyline = odds["home_moneyline"]
@@ -1542,32 +1560,76 @@ async def enrich_slate_game_vegas_lines(db: Session, slate: Slate) -> int:
             game.away_moneyline = odds["away_moneyline"]
         if odds.get("total") is not None:
             game.vegas_total = odds["total"]
+
+        # Partial-coverage check: even when the API returned an event, individual
+        # markets (moneyline / total) may be empty. Treat the same as a missing
+        # event — drop the game rather than score it on partial data.
+        if (
+            game.home_moneyline is None
+            or game.away_moneyline is None
+            or game.vegas_total is None
+        ):
+            missing = []
+            if game.home_moneyline is None or game.away_moneyline is None:
+                missing.append("moneyline")
+            if game.vegas_total is None:
+                missing.append("total")
+            logger.warning(
+                "Odds API event for %s vs %s on %s missing %s — dropping from slate.",
+                game.home_team, game.away_team, slate.date, "+".join(missing),
+            )
+            games_to_drop.append(game)
+            continue
+
         updated += 1
 
-    null_moneylines = [
-        f"{g.home_team} vs {g.away_team}"
-        for g in games
-        if g.home_moneyline is None or g.away_moneyline is None
-    ]
-    if null_moneylines:
-        raise RuntimeError(
-            f"Vegas lines: moneylines not populated for {len(null_moneylines)} game(s) "
-            f"on {slate.date}: {', '.join(null_moneylines)}"
-        )
+    if games_to_drop:
+        # All-or-nothing check: if EVERY remaining game lacks odds, that's a
+        # real Odds API failure (vendor outage, regional restriction, etc.) —
+        # crash loud so ops investigates rather than silently producing an
+        # empty slate. The MIN_GAMES_REPRESENTED guard later in run_full_pipeline
+        # would catch this too, but a precise "no odds for any game" message
+        # is more diagnosable.
+        if updated == 0:
+            raise RuntimeError(
+                f"Odds API returned no usable lines for ANY of {len(games)} game(s) "
+                f"on {slate.date} — vendor outage suspected, pipeline cannot proceed. "
+                f"Odds API returned {len(odds_data)} total events."
+            )
 
-    # Vegas total (O/U) is also a primary env input — pitcher env penalises
-    # high totals, batter env scoring previously consumed it (still surfaced
-    # in stack_eligibility PATH 1 / PATH 2).  A None here is a vendor
-    # outage, not a valid state.
-    null_totals = [
-        f"{g.home_team} vs {g.away_team}"
-        for g in games
-        if g.vegas_total is None
-    ]
-    if null_totals:
-        raise RuntimeError(
-            f"Vegas lines: vegas_total (O/U) not populated for {len(null_totals)} game(s) "
-            f"on {slate.date}: {', '.join(null_totals)}"
+        # Cascade-delete dropped games: their SlatePlayers, the players' scores,
+        # and the SlateGames themselves. Otherwise downstream env scoring would
+        # see these games (still in DB) but with NULL moneylines and crash.
+        from app.models import PlayerScore, ScoreBreakdown
+        drop_ids = [g.id for g in games_to_drop]
+        sp_ids = [
+            r for (r,) in db.query(SlatePlayer.id).filter(
+                SlatePlayer.game_id.in_(drop_ids)
+            )
+        ]
+        if sp_ids:
+            ps_ids = [
+                r for (r,) in db.query(PlayerScore.id).filter(
+                    PlayerScore.slate_player_id.in_(sp_ids)
+                )
+            ]
+            if ps_ids:
+                db.query(ScoreBreakdown).filter(
+                    ScoreBreakdown.player_score_id.in_(ps_ids)
+                ).delete(synchronize_session=False)
+            db.query(PlayerScore).filter(
+                PlayerScore.slate_player_id.in_(sp_ids)
+            ).delete(synchronize_session=False)
+        db.query(SlatePlayer).filter(
+            SlatePlayer.game_id.in_(drop_ids)
+        ).delete(synchronize_session=False)
+        db.query(SlateGame).filter(
+            SlateGame.id.in_(drop_ids)
+        ).delete(synchronize_session=False)
+        logger.warning(
+            "Vegas lines: dropped %d of %d games from %s slate due to missing odds. "
+            "Pipeline continues with %d games.",
+            len(games_to_drop), len(games), slate.date, updated,
         )
 
     db.commit()

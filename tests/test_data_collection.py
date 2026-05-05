@@ -145,8 +145,10 @@ async def test_enrich_vegas_lines_happy_path(db):
 
 
 @pytest.mark.asyncio
-async def test_enrich_vegas_lines_no_match_raises(db):
-    """If Odds API returns lines for a different team pairing, raise — no fallback."""
+async def test_enrich_vegas_lines_all_missing_raises(db):
+    """If Odds API returns NO matching lines for ANY game on the slate, that's
+    a real vendor outage — pipeline crashes loud. Distinguishes from the
+    partial-coverage case (some games missing) which is tolerated."""
     from app.services.data_collection import enrich_slate_game_vegas_lines
 
     slate, _ = _make_slate_with_game(db, home="NYY", away="BOS")
@@ -163,8 +165,118 @@ async def test_enrich_vegas_lines_no_match_raises(db):
     with patch("app.core.odds_api.fetch_mlb_odds", new_callable=AsyncMock, return_value=fake_odds), \
          patch("app.config.settings") as mock_settings:
         mock_settings.odds_api_key = "test-key"
-        with pytest.raises(RuntimeError, match="No odds found for NYY vs BOS"):
+        with pytest.raises(RuntimeError, match="no usable lines for ANY"):
             await enrich_slate_game_vegas_lines(db, slate)
+
+
+@pytest.mark.asyncio
+async def test_enrich_vegas_lines_partial_missing_drops_game(db):
+    """If the Odds API has lines for SOME games but not others, drop the
+    missing-odds games + their players from the slate and continue with the
+    rest. Mid-slate-redeploy fix — pre-fix this scenario crashed the whole
+    pipeline because of a single missing game (e.g. COL vs NYM bookmaker
+    pulled lines on weather risk)."""
+    from app.services.data_collection import enrich_slate_game_vegas_lines
+
+    # Two games: NYY/BOS will get odds, COL/NYM won't.
+    slate, game_with_odds = _make_slate_with_game(db, home="NYY", away="BOS")
+    game_without_odds = SlateGame(
+        slate_id=slate.id,
+        home_team="COL",
+        away_team="NYM",
+        game_status="Preview",
+    )
+    db.add(game_without_odds)
+    db.flush()
+
+    # Add a SlatePlayer for the to-be-dropped game so we verify cascade.
+    from app.models.player import Player
+    from app.models.slate import SlatePlayer
+    p = Player(name="Some Rockie", name_normalized="some rockie", team="COL", position="OF", mlb_id=999999)
+    db.add(p)
+    db.flush()
+    sp = SlatePlayer(
+        slate_id=slate.id,
+        player_id=p.id,
+        game_id=game_without_odds.id,
+        batting_order=1,
+        player_status="active",
+    )
+    db.add(sp)
+    db.flush()
+    sp_id = sp.id
+    dropped_game_id = game_without_odds.id
+
+    fake_odds = [
+        {
+            "home_team": "NYY",
+            "away_team": "BOS",
+            "home_moneyline": -150,
+            "away_moneyline": 130,
+            "total": 8.5,
+        }
+    ]
+
+    with patch("app.core.odds_api.fetch_mlb_odds", new_callable=AsyncMock, return_value=fake_odds), \
+         patch("app.config.settings") as mock_settings:
+        mock_settings.odds_api_key = "test-key"
+        updated = await enrich_slate_game_vegas_lines(db, slate)
+
+    # Surviving game has lines populated.
+    assert updated == 1
+    db.refresh(game_with_odds)
+    assert game_with_odds.home_moneyline == -150
+    assert game_with_odds.vegas_total == 8.5
+
+    # Dropped game and its SlatePlayer are gone from the DB so downstream env
+    # scoring never sees them with NULL moneylines.
+    assert db.query(SlateGame).filter_by(id=dropped_game_id).first() is None
+    assert db.query(SlatePlayer).filter_by(id=sp_id).first() is None
+
+
+@pytest.mark.asyncio
+async def test_enrich_vegas_lines_partial_market_drops_game(db):
+    """If the Odds API returned an event but the moneyline/total markets are
+    empty (no bookmaker priced them yet), drop that game — same as missing
+    event. We never score on partial markets."""
+    from app.services.data_collection import enrich_slate_game_vegas_lines
+
+    slate, game_with_odds = _make_slate_with_game(db, home="NYY", away="BOS")
+    game_partial = SlateGame(
+        slate_id=slate.id,
+        home_team="COL",
+        away_team="NYM",
+        game_status="Preview",
+    )
+    db.add(game_partial)
+    db.flush()
+    partial_id = game_partial.id
+
+    fake_odds = [
+        {
+            "home_team": "NYY",
+            "away_team": "BOS",
+            "home_moneyline": -150,
+            "away_moneyline": 130,
+            "total": 8.5,
+        },
+        {
+            # Event present but markets empty — bookmaker hadn't priced this game.
+            "home_team": "COL",
+            "away_team": "NYM",
+            "home_moneyline": None,
+            "away_moneyline": None,
+            "total": None,
+        },
+    ]
+
+    with patch("app.core.odds_api.fetch_mlb_odds", new_callable=AsyncMock, return_value=fake_odds), \
+         patch("app.config.settings") as mock_settings:
+        mock_settings.odds_api_key = "test-key"
+        updated = await enrich_slate_game_vegas_lines(db, slate)
+
+    assert updated == 1
+    assert db.query(SlateGame).filter_by(id=partial_id).first() is None
 
 
 @pytest.mark.asyncio

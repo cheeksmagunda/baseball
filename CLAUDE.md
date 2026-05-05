@@ -140,18 +140,24 @@ If all retries exhaust, the client raises and the T-65 pipeline crashes loud —
 
 **Behavior:**
 - `BO_ODDS_API_KEY` **must be set** at startup. If missing, the app logs a critical warning at initialization.
-- When the T-65 pipeline runs (`app/services/pipeline.py:537`), `enrich_slate_game_vegas_lines()` **raises `RuntimeError`** if:
+- When the T-65 pipeline runs, `enrich_slate_game_vegas_lines()` **raises `RuntimeError`** if:
   - The API key is unset
   - The API request fails (network error, timeout)
   - The API response indicates an error (401 invalid key, 422 quota exhausted, etc.)
-- **No fallback to NULL moneylines.** The entire T-65 pipeline crashes with a clear error.
-- Users see HTTP 503 "T-65 lineup not available — Vegas API failed" when they try to fetch picks.
+  - **NO** game on the slate has matching odds (full vendor outage)
+- Users see HTTP 503 with the specific error message when they try to fetch picks.
 
-**Why?** Vegas lines feed directly into pitcher and batter environmental scoring (Filter 2):
+**Per-game tolerance for partial coverage (May 2026 mid-slate redeploy fix):** within a single Odds API response, individual games can be missing — typical causes include bookmakers pulling lines on weather risk (Coors Field is the most common offender), doubleheader splits where only one game has been priced, late scheduling changes, or sportsbook-specific gaps. Pre-fix, a single missing game crashed the entire slate (zero picks generated). Post-fix, when the API is reachable but odds are missing for a SUBSET of games, those games are dropped from the slate (their `SlateGame` + `SlatePlayer` rows deleted) and the pipeline continues with the remaining games. Per-game drops log a loud `WARNING` so ops sees the coverage gap.
+
+**This is NOT a fallback in the no-fallback-policy sense.** We never substitute fake moneylines or default totals. We strictly shrink the slate to the games we can score on real data — exactly the same posture as the existing `is_game_remaining` filter that drops already-started games on a mid-slate cold start. The full-outage case (zero matched games) still raises loudly. The downstream `MIN_GAMES_REPRESENTED` guard in `run_full_pipeline` catches the case where too many games dropped to produce a meaningful slate.
+
+**Why this matters:** mid-slate redeploys (Railway dyno cycles after the day's first pitch) routinely run the pipeline 30-60 minutes from imminent first pitches, where bookmakers may have pulled lines for one or two games due to weather or late-breaking news. Crashing the entire slate over one game would produce zero picks for the user when 14 of 15 games are perfectly scoreable.
+
+**Why Vegas lines matter:** they feed directly into pitcher and batter environmental scoring:
 - **Pitcher env (Factor 5):** Moneyline determines win-bonus probability (heavy favorite -250+ gets full credit).
 - **Batter env (Group A, A1/A3):** Vegas O/U (over/under) and moneyline determine run-scoring environment.
 
-Missing Vegas data corrupts the EV formula and produces suboptimal lineups. The system cannot proceed without it. If The Odds API fails, operations must investigate and restore it — there is no graceful degradation.
+A game with NULL moneyline cannot be scored — that's why dropping it is correct, not papering it over with defaults.
 
 **Configuration:** Set `BO_ODDS_API_KEY` to your The Odds API key (free tier: 500 requests/month, sufficient for one pipeline run per day).
 
