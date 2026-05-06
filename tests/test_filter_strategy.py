@@ -980,16 +980,21 @@ class TestRunFilterStrategy:
         assert result.slots == []
         assert result.total_expected_value == 0.0
 
-    def test_pitcher_only_pool_yields_5p_lineup(self):
-        """V12: when only pitchers are available, the chooser picks the 5P+0B variant."""
+    def test_pitcher_only_pool_raises_under_max_pitchers_cap(self):
+        """V15.3: with MAX_PITCHERS_PER_LINEUP=1, a pitcher-only pool can't
+        produce any legal variant — variant chooser raises ValueError.
+
+        Pre-V15.3 (V12 era) this test asserted a 5P+0B variant was produced.
+        Real Sports caps lineups at 1 pitcher, so the multi-pitcher
+        variants V12 explored are unsubmittable on the platform.
+        """
         pool = []
         for i in range(6):
             c = _make_candidate(name=f"P{i}", team=f"T{i}", is_pitcher=True,
                                 game_id=i, env_score=0.85, total_score=70)
             pool.append(c)
-        result = run_filter_strategy(pool, _default_slate())
-        assert result.composition["pitchers"] == 5
-        assert result.composition["hitters"] == 0
+        with pytest.raises(ValueError, match="lineup variant"):
+            run_filter_strategy(pool, _default_slate())
 
     def test_anti_correlation_guard_blocks_opposing_batter(self):
         """V12: a high-EV opposing batter must NOT be drafted alongside our pitcher."""

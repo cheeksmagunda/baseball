@@ -66,6 +66,7 @@ from app.core.constants import (
     MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE,
     MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT,
     MAX_PLAYERS_PER_GAME_BATTERS,
+    MAX_PITCHERS_PER_LINEUP,
     is_stack_eligible_game,
     STACK_ELIGIBILITY_SHOOTOUT_TOTAL,
     STACK_ELIGIBILITY_PATH3_OPP_SP_ERA,
@@ -1169,7 +1170,12 @@ def _enforce_composition(
     best_ev: float = -1.0
     best_n_p: int = -1
     variant_evs: dict[int, float] = {}
-    for n_p in range(0, 6):  # 0P..5P
+    # V15.3 (May 6, 2026): Real Sports platform caps lineups at
+    # MAX_PITCHERS_PER_LINEUP pitchers.  V12's 0P-5P sweep produced
+    # unsubmittable lineups (4P+1B etc.) on the actual platform; we
+    # now only build legal pitcher counts.  See constants.py for the
+    # rationale and the V12 audit-data conflict.
+    for n_p in range(0, MAX_PITCHERS_PER_LINEUP + 1):
         lineup = _build_variant(n_p, sorted_pitchers, sorted_batters, stack_eligible_teams)
         if len(lineup) != 5:
             continue

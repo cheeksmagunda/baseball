@@ -734,6 +734,61 @@ The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each
 
 **Stacking** is still capped at 2 batters per team AND 2 per game and only fires on overwhelmingly clear game scripts.
 
+### V15.3 Max-Pitchers Cap + V15.2 Revert (May 6)
+
+V15.3 reinstates the platform-level cap of one pitcher per lineup and
+reverts V15.2's batter env ceiling tighten.
+
+**The bug.** V15.2 tightened batter env ceiling 1.30 → 1.20 to address a
+"too many rating-30s bats" complaint, but kept pitcher ceiling at 1.55
+— widening the pitcher-vs-batter asymmetry from 19% to 29%.  The
+mid-slate redeploy on 2026-05-06 produced a lineup of four pitchers and
+one batter (Ragans / Cantillo / Soroka / Pérez / Clemens), where the
+Real Sports platform actually caps lineups at **1 pitcher**.  Both the
+asymmetric over-correction and the unsubmittable pitcher count had to
+be fixed before first pitch.
+
+**Two changes:**
+
+1. `ENV_MODIFIER_CEILING` reverted 1.20 → 1.30.  V15.2's tighten was
+   tested only against the symmetric case and missed the interaction
+   with the asymmetric pitcher ceiling.  The "too many rating-30s bats"
+   problem returns under V15.3 but is the lesser evil — and the cap
+   below addresses it differently.
+2. `MAX_PITCHERS_PER_LINEUP = 1` added to `app/core/constants.py`.  The
+   variant chooser (`_enforce_composition`) now iterates only `n_p ∈ [0,
+   1]` instead of `[0, 5]`.  Builds 0P+5B and 1P+4B variants only,
+   picks the higher slot-weighted total.
+
+**The V12 audit conflict.**  V12.1's documented audit of "35 actual #1
+winning lineups" reported 28.6% with 2P+3B, 14.3% with 3P+2B, 11.4%
+with 4P+1B — i.e. ~57% of historical winners had multi-pitcher shapes.
+That data drove the V12 design ("multi-pitcher 0P-5P composition
+chooser").  The 2026-05-06 user assertion ("number of pitchers is maxed
+at 1 per draft") directly contradicts that audit.  Possible
+explanations:
+
+- Audit data was contaminated (mis-labelled positions on the captured
+  leaderboard screenshots, or "pitcher count" counted RP appearances
+  separately).
+- Platform rules changed since the V12 audit window (March-April 2026).
+- The audited "winning lineups" came from a different contest format
+  with different rules than the live daily slate.
+
+The runtime fix doesn't depend on resolving which.  V15.3 enforces the
+known-current platform rule; if the audit data was right and the
+platform actually allows multi-pitcher, we'll see that in lower
+slot-weighted RS over the next 5-10 slates and can revisit then.  For
+now the structural cap matches what the user can submit.
+
+**Test impact:**
+- `tests/test_filter_strategy.py::test_pitcher_only_pool_yields_5p_lineup`
+  rewritten to `test_pitcher_only_pool_raises_under_max_pitchers_cap` —
+  V12's 5P+0B fallback is no longer reachable; a pitcher-only pool now
+  raises `ValueError` from the variant chooser (no legal variant).
+- 258/258 tests pass (composition tests already use the constant, not
+  hardcoded counts).
+
 ### V15.1 Continuous Popularity-Score Components (May 6)
 
 V15 calibrated the score → multiplier curve from outcome data, but the
