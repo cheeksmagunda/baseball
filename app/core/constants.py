@@ -613,8 +613,20 @@ ET_TO_UTC_OFFSET_HOURS = 4
 # NEUTRAL_SCORE = pool weighted-mean popularity score (rounded).
 # SLOPE = avg of (1−FLOOR)/(p90−NEUTRAL) and (CEILING−1)/(NEUTRAL−p10) on
 #         the corpus, so the curve naturally saturates near the tails.
-POPULARITY_NEUTRAL_SCORE = 3.5
-POPULARITY_SLOPE = 0.08
+# V15.1 (May 2026) — re-fitted constants after replacing V15's binary
+# threshold components with continuous ramps.  V15.1 scores have wider
+# spread (typical max ~9.0 vs V15's ~7.5) because elite-stats and
+# fame-rate now contribute proportionally rather than capped at +2/+1
+# steps.  Re-fitting NEUTRAL and SLOPE preserves the original intent
+# (multiplier saturates near pool tails, neutral at pool mean) on the
+# new score distribution.
+#
+# Curve preview at calibrated constants (see scripts/calibrate_popularity_curve.py):
+#   score 0 → mult 1.25 (CEILING / max sleeper boost; HV-rate 66%)
+#   score 4.5 → mult 1.00 (neutral; HV-rate 49%)
+#   score 9 → mult 0.80 (FLOOR / max consensus discount; HV-rate 16%)
+POPULARITY_NEUTRAL_SCORE = 4.5
+POPULARITY_SLOPE = 0.07
 POPULARITY_MULT_FLOOR = 0.80
 POPULARITY_MULT_CEILING = 1.25
 
@@ -665,18 +677,54 @@ STAR_PLAYER_FLAGS = frozenset({
     "aaron nola", "sonny gray", "justin verlander", "clayton kershaw",
 })
 
-# Rolling fame index window — number of trailing days over which to count
-# Most Popular leaderboard appearances when scoring a candidate's "field
-# attention" feature.  14 days is two weeks of slate cadence — long enough
-# to capture true breakout buzz, short enough to age out noise.
-LEVERAGE_FAME_INDEX_DAYS = 14
+# V15.1 (May 2026) — continuous fame index, position-aware window.
+# Replaces V14/V15's binary thresholds (>=1 → +1, >=3 → +2) with a
+# rate-based signal: mp_appearances / total_appearances over the trailing
+# window, scaled to [0, LEVERAGE_FAME_RATE_MAX_PTS].  Calibrated by
+# scripts/calibrate_popularity_components.py against actual MP-flag
+# outcomes — the rate-based signal lifted batter MP-prediction AUC from
+# 0.823 → 0.848 by capturing the gradient between "popular every start"
+# and "popular once in 14 days" the binary thresholds collapsed to +1 each.
+#
+# Position-aware windows: starting pitchers pitch every 5 days, so a 14-day
+# window has at most 3 starts as denominator; lengthening to 28 days gives
+# 5-6 starts and a stable rate.  Batters appear ~5 of every 7 days, so 14
+# days is already 8-10 appearances and stable.
+LEVERAGE_FAME_INDEX_DAYS_BATTER = 14
+LEVERAGE_FAME_INDEX_DAYS_PITCHER = 28
+LEVERAGE_FAME_RATE_MAX_PTS = 3.0
 
-# Star-status threshold for currently-elite season stats — players above
-# these without any historical leaderboard fame still get the star flag.
-# Rationale: we don't want to fade a 0.950 OPS hitter just because he had
-# a quiet 2025; the field WILL notice 1.0+ OPS / sub-2.50 ERA.
-LEVERAGE_STAR_BATTER_OPS = 0.900
-LEVERAGE_STAR_PITCHER_ERA = 3.00
+# Backwards-compat alias — used only by scripts/calibrate_popularity_curve.py
+# (the score → multiplier curve fitter, runs offline).  Live runtime uses
+# the position-aware constants above.
+LEVERAGE_FAME_INDEX_DAYS = LEVERAGE_FAME_INDEX_DAYS_BATTER
+
+# V15.1 — continuous elite-stats signal, replaces V14/V15's binary thresholds
+# (OPS >= 0.900 → +2 batter, ERA <= 3.00 → +2 pitcher).  Linear scale within
+# [floor, ceiling], maxing at LEVERAGE_ELITE_STAT_MAX_PTS (held at 2.5 so a
+# flagged star at +3 still slightly outranks pure-elite-stats at +2.5).
+#
+# Floor/ceiling endpoints calibrated to where the empirical MP-rate ramp
+# starts and saturates in historical_players.csv:
+#   * Batters: OPS 0.65 → 7% MP-rate; OPS 0.95 → 64% MP-rate.  The 0.50–0.65
+#     band is also low-MP but at smaller N and includes utility bats with
+#     limited PAs; using 0.65 as the floor avoids over-weighting that noise.
+#   * Pitchers: ERA <= 4.00 → ~80% MP-rate (the "draft-relevant tier"); ERA
+#     >= 4.50 falls to 50–70% MP-rate with high variance.  Setting ceiling
+#     at 4.50 gives partial credit through the entire usable starter band
+#     and zero credit only past the bullpen-tier line.
+LEVERAGE_ELITE_BATTER_OPS_FLOOR = 0.650
+LEVERAGE_ELITE_BATTER_OPS_CEILING = 0.950
+LEVERAGE_ELITE_PITCHER_ERA_FLOOR = 2.50
+LEVERAGE_ELITE_PITCHER_ERA_CEILING = 4.50
+LEVERAGE_ELITE_STAT_MAX_PTS = 2.5
+
+# Backwards-compat aliases — used only by scripts/calibrate_popularity_curve.py
+# (the score → multiplier curve fitter).  Live runtime uses the floor/ceiling
+# pairs above.  Aliased to the legacy values so calibrate_popularity_curve.py
+# can still recompute the V15 score for comparison reporting.
+LEVERAGE_STAR_BATTER_OPS = LEVERAGE_ELITE_BATTER_OPS_CEILING
+LEVERAGE_STAR_PITCHER_ERA = LEVERAGE_ELITE_PITCHER_ERA_FLOOR
 
 
 # ---------------------------------------------------------------------------
@@ -762,6 +810,37 @@ def _validate_constants() -> None:
     missing_tier = set(PARK_HR_FACTORS.keys()) - set(TEAM_MARKET_TIER.keys())
     assert not missing_tier, (
         f"TEAM_MARKET_TIER missing teams present in PARK_HR_FACTORS: {sorted(missing_tier)}"
+    )
+
+    # V15.1 — continuous component bounds.  Floor/ceiling must be ordered
+    # in the right direction (OPS ascending = higher = more popular; ERA
+    # descending = lower = more popular).  Inverting either silently flips
+    # the contrarian signal, scoring the wrong tail of the distribution.
+    assert LEVERAGE_ELITE_BATTER_OPS_FLOOR < LEVERAGE_ELITE_BATTER_OPS_CEILING, (
+        f"OPS floor must be below ceiling (higher OPS = more popular): "
+        f"[{LEVERAGE_ELITE_BATTER_OPS_FLOOR}, {LEVERAGE_ELITE_BATTER_OPS_CEILING}]"
+    )
+    assert LEVERAGE_ELITE_PITCHER_ERA_FLOOR < LEVERAGE_ELITE_PITCHER_ERA_CEILING, (
+        f"ERA floor must be below ceiling (lower ERA = more popular, but "
+        f"floor < ceiling on the value axis): "
+        f"[{LEVERAGE_ELITE_PITCHER_ERA_FLOOR}, {LEVERAGE_ELITE_PITCHER_ERA_CEILING}]"
+    )
+    assert LEVERAGE_ELITE_STAT_MAX_PTS > 0, (
+        f"LEVERAGE_ELITE_STAT_MAX_PTS must be positive: {LEVERAGE_ELITE_STAT_MAX_PTS}"
+    )
+    assert LEVERAGE_FAME_RATE_MAX_PTS > 0, (
+        f"LEVERAGE_FAME_RATE_MAX_PTS must be positive: {LEVERAGE_FAME_RATE_MAX_PTS}"
+    )
+    assert LEVERAGE_FAME_INDEX_DAYS_BATTER > 0 and LEVERAGE_FAME_INDEX_DAYS_PITCHER > 0, (
+        f"Fame-index windows must be positive: "
+        f"batter={LEVERAGE_FAME_INDEX_DAYS_BATTER}, "
+        f"pitcher={LEVERAGE_FAME_INDEX_DAYS_PITCHER}"
+    )
+    assert LEVERAGE_FAME_INDEX_DAYS_PITCHER >= LEVERAGE_FAME_INDEX_DAYS_BATTER, (
+        f"Pitcher fame window should be at least as long as batter window "
+        f"(pitchers play less frequently): batter="
+        f"{LEVERAGE_FAME_INDEX_DAYS_BATTER}, pitcher="
+        f"{LEVERAGE_FAME_INDEX_DAYS_PITCHER}"
     )
 
 

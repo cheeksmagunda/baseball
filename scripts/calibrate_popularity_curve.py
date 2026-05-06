@@ -1,10 +1,14 @@
-"""Calibrate the V15 continuous popularity-score → EV multiplier curve.
+"""Calibrate the V15.1 continuous popularity-score → EV multiplier curve.
 
-Replaces the V14 discrete-bucket leverage system.  Walks historical
-player rows (data/historical_players.csv), recomputes each row's
-public-observable popularity score using the same input shape as
-app/core/popularity.py, then reports per-score-level HV-rate vs
-MP-rate to inform a continuous score → multiplier mapping.
+Walks historical player rows (data/historical_players.csv), recomputes
+each row's public-observable popularity score using the LIVE V15.1
+helpers (`_team_market_score`, `_elite_stat_pts`, fame-rate index), then
+reports per-score-level HV-rate vs MP-rate to inform a continuous score
+→ multiplier mapping.
+
+This script's output drives POPULARITY_NEUTRAL_SCORE / POPULARITY_SLOPE
+in app/core/constants.py.  Re-run after any change to V15.1 component
+weights to confirm the curve still saturates near the pool tails.
 
 This is a calibration script — it lives in /scripts/ and IS allowed to
 read outcome columns (is_highest_value, is_most_popular, real_score)
@@ -27,15 +31,17 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app.core.constants import (  # noqa: E402
-    LEVERAGE_FAME_INDEX_DAYS,
-    LEVERAGE_STAR_BATTER_OPS,
-    LEVERAGE_STAR_PITCHER_ERA,
+    LEVERAGE_FAME_INDEX_DAYS_BATTER,
+    LEVERAGE_FAME_INDEX_DAYS_PITCHER,
+    LEVERAGE_FAME_RATE_MAX_PTS,
     PITCHER_POSITIONS,
+    POPULARITY_MULT_CEILING,
+    POPULARITY_MULT_FLOOR,
     STAR_PLAYER_FLAGS,
     TEAM_MARKET_TIER,
     canonicalize_team,
 )
-from app.core.popularity import _normalize  # noqa: E402
+from app.core.popularity import _elite_stat_pts, _normalize  # noqa: E402
 
 CSV_PATH = ROOT / "data" / "historical_players.csv"
 
@@ -48,53 +54,70 @@ def _team_market_score(team: str) -> float:
     return {1: 3.0, 2: 2.0, 3: 1.0, 4: 0.0}[tier]
 
 
-def _build_fame_index(rows: list[dict]) -> dict[tuple[str, str, date], int]:
-    """Pre-compute (name, team, as_of) → MP appearances in trailing window.
+def _build_fame_rate_index(
+    rows: list[dict],
+    window_days: int,
+) -> dict[tuple[str, str, date], tuple[int, int]]:
+    """Pre-compute (name, team, as_of) → (mp_count, total_count) in trailing window.
 
-    Mirrors app.core.popularity._load_fame_index but keyed across all
-    dates for a single batched walk of the CSV.
+    Mirrors app.core.popularity._load_fame_rate_index but keyed across
+    all dates for a single batched walk of the CSV.
     """
-    by_player: dict[tuple[str, str], list[date]] = defaultdict(list)
+    by_player: dict[tuple[str, str], list[tuple[date, int]]] = defaultdict(list)
     for row in rows:
-        if row.get("is_most_popular") != "1":
-            continue
         try:
             d = date.fromisoformat(row["date"])
         except (KeyError, ValueError):
             continue
         key = (_normalize(row["player_name"]), canonicalize_team(row["team"]))
-        by_player[key].append(d)
+        mp = 1 if row.get("is_most_popular") == "1" else 0
+        by_player[key].append((d, mp))
 
-    index: dict[tuple[str, str, date], int] = {}
-    for key, dates in by_player.items():
-        dates.sort()
-        for d in dates:
-            cutoff = d - timedelta(days=LEVERAGE_FAME_INDEX_DAYS)
-            count = sum(1 for prior in dates if cutoff <= prior < d)
-            index[(key[0], key[1], d)] = count
+    index: dict[tuple[str, str, date], tuple[int, int]] = {}
+    for key, dated in by_player.items():
+        dated.sort()
+        for d, _ in dated:
+            cutoff = d - timedelta(days=window_days)
+            mp_count = 0
+            total = 0
+            for prior_d, prior_mp in dated:
+                if cutoff <= prior_d < d:
+                    total += 1
+                    if prior_mp == 1:
+                        mp_count += 1
+            index[(key[0], key[1], d)] = (mp_count, total)
     return index
+
+
+def _safe_float(s) -> float | None:
+    if s in (None, ""):
+        return None
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        return None
 
 
 def _row_popularity_score(
     row: dict,
-    fame_index: dict[tuple[str, str, date], int],
+    fame_batter: dict[tuple[str, str, date], tuple[int, int]],
+    fame_pitcher: dict[tuple[str, str, date], tuple[int, int]],
 ) -> float | None:
-    """Compute the continuous popularity score for one historical row.
+    """Compute the V15.1 continuous popularity score for one historical row.
 
-    Returns None if the row is unscoreable (e.g., missing date/team or a
-    non-rookie batter with empty OPS — we can't estimate the field's
-    fame for them retroactively without the elite-stat signal).
+    Calls the live `_elite_stat_pts` helper so any future tweak to the
+    elite-stats ramp shape automatically propagates here.
 
     Inputs (all public pre-game observables — same shape as the live
     predictor):
       * Team market tier
-      * Star flag OR elite stats (ops_at_slate ≥ 0.900 batters; ERA not
-        in the CSV — treated as None for pitchers)
-      * Rolling 14-day MP fame index from prior-slate is_most_popular
-      * Top-3 batting order — NOT in the CSV; deferred (the live path
-        adds +1 for it; absent in calibration so the curve is slightly
-        conservative for top-of-order batters, which is a forgivable
-        miscalibration)
+      * Star flag OR elite-stats ramp (continuous in OPS or ERA)
+      * Position-aware rate-based fame index (MP appearances / total
+        appearances over trailing window — 14d batters, 28d pitchers)
+      * Top-3 batting order — NOT in the CSV; the live path adds +1 for
+        it.  Absent here, so the curve is slightly conservative for
+        top-of-order batters — a forgivable miscalibration since they're
+        a small fraction of the corpus and the +1 is uniform.
     """
     try:
         d = date.fromisoformat(row["date"])
@@ -116,26 +139,15 @@ def _row_popularity_score(
     if name_norm in STAR_PLAYER_FLAGS:
         score += 3.0
     else:
-        ops_str = row.get("ops_at_slate", "")
-        ops_at_slate: float | None = None
-        if ops_str not in (None, ""):
-            try:
-                ops_at_slate = float(ops_str)
-            except ValueError:
-                ops_at_slate = None
-        if not is_pitcher and ops_at_slate is not None and ops_at_slate >= LEVERAGE_STAR_BATTER_OPS:
-            score += 2.0
-        # Pitchers: ERA not in CSV; we conservatively skip the elite-stats branch.
+        ops_at_slate = _safe_float(row.get("ops_at_slate"))
+        era_at_slate = _safe_float(row.get("era_at_slate"))
+        # Live elite-stats helper — same code path the runtime executes.
+        score += _elite_stat_pts(is_pitcher, ops_at_slate, era_at_slate)
 
-    fame = fame_index.get((name_norm, canonical, d), 0)
-    if fame >= 3:
-        score += 2.0
-    elif fame >= 1:
-        score += 1.0
-
-    # No batting_order column in the CSV — the +1 top-3 term is omitted.
-    # Live runtime still applies it; calibration is slightly conservative
-    # for top-of-order batters as a result.
+    fame_index = fame_pitcher if is_pitcher else fame_batter
+    mp, total = fame_index.get((name_norm, canonical, d), (0, 0))
+    if total >= 1:
+        score += LEVERAGE_FAME_RATE_MAX_PTS * (mp / total)
 
     return score
 
@@ -155,8 +167,13 @@ def main() -> int:
 
     print(f"Loaded {len(rows)} player-slate rows from {CSV_PATH.name}")
 
-    fame_index = _build_fame_index(rows)
-    print(f"Built fame index: {len(fame_index)} (player, team, date) entries")
+    fame_batter = _build_fame_rate_index(rows, LEVERAGE_FAME_INDEX_DAYS_BATTER)
+    fame_pitcher = _build_fame_rate_index(rows, LEVERAGE_FAME_INDEX_DAYS_PITCHER)
+    print(
+        f"Built fame indexes: batter ({LEVERAGE_FAME_INDEX_DAYS_BATTER}d) "
+        f"{len(fame_batter)} entries / pitcher ({LEVERAGE_FAME_INDEX_DAYS_PITCHER}d) "
+        f"{len(fame_pitcher)} entries"
+    )
 
     # Aggregate per score bin
     by_bin: dict[float, dict[str, float]] = defaultdict(lambda: {
@@ -165,7 +182,7 @@ def main() -> int:
 
     skipped = 0
     for row in rows:
-        score = _row_popularity_score(row, fame_index)
+        score = _row_popularity_score(row, fame_batter, fame_pitcher)
         if score is None:
             skipped += 1
             continue
@@ -242,8 +259,9 @@ def main() -> int:
 
     # multiplier(p90) = FLOOR; multiplier(p10) = CEILING
     # slope * (NEUTRAL - p90) = FLOOR - 1.0  → slope = (1.0 - FLOOR) / (p90 - NEUTRAL)
-    floor = 0.85
-    ceiling = 1.20
+    # Source FLOOR / CEILING from the live constants — keep them in sync.
+    floor = POPULARITY_MULT_FLOOR
+    ceiling = POPULARITY_MULT_CEILING
     if p90 is not None and p10 is not None and p90 > weighted_mean and p10 < weighted_mean:
         slope_floor = (1.0 - floor) / (p90 - weighted_mean)
         slope_ceiling = (ceiling - 1.0) / (weighted_mean - p10)

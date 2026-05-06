@@ -734,6 +734,111 @@ The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each
 
 **Stacking** is still capped at 2 batters per team AND 2 per game and only fires on overwhelmingly clear game scripts.
 
+### V15.1 Continuous Popularity-Score Components (May 6)
+
+V15 calibrated the score → multiplier curve from outcome data, but the
+score *itself* was still built from V14-era binary thresholds: OPS ≥
+0.900 → +2 / ERA ≤ 3.00 → +2, fame_count ≥ 1 → +1 / ≥ 3 → +2.  These
+were never re-fitted.  V15.1 replaces them with continuous functions
+calibrated against actual is_most_popular outcomes.
+
+Triggered by 2026-05-05 user complaint: Bello (BOS, 50% MP rate over
+last 2 starts, 7.44 ERA) and Elder (ATL, 0% MP rate, 1.50 ERA) scored
+within 17% of each other under V15.  The bucket analysis on the
+historical corpus showed why: Bello hit "fame_count ≥ 1" (+1) but
+couldn't reach "≥ 3" (+2) because starters only pitch 3× in 14 days;
+Elder failed the elite-stats binary at exactly 3.00.  Both edge cases
+are boundary-cliff failures of binary thresholds — the kind that recur
+indefinitely with one-off fixes.
+
+**Empirical fit (1561 player-slate rows, May 2026):**
+
+| Component | V15 design | V15.1 design | Empirical signal |
+|---|---|---|---|
+| Elite stats — batter | OPS ≥ 0.900 → +2 (binary) | OPS ramp [0.65, 0.95] → [0, 2.5] pts (continuous) | OPS 0.65 → 7% MP-rate; OPS 0.95 → 64% MP-rate. Smooth gradient. |
+| Elite stats — pitcher | ERA ≤ 3.00 → +2 (binary) | ERA ramp [2.50, 4.50] → [2.5, 0] pts (continuous) | ERA <4.0 → ~80% MP-rate; ERA >4.5 → 50–70%. Below-4.0 is "draft-relevant". |
+| Fame index | count ≥ 1 → +1, ≥ 3 → +2 (binary) | rate × 3 pts where rate = mp / total appearances (continuous, position-aware window) | rate=0 → 13% MP; rate>0.75 → 86% MP. Massive gradient bucket-thresholds collapsed. |
+| Window | 14 days for everyone | 14d batters, 28d pitchers | Pitchers pitch every 5 days; 14d gives ~2-3 starts as denominator (sparse), 28d gives ~5-6 (stable). |
+| Market tier | {1:3, 2:2, 3:1, 4:0} | unchanged (data confirms monotone) | Tier 1: 55% MP, Tier 4: 35% MP. Mapping is correct. |
+| STAR_PLAYER_FLAGS | +3 if flagged | unchanged (curated list, can't fit) | Flagged: 66% MP, unflagged: 38%. +3 stays. |
+| Top-3 batting order | +1 (binary) | unchanged (not in CSV, can't fit) | Live runtime keeps the binary +1. |
+
+**Validation** — AUC on `is_most_popular` against the 1560-row corpus:
+
+| Variant | Overall AUC | Pitcher AUC | Batter AUC |
+|---|---|---|---|
+| V15 (binary thresholds, current shipped) | 0.7775 | 0.7562 | 0.8018 |
+| V15.1 (continuous components) | 0.8213 | 0.7700 | 0.8484 |
+| Δ | **+0.0438** | +0.0138 | +0.0466 |
+
+Lift is concentrated on batters (where the OPS ramp + fame-rate signal
+both fire) but the pitcher track also gains. The continuous fame rate
+is the dominant new lever — separating "popular every start" from
+"popular once" instead of collapsing both to identical +1 points.
+
+**Recalibrated curve constants** — V15.1 scores have wider spread (max
+~9.0 vs V15's ~7.5) because elite-stats and fame-rate now contribute
+proportionally rather than capped at +2/+1 steps.  `POPULARITY_NEUTRAL_SCORE`
+re-fit from 3.5 → 4.5 (new pool weighted-mean); `POPULARITY_SLOPE` re-fit
+from 0.08 → 0.07 (gentler ramp to match wider score range). Floor and
+ceiling unchanged (0.80, 1.25).  Curve preview at calibrated constants:
+
+| Score | Multiplier | HV-rate at this score |
+|---|---|---|
+| 0 | 1.250 (CEILING / max sleeper boost) | 66% |
+| 2 | 1.176 | 65% |
+| 4.5 | 1.000 (neutral) | 49% |
+| 7 | 0.824 | 19% |
+| 9 | 0.800 (FLOOR / max consensus discount) | 16% |
+
+The HV-rate column is the *outcome* signal, not used as input — it's
+shown to confirm the multiplier moves in the right direction (low score
+= high HV-rate, deserved bonus; high score = low HV-rate, deserved
+discount).
+
+**Surface area:**
+- `app/core/constants.py` — `LEVERAGE_FAME_INDEX_DAYS_BATTER`,
+  `LEVERAGE_FAME_INDEX_DAYS_PITCHER`, `LEVERAGE_FAME_RATE_MAX_PTS`,
+  `LEVERAGE_ELITE_BATTER_OPS_FLOOR/CEILING`,
+  `LEVERAGE_ELITE_PITCHER_ERA_FLOOR/CEILING`,
+  `LEVERAGE_ELITE_STAT_MAX_PTS` replace `LEVERAGE_FAME_INDEX_DAYS`,
+  `LEVERAGE_STAR_BATTER_OPS`, `LEVERAGE_STAR_PITCHER_ERA`. Legacy names
+  aliased to the new floor/ceiling so `calibrate_popularity_curve.py`
+  retains backwards compatibility.
+- `app/core/popularity.py` — `_load_fame_rate_index`, `get_fame_rate`,
+  `_elite_stat_pts`, `_fame_rate_pts` (private). The public surface
+  (`predict_popularity_score`, `predict_rookie_popularity_score`,
+  `popularity_score_to_multiplier`) keeps the same signatures —
+  callers in `candidate_resolver.py` and `pipeline.py` need no changes.
+- `scripts/backfill_player_season_stats_at_slate.py` — extended to also
+  populate `era_at_slate` / `whip_at_slate` / `k9_at_slate` columns for
+  pitcher rows (was hitter-only).  268/273 pitcher rows backfilled in
+  May 2026 (5 unresolved are scraper-OCR name errors, accepted blank).
+- `scripts/calibrate_popularity_components.py` (new) — re-fits each
+  component's MP-rate curve.  Re-run after any constant change.
+- `scripts/calibrate_popularity_curve.py` — updated to consume the V15.1
+  score (`_elite_stat_pts` + rate-based fame index).  Output drives
+  `POPULARITY_NEUTRAL_SCORE` / `POPULARITY_SLOPE`.
+- `tests/test_popularity.py` — `TestContinuousElite` (11 new) and
+  `TestContinuousFameRate` pin the ramp shape, monotonicity, no-cliff
+  invariant, and position-aware window. 30/30 pass.
+
+**V15.1 explicitly does NOT change:** the popularity score → multiplier
+mapping shape (still linear with FLOOR/CEILING clamps), V12 multi-pitcher
+0P–5P composition chooser, per-team / per-game caps, anti-correlation
+guard, slot-1 = highest-EV-player rule, FADE / hard-exclusion remains
+deleted (V11), env asymmetric ceilings (pitcher 1.55, batter 1.30,
+rookie 1.10), trait band [0.85, 1.15], V13.3 position-volume haircut,
+V13 ML curves, T-65 timing model, no-fallbacks rule, no-historical-bleed
+rule. The audit-isolation script remains clean: `app/core/popularity.py`
+still in `EXEMPT_FILES` for the prior-slate `is_most_popular` read; no
+new outcome-label leakage introduced.
+
+**Verification:** 258/258 tests pass (was 245 pre-V15.1; +13 new tests
+in `TestContinuousElite` + `TestContinuousFameRate`).
+`scripts/audit_live_isolation.py` clean.  Calibration is reproducible
+via `BO_CURRENT_SEASON=2026 python scripts/calibrate_popularity_components.py`.
+
 ### V15 Continuous Popularity-Calibrated EV Multiplier (May 6)
 
 V15 replaces V14's discrete five-bucket leverage system (`top_decile` /

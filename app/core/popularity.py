@@ -1,4 +1,4 @@
-"""Predicted-ownership popularity score (V15, May 2026).
+"""Predicted-ownership popularity score (V15.1, May 2026).
 
 The pipeline is, by construction, a performance predictor.  The 40-slate
 audit (STRATEGY_AUDIT_2026-05.md) shows that performance prediction alone
@@ -8,29 +8,38 @@ leaderboard, and popular HVs vs sleeper HVs score essentially identically.
 The contest-winning edge is differentiation from the field, not raw
 projection.
 
-V15 replaces V14's discrete-bucket system (top_decile / upper_mid / mid /
-lower_mid / bottom_decile) with a continuous popularity score in [0, 10]
-mapping to a continuous EV multiplier in [POPULARITY_MULT_FLOOR,
-POPULARITY_MULT_CEILING].  Same inputs, smoother gradient — the field's
-draft preferences are continuous, so the contrarian premium should be
-continuous too.  Calibrated by scripts/calibrate_popularity_curve.py
-against historical_players.csv (May 2026: 1561 player-slate rows).
+V15 (May 2026) replaced V14's discrete-bucket leverage system with a
+continuous popularity score in [0, ~10] mapping to a continuous EV
+multiplier in [POPULARITY_MULT_FLOOR, POPULARITY_MULT_CEILING] via
+popularity_score_to_multiplier (calibrated by
+scripts/calibrate_popularity_curve.py against MP-flag outcomes).
 
-Inputs (all pre-game public observables):
-    1. Team market tier — TEAM_MARKET_TIER lookup in constants.py.
-       Yankees / Dodgers / Cubs etc. are systematically over-drafted; small
-       markets are systematically under-drafted.  Static; not an outcome.
-    2. Player fame — STAR_PLAYER_FLAGS (returning All-Stars, MVP/CY top-5)
-       plus elite current-season stats (OPS >= 0.900 / ERA <= 3.00).
-       Both are facts visible on every player profile pre-game.
-    3. Slate context — top-of-order batting position.
-    4. Rolling 14-day fame index — count of prior Most Popular leaderboard
-       appearances in the trailing window.  This is the one feature that
-       references historical data, and only the prior-slate Most Popular
-       flag (a publicly-displayed observable, not an outcome label of the
-       current slate).  The audit doc explicitly carves this out as
-       analogous to using prior-season ERA: a backward-looking aggregate
-       of pre-game observables, not leakage of the current slate's label.
+V15.1 (May 2026, this revision) replaces the binary thresholds INSIDE the
+score with continuous functions fit against the same outcome data:
+
+  * Elite stats — V15 used OPS >= 0.900 → +2 / ERA <= 3.00 → +2 (binary).
+    V15.1 uses a smooth ramp: OPS in [0.650, 0.950] → [0, 2.5] pts;
+    ERA in [2.50, 4.50] → [2.5, 0] pts.  The bucket analysis shows the
+    actual MP-rate ramp starts at OPS 0.65 (7% MP) and saturates by 0.95
+    (64% MP) — V15's threshold collapsed this gradient into a single +2
+    cliff and treated everyone outside as identical.
+
+  * Fame index — V15 used fame_count >= 1 → +1 / >= 3 → +2 (binary,
+    14-day window).  V15.1 uses a rate-based signal:
+    mp_appearances / total_appearances over the trailing window, scaled
+    to [0, 3] pts.  Position-aware window: 28 days for pitchers (5-6
+    starts as denominator), 14 days for batters (~10 appearances).
+    Calibration shows the rate signal lifts batter MP-prediction AUC
+    0.823 → 0.848 by separating "popular every start" from "popular
+    once per fortnight" — V15 collapsed both to +1.
+
+  * Market tier and STAR_PLAYER_FLAGS retained — both showed clean
+    monotonic signal in calibration (tier 1 = 55% MP-rate vs tier 4 =
+    34% MP-rate; flagged stars 66% vs unflagged 38%).
+
+  * Top-3 batting order — retained as binary +1.  Not in the historical
+    CSV, so cannot be fit against MP-flag outcomes.  Live runtime keeps
+    the binary bonus.
 
 Inputs that are FORBIDDEN by the architecture and not consumed here:
     - `card_boost` (revealed only during/after draft)
@@ -44,6 +53,12 @@ still constrains them on the env side, so a rookie pitcher's net EV
 ceiling stays well below a veteran's — but the popularity boost keeps
 them competitive in genuinely strong env contexts rather than getting
 double-faded.
+
+The audit script (scripts/audit_live_isolation.py) exempts this module
+from the no-historical-bleed rule because the only data file it touches
+is data/historical_players.csv, and only the prior-slate is_most_popular
+flag — a publicly-visible pre-game observable for any future slate.  The
+read is bounded to dates strictly before the current slate.
 """
 
 from __future__ import annotations
@@ -55,9 +70,14 @@ from functools import lru_cache
 from pathlib import Path
 
 from app.core.constants import (
-    LEVERAGE_FAME_INDEX_DAYS,
-    LEVERAGE_STAR_BATTER_OPS,
-    LEVERAGE_STAR_PITCHER_ERA,
+    LEVERAGE_ELITE_BATTER_OPS_CEILING,
+    LEVERAGE_ELITE_BATTER_OPS_FLOOR,
+    LEVERAGE_ELITE_PITCHER_ERA_CEILING,
+    LEVERAGE_ELITE_PITCHER_ERA_FLOOR,
+    LEVERAGE_ELITE_STAT_MAX_PTS,
+    LEVERAGE_FAME_INDEX_DAYS_BATTER,
+    LEVERAGE_FAME_INDEX_DAYS_PITCHER,
+    LEVERAGE_FAME_RATE_MAX_PTS,
     POPULARITY_MULT_CEILING,
     POPULARITY_MULT_FLOOR,
     POPULARITY_NEUTRAL_SCORE,
@@ -71,9 +91,6 @@ from app.core.constants import (
 # Path to the prior-slate fame source.  Same file as the calibration
 # corpus, but only its date + player_name + team + is_most_popular columns
 # are consumed here, and only for dates strictly before the current slate.
-# The audit script (scripts/audit_live_isolation.py) exempts this module
-# precisely because the read is bounded and the field is a pre-game
-# observable for any future slate.
 _FAME_SOURCE = Path(__file__).resolve().parents[2] / "data" / "historical_players.csv"
 
 
@@ -88,22 +105,35 @@ def _normalize(name: str) -> str:
     return " ".join(ascii_name.lower().split())
 
 
-@lru_cache(maxsize=4)
-def _load_fame_index(as_of: date) -> dict[tuple[str, str], int]:
-    """Build {(name_normalized, team): MP_appearances_in_prior_14_days}.
+@lru_cache(maxsize=8)
+def _load_fame_rate_index(
+    as_of: date,
+    window_days: int,
+) -> dict[tuple[str, str], tuple[int, int]]:
+    """Build {(name_normalized, team): (mp_appearances, total_appearances)}.
 
-    Cached per `as_of` date — a single T-65 pipeline run scores ~250
-    candidates and would otherwise re-read the CSV that many times.
+    Cached per (as_of, window_days) pair — a single T-65 pipeline run
+    scores ~250 candidates split between pitchers (28-day window) and
+    batters (14-day window), and would otherwise re-read the CSV up to
+    that many times.
 
-    Only rows strictly older than `as_of` and within
-    LEVERAGE_FAME_INDEX_DAYS are counted.  The current-slate row (if it
-    were present in the CSV ahead of time, which it is not) would be
-    excluded — the function does not see today's outcome.
+    Both the numerator (MP appearances) and denominator (total
+    appearances) are scoped to the trailing `window_days` strictly before
+    `as_of`.  The current-slate row, even if present in the CSV ahead of
+    time (it is not), would be excluded — the function does not see
+    today's outcome.
+
+    The denominator captures "any appearance in the leaderboard corpus"
+    — MP, HV, or 3X.  This is the right denominator for a "given the
+    field considered drafting you, how often did they make you popular"
+    rate; using it lets us distinguish a pitcher MP'd 1 of 2 starts (50%
+    rate) from one MP'd 2 of 2 starts (100% rate), which V15's binary
+    fame_count >= 1 collapsed to identical +1 contributions.
     """
     if not _FAME_SOURCE.exists():
         return {}
-    cutoff = as_of - timedelta(days=LEVERAGE_FAME_INDEX_DAYS)
-    counts: dict[tuple[str, str], int] = {}
+    cutoff = as_of - timedelta(days=window_days)
+    counts: dict[tuple[str, str], tuple[int, int]] = {}
     with _FAME_SOURCE.open("r", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
@@ -113,38 +143,88 @@ def _load_fame_index(as_of: date) -> dict[tuple[str, str], int]:
                 continue
             if row_date >= as_of or row_date < cutoff:
                 continue
-            if row.get("is_most_popular") != "1":
-                continue
             key = (_normalize(row["player_name"]), canonicalize_team(row["team"]))
-            counts[key] = counts.get(key, 0) + 1
+            mp_inc = 1 if row.get("is_most_popular") == "1" else 0
+            mp, total = counts.get(key, (0, 0))
+            counts[key] = (mp + mp_inc, total + 1)
     return counts
 
 
-def get_fame_index(player_name: str, team: str, as_of: date) -> int:
-    """Public accessor for the rolling 14-day MP appearance count."""
-    lookup = _load_fame_index(as_of)
-    return lookup.get((_normalize(player_name), canonicalize_team(team)), 0)
+def get_fame_rate(
+    player_name: str,
+    team: str,
+    as_of: date,
+    is_pitcher: bool,
+) -> tuple[float, int]:
+    """Public accessor: return (rate_in_0_to_1, denominator) for a player.
+
+    `denominator` is exposed so the caller can distinguish "0 prior
+    appearances" (rate=0, denom=0) from "appeared but never popular"
+    (rate=0, denom>0) — the runtime score function should award fame
+    points only when there's a meaningful denominator.
+    """
+    window = (
+        LEVERAGE_FAME_INDEX_DAYS_PITCHER if is_pitcher
+        else LEVERAGE_FAME_INDEX_DAYS_BATTER
+    )
+    lookup = _load_fame_rate_index(as_of, window)
+    mp, total = lookup.get(
+        (_normalize(player_name), canonicalize_team(team)),
+        (0, 0),
+    )
+    if total == 0:
+        return (0.0, 0)
+    return (mp / total, total)
 
 
-def _is_star_by_stats(is_pitcher: bool, season_ops: float, season_era: float) -> bool:
-    """True if current-season aggregates put the player in name-recognition territory.
+def _elite_stat_pts(
+    is_pitcher: bool,
+    season_ops: float | None,
+    season_era: float | None,
+) -> float:
+    """Continuous elite-stat score in [0, LEVERAGE_ELITE_STAT_MAX_PTS].
 
-    Catches breakouts who are not in STAR_PLAYER_FLAGS yet — e.g. an
-    OPS-0.950 hitter who broke out mid-season will be drafted heavily
-    even without prior fame.
+    Replaces V15's binary thresholds (OPS >= 0.900 → +2 / ERA <= 3.00 → +2).
+    Pitchers: lower ERA = higher pts (descending ramp).  Batters: higher
+    OPS = higher pts (ascending ramp).  Linear within [floor, ceiling],
+    clamped to [0, MAX_PTS] outside.
 
-    Inputs are non-Optional: the caller is responsible for confirming the
-    player is on the traditional (non-rookie) track and PlayerStats is
-    populated before invoking this branch.  See predict_popularity_score
-    for the strict precondition.
+    Inputs are non-Optional from the caller's strict precondition, but
+    handled defensively here (return 0.0 on missing) so this helper can
+    be unit-tested in isolation without crashing on missing fixture data.
     """
     if is_pitcher:
-        return season_era <= LEVERAGE_STAR_PITCHER_ERA
-    return season_ops >= LEVERAGE_STAR_BATTER_OPS
+        if season_era is None or season_era <= 0.0:
+            # ERA = 0 occurs in opening-week 0-IP small-sample rows where
+            # the byDateRange API returns garbage zeros.  Treat as
+            # "no signal" (0 pts) rather than "ace tier" (max pts) — the
+            # right behavior is conservative pending real innings.
+            return 0.0
+        floor = LEVERAGE_ELITE_PITCHER_ERA_FLOOR
+        ceiling = LEVERAGE_ELITE_PITCHER_ERA_CEILING
+        if season_era <= floor:
+            return LEVERAGE_ELITE_STAT_MAX_PTS
+        if season_era >= ceiling:
+            return 0.0
+        # Linear ramp: lower ERA → higher pts
+        frac = (ceiling - season_era) / (ceiling - floor)
+        return LEVERAGE_ELITE_STAT_MAX_PTS * frac
+
+    if season_ops is None:
+        return 0.0
+    floor = LEVERAGE_ELITE_BATTER_OPS_FLOOR
+    ceiling = LEVERAGE_ELITE_BATTER_OPS_CEILING
+    if season_ops <= floor:
+        return 0.0
+    if season_ops >= ceiling:
+        return LEVERAGE_ELITE_STAT_MAX_PTS
+    # Linear ramp: higher OPS → higher pts
+    frac = (season_ops - floor) / (ceiling - floor)
+    return LEVERAGE_ELITE_STAT_MAX_PTS * frac
 
 
 def popularity_score_to_multiplier(score: float | None) -> float:
-    """Map a continuous popularity score in [0, 10] to an EV multiplier.
+    """Map a continuous popularity score in [0, ~10] to an EV multiplier.
 
     The curve is linear with clamps:
         multiplier = clamp(1.0 + (NEUTRAL - score) * SLOPE, FLOOR, CEILING)
@@ -183,6 +263,26 @@ def _team_market_score(team: str, is_pitcher: bool, player_name: str) -> float:
     return {1: 3.0, 2: 2.0, 3: 1.0, 4: 0.0}[tier]
 
 
+def _fame_rate_pts(
+    player_name: str,
+    team: str,
+    as_of: date,
+    is_pitcher: bool,
+) -> float:
+    """Continuous fame-rate score in [0, LEVERAGE_FAME_RATE_MAX_PTS].
+
+    Replaces V15's binary fame_count thresholds (>= 1 → +1, >= 3 → +2).
+    Returns 0 when the player has no prior appearances in the trailing
+    window — they're either new to the corpus or have been off the
+    leaderboards for >2 weeks (batter) / >4 weeks (pitcher), and the
+    field has correspondingly low awareness of them.
+    """
+    rate, denom = get_fame_rate(player_name, team, as_of, is_pitcher)
+    if denom == 0:
+        return 0.0
+    return LEVERAGE_FAME_RATE_MAX_PTS * rate
+
+
 def predict_popularity_score(
     *,
     player_name: str,
@@ -211,13 +311,12 @@ def predict_popularity_score(
     instead.  Routing is done in the resolver based on
     PlayerStats.is_rookie_track.
 
-    Scoring (max ~10 points):
+    V15.1 scoring (continuous components, max ~10 points):
       Team market tier 1 = +3, 2 = +2, 3 = +1, 4 = 0
       STAR_PLAYER_FLAGS member = +3
-      Elite current-season stats = +2 (only if NOT already a flagged star,
-        to avoid double-counting)
-      Rolling fame index >= 3 = +2, >= 1 = +1
-      Top-3 batting order = +1 (top-of-order PA volume drives draft)
+        ELSE elite-stats ramp = [0, +2.5] continuous (OPS or ERA)
+      Fame-rate ramp = [0, +3.0] continuous (mp_rate over trailing window)
+      Top-3 batting order = +1 (binary; not fit, no historical data)
     """
     if is_pitcher and season_era is None:
         raise RuntimeError(
@@ -239,14 +338,10 @@ def predict_popularity_score(
     name_norm = _normalize(player_name)
     if name_norm in STAR_PLAYER_FLAGS:
         score += 3.0
-    elif _is_star_by_stats(is_pitcher, season_ops or 0.0, season_era or 9.99):
-        score += 2.0
+    else:
+        score += _elite_stat_pts(is_pitcher, season_ops, season_era)
 
-    fame = get_fame_index(player_name, team, as_of)
-    if fame >= 3:
-        score += 2.0
-    elif fame >= 1:
-        score += 1.0
+    score += _fame_rate_pts(player_name, team, as_of, is_pitcher)
 
     if not is_pitcher and batting_order is not None and 1 <= batting_order <= 3:
         score += 1.0
@@ -270,8 +365,8 @@ def predict_rookie_popularity_score(
     every September call-up.
 
     Empirically the crowd fades rookies hard, so absent any contrary
-    signal a rookie scores near 0 → multiplier near the ceiling (1.20).
-    The two ways a rookie can climb out:
+    signal a rookie scores near 0 → multiplier near the ceiling
+    (POPULARITY_MULT_CEILING).  The two ways a rookie can climb out:
 
       * Tier-1 market — Yankees / Dodgers / etc. fans draft their own
         team's call-ups regardless of MLB-debut status.
@@ -279,7 +374,7 @@ def predict_rookie_popularity_score(
         Chourio, Langford, Merrill, etc.) should be pre-flagged in
         constants.py because they were household names before debuting.
 
-    The fame_index is consulted but contributes near-zero for true
+    The fame_rate term is consulted but contributes near-zero for true
     rookies (no prior MP appearances by definition).  Batting order is
     still scored because a rookie batting leadoff WILL be drafted by
     his own market.
@@ -288,22 +383,19 @@ def predict_rookie_popularity_score(
     applies to all rookies, so the popularity boost from a low score
     keeps rookies competitive in strong env without letting them
     dominate.  Rookie pitchers in good matchups can earn ~1.10 × 1.0 ×
-    1.20 = 1.32 EV multiplier, vs ~1.51 for a comparable veteran ace —
-    structurally below veterans but not double-faded.
+    1.25 = 1.375 EV multiplier, vs ~1.55 × 1.10 × 0.80 = 1.36 for a
+    comparable veteran ace — structurally below veterans but not
+    double-faded.
     """
     score = _team_market_score(team, is_pitcher, player_name)
 
     name_norm = _normalize(player_name)
     if name_norm in STAR_PLAYER_FLAGS:
         score += 3.0
-    # No is_star_by_stats branch — rookies have no current-season stats
-    # to evaluate.  This is the deliberate carve-out, not a silent fallback.
+    # No elite-stats branch — rookies have no current-season stats to
+    # evaluate.  This is the deliberate carve-out, not a silent fallback.
 
-    fame = get_fame_index(player_name, team, as_of)
-    if fame >= 3:
-        score += 2.0
-    elif fame >= 1:
-        score += 1.0
+    score += _fame_rate_pts(player_name, team, as_of, is_pitcher)
 
     if not is_pitcher and batting_order is not None and 1 <= batting_order <= 3:
         score += 1.0
@@ -314,4 +406,4 @@ def predict_rookie_popularity_score(
 def clear_cache() -> None:
     """Clear the cached fame-index lookups.  Tests use this to ensure
     each scenario starts from a clean read."""
-    _load_fame_index.cache_clear()
+    _load_fame_rate_index.cache_clear()
