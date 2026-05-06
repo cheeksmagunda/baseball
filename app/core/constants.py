@@ -318,10 +318,22 @@ PITCHER_ENV_MODIFIER_CEILING = 1.55
 ROOKIE_ENV_MODIFIER_CEILING = 1.10
 
 # Trait modifier bounds — SECONDARY EV signal.
-# Range: 0.85–1.15 (1.35x swing) — season stats (K/9, ISO, barrel%, ERA, WHIP,
-# recent form) provide fine-grained differentiation within the same env tier.
-TRAIT_MODIFIER_FLOOR = 0.85
-TRAIT_MODIFIER_CEILING = 1.15
+# V15.4 (May 6, 2026): widened 0.85–1.15 (1.35x swing) → 0.70–1.20 (1.71x swing).
+# The 0.85 floor was too generous — a rating-9.6 batter (deep slump, sub-0.500
+# OPS, no recent hits) still got 88% of an average hitter's EV under the old
+# band, allowing him to beat better-rated hitters whenever env was modestly
+# favorable.  Empirical OPS-by-quartile MP-rate signal in the historical
+# corpus shows ~9× swing (Q1 0.65 OPS = 7% MP, Q4 0.95 OPS = 64% MP), so the
+# 1.35x band was severely underweighting trait.  1.71x is still conservative
+# vs the empirical signal but punishes near-zero-rated players harder:
+#   rating  9.6 → trait_factor 0.748 (was 0.879, -15%)
+#   rating 50   → trait_factor 0.950 (was 1.000)
+#   rating 80   → trait_factor 1.100 (was 1.090)
+#   rating 100  → trait_factor 1.200 (was 1.150)
+# Net effect: dredge-tier hitters (rating <20) now drop ~15% on EV, letting
+# average-or-better trait survive at neutral env.
+TRAIT_MODIFIER_FLOOR = 0.70
+TRAIT_MODIFIER_CEILING = 1.20
 
 # Recent form volatility modifier — applies when recent_form CV is high.
 # High variance (CV near 1.0) in recent production signals sensitivity to conditions.
