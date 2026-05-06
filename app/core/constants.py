@@ -239,8 +239,10 @@ PITCHER_ENV_MIN_K_PER_9 = 8.0         # min K/9 for "K upside"
 # ---------------------------------------------------------------------------
 
 # Env modifier bounds — PRIMARY EV signal.
-# Range: 0.70–1.30 (1.86x swing) — game conditions (Vegas O/U, ERA, bullpen,
-# park, weather, platoon, batting order, moneyline).
+# Range: 0.20–1.20 (batter, V15.2), 0.20–1.55 (pitcher), 0.20–1.10 (rookie).
+# Game conditions: Vegas O/U, ERA, bullpen, park, weather, platoon, batting
+# order, moneyline.  Floor is shared across all three; ceiling is asymmetric
+# per position (see PITCHER_ENV_MODIFIER_CEILING / ROOKIE_ENV_MODIFIER_CEILING).
 ENV_MODIFIER_FLOOR = 0.20   # V12.1: lowered from 0.40 (which was already cut
                              # from V11 0.70).  Tuning sweep across 35-slate
                              # backtest showed lower floors improve mean
@@ -251,7 +253,26 @@ ENV_MODIFIER_FLOOR = 0.20   # V12.1: lowered from 0.40 (which was already cut
                              # yet still floors a "no info" candidate with a
                              # base value (so the variant chooser doesn't try
                              # to fill slots with zero-EV stragglers).
-ENV_MODIFIER_CEILING = 1.30
+# V15.2 (May 6, 2026): batter env ceiling tightened 1.30 → 1.20.  Direct
+# precedent — V10.6 made the SAME change for pitchers (1.30 → 1.20) with
+# the rationale "any confirmed favored-team starter trivially saturated
+# all 5 pitcher env signals".  Same problem on the batter side now: any
+# "weak hitter facing a bloated-ERA opp starter" saturates env at 1.30,
+# producing lineups dominated by rating-30s bats while talented hitters
+# (rating 80+) at neutral matchups get bypassed.  Tightening to 1.20
+# preserves the audit-validated env-dominant signal (5x swing still wide
+# vs trait's 1.35x) but lets elite trait survive at neutral env.
+#
+# Math after change:
+#   weak (trait 38) × saturated env (1.20) → 0.96 × 1.20 = 1.15 EV
+#   elite (trait 85) × neutral env (1.00)  → 1.10 × 1.00 = 1.10 EV
+# Compared to pre-V15.2:
+#   weak × 1.30 = 1.25 EV  vs elite × 1.00 = 1.10 EV  (env wins by 14%)
+# Now env still wins narrowly but elite trait stays in the pool.
+#
+# Pitcher and rookie ceilings unchanged (1.55, 1.10) — pitcher empirical
+# RS is 1.38x batter RS, justifying the asymmetry.
+ENV_MODIFIER_CEILING = 1.20
 
 # V10.6 (April 28-29 evaluation): pitcher-specific env ceiling, asymmetric.
 # 33-slate harness analysis showed pitchers occupied 54% of model top-10 (target

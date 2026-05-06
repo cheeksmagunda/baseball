@@ -52,13 +52,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app.core.constants import (  # noqa: E402
-    LEVERAGE_ELITE_BATTER_OPS_CEILING,
-    LEVERAGE_ELITE_BATTER_OPS_FLOOR,
-    LEVERAGE_ELITE_PITCHER_ERA_CEILING,
-    LEVERAGE_ELITE_PITCHER_ERA_FLOOR,
-    LEVERAGE_ELITE_STAT_MAX_PTS,
     LEVERAGE_FAME_INDEX_DAYS,
-    LEVERAGE_FAME_INDEX_DAYS_BATTER,
     LEVERAGE_FAME_INDEX_DAYS_PITCHER,
     LEVERAGE_FAME_RATE_MAX_PTS,
     LEVERAGE_STAR_BATTER_OPS,
@@ -357,8 +351,8 @@ def fit_star_flag(rows: list[Row]) -> None:
 
 def auc_for_score(scores_and_labels: list[tuple[float, int]]) -> float:
     """Compute AUC for a binary classifier via ranks.  Mann-Whitney U."""
-    pos = [s for s, l in scores_and_labels if l == 1]
-    neg = [s for s, l in scores_and_labels if l == 0]
+    pos = [s for s, label in scores_and_labels if label == 1]
+    neg = [s for s, label in scores_and_labels if label == 0]
     if not pos or not neg:
         return 0.5
     # Sum of ranks of positives over all pairs (positive, negative)
@@ -503,7 +497,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--validate-current", action="store_true",
                         help="Compute AUC of current implementation only")
-    args = parser.parse_args()
+    parser.parse_args()
 
     if not CSV_PATH.exists():
         print(f"ERROR: {CSV_PATH} not found", file=sys.stderr)

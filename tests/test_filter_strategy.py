@@ -546,7 +546,7 @@ class TestV133PositionAndRookie:
         # Confirm by comparing with explicit non-haircut position
         of = _make_candidate(position="OF", env_score=0.7, total_score=60.0)
         ev_of = _compute_base_ev(of)
-        # Pitchers use PITCHER_ENV_MODIFIER_CEILING (1.55) vs batter ENV_MODIFIER_CEILING (1.30)
+        # Pitchers use PITCHER_ENV_MODIFIER_CEILING (1.55) vs batter ENV_MODIFIER_CEILING (1.20)
         # so direct EV comparison isn't equality, but the relationship should be:
         # P should be MORE than the OF result × pitcher-vs-batter env ratio.
         assert ev_p > ev_of  # pitcher's larger env ceiling dominates
