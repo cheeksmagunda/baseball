@@ -8,11 +8,11 @@ Stages:
      two-way pitchers, capture series context.
   3. Stage 2: assemble FilteredCandidate instances + emit health-check logs.
 
-V14: each candidate is annotated with a predicted ownership bucket from
-app/core/popularity.py.  The bucket drives leverage_factor in
-_compute_base_ev so the optimizer prefers, all else equal, the player
-the field is less likely to draft.  See STRATEGY_AUDIT_2026-05.md for
-the empirical case.
+V15: each candidate is annotated with a predicted popularity score from
+app/core/popularity.py (continuous float in [0, 10]).  The score drives
+leverage_factor in _compute_base_ev so the optimizer prefers, all else
+equal, the player the field is less likely to draft.  See
+STRATEGY_AUDIT_2026-05.md for the empirical case.
 
 Moved out of app/routers/filter_strategy.py so the router stays thin and
 this logic is independently testable.
@@ -27,7 +27,7 @@ from app.config import settings
 from app.core.constants import (
     PITCHER_POSITIONS,
 )
-from app.core.popularity import predict_popularity_bucket, predict_rookie_popularity_bucket
+from app.core.popularity import predict_popularity_score, predict_rookie_popularity_score
 from app.core.utils import find_players_by_name_team_batch
 from app.models.player import PlayerStats, TeamSeasonStats
 from app.schemas.filter_strategy import FilterCard, GameEnvironment
@@ -271,9 +271,11 @@ async def resolve_candidates(
             "team_l10_wins": team_l10,
         })
 
-    # Stage 2: assemble FilteredCandidates + predict ownership bucket.
+    # Stage 2: assemble FilteredCandidates + predict ownership popularity score.
     candidates: list[FilteredCandidate] = []
-    bucket_distribution: dict[str, int] = {}
+    score_min: float | None = None
+    score_max: float | None = None
+    score_sum: float = 0.0
     for pre in pre_candidates:
         card = pre["card"]
         score_result = pre["score_result"]
@@ -288,7 +290,7 @@ async def resolve_candidates(
         # same predicate the trait engine uses (score_player → score_rookie).
         is_rookie = stats is not None and stats.is_rookie_track
         if is_rookie:
-            ownership_bucket = predict_rookie_popularity_bucket(
+            popularity_score = predict_rookie_popularity_score(
                 player_name=card.player_name,
                 team=card.team,
                 is_pitcher=is_pitcher,
@@ -296,7 +298,7 @@ async def resolve_candidates(
                 as_of=as_of,
             )
         else:
-            ownership_bucket = predict_popularity_bucket(
+            popularity_score = predict_popularity_score(
                 player_name=card.player_name,
                 team=card.team,
                 is_pitcher=is_pitcher,
@@ -305,7 +307,9 @@ async def resolve_candidates(
                 season_era=stats.era if stats is not None else None,
                 as_of=as_of,
             )
-        bucket_distribution[ownership_bucket] = bucket_distribution.get(ownership_bucket, 0) + 1
+        score_sum += popularity_score
+        score_min = popularity_score if score_min is None else min(score_min, popularity_score)
+        score_max = popularity_score if score_max is None else max(score_max, popularity_score)
 
         candidates.append(FilteredCandidate(
             player_name=card.player_name,
@@ -324,13 +328,15 @@ async def resolve_candidates(
             series_team_wins=pre.get("series_team_wins"),
             series_opp_wins=pre.get("series_opp_wins"),
             team_l10_wins=pre.get("team_l10_wins"),
-            predicted_ownership_bucket=ownership_bucket,
+            predicted_ownership_score=popularity_score,
         ))
 
+    score_mean = score_sum / len(candidates) if candidates else 0.0
     logger.info(
-        "Candidate pool: %d cards in → %d candidates out (dropped: %d) | ownership: %s",
+        "Candidate pool: %d cards in → %d candidates out (dropped: %d) | "
+        "popularity score min/mean/max: %.2f / %.2f / %.2f",
         len(cards), len(candidates), len(cards) - len(candidates),
-        bucket_distribution,
+        score_min or 0.0, score_mean, score_max or 0.0,
     )
 
     return candidates

@@ -734,6 +734,111 @@ The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each
 
 **Stacking** is still capped at 2 batters per team AND 2 per game and only fires on overwhelmingly clear game scripts.
 
+### V15 Continuous Popularity-Calibrated EV Multiplier (May 6)
+
+V15 replaces V14's discrete five-bucket leverage system (`top_decile` /
+`upper_mid` / `mid` / `lower_mid` / `bottom_decile` mapped to fixed
+multipliers via `LEVERAGE_FACTORS`) with a **continuous popularity score
+in [0, 10] mapping to a continuous EV multiplier** via
+`popularity_score_to_multiplier()` in `app/core/popularity.py`. Same
+inputs (team market tier, fame flag / elite stats, batting order,
+rolling 14-day MP fame index) — smoother gradient.
+
+Triggered by user feedback after the 2026-05-05 slate where the V14
+bucket-based picks (Elder, Webb, Vargas, Swanson, Schmitt) missed every
+player on the day's top-20 HV leaderboard. The bucket boundaries were
+hardcoded slicing — V15 replaces them with a curve calibrated from the
+actual outcome distribution in `historical_players.csv`.
+
+**Empirical signal (1561 player-slate rows, May 2026):**
+
+| Pop score | n | HV-rate | MP-rate | alpha (HV/MP) |
+|---|---|---|---|---|
+| 0.0 | 139 | **71.9%** | 12.2% | 5.88 |
+| 1.0 | 180 | 68.9% | 18.3% | 3.76 |
+| 2.0 | 276 | 56.5% | 23.6% | 2.40 |
+| 3.0 | 241 | 57.3% | 30.3% | 1.89 |
+| 4.0 | 196 | 37.8% | 53.6% | 0.71 |
+| 5.0 | 203 | 35.5% | 64.0% | 0.55 |
+| 6.0 | 155 | 18.1% | 69.0% | 0.26 |
+| 7.0 | 111 | 6.3% | 100.0% | 0.06 |
+
+Score-0 players HV at ~12× the field draft rate; score-7 consensus picks
+HV at 1/16th the field draft rate. The bucket system collapsed all this
+into 5 discrete tiers; the continuous curve preserves the gradient.
+
+**Mechanism** — `_compute_base_ev` in `app/services/filter_strategy.py`:
+
+```
+filter_ev = env_factor × volatility_amplifier × trait_factor
+          × leverage_factor × stack_bonus × dnp_adj × position_mult × 100
+
+leverage_factor = popularity_score_to_multiplier(predicted_ownership_score)
+                = clamp(1.0 + (NEUTRAL - score) * SLOPE, FLOOR, CEILING)
+```
+
+Calibrated constants in `app/core/constants.py` (initial V15 ship):
+- `POPULARITY_NEUTRAL_SCORE = 3.5` — pool-weighted-mean score; multiplier
+  is exactly 1.0 here.
+- `POPULARITY_SLOPE = 0.08` — EV change per unit of score.
+- `POPULARITY_MULT_FLOOR = 0.80` — heaviest consensus discount.
+- `POPULARITY_MULT_CEILING = 1.25` — biggest sleeper premium.
+
+Curve preview:
+- Score 0 → 1.25 (max sleeper boost: anonymous Tier-4 small-market batter)
+- Score 1 → 1.20
+- Score 3.5 → 1.00 (neutral: typical mid-fame mid-market player)
+- Score 4 → 0.96 (mild discount: known name on a strong team)
+- Score 5 → 0.88
+- Score 6+ → 0.80 (floor: heavy consensus — NYY/LAD/BOS star)
+
+V15 is intentionally MORE decisive than V14's [0.85, 1.20] band (1.41×
+swing) — V15 hits 1.56× swing — but stays well below env's ~7.75× swing
+so leverage remains a tiebreaker, not an override of weak performance.
+The user's invariant ("a high-env consensus pick must still rank above a
+low-env sleeper") is preserved in `tests/test_filter_strategy.py::TestLeverageFactor::test_leverage_cannot_rescue_weak_candidate`.
+
+**`FilteredCandidate.predicted_ownership_score: float | None`** replaces
+the V14 `predicted_ownership_bucket: str | None`. `tests/test_invariants.py::test_predicted_ownership_score_is_allowed` carves it out as a discrete
+LABEL (continuous numeric score derived from public observables, NOT a
+raw count, NOT an outcome label, NOT card_boost).
+
+**Rookie interaction (preserves V13.3 intent).** Rookie-track players
+with no fame, no current-season stats, and small-market teams naturally
+score 0–3 → multiplier 1.04–1.25 (boost). Combined with V13.3's
+ROOKIE_ENV_MODIFIER_CEILING (1.10) and rookie trait_factor (1.0
+neutral), a rookie pitcher's EV ceiling is roughly env=1.10 × trait=1.0
+× leverage=1.25 = 1.375 — vs ~1.55 × 1.10 × 0.85 = 1.45 for a
+comparable veteran ace under consensus discount. Rookie pitchers stay
+competitive in genuinely strong env contexts without dominating EV.
+Calls this out in `app/core/popularity.py` docstring and
+`tests/test_popularity.py::TestRookiePath::test_rookie_on_tier4_with_no_signals_gets_max_boost`.
+
+**Verification:**
+- `scripts/calibrate_popularity_curve.py` (new) — re-runs the
+  empirical fit any time the corpus grows. Lives in `/scripts/` because
+  it reads outcome columns; the runtime path never reads them.
+- 245/245 tests pass post-V15.
+- `scripts/audit_live_isolation.py` clean — `app/core/popularity.py`
+  remains exempt (reads prior-slate is_most_popular flag only, never
+  current slate); no card_boost / drafts / outcome label leakage
+  introduced.
+
+**V15 explicitly does NOT change:** V12 multi-pitcher 0P–5P composition
+chooser, per-team / per-game caps, anti-correlation guard, slot-1 =
+highest-EV-player rule, FADE / hard-exclusion remains deleted (V11),
+env asymmetric ceilings (pitcher 1.55, batter 1.30, rookie 1.10), trait
+band [0.85, 1.15], V13.3 position-volume haircut, V13 ML curve
+inversions, T-65 timing model, no-fallbacks rule, no-historical-bleed
+rule.
+
+**Limitations.** Without the original env_score and trait_score values
+from each historical slate (computed at T-65 from live MLB / Vegas /
+weather APIs and not persisted), the live impact of V15 vs V14 cannot
+be deterministically backtested for specific dates. Expected behavior
+will surface over the next ~15 slates as more candidates flow through
+the new curve.
+
 ### V13.3 Position-Volume Haircut + Rookie Env Cap + Stack Bonus Recalibration (May 4)
 
 V13.3 ships four targeted changes from a 40-slate manual audit of slot-1 winners against the live EV math, triggered by user complaints that the optimizer kept defaulting to the same Cubs catcher (Moisés Ballesteros) and a thin-sample SF spot starter (Trevor McDonald, 3 career-recent IP). No structural rewrites — composition, stacking gates, V13 ML curves, trait weights, T-65 timing all unchanged.

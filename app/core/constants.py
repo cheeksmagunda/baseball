@@ -596,29 +596,27 @@ ET_TO_UTC_OFFSET_HOURS = 4
 # the empirical case.
 # ---------------------------------------------------------------------------
 
-# Predicted ownership bucket → leverage multiplier in _compute_base_ev.
-# Range [0.85, 1.20] is deliberately narrower than the env factor swing
-# (~7.75x for pitchers, ~6.5x for batters) so leverage acts as a tiebreaker
-# among comparable performance projections, never an override of poor env.
-LEVERAGE_FACTORS = {
-    "top_decile":    0.85,   # heavily-owned consensus picks → discount
-    "upper_mid":     0.92,
-    "mid":           1.00,   # neutral
-    "lower_mid":     1.08,
-    "bottom_decile": 1.20,   # predicted sleepers → premium
-}
-
-# Bucket boundaries (drafts thresholds) — quantile-derived from the 40-slate
-# corpus.  Used in the popularity predictor's final mapping and in the
-# offline calibration script.  Not consumed at runtime; stored here so the
-# numbers in popularity.py and constants.py never drift apart.
-LEVERAGE_BUCKET_DRAFT_THRESHOLDS = {
-    "top_decile":    5000,   # >= 5000 drafts
-    "upper_mid":     2000,   # 2000 - 4999
-    "mid":            500,   # 500 - 1999
-    "lower_mid":      100,   # 100 - 499
-    "bottom_decile":    0,   # < 100
-}
+# V15 — Continuous popularity-score → EV multiplier.
+#
+# Replaces V14's discrete bucket system (top_decile / upper_mid / mid /
+# lower_mid / bottom_decile).  Calibrated by scripts/calibrate_popularity_curve.py
+# against the 28+ slate historical_players.csv corpus (May 2026).
+#
+# Linear curve, clamped to [FLOOR, CEILING]:
+#   multiplier(score) = clamp(1.0 + (NEUTRAL - score) * SLOPE, FLOOR, CEILING)
+#
+# Empirical signal in the corpus is extreme — score-0 players HV at 71.9%
+# vs score-8 players at 18.6% (alpha ratio ~30×).  We deliberately keep
+# the multiplier band narrow [0.85, 1.20] (1.41× swing) so leverage stays
+# a tiebreaker, not an override of env (which has 6.5–7.75× swing).
+#
+# NEUTRAL_SCORE = pool weighted-mean popularity score (rounded).
+# SLOPE = avg of (1−FLOOR)/(p90−NEUTRAL) and (CEILING−1)/(NEUTRAL−p10) on
+#         the corpus, so the curve naturally saturates near the tails.
+POPULARITY_NEUTRAL_SCORE = 3.5
+POPULARITY_SLOPE = 0.08
+POPULARITY_MULT_FLOOR = 0.80
+POPULARITY_MULT_CEILING = 1.25
 
 # Team market tier — drives one of four families of popularity features.
 # Tier 1 = national following (top of every casual fan's mind), tier 4 =
@@ -744,14 +742,19 @@ def _validate_constants() -> None:
         f"Shootout total ({STACK_ELIGIBILITY_SHOOTOUT_TOTAL}) must exceed PATH 1 total ({STACK_ELIGIBILITY_VEGAS_TOTAL})"
     )
 
-    # Leverage band must straddle 1.0 and the bottom_decile premium must
-    # exceed the top_decile discount (otherwise contrarian ranking is
-    # silently disabled).
-    assert LEVERAGE_FACTORS["top_decile"] < 1.0 < LEVERAGE_FACTORS["bottom_decile"], (
-        f"LEVERAGE_FACTORS band must straddle 1.0: {LEVERAGE_FACTORS}"
+    # V15 popularity-curve band must straddle 1.0, slope must be positive,
+    # and clamps must be ordered.  A miscalibration here silently disables
+    # contrarian ranking or inverts it.
+    assert POPULARITY_MULT_FLOOR < 1.0 < POPULARITY_MULT_CEILING, (
+        f"POPULARITY_MULT band must straddle 1.0: "
+        f"[{POPULARITY_MULT_FLOOR}, {POPULARITY_MULT_CEILING}]"
     )
-    assert LEVERAGE_FACTORS["mid"] == 1.0, (
-        f"LEVERAGE_FACTORS['mid'] must be neutral (1.0): {LEVERAGE_FACTORS['mid']}"
+    assert POPULARITY_SLOPE > 0, (
+        f"POPULARITY_SLOPE must be positive (higher score → lower multiplier): "
+        f"{POPULARITY_SLOPE}"
+    )
+    assert POPULARITY_NEUTRAL_SCORE > 0, (
+        f"POPULARITY_NEUTRAL_SCORE must be positive: {POPULARITY_NEUTRAL_SCORE}"
     )
     # Every team in PARK_HR_FACTORS must have a market tier — missing a
     # team would silently default that team's players to 'mid' bucket and

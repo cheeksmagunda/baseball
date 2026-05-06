@@ -90,8 +90,8 @@ class FilterCandidateOut(BaseModel):
     is_two_way_pitcher: bool = False  # True if detected as starter despite non-pitcher position (e.g., Ohtani)
     filter_ev: float
     game_id: int | str | None = None
-    # V14 leverage diagnostics
-    predicted_ownership_bucket: str | None = None
+    # V15 leverage diagnostics — continuous popularity score in [0, 10]
+    predicted_ownership_score: float | None = None
     leverage_factor: float = 1.0
     breakdowns: list[TraitBreakdown] = []
 
@@ -109,8 +109,8 @@ class FilterSlotOut(BaseModel):
     filter_ev: float
     expected_slot_value: float
     game_id: int | str | None = None
-    # V14 leverage diagnostics — surfaces WHY a contrarian player was picked
-    predicted_ownership_bucket: str | None = None
+    # V15 leverage diagnostics — surfaces WHY a contrarian player was picked
+    predicted_ownership_score: float | None = None
     leverage_factor: float = 1.0
     breakdowns: list[TraitBreakdown] = []
 

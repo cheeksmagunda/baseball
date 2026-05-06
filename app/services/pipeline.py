@@ -33,7 +33,7 @@ from app.services.data_collection import (
     enrich_slate_game_series_context,
     enrich_slate_game_vegas_lines,
 )
-from app.core.popularity import predict_popularity_bucket, predict_rookie_popularity_bucket
+from app.core.popularity import predict_popularity_score, predict_rookie_popularity_score
 from app.services.filter_strategy import (
     FilteredCandidate,
     build_batter_env_kwargs,
@@ -703,13 +703,13 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
         # Store env_score on slate player for reference
         sp.env_score = env_score
 
-        # V14 — predict ownership bucket from public pre-game observables.
-        # Rookies route to predict_rookie_popularity_bucket; veterans go through
+        # V15 — predict popularity score from public pre-game observables.
+        # Rookies route to predict_rookie_popularity_score; veterans go through
         # the strict-precondition path that raises on missing OPS/ERA.
         pop_stats = stats_lookup_for_pop.get(player.id)
         is_rookie = pop_stats is not None and pop_stats.is_rookie_track
         if is_rookie:
-            ownership_bucket = predict_rookie_popularity_bucket(
+            popularity_score = predict_rookie_popularity_score(
                 player_name=player.name,
                 team=player.team,
                 is_pitcher=is_pitcher,
@@ -717,7 +717,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
                 as_of=game_date,
             )
         else:
-            ownership_bucket = predict_popularity_bucket(
+            popularity_score = predict_popularity_score(
                 player_name=player.name,
                 team=player.team,
                 is_pitcher=is_pitcher,
@@ -741,7 +741,7 @@ def run_filter_strategy_from_slate(db: Session, game_date: date) -> dict:
             series_team_wins=series_team_w,
             series_opp_wins=series_opp_w,
             team_l10_wins=team_l10,
-            predicted_ownership_bucket=ownership_bucket,
+            predicted_ownership_score=popularity_score,
         ))
 
     db.commit()

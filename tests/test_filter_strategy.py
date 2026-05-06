@@ -52,7 +52,7 @@ def _make_candidate(
     is_in_blowout_game: bool = False,
     is_rookie_track: bool = False,
     traits: list | None = None,
-    predicted_ownership_bucket: str | None = None,
+    predicted_ownership_score: float | None = None,
 ) -> FilteredCandidate:
     return FilteredCandidate(
         player_name=name,
@@ -67,7 +67,7 @@ def _make_candidate(
         batting_order=batting_order if not is_pitcher else None,
         is_in_blowout_game=is_in_blowout_game,
         is_rookie_track=is_rookie_track,
-        predicted_ownership_bucket=predicted_ownership_bucket,
+        predicted_ownership_score=predicted_ownership_score,
     )
 
 
@@ -620,6 +620,8 @@ class TestV133PositionAndRookie:
 # not on the Most Popular leaderboard.
 
 class TestLeverageFactor:
+    """V15: continuous popularity-score → multiplier curve (replaces V14 buckets)."""
+
     def test_sleeper_outranks_consensus_at_identical_performance(self):
         """Two candidates with identical env+trait scores should rank with
         the predicted-sleeper above the predicted-consensus pick.  This is
@@ -627,12 +629,12 @@ class TestLeverageFactor:
         consensus = _make_candidate(
             name="Consensus", team="NYY",
             total_score=70.0, env_score=0.7,
-            predicted_ownership_bucket="top_decile",
+            predicted_ownership_score=8.0,  # Tier 1 + star + fame
         )
         sleeper = _make_candidate(
             name="Sleeper", team="KC",
             total_score=70.0, env_score=0.7,
-            predicted_ownership_bucket="bottom_decile",
+            predicted_ownership_score=0.0,  # Tier 4, no fame
         )
         ev_consensus = _compute_base_ev(consensus)
         ev_sleeper = _compute_base_ev(sleeper)
@@ -641,29 +643,54 @@ class TestLeverageFactor:
             f"({ev_consensus:.2f}) at identical env+trait — contrarian invariant"
         )
 
-    def test_leverage_band_matches_constants(self):
-        """Range checks: top_decile = 0.85x, bottom_decile = 1.20x, mid = 1.0x."""
-        from app.core.constants import LEVERAGE_FACTORS
+    def test_high_score_player_gets_floor_multiplier(self):
+        """A heavily-popular player (score >> NEUTRAL) hits the floor clamp."""
+        from app.core.constants import POPULARITY_MULT_FLOOR
 
-        baseline = _make_candidate(predicted_ownership_bucket="mid")
-        top = _make_candidate(predicted_ownership_bucket="top_decile")
-        bot = _make_candidate(predicted_ownership_bucket="bottom_decile")
+        c = _make_candidate(predicted_ownership_score=10.0)
+        _compute_base_ev(c)
+        assert c.leverage_factor == pytest.approx(POPULARITY_MULT_FLOOR)
 
-        ev_base = _compute_base_ev(baseline)
-        ev_top = _compute_base_ev(top)
-        ev_bot = _compute_base_ev(bot)
+    def test_low_score_player_gets_ceiling_multiplier(self):
+        """A deep-sleeper player (score << NEUTRAL) hits the ceiling clamp."""
+        from app.core.constants import POPULARITY_MULT_CEILING
 
-        assert ev_top == pytest.approx(ev_base * LEVERAGE_FACTORS["top_decile"], rel=1e-3)
-        assert ev_bot == pytest.approx(ev_base * LEVERAGE_FACTORS["bottom_decile"], rel=1e-3)
+        c = _make_candidate(predicted_ownership_score=0.0)
+        _compute_base_ev(c)
+        assert c.leverage_factor == pytest.approx(POPULARITY_MULT_CEILING)
 
-    def test_none_bucket_is_neutral(self):
+    def test_neutral_score_returns_one(self):
+        """A player at exactly POPULARITY_NEUTRAL_SCORE gets multiplier 1.0."""
+        from app.core.constants import POPULARITY_NEUTRAL_SCORE
+
+        c = _make_candidate(predicted_ownership_score=POPULARITY_NEUTRAL_SCORE)
+        _compute_base_ev(c)
+        assert c.leverage_factor == pytest.approx(1.0, rel=1e-6)
+
+    def test_curve_is_monotonic(self):
+        """Higher popularity score → strictly lower (or equal at clamp) multiplier."""
+        scores = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+        multipliers = []
+        for s in scores:
+            c = _make_candidate(predicted_ownership_score=s)
+            _compute_base_ev(c)
+            multipliers.append(c.leverage_factor)
+        # Strictly non-increasing (allows equal at clamps)
+        for i in range(len(multipliers) - 1):
+            assert multipliers[i] >= multipliers[i + 1], (
+                f"Curve non-monotonic at score {scores[i]}→{scores[i+1]}: "
+                f"{multipliers[i]:.3f} → {multipliers[i+1]:.3f}"
+            )
+
+    def test_none_score_is_neutral(self):
         """A missing popularity prediction must NOT corrupt EV — falls back
         to neutral 1.0 multiplier (only place a default is acceptable)."""
-        none_pred = _make_candidate(predicted_ownership_bucket=None)
-        mid_pred = _make_candidate(predicted_ownership_bucket="mid")
+        none_pred = _make_candidate(predicted_ownership_score=None)
+        from app.core.constants import POPULARITY_NEUTRAL_SCORE
+        neutral_pred = _make_candidate(predicted_ownership_score=POPULARITY_NEUTRAL_SCORE)
         ev_none = _compute_base_ev(none_pred)
-        ev_mid = _compute_base_ev(mid_pred)
-        assert ev_none == pytest.approx(ev_mid, rel=1e-6)
+        ev_neutral = _compute_base_ev(neutral_pred)
+        assert ev_none == pytest.approx(ev_neutral, rel=1e-6)
 
     def test_leverage_cannot_rescue_weak_candidate(self):
         """Multiplicative structure ensures a weak performance projection
@@ -671,11 +698,11 @@ class TestLeverageFactor:
         A high-env consensus pick must still rank above a low-env sleeper."""
         weak_sleeper = _make_candidate(
             name="WeakSleeper", total_score=20.0, env_score=0.2,
-            predicted_ownership_bucket="bottom_decile",
+            predicted_ownership_score=0.0,  # max sleeper boost
         )
         strong_consensus = _make_candidate(
             name="StrongConsensus", total_score=85.0, env_score=0.85,
-            predicted_ownership_bucket="top_decile",
+            predicted_ownership_score=10.0,  # max consensus discount
         )
         assert _compute_base_ev(strong_consensus) > _compute_base_ev(weak_sleeper)
 
@@ -683,9 +710,11 @@ class TestLeverageFactor:
         """Diagnostic: the leverage_factor used in EV computation is stored
         on the candidate after _compute_base_ev returns, so the response
         payload can surface it for the user."""
-        c = _make_candidate(predicted_ownership_bucket="bottom_decile")
+        from app.core.constants import POPULARITY_MULT_CEILING
+
+        c = _make_candidate(predicted_ownership_score=0.0)
         _compute_base_ev(c)
-        assert c.leverage_factor == 1.20
+        assert c.leverage_factor == pytest.approx(POPULARITY_MULT_CEILING)
 
 
 # ===================================================================

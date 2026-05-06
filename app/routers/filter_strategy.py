@@ -212,7 +212,10 @@ def _build_lineup_out(result) -> FilterLineupOut:
             filter_ev=round(s.candidate.filter_ev, 2),
             expected_slot_value=s.expected_slot_value,
             game_id=s.candidate.game_id,
-            predicted_ownership_bucket=s.candidate.predicted_ownership_bucket,
+            predicted_ownership_score=(
+                round(s.candidate.predicted_ownership_score, 2)
+                if s.candidate.predicted_ownership_score is not None else None
+            ),
             leverage_factor=round(s.candidate.leverage_factor, 3),
             breakdowns=_traits_to_breakdowns(s.candidate.traits),
         ))
@@ -239,7 +242,10 @@ def _build_response(lineup_result, candidates) -> FilterOptimizeResponse:
             is_two_way_pitcher=c.is_two_way_pitcher,
             filter_ev=round(c.filter_ev, 2),
             game_id=c.game_id,
-            predicted_ownership_bucket=c.predicted_ownership_bucket,
+            predicted_ownership_score=(
+                round(c.predicted_ownership_score, 2)
+                if c.predicted_ownership_score is not None else None
+            ),
             leverage_factor=round(c.leverage_factor, 3),
             breakdowns=_traits_to_breakdowns(c.traits),
         ))

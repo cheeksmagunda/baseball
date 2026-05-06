@@ -166,22 +166,23 @@ class TestSignalIsolation:
                 total_score=50.0, env_score=0.5, sharp_score=80.0,  # type: ignore[call-arg]
             )
 
-    def test_predicted_ownership_bucket_is_allowed(self):
-        """V14: predicted_ownership_bucket is a discrete LABEL produced from
-        public pre-game observables (team market, fame, batting order, season
-        stats).  It is explicitly NOT card_boost, NOT a raw drafts count, and
-        NOT an outcome label.  STRATEGY_AUDIT_2026-05.md carves it out as
-        analogous to using prior-season ERA — backward-looking aggregate of
-        publicly visible facts, not leakage of the current slate's outcome.
+    def test_predicted_ownership_score_is_allowed(self):
+        """V15: predicted_ownership_score is a continuous float in [0, 10]
+        produced from public pre-game observables (team market, fame,
+        batting order, season stats).  It is explicitly NOT card_boost,
+        NOT a raw drafts count, and NOT an outcome label.
+        STRATEGY_AUDIT_2026-05.md carves it out as analogous to using
+        prior-season ERA — backward-looking aggregate of publicly visible
+        facts, not leakage of the current slate's outcome.
         """
         c = FilteredCandidate(
             player_name="x", team="NYY", position="OF",
             total_score=50.0, env_score=0.5,
-            predicted_ownership_bucket="bottom_decile",
+            predicted_ownership_score=0.5,
         )
-        assert c.predicted_ownership_bucket == "bottom_decile"
-        # Confirm it's a string label, never a count.
-        assert isinstance(c.predicted_ownership_bucket, str)
+        assert c.predicted_ownership_score == 0.5
+        # Confirm it's a numeric score, never a count or outcome label.
+        assert isinstance(c.predicted_ownership_score, float)
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +255,16 @@ class TestConstantRankStability:
         "ROOKIE_ENV_MODIFIER_CEILING",
     ]
 
+    # V15 — continuous popularity-curve constants live on a different
+    # import path (app.core.constants) but participate in EV.  Keep them
+    # in a separate parametrize so the monkeypatch lookup is correct.
+    POPULARITY_PERTURBATION_TARGETS = [
+        "POPULARITY_NEUTRAL_SCORE",
+        "POPULARITY_SLOPE",
+        "POPULARITY_MULT_FLOOR",
+        "POPULARITY_MULT_CEILING",
+    ]
+
     TAU_FLOOR = 0.78
 
     @staticmethod
@@ -304,6 +315,44 @@ class TestConstantRankStability:
             f"Ranking collapsed under {delta:+.0%} perturbation of {constant_name}: "
             f"Kendall-tau={tau:.3f} < floor={self.TAU_FLOOR}. "
             "This constant is cliff-like; consider widening its effective range."
+        )
+
+    @pytest.mark.parametrize("constant_name", POPULARITY_PERTURBATION_TARGETS)
+    @pytest.mark.parametrize("delta", [-0.10, +0.10])
+    def test_popularity_curve_perturbation_does_not_collapse_rank(
+        self, constant_name, delta, monkeypatch
+    ):
+        """V15: perturbing each popularity-curve constant by ±10% must not
+        catastrophically reorder the ranking.  Pool seeded with assorted
+        popularity scores so the leverage signal is actually exercised.
+        """
+        import random as _r
+        from app.core import constants as cc
+        from app.core import popularity as pop
+
+        rng = _r.Random(42)
+        baseline_pool = self._build_pool()
+        # Seed each candidate with a popularity score in [0, 8] — covers
+        # the empirical pool's working range so the curve is exercised.
+        for c in baseline_pool:
+            c.predicted_ownership_score = rng.uniform(0.0, 8.0)
+        baseline_ranking = self._rank(baseline_pool)
+
+        original = getattr(cc, constant_name)
+        monkeypatch.setattr(cc, constant_name, original * (1.0 + delta))
+        # popularity.py imports the constants at module-load time, so
+        # monkeypatch the module-level binding too.
+        monkeypatch.setattr(pop, constant_name, original * (1.0 + delta))
+        perturbed_pool = self._build_pool()
+        rng2 = _r.Random(42)  # same seed → same scores
+        for c in perturbed_pool:
+            c.predicted_ownership_score = rng2.uniform(0.0, 8.0)
+        perturbed_ranking = self._rank(perturbed_pool)
+
+        tau = _kendall_tau(baseline_ranking, perturbed_ranking)
+        assert tau >= self.TAU_FLOOR, (
+            f"Popularity curve rank collapsed under {delta:+.0%} of "
+            f"{constant_name}: tau={tau:.3f} < floor={self.TAU_FLOOR}"
         )
 
 

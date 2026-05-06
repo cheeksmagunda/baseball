@@ -1,4 +1,4 @@
-"""Predicted-ownership bucket for each candidate (V14, May 2026).
+"""Predicted-ownership popularity score (V15, May 2026).
 
 The pipeline is, by construction, a performance predictor.  The 40-slate
 audit (STRATEGY_AUDIT_2026-05.md) shows that performance prediction alone
@@ -8,11 +8,13 @@ leaderboard, and popular HVs vs sleeper HVs score essentially identically.
 The contest-winning edge is differentiation from the field, not raw
 projection.
 
-This module produces, for each candidate, a discrete bucket label
-predicting where the field will draft them tomorrow.  The bucket feeds
-`leverage_factor` in `_compute_base_ev`, multiplying EV by ∈ [0.85, 1.20]
-so that two candidates with identical env+trait scores rank by ownership
-disparity rather than alphabetical accident.
+V15 replaces V14's discrete-bucket system (top_decile / upper_mid / mid /
+lower_mid / bottom_decile) with a continuous popularity score in [0, 10]
+mapping to a continuous EV multiplier in [POPULARITY_MULT_FLOOR,
+POPULARITY_MULT_CEILING].  Same inputs, smoother gradient — the field's
+draft preferences are continuous, so the contrarian premium should be
+continuous too.  Calibrated by scripts/calibrate_popularity_curve.py
+against historical_players.csv (May 2026: 1561 player-slate rows).
 
 Inputs (all pre-game public observables):
     1. Team market tier — TEAM_MARKET_TIER lookup in constants.py.
@@ -35,10 +37,13 @@ Inputs that are FORBIDDEN by the architecture and not consumed here:
     - `drafts` (raw historical count is an outcome label)
     - `real_score`, `total_value`, `is_highest_value` (post-game truth)
 
-The bucket function is deterministic and rule-based.  No statistical
-model, no learned weights — bucket boundaries are quantile-derived from
-the 40-slate corpus and tuned manually via the standard calibration
-discipline that governs every other constant in app/core/constants.py.
+Rookie interaction: rookie-track players (no fame, no stats, low team
+score on small markets) naturally land near score 0–3 and earn a positive
+multiplier (≥1.0).  The V13.3 env cap (ROOKIE_ENV_MODIFIER_CEILING = 1.10)
+still constrains them on the env side, so a rookie pitcher's net EV
+ceiling stays well below a veteran's — but the popularity boost keeps
+them competitive in genuinely strong env contexts rather than getting
+double-faded.
 """
 
 from __future__ import annotations
@@ -53,6 +58,10 @@ from app.core.constants import (
     LEVERAGE_FAME_INDEX_DAYS,
     LEVERAGE_STAR_BATTER_OPS,
     LEVERAGE_STAR_PITCHER_ERA,
+    POPULARITY_MULT_CEILING,
+    POPULARITY_MULT_FLOOR,
+    POPULARITY_NEUTRAL_SCORE,
+    POPULARITY_SLOPE,
     STAR_PLAYER_FLAGS,
     TEAM_MARKET_TIER,
     canonicalize_team,
@@ -126,7 +135,7 @@ def _is_star_by_stats(is_pitcher: bool, season_ops: float, season_era: float) ->
 
     Inputs are non-Optional: the caller is responsible for confirming the
     player is on the traditional (non-rookie) track and PlayerStats is
-    populated before invoking this branch.  See predict_popularity_bucket
+    populated before invoking this branch.  See predict_popularity_score
     for the strict precondition.
     """
     if is_pitcher:
@@ -134,21 +143,23 @@ def _is_star_by_stats(is_pitcher: bool, season_ops: float, season_era: float) ->
     return season_ops >= LEVERAGE_STAR_BATTER_OPS
 
 
-def _bucket_from_score(score: float) -> str:
-    """Map an internal popularity score in roughly [0, 10] to a discrete bucket.
+def popularity_score_to_multiplier(score: float | None) -> float:
+    """Map a continuous popularity score in [0, 10] to an EV multiplier.
 
-    Quantile-derived cutoffs.  Re-tune via the standard calibration
-    discipline when the corpus expands.
+    The curve is linear with clamps:
+        multiplier = clamp(1.0 + (NEUTRAL - score) * SLOPE, FLOOR, CEILING)
+
+    Higher score (more popular) → multiplier < 1.0 (consensus discount).
+    Lower score (more contrarian) → multiplier > 1.0 (sleeper premium).
+    A None score returns 1.0 — only place a default is acceptable, because
+    the leverage signal is genuinely additive and a missing prediction
+    must not corrupt a valid performance projection the way a missing
+    ERA would.
     """
-    if score >= 8.0:
-        return "top_decile"
-    if score >= 6.0:
-        return "upper_mid"
-    if score >= 3.0:
-        return "mid"
-    if score >= 1.5:
-        return "lower_mid"
-    return "bottom_decile"
+    if score is None:
+        return 1.0
+    raw = 1.0 + (POPULARITY_NEUTRAL_SCORE - score) * POPULARITY_SLOPE
+    return max(POPULARITY_MULT_FLOOR, min(POPULARITY_MULT_CEILING, raw))
 
 
 def _team_market_score(team: str, is_pitcher: bool, player_name: str) -> float:
@@ -158,12 +169,12 @@ def _team_market_score(team: str, is_pitcher: bool, player_name: str) -> float:
     PARK_HR_FACTORS must have a tier (enforced at startup by
     _validate_constants), so a runtime miss means a vendor-abbreviation
     drift the canonicaliser missed and is a real data-collection bug,
-    not a missing-data event.  No silent fallback to 'mid'.
+    not a missing-data event.  No silent fallback to neutral.
     """
     canonical = canonicalize_team(team)
     if canonical not in TEAM_MARKET_TIER:
         raise RuntimeError(
-            f"predict_popularity_bucket: team {team!r} (canonical {canonical!r}) "
+            f"predict_popularity_score: team {team!r} (canonical {canonical!r}) "
             f"not in TEAM_MARKET_TIER — for player {player_name!r} "
             f"(is_pitcher={is_pitcher}).  Add the team to TEAM_MARKET_TIER in "
             "app/core/constants.py or fix the upstream abbreviation."
@@ -172,7 +183,7 @@ def _team_market_score(team: str, is_pitcher: bool, player_name: str) -> float:
     return {1: 3.0, 2: 2.0, 3: 1.0, 4: 0.0}[tier]
 
 
-def predict_popularity_bucket(
+def predict_popularity_score(
     *,
     player_name: str,
     team: str,
@@ -181,10 +192,12 @@ def predict_popularity_bucket(
     season_ops: float | None,
     season_era: float | None,
     as_of: date,
-) -> str:
-    """Predict the field's draft bucket for a TRADITIONAL-TRACK (non-rookie) player.
+) -> float:
+    """Predict the field's popularity score for a TRADITIONAL-TRACK (non-rookie) player.
 
-    Returns one of: top_decile, upper_mid, mid, lower_mid, bottom_decile.
+    Returns a float in roughly [0, 10] — higher = more popular = field
+    will draft heavily.  The caller (`_compute_base_ev` via
+    `popularity_score_to_multiplier`) maps it to an EV multiplier.
 
     Strict precondition (no silent fallbacks):
       * `team` MUST be in TEAM_MARKET_TIER.  Raises RuntimeError otherwise.
@@ -194,7 +207,7 @@ def predict_popularity_bucket(
       * For pitchers, `season_era` MUST be populated (same DNP filter
         guarantees IP > 0 + ERA on a non-rookie SP).
 
-    Rookies have their own path — call `predict_rookie_popularity_bucket`
+    Rookies have their own path — call `predict_rookie_popularity_score`
     instead.  Routing is done in the resolver based on
     PlayerStats.is_rookie_track.
 
@@ -208,17 +221,17 @@ def predict_popularity_bucket(
     """
     if is_pitcher and season_era is None:
         raise RuntimeError(
-            f"predict_popularity_bucket: season_era=None for non-rookie pitcher "
+            f"predict_popularity_score: season_era=None for non-rookie pitcher "
             f"{player_name!r} ({team}) — every veteran SP must have ERA from "
             "fetch_player_season_stats / prior-season fallback.  If this is a "
-            "rookie, route via predict_rookie_popularity_bucket instead."
+            "rookie, route via predict_rookie_popularity_score instead."
         )
     if not is_pitcher and season_ops is None:
         raise RuntimeError(
-            f"predict_popularity_bucket: season_ops=None for non-rookie batter "
+            f"predict_popularity_score: season_ops=None for non-rookie batter "
             f"{player_name!r} ({team}) — every veteran batter past the DNP "
             "filter must have OPS.  If this is a rookie, route via "
-            "predict_rookie_popularity_bucket instead."
+            "predict_rookie_popularity_score instead."
         )
 
     score = _team_market_score(team, is_pitcher, player_name)
@@ -238,28 +251,27 @@ def predict_popularity_bucket(
     if not is_pitcher and batting_order is not None and 1 <= batting_order <= 3:
         score += 1.0
 
-    return _bucket_from_score(score)
+    return score
 
 
-def predict_rookie_popularity_bucket(
+def predict_rookie_popularity_score(
     *,
     player_name: str,
     team: str,
     is_pitcher: bool,
     batting_order: int | None,
     as_of: date,
-) -> str:
-    """Predict ownership bucket for a TRUE MLB-DEBUTANT (rookie-track) player.
+) -> float:
+    """Predict popularity score for a TRUE MLB-DEBUTANT (rookie-track) player.
 
     The traditional path raises on missing OPS / ERA because for a veteran
     those gaps mean a data-collection bug.  Rookies have NO traditional
-    stats by definition (zero current-season + zero prior-season + below
-    the rookie experience threshold), so applying the strict precondition
-    would crash every September call-up.
+    stats by definition, so applying the strict precondition would crash
+    every September call-up.
 
-    Empirically the crowd fades rookies hard (median draft count ~ tens
-    rather than hundreds), so absent any contrary signal a rookie defaults
-    deep into bottom_decile.  The two ways a rookie can climb out:
+    Empirically the crowd fades rookies hard, so absent any contrary
+    signal a rookie scores near 0 → multiplier near the ceiling (1.20).
+    The two ways a rookie can climb out:
 
       * Tier-1 market — Yankees / Dodgers / etc. fans draft their own
         team's call-ups regardless of MLB-debut status.
@@ -272,10 +284,12 @@ def predict_rookie_popularity_bucket(
     still scored because a rookie batting leadoff WILL be drafted by
     his own market.
 
-    Inputs:
-      Same as predict_popularity_bucket EXCEPT season_ops/season_era are
-      not consumed (rookies have neither).  team and as_of are still
-      validated.  No silent default for unknown team.
+    Note: the V13.3 env cap (ROOKIE_ENV_MODIFIER_CEILING = 1.10) still
+    applies to all rookies, so the popularity boost from a low score
+    keeps rookies competitive in strong env without letting them
+    dominate.  Rookie pitchers in good matchups can earn ~1.10 × 1.0 ×
+    1.20 = 1.32 EV multiplier, vs ~1.51 for a comparable veteran ace —
+    structurally below veterans but not double-faded.
     """
     score = _team_market_score(team, is_pitcher, player_name)
 
@@ -294,7 +308,7 @@ def predict_rookie_popularity_bucket(
     if not is_pitcher and batting_order is not None and 1 <= batting_order <= 3:
         score += 1.0
 
-    return _bucket_from_score(score)
+    return score
 
 
 def clear_cache() -> None:

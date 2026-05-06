@@ -88,9 +88,8 @@ from app.core.constants import (
     # V13.3 — rookie env cap + position-volume haircut
     ROOKIE_ENV_MODIFIER_CEILING,
     POSITION_VOLUME_MULTIPLIER,
-    # V14 — leverage / contrarian-edge scoring
-    LEVERAGE_FACTORS,
 )
+from app.core.popularity import popularity_score_to_multiplier
 from app.core.utils import BASE_MULTIPLIER, graduated_scale
 
 logger = logging.getLogger(__name__)
@@ -790,11 +789,13 @@ class FilteredCandidate:
     scripts/audit_live_isolation.py.  None of those signals is knowable
     pre-draft, so none belongs in the pre-draft EV path.
 
-    `predicted_ownership_bucket` is a discrete label (top_decile,
-    upper_mid, mid, lower_mid, bottom_decile) produced by
-    app/core/popularity.py from public pre-game signals.  It is NOT a
-    raw count, NOT an outcome label, and NOT card_boost.  See
-    STRATEGY_AUDIT_2026-05.md for the architectural carve-out.
+    `predicted_ownership_score` is a continuous float in roughly [0, 10]
+    produced by app/core/popularity.py from public pre-game signals
+    (team market tier, fame flag/elite stats, batting order, rolling
+    14-day MP fame index).  It is NOT a raw count, NOT an outcome label,
+    and NOT card_boost.  See STRATEGY_AUDIT_2026-05.md for the
+    architectural carve-out.  V15 (May 2026) replaced V14's discrete
+    bucket labels with a continuous score for smoother gradient ranking.
     ========================================================================
 
     EV is computed from pre-game signals only:
@@ -835,16 +836,15 @@ class FilteredCandidate:
     # on env alone.  Sourced from PlayerScoreResult.is_rookie_track.
     is_rookie_track: bool = False
 
-    # V14 — predicted-ownership bucket from app/core/popularity.py.
-    # One of {top_decile, upper_mid, mid, lower_mid, bottom_decile} or None.
-    # Drives leverage_factor in _compute_base_ev: heavily-owned consensus
-    # picks pay 0.85, predicted sleepers earn 1.20, every other bucket
-    # interpolates linearly through 1.00 at "mid".  None falls back to
-    # neutral 1.0 (no leverage adjustment) — the only place a None
-    # default is acceptable, because the leverage signal is genuinely
-    # additive and a missing prediction must not corrupt a valid
+    # V15 — predicted-ownership popularity score from app/core/popularity.py.
+    # Continuous float in roughly [0, 10] (higher = more popular).  Drives
+    # leverage_factor in _compute_base_ev via popularity_score_to_multiplier:
+    # multiplier = clamp(1.0 + (NEUTRAL - score) * SLOPE, FLOOR, CEILING).
+    # None falls back to neutral 1.0 (no leverage adjustment) — the only
+    # place a None default is acceptable, because the leverage signal is
+    # genuinely additive and a missing prediction must not corrupt a valid
     # performance projection the way a missing ERA would.
-    predicted_ownership_bucket: str | None = None
+    predicted_ownership_score: float | None = None
 
     # Computed by the optimizer
     filter_ev: float = 0.0
@@ -915,10 +915,12 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
       3. trait_factor        — SECONDARY: intrinsic player quality (Statcast
                                kinematics + ERA/K9/WHIP for SP; exit-velo +
                                hard-hit% + barrel% for batters).  0.85–1.15.
-      4. leverage_factor     — V14: contrarian-edge multiplier from predicted
-                               ownership bucket.  Range [0.85, 1.20], deliberately
-                               narrower than the env swing so leverage acts as a
-                               tiebreaker, not an override.
+      4. leverage_factor     — V15: contrarian-edge multiplier from predicted
+                               popularity score.  Continuous curve in
+                               [POPULARITY_MULT_FLOOR, POPULARITY_MULT_CEILING]
+                               = [0.85, 1.20], deliberately narrower than the
+                               env swing so leverage acts as a tiebreaker, not
+                               an override.
       5. stack_bonus         — 1.20 if PATH 1 blowout-favorite team, else 1.0.
       6. dnp_adj             — Confirmed-bad 0.70 / unknown 0.93 / known 1.0.
 
@@ -1003,11 +1005,11 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
             (candidate.position or "").upper(), 1.0
         )
 
-    # V14 — leverage_factor.  None bucket (popularity prediction unavailable)
-    # falls back to neutral 1.0; the leverage signal is genuinely additive
-    # and a missing prediction must not corrupt a valid performance
-    # projection.  Stored on the candidate for diagnostic exposure.
-    leverage_factor = LEVERAGE_FACTORS.get(candidate.predicted_ownership_bucket, 1.0)
+    # V15 — leverage_factor from continuous popularity score.  None falls
+    # back to neutral 1.0; the leverage signal is genuinely additive and a
+    # missing prediction must not corrupt a valid performance projection.
+    # Stored on the candidate for diagnostic exposure.
+    leverage_factor = popularity_score_to_multiplier(candidate.predicted_ownership_score)
     candidate.leverage_factor = leverage_factor
 
     return (
