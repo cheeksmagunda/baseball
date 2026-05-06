@@ -1,14 +1,15 @@
 "use client";
 
-import type { FilterLineupOut } from "@/lib/types";
+import type { FilterLineupOut, LivePlayerStats } from "@/lib/types";
 import { PlayerCard } from "./PlayerCard";
 import { NumberTicker } from "./NumberTicker";
 
 interface LineupStackProps {
   lineup: FilterLineupOut;
+  liveStats?: Map<string, LivePlayerStats>;
 }
 
-export function LineupStack({ lineup }: LineupStackProps) {
+export function LineupStack({ lineup, liveStats }: LineupStackProps) {
   return (
     <div
       role="region"
@@ -46,7 +47,12 @@ export function LineupStack({ lineup }: LineupStackProps) {
       {/* Card stack */}
       <div className="space-y-3 pb-8">
         {lineup.lineup.map((slot, i) => (
-          <PlayerCard key={slot.slot_index} slot={slot} index={i} />
+          <PlayerCard
+            key={slot.slot_index}
+            slot={slot}
+            index={i}
+            liveStats={liveStats?.get(slot.player_name)}
+          />
         ))}
       </div>
     </div>

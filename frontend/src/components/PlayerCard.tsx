@@ -2,7 +2,7 @@
 
 import React from "react";
 import { motion } from "framer-motion";
-import type { FilterSlotOut } from "@/lib/types";
+import type { FilterSlotOut, LivePlayerStats } from "@/lib/types";
 import { useTeamColors } from "@/hooks/useTeamColors";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { SlotBadge } from "./SlotBadge";
@@ -20,12 +20,39 @@ function StatBlock({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
+function LiveStatLine({ live, position }: { live: LivePlayerStats; position: string }) {
+  const isPitcher = position === "P" || position === "SP" || position === "RP";
+  if (isPitcher) {
+    if (live.ip == null) return null;
+    const parts = [`${live.ip} IP`];
+    if (live.k_p != null) parts.push(`${live.k_p}K`);
+    if (live.er != null) parts.push(`${live.er} ER`);
+    return (
+      <p className="text-fluid-xs text-text-muted">
+        {parts.join(" · ")}
+      </p>
+    );
+  }
+  if (live.ab == null) return null;
+  const line = `${live.h ?? 0}-${live.ab}`;
+  const extras: string[] = [];
+  if (live.hr != null && live.hr > 0) extras.push(`${live.hr} HR`);
+  if (live.rbi != null && live.rbi > 0) extras.push(`${live.rbi} RBI`);
+  if (live.bb != null && live.bb > 0) extras.push(`${live.bb} BB`);
+  return (
+    <p className="text-fluid-xs text-text-muted">
+      {line}{extras.length > 0 ? `, ${extras.join(", ")}` : ""}
+    </p>
+  );
+}
+
 interface PlayerCardProps {
   slot: FilterSlotOut;
   index: number;
+  liveStats?: LivePlayerStats;
 }
 
-export function PlayerCard({ slot, index }: PlayerCardProps) {
+export function PlayerCard({ slot, index, liveStats }: PlayerCardProps) {
   const { primary, glowShadow, gradientBg, borderColor } = useTeamColors(slot.team);
   const reduced = useReducedMotion();
 
@@ -71,7 +98,22 @@ export function PlayerCard({ slot, index }: PlayerCardProps) {
               2-WAY SP
             </span>
           )}
+          {liveStats?.hr != null && liveStats.hr > 0 && (
+            <motion.span
+              initial={reduced ? {} : { scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 400, damping: 15 }}
+              className="rounded-md bg-amber-500/20 px-1.5 py-0.5 text-fluid-xs font-bold text-amber-400"
+            >
+              {liveStats.hr === 1 ? "HR" : `${liveStats.hr} HR`}
+            </motion.span>
+          )}
         </div>
+        {liveStats && (
+          <div className="mt-0.5">
+            <LiveStatLine live={liveStats} position={slot.position} />
+          </div>
+        )}
 
         {/* Score row */}
         <div className="mt-3 grid grid-cols-3 gap-3">

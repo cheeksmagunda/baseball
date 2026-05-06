@@ -128,3 +128,26 @@ class FilterOptimizeResponse(BaseModel):
     slate_classification: SlateClassificationOut
     lineup: FilterLineupOut
     all_candidates: list[FilterCandidateOut] = []
+
+
+class LivePlayerStats(BaseModel):
+    """Live in-game stats for a single drafted player, fetched from MLB boxscore."""
+    player_name: str
+    team: str
+    position: str
+    game_status: str | None = None  # "Preview", "Live", "Final" (from SlateGame)
+    # Batter stats (None = game not started or player hasn't batted)
+    ab: int | None = None
+    h: int | None = None
+    hr: int | None = None
+    rbi: int | None = None
+    bb: int | None = None
+    k: int | None = None
+    # Pitcher stats
+    ip: str | None = None
+    er: int | None = None
+    k_p: int | None = None  # strikeouts (pitching)
+
+
+class LiveStatsResponse(BaseModel):
+    players: list[LivePlayerStats]
