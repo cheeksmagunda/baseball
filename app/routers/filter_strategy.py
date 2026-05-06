@@ -27,6 +27,8 @@ from app.schemas.filter_strategy import (
     GameEnvironment,
     SlateClassificationOut,
     StackableGameOut,
+    LivePlayerStats,
+    LiveStatsResponse,
 )
 from app.services.filter_strategy import (
     classify_slate,
@@ -556,3 +558,101 @@ async def diagnostics(db: Session = Depends(get_db)):
         "top_10_ev": top_evs,
         "lineup": [],
     }
+
+
+@router.get("/live-stats", response_model=LiveStatsResponse)
+async def live_stats(db: Session = Depends(get_db)):
+    """
+    Return live in-game stats for the current frozen lineup's players.
+
+    Only available when phase == "ready" (picks are frozen and games are active).
+    Fetches MLB boxscores for each game_pk in the frozen lineup, matches players
+    by name, and returns per-player stats (AB/H/HR/RBI/K for batters,
+    IP/ER/K for pitchers).
+
+    Returns 425 if picks are not yet frozen.
+    """
+    import unicodedata
+    from app.core.mlb_api import get_game_boxscore
+
+    if not lineup_cache.is_frozen:
+        raise HTTPException(status_code=425, detail="Picks not yet available")
+
+    cached = lineup_cache.get()
+    if cached is None:
+        raise HTTPException(status_code=425, detail="Picks not yet available")
+
+    lineup_slots = cached.lineup.lineup
+
+    # Collect internal game_ids used in the frozen lineup
+    game_ids = {int(s.game_id) for s in lineup_slots if s.game_id is not None}
+    if not game_ids:
+        return LiveStatsResponse(players=[
+            LivePlayerStats(player_name=s.player_name, team=s.team, position=s.position)
+            for s in lineup_slots
+        ])
+
+    # Map internal game_id → (mlb_game_pk, game_status) from the DB
+    sg_rows = db.query(SlateGame).filter(SlateGame.id.in_(game_ids)).all()
+    game_pk_map: dict[int, tuple[int | None, str | None]] = {
+        sg.id: (sg.mlb_game_pk, sg.game_status) for sg in sg_rows
+    }
+
+    def _norm(name: str) -> str:
+        nfkd = unicodedata.normalize("NFKD", name)
+        return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
+
+    # Fetch boxscores for each unique mlb_game_pk (deduplicated)
+    fetched: dict[int, dict] = {}  # mlb_game_pk → boxscore
+    for _sg_id, (mlb_pk, _status) in game_pk_map.items():
+        if mlb_pk is not None and mlb_pk not in fetched:
+            fetched[mlb_pk] = await get_game_boxscore(mlb_pk)
+
+    # Build name → stats lookup from all boxscores
+    player_stats_lookup: dict[str, dict] = {}
+    for sg_id, (mlb_pk, game_status) in game_pk_map.items():
+        if mlb_pk is None or mlb_pk not in fetched:
+            continue
+        bs = fetched[mlb_pk]
+        for side in ("home", "away"):
+            for _pid, pdata in bs.get("teams", {}).get(side, {}).get("players", {}).items():
+                full_name = pdata.get("person", {}).get("fullName", "")
+                if not full_name:
+                    continue
+                stats = pdata.get("stats", {})
+                bat = stats.get("batting", {})
+                pit = stats.get("pitching", {})
+                player_stats_lookup[_norm(full_name)] = {
+                    "game_status": game_status,
+                    "ab": bat.get("atBats"),
+                    "h": bat.get("hits"),
+                    "hr": bat.get("homeRuns"),
+                    "rbi": bat.get("rbi"),
+                    "bb": bat.get("baseOnBalls"),
+                    "k": bat.get("strikeOuts"),
+                    "ip": pit.get("inningsPitched"),
+                    "er": pit.get("earnedRuns"),
+                    "k_p": pit.get("strikeOuts"),
+                }
+
+    # Assemble per-player response
+    results = []
+    for slot in lineup_slots:
+        raw = player_stats_lookup.get(_norm(slot.player_name), {})
+        results.append(LivePlayerStats(
+            player_name=slot.player_name,
+            team=slot.team,
+            position=slot.position,
+            game_status=raw.get("game_status"),
+            ab=raw.get("ab"),
+            h=raw.get("h"),
+            hr=raw.get("hr"),
+            rbi=raw.get("rbi"),
+            bb=raw.get("bb"),
+            k=raw.get("k"),
+            ip=raw.get("ip"),
+            er=raw.get("er"),
+            k_p=raw.get("k_p"),
+        ))
+
+    return LiveStatsResponse(players=results)

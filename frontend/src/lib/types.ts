@@ -43,6 +43,28 @@ export interface FilterOptimizeResponse {
   all_candidates: unknown[];
 }
 
+export interface LivePlayerStats {
+  player_name: string;
+  team: string;
+  position: string;
+  game_status: string | null;
+  // Batter
+  ab: number | null;
+  h: number | null;
+  hr: number | null;
+  rbi: number | null;
+  bb: number | null;
+  k: number | null;
+  // Pitcher
+  ip: string | null;
+  er: number | null;
+  k_p: number | null;
+}
+
+export interface LiveStatsResponse {
+  players: LivePlayerStats[];
+}
+
 export interface WaitInfo {
   phase: "before_lock" | "generating" | "initializing";
   first_pitch_utc: string | null;

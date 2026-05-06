@@ -1,4 +1,4 @@
-import type { FilterOptimizeResponse, OptimizeStatus } from "./types";
+import type { FilterOptimizeResponse, OptimizeStatus, LiveStatsResponse } from "./types";
 
 class ApiError extends Error {
   public body: Record<string, unknown> | null;
@@ -37,6 +37,23 @@ export async function fetchStatus(signal?: AbortSignal): Promise<OptimizeStatus>
   });
   if (!res.ok) {
     throw new ApiError(res.status, `Status error: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchLiveStats(signal?: AbortSignal): Promise<LiveStatsResponse> {
+  const res = await fetch(`/api/filter-strategy/live-stats`, {
+    method: "GET",
+    signal,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let message = `Live stats error: ${res.status}`;
+    try {
+      const body = await res.json();
+      message = (body?.detail as string) ?? message;
+    } catch {}
+    throw new ApiError(res.status, message);
   }
   return res.json();
 }

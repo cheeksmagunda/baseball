@@ -3,6 +3,7 @@
 import type { FilterOptimizeResponse, OptimizeStatus } from "@/lib/types";
 import { useLineupData } from "@/hooks/useLineupData";
 import { useSlatePolling } from "@/hooks/useSlatePolling";
+import { useLiveStats } from "@/hooks/useLiveStats";
 import { StickyHeader } from "@/components/StickyHeader";
 import { LineupStack } from "@/components/LineupStack";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";
@@ -17,6 +18,7 @@ interface ClientHomeProps {
 
 export function ClientHome({ initialData, initialStatus }: ClientHomeProps) {
   const { data, loading, error, waitInfo, refetch } = useLineupData(initialData, initialStatus);
+  const liveStats = useLiveStats(!!data && !loading && !error && !waitInfo);
 
   useSlatePolling(refetch);
 
@@ -68,7 +70,7 @@ export function ClientHome({ initialData, initialStatus }: ClientHomeProps) {
     <div className="flex min-h-screen flex-col">
       <StickyHeader slate={data.slate_classification} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6">
-        <LineupStack lineup={data.lineup} />
+        <LineupStack lineup={data.lineup} liveStats={liveStats} />
       </main>
     </div>
   );
