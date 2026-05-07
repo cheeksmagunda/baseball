@@ -30,7 +30,7 @@ def list_players(
 
 @router.get("/{player_id}", response_model=PlayerDetailOut)
 def get_player(player_id: int, db: Session = Depends(get_db)):
-    player = db.query(Player).get(player_id)
+    player = db.get(Player, player_id)
     if not player:
         raise HTTPException(404, "Player not found")
 
