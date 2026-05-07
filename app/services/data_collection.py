@@ -893,7 +893,7 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats:
                     log_count += 1
             if log_count:
                 logger.info(
-                    "Pitcher %s (mlb_id=%d): backfilled %d %d game-log rows "
+                    "Pitcher %s (mlb_id=%d): backfilled %d game-log rows from %d season "
                     "for recent_form trait",
                     player.name, mlb_id, log_count, prior_season,
                 )
@@ -1013,7 +1013,7 @@ async def fetch_player_season_stats(db: Session, player: Player) -> PlayerStats:
                     log_count += 1
             if log_count:
                 logger.info(
-                    "Batter %s (mlb_id=%d): backfilled %d %d game-log rows "
+                    "Batter %s (mlb_id=%d): backfilled %d game-log rows from %d season "
                     "for recent_form / hot_streak traits",
                     player.name, mlb_id, log_count, prior_season,
                 )

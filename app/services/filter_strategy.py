@@ -11,22 +11,26 @@ Public API (imported by pipeline.py, routers/filter_strategy.py, and tests):
 
 Internal helpers:
   _compute_base_ev — single source of EV truth
-  _enforce_composition — V12 multi-pitcher variant chooser (0P-5P)
+  _enforce_composition — variant chooser (0P+5B / 1P+4B, capped by MAX_PITCHERS_PER_LINEUP)
   _build_variant — single-shape builder w/ anti-correlation guard
   _smart_slot_assignment — sort-by-EV, assign multipliers desc
   _compute_dnp_adjustment, _compute_stack_eligible_teams, _team_batter_cap
 
-EV formula (V13):
+EV formula (V15):
     filter_ev = env_factor × volatility_amplifier × trait_factor
-              × stack_bonus × dnp_adj × 100
+              × leverage_factor × stack_bonus × dnp_adj × position_mult × 100
 
-    env_factor: floor 0.20, pitcher ceiling 1.55 (V13), batter 1.30
+    env_factor:    floor 0.20, rookie ceiling 1.10 (V13.3), pitcher 1.55 (V13),
+                   batter 1.30
     volatility_amplifier: env-conditional, batters only
-    trait_factor: 0.85-1.15
-    stack_bonus: 1.0 / 1.20 (PATH 1 blowout-fav teams only)
-    dnp_adj: 0.70 / 1.0 (no unknown case — DNP filter excludes batting_order=None)
+    trait_factor:  0.70-1.20 (V15.4 widened band)
+    leverage_factor: 0.85-1.20 continuous popularity curve (V15)
+    stack_bonus:   1.0 / 1.10 (PATH 1 blowout-fav teams only, V13.3)
+    dnp_adj:       always 1.0 (strict-mode DNP filter excludes invalid candidates)
+    position_mult: 1.0 default; C 0.90, 2B/SS 0.95 (V13.3, batters only)
 
-Composition: builds variants 0P-5P, returns highest slot-weighted total EV.
+Composition: builds 0P+5B and 1P+4B variants (platform cap MAX_PITCHERS_PER_LINEUP=1),
+returns highest slot-weighted total EV.
 Display: pitcher(s) first by EV desc, then batters by EV desc.
 
 Stacking (is_stack_eligible_game): PATH 1 (ML≤-200 AND O/U≥9.0, favored
@@ -923,7 +927,9 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
                                env swing so leverage acts as a tiebreaker, not
                                an override.
       5. stack_bonus         — 1.20 if PATH 1 blowout-favorite team, else 1.0.
-      6. dnp_adj             — Confirmed-bad 0.70 / unknown 0.93 / known 1.0.
+      6. dnp_adj             — Always 1.0 (strict-mode: invalid candidates excluded
+                               upstream by the DNP filter; raises if batting_order=None
+                               somehow reaches this function).
 
     Formula:
         base_ev = env_factor × volatility_amplifier × trait_factor
@@ -1132,27 +1138,15 @@ def _enforce_composition(
     slate_class: SlateClassification,
 ) -> list[FilteredCandidate]:
     """
-    V12 EV-driven composition: try EVERY pitcher count from 0 to 5, return
-    the variant with the highest slot-weighted total EV.
+    EV-driven composition: try pitcher counts 0..MAX_PITCHERS_PER_LINEUP,
+    return the variant with the highest slot-weighted total EV.
 
-    Audit of 35 slates of actual #1 winning lineups (2026-03-25 → 2026-04-28):
-        2P+3B: 28.6%   ← most common winning shape
-        0P+5B: 25.7%
-        1P+4B: 17.1%
-        3P+2B: 14.3%
-        4P+1B: 11.4%
-        5P+0B:  2.9%
-
-    Pre-V12 we only built {0P+5B, 1P+4B} — structurally incapable of
-    producing 57% of winning shapes.  Mean total RS by shape (winning
-    lineups only): 0P=17.5, 1P=18.5, 2P=20.3, 4P=22.9, 5P=26.6.
-    Pitchers score more per RS-event because individual K/win-bonus
-    games stack.  The EV-driven chooser was correct in spirit; the
-    structural cap of 1 pitcher was the limiter.
-
-    Backtest of V12 with multi-pitcher variants on the same 35 slates:
-    beat the actual #1 winning lineup on 57.1% of slates (vs 22.9% with
-    only 0P/1P).  Mean slot-weighted RS rose from 28.65 → 35.43.
+    V15.3 (May 6, 2026): MAX_PITCHERS_PER_LINEUP=1 per Real Sports platform
+    rule — only 0P+5B and 1P+4B are legal submissions.  The V12 audit showed
+    multi-pitcher shapes dominating historical winners, but that data conflicts
+    with the confirmed platform cap.  If the cap is ever lifted, raising
+    MAX_PITCHERS_PER_LINEUP in constants.py re-enables the full sweep with no
+    other changes required.
 
     Anti-correlation guard: a batter is blocked from any game where one
     of our drafted pitchers plays UNLESS the batter is that pitcher's
