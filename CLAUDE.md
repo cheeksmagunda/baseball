@@ -345,9 +345,30 @@ The env scoring thresholds in `app/core/constants.py` (BATTER_ENV_VEGAS_FLOOR, E
 
 ## Ingesting New Slate Data
 
-New slates are ingested **manually by appending rows** to the four files above — there is no automated collector. After a slate completes, capture the platform's leaderboards and append to each file. The canonical column-by-column reference is reproduced below. Keep all four files in lockstep — a date missing from any one of them will break cross-validation.
+The default daily ingest is **automated via `scripts/scrape_realsports_daily.py`** — a Playwright-driven scrape against the Real Sports app that captures the day's leaderboards (HV/MP/3X), top-20 winning lineups, and game results from the platform's internal JSON endpoints. It writes to all four files in lockstep and is idempotent (re-run with `--force` to overwrite).
 
-### Per-slate ingest checklist
+Daily workflow (after a slate completes):
+
+```
+.venv-scraper/bin/python scripts/scrape_realsports_daily.py             # yesterday in EST
+.venv-scraper/bin/python scripts/scrape_realsports_daily.py --date YYYY-MM-DD
+.venv/bin/python scripts/backfill_slate_env_conditions.py               # Vegas/weather/pitchers per game
+.venv/bin/python scripts/backfill_slate_results_and_hv_stats.py         # box scores from MLB API
+.venv/bin/python scripts/backfill_player_season_stats_at_slate.py       # OPS/ERA/WHIP/K9 at the time of the slate
+.venv/bin/python scripts/validate_ingest.py --date YYYY-MM-DD           # lockstep + duplicate check
+```
+
+The scraper requires `scraper/storage_state.json` (Playwright auth state). If it returns 401 or zero parseable games, refresh the auth state once interactively:
+
+```
+BO_REALSPORTS_PASSWORD=… .venv-scraper/bin/python scripts/scrape_realsports_daily.py --refresh-auth
+```
+
+Auth tokens have indefinite-ish lifetime, so this should rarely be needed.
+
+The four-file ingest semantics below still apply — the scraper just automates the row-appending. The legacy "manual screenshot capture" workflow is documented in §"Improved Ingest Process (V9.1)" for the case where the scraper is unavailable (e.g. platform layout change broke the selector path) or you're backfilling pre-scraper dates.
+
+### Per-slate ingest checklist (manual fallback)
 
 - [ ] Append player rows to `historical_players.csv`
   - Columns: `date, player_name, team, position, real_score, total_value, is_highest_value, is_most_popular, is_most_drafted_3x`
@@ -733,6 +754,63 @@ The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each
 - Pitcher env: team_moneyline (PEAK at mild fav -120 to -180 — also inverted from V11), vegas_total (INVERSE — low total = pitcher game), park_hr_factor, pitcher_k_per_9 (talent), own_starter_era (tail bonus/penalty), opp_team_ops (tail)
 
 **Stacking** is still capped at 2 batters per team AND 2 per game and only fires on overwhelmingly clear game scripts.
+
+### Slot-1 ceiling diagnostic (May 7, post-V15.5)
+
+After V15.5 shipped, a deeper look at the 2026-05-06 slate (15 games,
+20 HV winners) surfaced a complementary metric to HV-hit-rate@5: **slot-1
+RS quality**.  HV@5 asks "did any of our 5 picks land on the HV
+leaderboard?"; slot-1 RS asks "is our highest-multiplier pick the
+SLATE's highest-RS HV winner?"  Both are valid proxies for the win
+condition; they are not the same thing.
+
+`scripts/audit_slot1_quality.py` (new) replays the env+leverage scoring
+stack on the same 42-slate corpus and reports:
+
+| Metric | Value |
+|---|---|
+| Slot-1 HV-hit rate | 81.0% |
+| Avg slot-1 RS | 4.20 |
+| Avg slot-weighted RS (zero boost) | 29.90 |
+| Avg slate top-HV RS | 7.33 |
+| Captured slate top-HV | **1/42 (2.4%)** |
+
+The optimizer's slot-1 pick lands an HV winner 4 out of 5 slates — but
+on average that pick is a 4.20-RS contrarian (Matt Waldron / Matt
+Wallner archetype), while the slate's top-RS HV winner that day
+averaged 7.33 RS (Paul Skenes / Andy Pages archetype).  The gap is
+structural: high-RS HV winners are usually stars on Tier-1 markets,
+which the V15 popularity model correctly predicts as consensus
+picks, applying the 0.80 leverage floor — and the resulting EV cut
+drops them to ranks 18-30 even when env + trait are fine.
+
+Slate 5/6 illustrates: Andy Pages (LAD, 7.5 RS, the slot-1 winner of
+6+ winning lineups) ranked **#18** with env=0.94, leverage=0.80,
+stack=1.10 → EV 82.94. Matt Wallner (MIN, 3.9 RS) ranked **#2** with
+env=1.08, leverage=1.40 → EV 151.20. The 1.75× leverage swing
+dominated the modest env signal, swapping the high-RS-ceiling pick
+for a low-RS-ceiling contrarian.
+
+**Calibration sweep result: HV@5 and slot-1 RS sit on the same Pareto
+frontier.**  Across {slope ∈ [0.00, 0.20], floor ∈ [0.80, 1.00], ceil
+∈ [1.00, 1.40]} the curve is essentially flat — HV@5 lands in 21–22%,
+swRS in 29.7–30.2.  Tighter calibrations (slope=0.09, floor=0.85,
+ceil=1.20-1.25) marginally improve slot-1 RS at slight HV@10/@20 cost.
+V15.5's calibration is a defensible point on the frontier (best
+HV@5).  No calibration retune ships in this pass.
+
+**Why this isn't fixable by tuning popularity alone**: even fully
+disabling the discount (floor=1.00) only captures the slate top-HV in
+1/42 slates.  The structural ceiling is in env signal sensitivity to
+"star on a heavy-fav team in a moderate matchup" — pre-game data
+cannot reliably predict a 12-run blowout from a Vegas O/U of 9.5.
+This is named here so future calibration work targets either better
+env discrimination or a slot-1-aware variant chooser, not yet another
+popularity sweep.
+
+The runtime is unchanged.  The audit is a permanent harness in
+`scripts/` for tracking calibration tradeoffs across slot-1 RS,
+slot-weighted RS, and HV-hit-rate together.
 
 ### V15.5 Outcome-Calibrated Popularity Slope (May 7)
 

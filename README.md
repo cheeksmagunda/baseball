@@ -23,7 +23,7 @@ The obvious signals don't work the way you'd expect:
 - Hot teams (7-10 wins in last 10 games) produce fewer individual high-value players than cold teams (0-4 wins). Hot teams distribute production across the roster. Cold teams often have one player carrying the offense.
 - The winning lineup shape changes every day. Some days 2 pitchers win, some days 0 pitchers win. Pre-V12 the model could only build 0P+5B or 1P+4B lineups and was structurally incapable of producing 57% of actual winning shapes.
 
-Figuring this out took 33 slates of real outcome data and several rounds of quartile-bucketing every pre-game signal against actual HV (Highest Value) results. Signals that were flat or inverted got deleted. Signals with real separation got kept.
+Figuring this out took 42 slates of real outcome data and several rounds of quartile-bucketing every pre-game signal against actual HV (Highest Value) results. Signals that were flat or inverted got deleted. Signals with real separation got kept.
 
 ## Data sources
 
@@ -32,7 +32,7 @@ Figuring this out took 33 slates of real outcome data and several rounds of quar
 - **Baseball Savant / Statcast** - exit velocity, barrel rate, hard-hit%, xwOBA, xBA, xSLG, xERA, xwOBA-against, FB velocity, induced vertical break, whiff%, chase%. Pulled via `pybaseball`.
 - **RotoWire** - expected batting lineups before the official MLB API posts them. Scrape-based, best-effort, typically available 2-4 hours before first pitch.
 - **Open-Meteo** - stadium weather per game (temperature, wind speed and direction).
-- **Real Sports** - 33 slates of historical outcome data (manually ingested from the platform UI). Used only for calibration, never as live pipeline inputs.
+- **Real Sports** - 42+ slates of historical outcome data, scraped daily via `scripts/scrape_realsports_daily.py`. Used only for calibration, never as live pipeline inputs.
 
 > **Note on the Real Sports format:** Card boosts (0 to +3.0x) are additive to the slot multiplier and are revealed during the draft, not before. The optimizer ranks players purely on pre-game signals. Card boost is never an input to the model because it's not knowable before you draft.
 
@@ -277,13 +277,13 @@ app/
     +-- data_collection.py  # MLB API + RotoWire data fetching
     +-- pipeline.py         # Fetch, Score, Rank orchestrator
 data/
-+-- historical_players.csv           # Master player ledger (33 slates, 1221 rows)
++-- historical_players.csv           # Master player ledger (42 slates, 1602 rows)
 +-- historical_winning_drafts.csv    # Top-ranked lineups, 5 slots per lineup
 +-- historical_slate_results.json    # Per-date slate envelope (game results, context)
 +-- hv_player_game_stats.csv         # Box scores for Highest Value players
 ```
 
-Current coverage: 2026-03-25 through 2026-04-26 (33 slates). All four files stay in lockstep.
+Current coverage: 2026-03-25 through 2026-05-06 (42 slates). All four files stay in lockstep.
 
 ---
 
@@ -313,14 +313,28 @@ The script requires `GITHUB_PAT` in cloud secrets (for `gh` CLI and `git push` a
 
 ## Ingesting a New Slate
 
-New slates are added manually after each slate completes. There is no automated collector. Append rows to the four files in `/data/` (see CLAUDE.md "Ingesting New Slate Data" for the full column-by-column reference and platform-to-CSV mapping). Short version:
+The default daily ingest is automated via a Playwright scraper (`scripts/scrape_realsports_daily.py`) that captures the day's leaderboards (HV/MP/3X), top-20 winning lineups, and game results from Real Sports' internal JSON endpoints, then writes all four files in lockstep.
 
-1. Append player rows to `historical_players.csv` (Most Popular + Most Drafted 3x mandatory, HV optional).
-2. Append winning-lineup rows to `historical_winning_drafts.csv` (5 rows per lineup, target top-20 ranks).
-3. Append one slate envelope object to `historical_slate_results.json`.
-4. Append HV box-score rows to `hv_player_game_stats.csv`.
-5. Verify `total_value = real_score x (2 + card_boost)` for each player row.
-6. Run `python scripts/validate_ingest.py --date YYYY-MM-DD` to confirm all four files are in lockstep.
+```bash
+# scrape yesterday's results
+.venv-scraper/bin/python scripts/scrape_realsports_daily.py
+
+# enrich Vegas/weather/pitchers + box-score backfill from MLB API
+.venv/bin/python scripts/backfill_slate_env_conditions.py
+.venv/bin/python scripts/backfill_slate_results_and_hv_stats.py
+.venv/bin/python scripts/backfill_player_season_stats_at_slate.py
+
+# verify lockstep + duplicates
+.venv/bin/python scripts/validate_ingest.py --date YYYY-MM-DD
+```
+
+The scraper reads its auth from `scraper/storage_state.json` (gitignored). If the token expires, refresh it once interactively:
+
+```bash
+BO_REALSPORTS_PASSWORD=… .venv-scraper/bin/python scripts/scrape_realsports_daily.py --refresh-auth
+```
+
+Manual fallback (screenshot capture + row-by-row append) is documented in CLAUDE.md §"Improved Ingest Process (V9.1)" for cases where the platform layout changes and breaks scraper selectors.
 
 The database does not store historical data. Appending to the four files in `/data/` is the entire ingest.
 
