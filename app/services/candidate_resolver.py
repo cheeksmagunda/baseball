@@ -43,6 +43,11 @@ from app.services.scoring_engine import score_player
 logger = logging.getLogger(__name__)
 
 
+def _tokens(s: str) -> frozenset[str]:
+    """Token-set helper for fuzzy name matching (strips dots, lowercases)."""
+    return frozenset(t for t in s.lower().replace(".", " ").split() if len(t) >= 2)
+
+
 def _build_game_lookup(games: list[GameEnvironment]) -> tuple[dict, dict]:
     """Build lookup dicts from game environment data."""
     game_by_id: dict = {}
@@ -81,10 +86,6 @@ def _detect_two_way_pitcher(player, card: FilterCard, game: GameEnvironment) -> 
     if starter_name is not None and player.mlb_id is None:
         # Only fall back to name matching if we have no mlb_id to verify
         # against — otherwise mlb_id mismatch above is the real signal.
-        def _tokens(s: str) -> frozenset[str]:
-            return frozenset(
-                t for t in s.lower().replace(".", " ").split() if len(t) >= 2
-            )
         card_tokens = _tokens(card.player_name)
         prob_tokens = _tokens(starter_name)
         if card_tokens and card_tokens == prob_tokens:
@@ -223,10 +224,6 @@ async def resolve_candidates(
                 # Token-set equality — same matcher as _detect_two_way_pitcher.
                 # The previous substring check let "Smith" match "Smith Jr." in
                 # either direction, occasionally including a non-starter pitcher.
-                def _tokens(s: str) -> frozenset[str]:
-                    return frozenset(
-                        t for t in s.lower().replace(".", " ").split() if len(t) >= 2
-                    )
                 if _tokens(card.player_name) != _tokens(starter_name):
                     continue
 
