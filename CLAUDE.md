@@ -755,6 +755,89 @@ The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each
 
 **Stacking** is still capped at 2 batters per team AND 2 per game and only fires on overwhelmingly clear game scripts.
 
+### V15.6 TV-target popularity recalibration (May 7, T-65 ship)
+
+V15.6 retunes the popularity band against `total_value` (TV) outcomes
+after extending `audit_hv_hit_rate.py` to track TV-rate@K alongside
+HV-rate@K in a single pass.  No structural changes — same V15
+continuous popularity curve, same slot mechanics, same env scoring,
+same V12 multi-pitcher composition.  Just three constants:
+
+| Constant | V15.5 | V15.6 |
+|---|---|---|
+| `POPULARITY_SLOPE` | 0.16 | **0.22** |
+| `POPULARITY_MULT_FLOOR` | 0.80 | **0.75** |
+| `POPULARITY_MULT_CEILING` | 1.40 | **1.55** |
+
+`POPULARITY_NEUTRAL_SCORE` unchanged at 4.5.
+
+**Why TV is a more informative calibration label than RS or HV-rate.**
+The platform's pricing combines RS and card_boost into a single
+displayed number (TV).  A contrarian RS=4 player with boost=3 produces
+TV=20, beating a star RS=8 player with boost=0 (TV=16).  Across the
+42-slate corpus, `corr(pop_score, TV) = -0.31` is ~50% stronger than
+`corr(pop_score, RS) = -0.20`.  V15.5's calibration optimised HV-rate
+(binary leaderboard hit, indifferent to TV magnitude); V15.6 widens
+the band where the TV signal is structurally stronger.
+
+**Sweep methodology** (`scripts/audit_hv_hit_rate.py`, the harness now
+reports both metrics).  Slope ∈ [0.00, 0.45], floor ∈ [0.50, 1.00],
+ceiling ∈ [1.00, 1.70].  Found a clean Pareto improvement at
+slope=0.22 / floor=0.75 / ceiling=1.55:
+
+| Metric | V15.5 | V15.6 | Δ |
+|---|---|---|---|
+| HV captured @5  | 160 / 717 | 158 / 717 | -2 |
+| HV captured @10 | 292 / 717 | 298 / 717 | **+6** |
+| HV captured @20 | 483 / 717 | 503 / 717 | **+20** |
+| TV captured @5  | 57 / 210 | 58 / 210 | +1 |
+| TV captured @10 | 182 / 420 | 189 / 420 | **+7** |
+| TV captured @20 | 557 / 840 | 574 / 840 | **+17** |
+| Slot-1 in top-5 TV | 17 / 42 | 17 / 42 | preserved |
+| Mean slot-1 TV outcome | 17.87 | 17.87 | preserved |
+
+The slot-1 metrics are PRESERVED — V15.6 is purely an improvement on
+lineup-wide capture without sacrificing the highest-multiplier slot.
+More aggressive configs (floor 0.65, slope 0.30) extracted bigger
+HV@20 / TV@20 lift but cost 1 slot-1 hit and feel punitive on stars
+with strong env+trait alignment.  V15.6 stays at floor 0.75 — a 25%
+max discount — which is the steepest defensible discount that
+preserves slot-1 metrics.
+
+**Hard rule reinforced.**  TV is a calibration LABEL (output side).
+The runtime never reads `total_value`, `real_score`, or `card_boost`
+as inputs.  Same posture as RS and `is_highest_value`.  No boost
+predictor, no slot-ordering heuristic that uses boost — boost is dealt
+by the platform during the draft, not chosen by the user.  V15.6
+exploits the empirical correlation between popularity prediction and
+the platform-set boost; it does not predict boost.
+
+**V15.6 explicitly does NOT change**: V12 multi-pitcher 0P-5P
+composition chooser (capped at 1 by V15.3), per-team / per-game caps,
+anti-correlation guard, V13.3 position-volume haircut, V13 ML curves,
+V13 wind-direction split, V13 catcher framing, asymmetric env
+ceilings (pitcher 1.55, batter 1.30, rookie 1.10), V15.4 trait band
+[0.70, 1.20], `STACK_BONUS = 1.10`, `MAX_PITCHERS_PER_LINEUP = 1`,
+T-65 timing, no-fallbacks rule, no-historical-bleed rule.  The audit
+isolation script remains clean.
+
+**New audit infrastructure**:
+- `scripts/audit_hv_hit_rate.py` — extended to compute and report
+  TV-rate@5/@10/@20, slot-1 top-5-TV hit rate, and mean slot-1 TV
+  outcome alongside HV-rate metrics.  All env-override env vars
+  continue to work for parameter sweeps.
+- `scripts/audit_tv_signals.py` — the bucketed signal audit (already
+  shipped earlier today): per-quartile mean_RS, mean_TV, HV%, top-5-TV
+  rate, plus a popularity × TV cross-tab that empirically validates
+  the "popular players need a super-strong RS to overcome low boost"
+  thesis (sleeper RS-floor for top-5-TV = 1.80, popular RS-floor = 4.70).
+- `scripts/audit_slot1_quality.py` — slot-1 RS / swRS audit, kept
+  for trend tracking even though slot-1 metrics are stable in V15.6.
+
+**Verification**: 258/258 tests pass; ruff lint clean; audit_live_isolation
+clean.  Calibration is reproducible: re-run the sweep any time the
+corpus grows.
+
 ### Slot-1 ceiling diagnostic (May 7, post-V15.5)
 
 After V15.5 shipped, a deeper look at the 2026-05-06 slate (15 games,

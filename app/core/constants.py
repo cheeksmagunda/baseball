@@ -664,20 +664,55 @@ ET_TO_UTC_OFFSET_HOURS = 4
 #   score 9 → mult 0.80 (FLOOR / max consensus discount; HV-rate 16%)
 #
 # V15.5 (May 7, 2026) — POPULARITY_SLOPE re-fit 0.09 → 0.16 against actual
-# HV-hit-rate outcomes (scripts/audit_hv_hit_rate.py on the 37-slate /
-# 1371-player corpus).  V15.1's 0.09 was the symmetric quantile fit
-# (p10/p90 saturation); 0.16 is the outcome-validated value that
-# maximises top-5 HV capture.  At slope=0.16, scores reach FLOOR/CEILING
-# at neutral ± 2.5 instead of ± 5.5 — leverage becomes more decisive on
-# moderate-deviation players (score 6-7 chalk consensus drop straight to
-# 0.80; score 2-3 sleepers ride 1.20-1.40 instead of softer 1.20-1.30).
-# Empirical lift: HV@5 134→137 (+2.2%), HV@10 245→251 (+2.4%), HV@20
-# 406→419 (+3.2%) on the audit corpus.  Floor and ceiling unchanged so
-# leverage stays a tiebreaker, not an override of env+trait.
+# HV-hit-rate outcomes on the 37-slate / 1371-player corpus.  Empirical
+# lift: HV@5 134→137 (+2.2%), HV@10 245→251 (+2.4%), HV@20 406→419
+# (+3.2%).  V15.5 explicitly used HV-hit-rate as the calibration label.
+#
+# V15.6 (May 7, 2026, mid-day) — POPULARITY band re-fit against
+# total_value (TV) outcomes after extending audit_hv_hit_rate.py to
+# track TV-rate@K alongside HV-rate@K.  TV is the actual draft-win
+# currency: a contrarian RS=4 with boost=3 (TV=20) beats a star RS=8
+# with boost=0 (TV=16).  The pop_score → TV correlation (-0.31) is
+# ~50% stronger than pop_score → RS (-0.20) — so calibrating on TV
+# upweights leverage's role.
+#
+# Sweep on 42-slate corpus (slope ∈ [0.00, 0.45], floor ∈ [0.50, 1.00],
+# ceiling ∈ [1.00, 1.70]) found a clean Pareto improvement at
+# slope=0.22, floor=0.75, ceiling=1.55:
+#   HV@5:   160 → 158  (-2)
+#   HV@10:  292 → 298  (+6)
+#   HV@20:  483 → 503  (+20)
+#   TV@5:    57 →  58  (+1)
+#   TV@10:  182 → 189  (+7)
+#   TV@20:  557 → 574  (+17)
+#   slot-1 in top-5 TV:    17/42 → 17/42  (preserved)
+#   mean slot-1 TV:        17.87 → 17.87  (preserved)
+#
+# Slot-1 quality is held constant, so this is purely an improvement on
+# lineup-wide capture without sacrificing the highest-multiplier slot.
+# More aggressive configs (floor 0.65, slope 0.30) extracted bigger
+# HV@20 / TV@20 lift but cost 1 slot-1 hit and feel punitive on stars
+# with strong env+trait alignment.  V15.6 stays at floor 0.75 — a 25%
+# max discount — which is the steepest defensible discount that
+# preserves slot-1 metrics.
+#
+# Curve preview at V15.6:
+#   score 0  → mult 1.55 (CEILING / max sleeper boost)
+#   score 2  → mult 1.55 (saturated; was 1.40 under V15.5)
+#   score 4.5 → mult 1.00 (neutral)
+#   score 7  → mult 0.75 (FLOOR / max consensus discount)
+#   score 9  → mult 0.75 (saturated)
+#
+# CRITICAL: TV is used here ONLY as an outcome label for calibration.
+# The runtime never reads total_value, real_score, or card_boost.  No
+# boost predictor, no slot-ordering heuristic that uses boost.  The
+# user controls boost during the draft; the platform deals it.  This
+# calibration shift exploits the empirical correlation between
+# popularity and the platform-set boost; it does not predict boost.
 POPULARITY_NEUTRAL_SCORE = 4.5
-POPULARITY_SLOPE = 0.16
-POPULARITY_MULT_FLOOR = 0.80
-POPULARITY_MULT_CEILING = 1.40
+POPULARITY_SLOPE = 0.22
+POPULARITY_MULT_FLOOR = 0.75
+POPULARITY_MULT_CEILING = 1.55
 
 # Team market tier — drives one of four families of popularity features.
 # Tier 1 = national following (top of every casual fan's mind), tier 4 =

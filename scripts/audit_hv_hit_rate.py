@@ -1,14 +1,22 @@
-"""HV hit-rate audit harness.
+"""HV + TV hit-rate audit harness.
 
 Replays the live env + leverage scoring stack on every slate in
-data/historical_players.csv against actual is_highest_value outcomes.
-Trait scoring is held constant (trait_factor = 1.0) because Statcast
-kinematics aren't in the historical CSV; this isolates the env + leverage
-miscalibration the V15.x changelog identified as the most likely
-HV-miss-rate causes.
+data/historical_players.csv against actual is_highest_value AND
+total_value outcomes.  Trait scoring is held constant (trait_factor =
+1.0) because Statcast kinematics aren't in the historical CSV; this
+isolates the env + leverage miscalibration the V15.x changelog
+identified as the most likely HV-miss-rate causes.
+
+The harness reports BOTH HV-rate and TV-rate metrics in a single pass.
+TV (real_score × (slot_mult + card_boost), as recorded by the platform)
+is the actual draft-win currency: a contrarian RS=4 with boost=3
+produces TV=20, beating a star RS=8 with boost=0 (TV=16).  Tracking
+both metrics simultaneously lets us see when calibration changes have
+opposite directional effects on HV-rate vs TV-rate (the popularity
+discount is the canonical example).
 
 Outputs:
-    stdout: corpus + per-slate HV-hit-rate@5 / @10 / @20
+    stdout: corpus + per-slate HV-hit-rate@5/@10/@20 AND TV-rate@5/@10/@20
     scripts/output/hv_miss_decomposition.csv: every actual HV winner that
         ranked outside the top-5, with the per-multiplier deficits and a
         bucketed primary_miss_cause.
@@ -16,6 +24,12 @@ Outputs:
 Per CLAUDE.md "calibration scripts in /scripts/ may read outcome columns
 (real_score, total_value, is_highest_value, ...)" — this script does, but
 it only writes to scripts/output/ and never touches app/.
+
+CRITICAL: TV is treated strictly as an outcome label, identical to RS
+and is_highest_value.  The runtime never reads any of these columns —
+this script is output-only.  No boost predictor, no slot-ordering
+heuristic that uses boost.  See app/services/filter_strategy.py for
+the live runtime; this harness only measures it.
 """
 
 from __future__ import annotations
@@ -288,6 +302,20 @@ def score_one_player(
         * 100.0
     )
 
+    # tv is read strictly as an OUTCOME LABEL.  It is never an input to
+    # filter_ev or to any model decision — the assignment below mirrors
+    # the rs / is_hv reads, both of which are also outcome labels.
+    rs_str = row.get("real_score") or ""
+    tv_str = row.get("total_value") or ""
+    try:
+        rs_outcome = float(rs_str) if rs_str else 0.0
+    except ValueError:
+        rs_outcome = 0.0
+    try:
+        tv_outcome = float(tv_str) if tv_str else 0.0
+    except ValueError:
+        tv_outcome = 0.0
+
     return {
         "name": row["player_name"],
         "team": team,
@@ -301,6 +329,9 @@ def score_one_player(
         "stack_bonus": stack_bonus,
         "position_mult": position_mult,
         "pop_score": pop_score,
+        # outcome labels (NEVER inputs to scoring — see module docstring)
+        "rs_outcome": rs_outcome,
+        "tv_outcome": tv_outcome,
     }
 
 
@@ -391,13 +422,35 @@ def main() -> int:
         for rank, c in enumerate(scored, start=1):
             c["rank"] = rank
 
+        # Per-slate TV ranking — computed once and attached to each record
+        # so the miss CSV can flag "missed top-K-TV" as well as "missed HV".
+        for tv_rank, c in enumerate(
+            sorted(scored, key=lambda x: -x["tv_outcome"]), start=1
+        ):
+            c["tv_rank"] = tv_rank
+        # Top-K-TV reference set for the per-slate hit-rate
+        top5_tv = {(c["name"], c["team"]) for c in scored if c["tv_rank"] <= 5}
+        top10_tv = {(c["name"], c["team"]) for c in scored if c["tv_rank"] <= 10}
+        top20_tv = {(c["name"], c["team"]) for c in scored if c["tv_rank"] <= 20}
+
         total_hv = sum(c["is_hv"] for c in scored)
         if total_hv == 0:
             continue
         hv5 = sum(c["is_hv"] for c in scored[:5])
         hv10 = sum(c["is_hv"] for c in scored[:10])
         hv20 = sum(c["is_hv"] for c in scored[:20])
-        per_slate.append((date_str, hv5, hv10, hv20, total_hv, len(scored), skipped))
+        # TV-rate metrics: how many of our top-K filter_ev picks are
+        # also in the slate's top-K by TV outcome?
+        tv5 = sum(1 for c in scored[:5] if (c["name"], c["team"]) in top5_tv)
+        tv10 = sum(1 for c in scored[:10] if (c["name"], c["team"]) in top10_tv)
+        tv20 = sum(1 for c in scored[:20] if (c["name"], c["team"]) in top20_tv)
+        # Slot-1 TV: was our #1 filter_ev pick also a top-K-TV winner?
+        slot1_in_top5_tv = 1 if scored and scored[0]["tv_rank"] <= 5 else 0
+        slot1_tv_outcome = scored[0]["tv_outcome"] if scored else 0.0
+        per_slate.append((
+            date_str, hv5, hv10, hv20, total_hv, len(scored), skipped,
+            tv5, tv10, tv20, slot1_in_top5_tv, slot1_tv_outcome,
+        ))
 
         for c in scored:
             if c["is_hv"] == 1 and c["rank"] > 5:
@@ -437,14 +490,33 @@ def main() -> int:
     total_at_10 = sum(r[2] for r in per_slate)
     total_at_20 = sum(r[3] for r in per_slate)
     total_pool = sum(r[5] for r in per_slate)
+    # TV-rate aggregates
+    total_tv5 = sum(r[7] for r in per_slate)
+    total_tv10 = sum(r[8] for r in per_slate)
+    total_tv20 = sum(r[9] for r in per_slate)
+    slot1_top5_tv = sum(r[10] for r in per_slate)
+    slot1_tv_total = sum(r[11] for r in per_slate)
 
     print(f"Slates scored:    {n_slates}")
     print(f"Players ranked:   {total_pool}  (skipped {skipped_total})")
     print(f"HV winners total: {total_hv}")
     print()
+    print("=== HV-rate (binary leaderboard hit) ===")
     print(f"HV captured @5:   {total_at_5} / {total_hv} ({total_at_5/total_hv:.1%})  avg/slate {total_at_5/n_slates:.2f}")
     print(f"HV captured @10:  {total_at_10} / {total_hv} ({total_at_10/total_hv:.1%})  avg/slate {total_at_10/n_slates:.2f}")
     print(f"HV captured @20:  {total_at_20} / {total_hv} ({total_at_20/total_hv:.1%})  avg/slate {total_at_20/n_slates:.2f}")
+    print()
+    # TV-rate denominators are slate-bounded: each slate has exactly K
+    # top-K-TV winners, so the corpus-level cap is K * n_slates.
+    cap5 = 5 * n_slates
+    cap10 = 10 * n_slates
+    cap20 = 20 * n_slates
+    print("=== TV-rate (top-K by total_value, the actual draft-win currency) ===")
+    print(f"TV captured @5:   {total_tv5} / {cap5} ({total_tv5/cap5:.1%})  avg/slate {total_tv5/n_slates:.2f}")
+    print(f"TV captured @10:  {total_tv10} / {cap10} ({total_tv10/cap10:.1%})  avg/slate {total_tv10/n_slates:.2f}")
+    print(f"TV captured @20:  {total_tv20} / {cap20} ({total_tv20/cap20:.1%})  avg/slate {total_tv20/n_slates:.2f}")
+    print(f"Slot-1 in top-5 TV:  {slot1_top5_tv}/{n_slates} ({slot1_top5_tv/n_slates:.1%})")
+    print(f"Mean slot-1 TV outcome: {slot1_tv_total/n_slates:.2f}")
     print()
 
     cause_counts: dict[str, int] = defaultdict(int)
