@@ -659,11 +659,23 @@ ET_TO_UTC_OFFSET_HOURS = 4
 # new score distribution.
 #
 # Curve preview at calibrated constants (see scripts/calibrate_popularity_curve.py):
-#   score 0 → mult 1.25 (CEILING / max sleeper boost; HV-rate 66%)
+#   score 0 → mult 1.40 (CEILING / max sleeper boost; HV-rate 66%)
 #   score 4.5 → mult 1.00 (neutral; HV-rate 49%)
 #   score 9 → mult 0.80 (FLOOR / max consensus discount; HV-rate 16%)
+#
+# V15.5 (May 7, 2026) — POPULARITY_SLOPE re-fit 0.09 → 0.16 against actual
+# HV-hit-rate outcomes (scripts/audit_hv_hit_rate.py on the 37-slate /
+# 1371-player corpus).  V15.1's 0.09 was the symmetric quantile fit
+# (p10/p90 saturation); 0.16 is the outcome-validated value that
+# maximises top-5 HV capture.  At slope=0.16, scores reach FLOOR/CEILING
+# at neutral ± 2.5 instead of ± 5.5 — leverage becomes more decisive on
+# moderate-deviation players (score 6-7 chalk consensus drop straight to
+# 0.80; score 2-3 sleepers ride 1.20-1.40 instead of softer 1.20-1.30).
+# Empirical lift: HV@5 134→137 (+2.2%), HV@10 245→251 (+2.4%), HV@20
+# 406→419 (+3.2%) on the audit corpus.  Floor and ceiling unchanged so
+# leverage stays a tiebreaker, not an override of env+trait.
 POPULARITY_NEUTRAL_SCORE = 4.5
-POPULARITY_SLOPE = 0.09
+POPULARITY_SLOPE = 0.16
 POPULARITY_MULT_FLOOR = 0.80
 POPULARITY_MULT_CEILING = 1.40
 

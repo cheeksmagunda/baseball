@@ -11,6 +11,7 @@ build/
 .pytest_cache/
 .claude/
 output/*.json
+scripts/output/
 .venv-scraper/
 scratch/
 scraper/storage_state.json

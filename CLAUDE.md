@@ -734,6 +734,101 @@ The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each
 
 **Stacking** is still capped at 2 batters per team AND 2 per game and only fires on overwhelmingly clear game scripts.
 
+### V15.5 Outcome-Calibrated Popularity Slope (May 7)
+
+V15.5 retunes `POPULARITY_SLOPE` from 0.09 → 0.16 against actual
+HV-hit-rate outcomes on the May 2026 historical corpus.  No structural
+changes — same V15 continuous popularity curve, same FLOOR (0.80) and
+CEILING (1.40), same V15.1 components.  Only the slope inside that band
+changes.
+
+**Trigger.** User feedback: "I've never won a draft."  Drafts are won by
+landing HV players; the optimizer's top-5 picks were missing the HV
+leaderboard too often.  Built `scripts/audit_hv_hit_rate.py` to replay
+the live env + leverage stack on every slate in
+`historical_players.csv` (37 slates / 1371 rankable players / 617 HV
+winners), holding `trait_factor = 1.0` (Statcast kinematics aren't in
+the historical CSV) to isolate env + leverage miscalibration.
+
+**Baseline (SLOPE = 0.09, V15.1):**
+- HV@5  = 134 / 617 (21.7%, avg 3.62/slate)
+- HV@10 = 245 / 617 (39.7%, avg 6.62/slate)
+- HV@20 = 406 / 617 (65.8%, avg 10.97/slate)
+
+**Miss decomposition** of 483 HV winners ranked outside top-5 (primary
+cause = factor with the largest deviation below 1.0):
+- low_env             408 (pitcher 35, batter 373)
+- leverage_discount    31 (pitcher 4,  batter 27)
+- outranked            30 (pitcher 6,  batter 24)
+- position_haircut     14 (pitcher 0,  batter 14)
+
+**Sweep findings.**  ENV_MODIFIER_FLOOR sweep (0.20–0.90) showed HV@5
+peaks at the current 0.20 — narrowing the env band trades top-5
+capture for top-20 spread, opposite of what we want.  POPULARITY_SLOPE
+sweep showed monotonic HV@5 lift up to a plateau around 0.16-0.17:
+
+| SLOPE | HV@5 | HV@10 | HV@20 |
+|---|---|---|---|
+| 0.00 (no leverage)| 106 (17.2%)| 195 (31.6%) | 377 (61.1%) |
+| 0.09 (V15.1)      | 134 (21.7%)| 245 (39.7%) | 406 (65.8%) |
+| 0.13              | 133 (21.6%)| 249 (40.4%) | 415 (67.3%) |
+| 0.14              | 136 (22.0%)| 248 (40.2%) | 417 (67.6%) |
+| 0.16 (V15.5)      | **137 (22.2%)** | **251 (40.7%)** | **419 (67.9%)** |
+| 0.17              | 137 (22.2%)| 251 (40.7%) | 420 (68.1%) |
+| 0.18              | 136 (22.0%)| 251 (40.7%) | 420 (68.1%) |
+
+Slope=0.16 is the onset of plateau and the round value to commit to.
+
+**Why this differs from `scripts/calibrate_popularity_curve.py`.**  The
+existing calibrator returns SLOPE ≈ 0.0952 from the symmetric quantile
+fit `(1 − FLOOR) / (p90 − NEUTRAL)` — a curve-shape choice that ensures
+exactly the pool's tails saturate at FLOOR and CEILING.  That target is
+not the same as "maximise HV-hit-rate@5": empirically the contrarian
+end (score 0–2) HV-rates at ~65% vs the consensus end (score 7+) at
+~15%, a 4.3× ratio that swamps the FLOOR/CEILING band ratio of 1.75×.
+The quantile fit underweights the empirical signal; the
+outcome-validated 0.16 captures more of it within the existing
+[0.80, 1.40] band by reaching saturation at score deviations of ±2.5
+from neutral instead of ±5.5.  Both methods are valid for their
+respective targets; HV-hit-rate is the actual contest objective.
+
+**Lift on 37-slate corpus:**
+- HV@5  134 → 137 (+3, +2.2%)
+- HV@10 245 → 251 (+6, +2.4%)
+- HV@20 406 → 419 (+13, +3.2%)
+
+**Surface area:**
+- `app/core/constants.py` — `POPULARITY_SLOPE = 0.16` (was 0.09).
+  FLOOR / CEILING / NEUTRAL_SCORE unchanged.  Curve-preview comment
+  refreshed.
+- `scripts/audit_hv_hit_rate.py` (new) — backtest harness.  Reads
+  outcome columns from `historical_players.csv`; lives in `/scripts/`
+  per the calibration-script carve-out.  Supports `BO_OVERRIDE_*=value`
+  env vars for parameter sweeps without code edits, patching both
+  `app.core.constants` and `app.core.popularity` (which binds
+  POPULARITY_* at import time).
+- `scripts/output/hv_miss_decomposition.csv` — output of the harness.
+
+**V15.5 explicitly does NOT change:** popularity score → multiplier
+mapping shape (still linear with FLOOR/CEILING clamps), V15.1
+continuous components, V15 architectural intent (leverage as
+tiebreaker, swing < env swing), V13.3 multi-pitcher composition,
+per-team/per-game caps, anti-correlation guard, slot-1 = highest-EV
+display rule, T-65 timing, no-fallbacks rule, no-historical-bleed rule.
+The audit-isolation script remains clean.
+
+**Verification:** 258/258 tests pass.  `audit_live_isolation.py` clean.
+The harness is reproducible: `python scripts/audit_hv_hit_rate.py`
+prints the corpus HV@5/@10/@20 and writes the miss-decomposition CSV.
+
+**Known limitation.** The harness holds `trait_factor` constant at 1.0
+because the historical CSV doesn't carry Statcast kinematics (exit-velo,
+hard-hit%, barrel%, IVB, whiff%) needed to recompute the live trait
+score.  Live ranking will differ slightly from the harness because
+trait swings are real (band 0.70–1.20).  A follow-up calibration would
+need a one-time backfill of Statcast leaderboards onto historical rows
+to validate trait-side tuning at the same level of fidelity.
+
 ### V15.3 Max-Pitchers Cap + V15.2 Revert (May 6)
 
 V15.3 reinstates the platform-level cap of one pitcher per lineup and
