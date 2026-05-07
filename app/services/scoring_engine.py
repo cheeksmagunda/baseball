@@ -15,8 +15,11 @@ from app.core.constants import (
     PITCHER_POSITIONS,
     OFFENSIVE_PROFILE_OPS_CEILING,
     OFFENSIVE_PROFILE_OPS_FLOOR,
+    POWER_PROFILE_AVG_EV_FLOOR,
     POWER_PROFILE_AVG_EV_MAX,
+    POWER_PROFILE_BARREL_PCT_FLOOR,
     POWER_PROFILE_BARREL_PCT_MAX,
+    POWER_PROFILE_HARD_HIT_FLOOR,
     POWER_PROFILE_HARD_HIT_MAX,
     POWER_PROFILE_X_WOBA_CEILING,
     POWER_PROFILE_X_WOBA_FLOOR,
@@ -329,8 +332,7 @@ def score_offensive_profile(stats: PlayerStats | None, max_pts: float) -> TraitR
     """Score holistic offensive output: OPS-anchored season aggregate plus
     Statcast kinematics for upside confirmation.
 
-    V13.1 sub-signals (out of POWER_PROFILE_DENOM = 30 sub-pts, scaled to
-    `max_pts`):
+    V13.1 sub-signals (out of 30 sub-pts, scaled to `max_pts`):
       OPS                 → 10 pts  (ANCHOR — outcome-side, captures both
                                      on-base and slugging in one number)
       x_woba              →  7 pts  (Statcast contact-quality leading indicator)
@@ -370,9 +372,9 @@ def score_offensive_profile(stats: PlayerStats | None, max_pts: float) -> TraitR
 
     # Each sub-score is 0.0–1.0, then weighted by its point allotment.
     ops_score = scale_score(ops, OFFENSIVE_PROFILE_OPS_FLOOR, OFFENSIVE_PROFILE_OPS_CEILING, 1.0)
-    avg_ev_score = scale_score(avg_ev, 85.0, POWER_PROFILE_AVG_EV_MAX, 1.0) if avg_ev is not None else None
-    hard_hit_score = scale_score(hard_hit, 30.0, POWER_PROFILE_HARD_HIT_MAX, 1.0) if hard_hit is not None else None
-    barrel_score = scale_score(barrel_pct, 4.0, POWER_PROFILE_BARREL_PCT_MAX, 1.0) if barrel_pct is not None else None
+    avg_ev_score = scale_score(avg_ev, POWER_PROFILE_AVG_EV_FLOOR, POWER_PROFILE_AVG_EV_MAX, 1.0) if avg_ev is not None else None
+    hard_hit_score = scale_score(hard_hit, POWER_PROFILE_HARD_HIT_FLOOR, POWER_PROFILE_HARD_HIT_MAX, 1.0) if hard_hit is not None else None
+    barrel_score = scale_score(barrel_pct, POWER_PROFILE_BARREL_PCT_FLOOR, POWER_PROFILE_BARREL_PCT_MAX, 1.0) if barrel_pct is not None else None
     x_woba_score = scale_score(x_woba, POWER_PROFILE_X_WOBA_FLOOR, POWER_PROFILE_X_WOBA_CEILING, 1.0) if x_woba is not None else None
 
     # Weighted sum. Missing Statcast sub-scores drop out of the numerator AND

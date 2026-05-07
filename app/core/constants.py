@@ -570,7 +570,9 @@ OFFENSIVE_PROFILE_OPS_CEILING = 0.950
 POWER_PROFILE_BARREL_PCT_MAX = 15.0
 POWER_PROFILE_AVG_EV_MAX = 92.0
 POWER_PROFILE_HARD_HIT_MAX = 50.0
-POWER_PROFILE_DENOM = 30.0
+POWER_PROFILE_AVG_EV_FLOOR = 85.0
+POWER_PROFILE_HARD_HIT_FLOOR = 30.0
+POWER_PROFILE_BARREL_PCT_FLOOR = 4.0
 
 # V10.8 — batter xwOBA scaling.  xwOBA derives from exit velocity + launch
 # angle (and sprint speed for some batted balls); it captures the full

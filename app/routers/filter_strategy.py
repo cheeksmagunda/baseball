@@ -539,9 +539,17 @@ async def diagnostics(db: Session = Depends(get_db)):
     slate_class = classify_slate(len(games), game_dicts)
     candidates = await resolve_candidates(cards, games, db, slate_date=active_date)
 
-    # Quick EV computation for diagnostics (without full optimization)
+    # Quick EV computation for diagnostics (without full optimization).
+    # Must set is_in_blowout_game before calling _compute_base_ev — otherwise
+    # PATH 1 blowout-favorite players are missing their STACK_BONUS.
     from app.services.filter_strategy import _compute_base_ev
+    blowout_teams = {
+        g.favored_team.upper()
+        for g in slate_class.stackable_games
+        if g.favored_team and g.is_blowout_favorite
+    }
     for c in candidates:
+        c.is_in_blowout_game = c.team.upper() in blowout_teams
         c.filter_ev = _compute_base_ev(c)
     candidates.sort(key=lambda c: c.filter_ev, reverse=True)
 
