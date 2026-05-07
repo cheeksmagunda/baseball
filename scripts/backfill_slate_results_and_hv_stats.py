@@ -1,5 +1,5 @@
-"""Backfill historical_slate_results.json games[] and hv_player_game_stats.csv
-for dates where the post-slate ingest captured leaderboards but not box scores.
+"""Backfill historical_slate_results.json, hv_player_game_stats.csv, and
+historical_app_picks.csv for dates where box scores have not yet been filled.
 
 Scope is auto-detected:
   - Slate-result dates whose ``games`` array is empty are refilled from the
@@ -8,8 +8,12 @@ Scope is auto-detected:
     historical_players.csv) whose matching hv_player_game_stats.csv row is
     missing OR is a placeholder (empty batting + pitching stats) are filled
     from the MLB Stats API boxscore.
+  - App picks rows in historical_app_picks.csv whose box-stat columns are
+    blank (written by the post-lock monitor at slate completion) are filled
+    from the MLB Stats API boxscore.  real_score is left untouched — fill it
+    manually after the platform posts results.
 
-No fallbacks: if the MLB API does not return a Final game, or the HV player
+No fallbacks: if the MLB API does not return a Final game, or a player
 does not appear in the corresponding team's boxscore, the row is logged and
 skipped. Never guess, never substitute.
 
@@ -37,6 +41,14 @@ DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 SLATE_RESULTS = DATA_DIR / "historical_slate_results.json"
 HV_STATS = DATA_DIR / "hv_player_game_stats.csv"
 HISTORICAL_PLAYERS = DATA_DIR / "historical_players.csv"
+APP_PICKS = DATA_DIR / "historical_app_picks.csv"
+
+APP_PICK_FIELDNAMES = [
+    "date", "slot_index", "player_name", "team", "position",
+    "slot_mult", "filter_ev", "env_score", "total_score", "real_score",
+    "ab", "r", "h", "hr", "rbi", "bb", "so",
+    "ip", "er", "k_pitching", "decision",
+]
 
 HV_FIELDNAMES = [
     "date", "player_name", "team_actual", "position",
@@ -352,6 +364,115 @@ async def backfill_hv_stats(all_games: dict[str, list[dict]]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# App picks backfill
+# ---------------------------------------------------------------------------
+
+def load_app_picks() -> list[dict]:
+    if not APP_PICKS.exists():
+        return []
+    with APP_PICKS.open() as f:
+        return list(csv.DictReader(f))
+
+
+def _app_pick_needs_box_backfill(row: dict) -> bool:
+    bat_cols = ("ab", "r", "h", "hr", "rbi", "bb", "so")
+    pit_cols = ("ip", "er", "k_pitching", "decision")
+    return (
+        all(row.get(c, "") == "" for c in bat_cols)
+        and all(row.get(c, "") == "" for c in pit_cols)
+    )
+
+
+def _build_app_pick_box_stats(pick_row: dict, box_player: dict) -> dict:
+    """Return a copy of pick_row with box stats populated from the boxscore."""
+    stats = box_player.get("stats", {}) or {}
+    bat = stats.get("batting", {}) or {}
+    pit = stats.get("pitching", {}) or {}
+    is_pitcher = pick_row["position"].upper() in ("P", "SP", "RP")
+
+    updated = dict(pick_row)
+    if is_pitcher and pit.get("inningsPitched"):
+        updated["ip"] = pit.get("inningsPitched", "")
+        updated["er"] = pit.get("earnedRuns", "")
+        updated["k_pitching"] = pit.get("strikeOuts", "")
+        updated["decision"] = _pitcher_decision(pit)
+    elif bat and (bat.get("atBats", 0) or bat.get("plateAppearances", 0)):
+        updated["ab"] = bat.get("atBats", 0)
+        updated["r"] = bat.get("runs", 0)
+        updated["h"] = bat.get("hits", 0)
+        updated["hr"] = bat.get("homeRuns", 0)
+        updated["rbi"] = bat.get("rbi", 0)
+        updated["bb"] = bat.get("baseOnBalls", 0)
+        updated["so"] = bat.get("strikeOuts", 0)
+    return updated
+
+
+async def backfill_app_pick_stats(all_games: dict[str, list[dict]]) -> None:
+    rows = load_app_picks()
+    if not rows:
+        print("[app] historical_app_picks.csv is empty — nothing to backfill.")
+        return
+
+    targets = [
+        r for r in rows
+        if r["date"] in all_games and _app_pick_needs_box_backfill(r)
+    ]
+    if not targets:
+        print("[app] No app pick rows require box-stat backfill.")
+        return
+
+    print(f"[app] {len(targets)} app pick row(s) to backfill")
+
+    games_by_team: dict[tuple[str, str], dict] = {}
+    for d, games in all_games.items():
+        for g in games:
+            games_by_team[(d, canonicalize_team(g["home"]))] = g
+            games_by_team[(d, canonicalize_team(g["away"]))] = g
+
+    box_cache: dict[int, dict] = {}
+    updated_by_key: dict[tuple[str, str], dict] = {}
+
+    for pick in targets:
+        d = pick["date"]
+        team_canon = canonicalize_team(pick["team"])
+        game = games_by_team.get((d, team_canon))
+        if not game:
+            print(f"[app]   SKIP {d} {pick['player_name']} ({pick['team']}): no Final game found")
+            continue
+        pk = game["game_pk"]
+        if pk not in box_cache:
+            print(f"[app]   Fetching boxscore for {game['away']} @ {game['home']} ({pk})...")
+            box_cache[pk] = await get_game_boxscore(pk)
+        box_player = _find_player_in_boxscore(box_cache[pk], pick["player_name"], team_canon)
+        if not box_player:
+            print(f"[app]   SKIP {d} {pick['player_name']} ({pick['team']}): not in boxscore")
+            continue
+        key = (d, _normalize_name(pick["player_name"]))
+        updated_by_key[key] = _build_app_pick_box_stats(pick, box_player)
+        print(f"[app]   OK   {d} {pick['player_name']}")
+
+    if not updated_by_key:
+        print("[app] All app pick targets failed — no rows written.")
+        return
+
+    updated_rows = []
+    for r in rows:
+        k = (r["date"], _normalize_name(r["player_name"]))
+        updated_rows.append(updated_by_key.get(k, r))
+
+    with APP_PICKS.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=APP_PICK_FIELDNAMES)
+        w.writeheader()
+        w.writerows(updated_rows)
+
+    print(f"[app] Updated {len(updated_by_key)} row(s) in {APP_PICKS.name}")
+
+
+def _dates_needing_app_pick_backfill() -> set[str]:
+    return {r["date"] for r in load_app_picks() if _app_pick_needs_box_backfill(r)}
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -372,7 +493,8 @@ async def main() -> None:
     slate_data = load_slate_results()
     slate_needing = set(_dates_needing_game_backfill(slate_data))
     hv_needing = _dates_needing_hv_backfill()
-    target_dates = sorted(slate_needing | hv_needing)
+    app_needing = _dates_needing_app_pick_backfill()
+    target_dates = sorted(slate_needing | hv_needing | app_needing)
 
     if not target_dates:
         print("Nothing to backfill.")
@@ -381,6 +503,7 @@ async def main() -> None:
     print(f"Target dates: {target_dates}")
     print(f"  slate-results backfill: {sorted(slate_needing)}")
     print(f"  HV stats backfill:      {sorted(hv_needing)}")
+    print(f"  app picks backfill:     {sorted(app_needing)}")
 
     fetched_by_date: dict[str, list[dict]] = {}
     for d in target_dates:
@@ -405,6 +528,9 @@ async def main() -> None:
 
     if hv_needing:
         await backfill_hv_stats({d: fetched_by_date[d] for d in hv_needing})
+
+    if app_needing:
+        await backfill_app_pick_stats({d: fetched_by_date[d] for d in app_needing})
 
 
 if __name__ == "__main__":

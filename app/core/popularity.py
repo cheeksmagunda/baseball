@@ -260,7 +260,7 @@ def _team_market_score(team: str, is_pitcher: bool, player_name: str) -> float:
             "app/core/constants.py or fix the upstream abbreviation."
         )
     tier = TEAM_MARKET_TIER[canonical]
-    return {1: 3.0, 2: 2.0, 3: 1.0, 4: 0.0}[tier]
+    return {1: 2.0, 2: 2.0, 3: 1.0, 4: 0.0}[tier]
 
 
 def _fame_rate_pts(

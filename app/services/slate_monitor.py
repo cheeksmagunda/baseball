@@ -38,6 +38,63 @@ from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
+
+def _save_app_picks(db, today: date) -> None:
+    """Append the frozen lineup's 5 picks to data/historical_app_picks.csv.
+
+    Called once per slate just before lineup_cache.purge() wipes CachedLineup
+    from SQLite.  real_score and box-stat columns are written blank — fill
+    real_score manually after the platform posts results; run
+    scripts/backfill_slate_results_and_hv_stats.py to auto-populate box stats.
+    """
+    import csv
+    from pathlib import Path
+    from app.models.slate import CachedLineup
+    from app.schemas.filter_strategy import FilterOptimizeResponse
+
+    row = db.query(CachedLineup).filter_by(cache_date=today).first()
+    if row is None:
+        logger.warning("_save_app_picks: no CachedLineup for %s — skipping", today)
+        return
+
+    try:
+        response = FilterOptimizeResponse.model_validate_json(row.response_json)
+    except Exception as exc:
+        logger.error("_save_app_picks: failed to parse cached picks for %s: %s", today, exc)
+        return
+
+    csv_path = Path(__file__).resolve().parents[2] / "data" / "historical_app_picks.csv"
+    fieldnames = [
+        "date", "slot_index", "player_name", "team", "position",
+        "slot_mult", "filter_ev", "env_score", "total_score", "real_score",
+        "ab", "r", "h", "hr", "rbi", "bb", "so",
+        "ip", "er", "k_pitching", "decision",
+    ]
+
+    write_header = not csv_path.exists()
+    with csv_path.open("a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        for slot in response.lineup.lineup:
+            writer.writerow({
+                "date": today.isoformat(),
+                "slot_index": slot.slot_index,
+                "player_name": slot.player_name,
+                "team": slot.team,
+                "position": slot.position,
+                "slot_mult": slot.slot_mult,
+                "filter_ev": round(slot.filter_ev, 4),
+                "env_score": round(slot.env_score, 4),
+                "total_score": round(slot.total_score, 2),
+                "real_score": "",
+                "ab": "", "r": "", "h": "", "hr": "", "rbi": "", "bb": "", "so": "",
+                "ip": "", "er": "", "k_pitching": "", "decision": "",
+            })
+
+    logger.info("App picks for %s appended to %s", today, csv_path.name)
+
+
 # T-65: 60-min user draft window + 5-min final generation buffer
 LOCK_MINUTES_BEFORE_PITCH = 65
 
@@ -287,6 +344,7 @@ async def _post_lock_monitor(today: date) -> None:
                     "Slate %s complete (%d games final) — purging frozen cache",
                     today, len(games),
                 )
+                _save_app_picks(db, today)
                 # purge() (not clear()) so the Redis lineup:{today} +
                 # lineup:meta:{today} keys are deleted alongside the in-memory
                 # state.  Otherwise the 24h Redis TTL keeps yesterday's
