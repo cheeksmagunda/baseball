@@ -661,9 +661,9 @@ ET_TO_UTC_OFFSET_HOURS = 4
 #   score 4.5 → mult 1.00 (neutral; HV-rate 49%)
 #   score 9 → mult 0.80 (FLOOR / max consensus discount; HV-rate 16%)
 POPULARITY_NEUTRAL_SCORE = 4.5
-POPULARITY_SLOPE = 0.07
+POPULARITY_SLOPE = 0.09
 POPULARITY_MULT_FLOOR = 0.80
-POPULARITY_MULT_CEILING = 1.25
+POPULARITY_MULT_CEILING = 1.40
 
 # Team market tier — drives one of four families of popularity features.
 # Tier 1 = national following (top of every casual fan's mind), tier 4 =
