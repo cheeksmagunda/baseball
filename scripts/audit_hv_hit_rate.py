@@ -36,10 +36,6 @@ os.environ.setdefault("BO_CURRENT_SEASON", "2026")
 from app.core import constants as _C  # noqa: E402
 from app.core.constants import (  # noqa: E402
     MIN_SCORE_THRESHOLD,
-    POPULARITY_MULT_CEILING,
-    POPULARITY_MULT_FLOOR,
-    POPULARITY_NEUTRAL_SCORE,
-    POPULARITY_SLOPE,
     POSITION_VOLUME_MULTIPLIER,
     STACK_BONUS,
     TRAIT_MODIFIER_CEILING,
@@ -468,7 +464,7 @@ def main() -> int:
         print(f"  {cause:22s} {count:4d}  (pitcher={p}, batter={b})")
     print()
     print(f"Decomposition CSV: {output_csv}")
-    print(f"Calibration constants used:")
+    print("Calibration constants used:")
     print(f"  ENV_FLOOR / batter_CEIL / pitcher_CEIL / rookie_CEIL = {_get('ENV_MODIFIER_FLOOR')} / {_get('ENV_MODIFIER_CEILING')} / {_get('PITCHER_ENV_MODIFIER_CEILING')} / {_get('ROOKIE_ENV_MODIFIER_CEILING')}")
     print(f"  POPULARITY: NEUTRAL={_get('POPULARITY_NEUTRAL_SCORE')}, SLOPE={_get('POPULARITY_SLOPE')}, mult range [{_get('POPULARITY_MULT_FLOOR')}, {_get('POPULARITY_MULT_CEILING')}]")
     print(f"  TRAIT band [{TRAIT_MODIFIER_FLOOR}, {TRAIT_MODIFIER_CEILING}]  (held at 1.0 in this audit; total_score pinned to {NEUTRAL_TOTAL:.1f})")
