@@ -251,17 +251,19 @@ PITCHER_ENV_MIN_K_PER_9 = 8.0         # min K/9 for "K upside"
 # ---------------------------------------------------------------------------
 
 # Env modifier bounds — PRIMARY EV signal.
-# Range: 0.20–1.30 (batter), 0.20–1.55 (pitcher), 0.20–1.10 (rookie).
+# Range: 0.20–1.30 (batter / pitcher), 0.20–1.10 (rookie).
 # Game conditions: Vegas O/U, ERA, bullpen, park, weather, platoon, batting
-# order, moneyline.  Floor is shared across all three; ceiling is asymmetric
-# per position (see PITCHER_ENV_MODIFIER_CEILING / ROOKIE_ENV_MODIFIER_CEILING).
+# order, moneyline.  V15.7 made pitcher and batter ceilings symmetric at
+# 1.30 (was 1.55 / 1.30 asymmetric before V15.7) — see
+# PITCHER_ENV_MODIFIER_CEILING block below for the TV-target rationale.
+# The rookie carve-out remains; see ROOKIE_ENV_MODIFIER_CEILING.
 ENV_MODIFIER_FLOOR = 0.20   # V12.1: lowered from 0.40 (which was already cut
                              # from V11 0.70).  Tuning sweep across 35-slate
                              # backtest showed lower floors improve mean
                              # slot-weighted RS without hurting beat-winner
                              # rate (steady at 51.4% from floor 0.10-0.40).
                              # 0.20 is the sweet spot: meaningful EV signal
-                             # spread (env=0 → 0.20 multiplier, env=1 → 1.30/1.40),
+                             # spread (env=0 → 0.20 multiplier, env=1 → 1.30),
                              # yet still floors a "no info" candidate with a
                              # base value (so the variant chooser doesn't try
                              # to fill slots with zero-EV stragglers).
@@ -297,13 +299,41 @@ ENV_MODIFIER_CEILING = 1.30
 # winning shapes: 2P+3B 28.6%, 0P+5B 25.7%, 1P+4B 17.1%) instead of the
 # nearly-monoculture 0P+5B that 1.20 produced.
 #
-# V13 update: 38-slate audit shows pitcher mean RS is 1.38x batter mean RS
+# V13 update: 38-slate audit showed pitcher mean RS is 1.38x batter mean RS
 # (3.42 vs 2.48), and the V12 backtest under 1.40 ceiling produced too-few
 # multi-pitcher lineups (1P+4B = 37% of optimizer output vs 17% of winners,
-# 2P+3B = 23% of output vs 28.6% of winners).  Bumping ceiling to 1.55
-# (~19% asymmetry vs 7.7% prior) should push the marginal cases toward
-# 2P+ shapes that the audit shows actually win more often.
-PITCHER_ENV_MODIFIER_CEILING = 1.55
+# 2P+3B = 23% of output vs 28.6% of winners).  V13 bumped the ceiling to
+# 1.55 (~19% asymmetry vs 7.7% prior) to push marginal cases toward 2P+
+# shapes that the audit showed won more often under RS / HV-rate.
+#
+# V15.3 (May 6, 2026): the multi-pitcher composition was capped at
+# MAX_PITCHERS_PER_LINEUP=1 (platform rule).  The 1.55 pitcher ceiling
+# was retained anyway because the asymmetric env band still expressed
+# the "pitcher RS premium" in the EV formula.
+#
+# V15.7 (May 7, 2026): TV-target audit on the 42-slate corpus reverses
+# the V13 conclusion.  Pitcher mean RS is +41.5% over batter (consistent
+# with V13), but pitcher mean TV is -21% vs batter (3.49→2.47 RS becomes
+# 9.02→11.41 TV) because pitchers concentrate in the high-fame /
+# low-boost end of the platform's pricing distribution.  Slate top-5-TV
+# composition is only 13.3% pitchers — yet under V15.6 the pitcher
+# ceiling 1.55 was systematically over-weighting them in EV ranking.
+#
+# Sweep on V15.6 baseline (audit_hv_hit_rate.py with TV metrics):
+#   pitcher ceiling 1.55 (V15.6)  → HV5/10/20 158/298/503  TV5/10/20 58/189/574  s1MT 17.87
+#   pitcher ceiling 1.30 (V15.7)  → HV5/10/20 160/303/515  TV5/10/20 58/193/584  s1MT 19.16
+#   pitcher ceiling 1.20          → HV5/10/20 164/305/520  TV5/10/20 59/195/587  s1MT 19.11 (-1 slot1 hit)
+#
+# Lowering the pitcher ceiling to match the batter ceiling (1.30) is a
+# strict Pareto improvement: every metric same or better, slot-1 hit
+# rate preserved, mean slot-1 TV outcome up +1.29 (+7.2%).  More
+# aggressive (1.20) loses 1 slot-1 hit; conservative pick is the
+# symmetric 1.30 ceiling.
+#
+# This also means the asymmetric-ceiling architecture is gone: pitcher
+# and batter both saturate env at 1.30.  The rookie carve-out
+# (ROOKIE_ENV_MODIFIER_CEILING=1.10) remains.
+PITCHER_ENV_MODIFIER_CEILING = 1.30
 
 # V13.3 (May 2026): rookie-track players have NO MLB quality signal — their
 # trait_factor is fixed at 1.0 (neutral) by design, so EV is purely

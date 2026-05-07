@@ -755,6 +755,74 @@ The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each
 
 **Stacking** is still capped at 2 batters per team AND 2 per game and only fires on overwhelmingly clear game scripts.
 
+### V15.7 Symmetric env ceiling — pitcher 1.55 → 1.30 (May 7, T-65 ship #2)
+
+V15.7 reverts the V13 asymmetric env ceiling architecture after the
+TV-target audit on the 42-slate corpus showed it was justified by the
+wrong response variable (RS, not TV).
+
+**The V13 hypothesis (under RS / HV-rate)**: pitchers carry a +38% RS
+premium over batters (3.49 vs 2.47), so the env ceiling should be
+asymmetric — pitchers cap at 1.55, batters at 1.30 — to express that
+premium in the EV multiplier.  This was a clean win on RS-correlated
+metrics under V13.
+
+**The TV-target inversion**: pitcher mean TV is **-21% below batter
+mean TV** (9.02 vs 11.41), even though pitcher mean RS is +41.5%
+above batter mean RS (3.49 vs 2.47).  The reversal is structural:
+pitchers concentrate in the high-fame / low-boost end of the
+platform's pricing distribution (Skenes 5/6 RS=8.7 with boost=0,
+Eovaldi 5/6 RS=7.4 with boost=0).  Confirmation: only 13.3% of slate
+top-5-TV winners are pitchers across the corpus.
+
+Under V15.6's asymmetric ceiling, pitchers were systematically
+over-ranked in EV against their actual TV outcomes — a side effect
+of calibrating against RS instead of TV.
+
+**Sweep result** (audit_hv_hit_rate.py with TV metrics, V15.6
+baseline):
+
+| pitcher_ceiling | HV@5 | HV@10 | HV@20 | TV@5 | TV@10 | TV@20 | s1tv | s1MT |
+|---|---|---|---|---|---|---|---|---|
+| 1.55 (V15.6) | 158 | 298 | 503 | 58 | 189 | 574 | 17/42 | 17.87 |
+| **1.30 (V15.7)** | **160** | **303** | **515** | **58** | **193** | **584** | **17/42** | **19.16** |
+| 1.20 (aggressive) | 164 | 305 | 520 | 59 | 195 | 587 | 16/42 | 19.11 |
+
+`PITCHER_ENV_MODIFIER_CEILING` 1.55 → 1.30 (now equal to
+`ENV_MODIFIER_CEILING`) is a strict Pareto improvement over V15.6:
+every metric same or better, slot-1 hit rate preserved, mean slot-1
+TV outcome up **+1.29 (+7.2%)**.  Going further to 1.20 lifts HV@5
+by another +4 but costs 1 slot-1 hit — V15.7 takes the
+slot-1-preserving point.
+
+**Architectural impact**: the asymmetric-ceiling architecture is
+gone.  Pitchers and batters both saturate env at 1.30.  The rookie
+carve-out (`ROOKIE_ENV_MODIFIER_CEILING = 1.10`) remains.  Composite
+EV multiplier ranges:
+
+| Position | Floor | Ceiling | Swing |
+|---|---|---|---|
+| Pitcher (V15.7, was V13) | 0.20 | 1.30 (was 1.55) | 6.5× (was 7.75×) |
+| Batter | 0.20 | 1.30 | 6.5× |
+| Rookie | 0.20 | 1.10 | 5.5× |
+
+**V15.7 explicitly does NOT change**: V15.6 popularity calibration
+(slope=0.22, floor=0.75, ceiling=1.55), V12 multi-pitcher composition
+(capped at 1 by V15.3), per-team / per-game caps, anti-correlation
+guard, V13.3 position-volume haircut, V13 ML curves, V13 wind-direction
+split, V13 catcher framing, V15.4 trait band [0.70, 1.20],
+`STACK_BONUS = 1.10`, `MAX_PITCHERS_PER_LINEUP = 1`, T-65 timing,
+no-fallbacks rule, no-historical-bleed rule.
+
+**Test impact**: `tests/test_filter_strategy.py::TestV133PositionAndRookie::test_pitcher_does_not_pay_position_multiplier`
+updated.  Under V15.7 a pitcher and an OF batter at matched env+trait
+have EQUAL EV (no asymmetric-ceiling exploit); the test now verifies
+the "no position haircut" invariant against a CATCHER (where the
+batter haircut would apply).  Test count unchanged at 258.
+
+**Verification**: 258/258 tests pass; ruff clean; audit_live_isolation
+clean.
+
 ### V15.6 TV-target popularity recalibration (May 7, T-65 ship)
 
 V15.6 retunes the popularity band against `total_value` (TV) outcomes

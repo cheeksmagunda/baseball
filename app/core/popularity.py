@@ -382,10 +382,16 @@ def predict_rookie_popularity_score(
     Note: the V13.3 env cap (ROOKIE_ENV_MODIFIER_CEILING = 1.10) still
     applies to all rookies, so the popularity boost from a low score
     keeps rookies competitive in strong env without letting them
-    dominate.  Rookie pitchers in good matchups can earn ~1.10 × 1.0 ×
-    1.25 = 1.375 EV multiplier, vs ~1.55 × 1.10 × 0.80 = 1.36 for a
-    comparable veteran ace — structurally below veterans but not
-    double-faded.
+    dominate.  Under V15.7 (pitcher ceiling 1.30, popularity range
+    [0.75, 1.55]) a rookie pitcher in a good matchup can earn
+    ~1.10 × 1.0 × 1.55 = 1.705 EV multiplier, vs ~1.30 × 1.10 × 0.75
+    = 1.073 for a comparable popular veteran ace — the rookie can
+    actually beat a max-fame veteran on env+leverage in the same
+    matchup, which is the V15.7 intent (pitcher TV is structurally
+    capped, leverage is the dominant lever).  Veterans with strong
+    trait_factor (1.20) and modest popularity (score 4-5, mult ~0.95)
+    still out-EV rookies via trait, since rookie trait_factor is
+    fixed at 1.0.
     """
     score = _team_market_score(team, is_pitcher, player_name)
 

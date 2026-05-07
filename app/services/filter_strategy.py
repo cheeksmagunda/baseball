@@ -20,11 +20,13 @@ EV formula (V15):
     filter_ev = env_factor × volatility_amplifier × trait_factor
               × leverage_factor × stack_bonus × dnp_adj × position_mult × 100
 
-    env_factor:    floor 0.20, rookie ceiling 1.10 (V13.3), pitcher 1.55 (V13),
-                   batter 1.30
+    env_factor:    floor 0.20, rookie ceiling 1.10 (V13.3),
+                   pitcher / batter ceiling 1.30 (V15.7 symmetric, was
+                   asymmetric 1.55 / 1.30 prior — TV-target audit
+                   showed pitcher TV is -21% vs batter TV)
     volatility_amplifier: env-conditional, batters only
     trait_factor:  0.70-1.20 (V15.4 widened band)
-    leverage_factor: 0.80-1.40 continuous popularity curve (V15)
+    leverage_factor: 0.75-1.55 continuous popularity curve (V15.6)
     stack_bonus:   1.0 / 1.10 (PATH 1 blowout-fav teams only, V13.3)
     dnp_adj:       always 1.0 (strict-mode DNP filter excludes invalid candidates)
     position_mult: 1.0 default; C 0.90, 2B/SS 0.95 (V13.3, batters only)
@@ -839,9 +841,9 @@ class FilteredCandidate:
     # V13.3: rookie-track players have no MLB quality signal — their
     # trait_factor is fixed at 1.0 by score_rookie, so EV is purely
     # env-driven.  _compute_base_ev applies ROOKIE_ENV_MODIFIER_CEILING
-    # (1.10) instead of the regular pitcher/batter ceiling (1.55/1.30)
-    # so unproven players cannot beat established trait-rated players
-    # on env alone.  Sourced from PlayerScoreResult.is_rookie_track.
+    # (1.10) instead of the regular pitcher/batter ceiling (1.30 / 1.30
+    # post-V15.7) so unproven players cannot beat established trait-rated
+    # players on env alone.  Sourced from PlayerScoreResult.is_rookie_track.
     is_rookie_track: bool = False
 
     # V15 — predicted-ownership popularity score from app/core/popularity.py.
@@ -913,22 +915,30 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
     HV player not on the Most Popular leaderboard.
 
     Seven multiplicative terms:
-      1. env_factor          — PRIMARY: game conditions.  Pitchers cap at
-                               PITCHER_ENV_MODIFIER_CEILING (1.55, V13), batters
-                               at ENV_MODIFIER_CEILING (1.30) — asymmetric:
-                               pitcher mean RS is 38% higher than batter mean RS.
+      1. env_factor          — PRIMARY: game conditions.  Pitchers and
+                               batters both cap at ENV_MODIFIER_CEILING /
+                               PITCHER_ENV_MODIFIER_CEILING (1.30 each
+                               post-V15.7).  Rookie carve-out at
+                               ROOKIE_ENV_MODIFIER_CEILING (1.10).  V13's
+                               asymmetric ceiling 1.55 / 1.30 was reverted
+                               after the V15.7 TV-target audit showed
+                               pitcher mean TV is -21% vs batter mean TV
+                               (despite RS being +41.5% higher) — so the
+                               RS-justified asymmetry inverts under TV.
       2. volatility_amplifier— Boom-bust hitter amplifier.  Env-CONDITIONAL:
                                amplifies env in good matchups, penalises in
                                bad.  Pitchers always 1.0 (no recent_form_cv).
       3. trait_factor        — SECONDARY: intrinsic player quality (Statcast
                                kinematics + ERA/K9/WHIP for SP; exit-velo +
-                               hard-hit% + barrel% for batters).  0.85–1.15.
+                               hard-hit% + barrel% for batters).  0.70–1.20
+                               (V15.4 widened band).
       4. leverage_factor     — V15: contrarian-edge multiplier from predicted
                                popularity score.  Continuous curve in
                                [POPULARITY_MULT_FLOOR, POPULARITY_MULT_CEILING]
-                               = [0.80, 1.40], deliberately narrower than the
-                               env swing so leverage acts as a tiebreaker, not
-                               an override.
+                               = [0.75, 1.55] (V15.6 TV-target retune,
+                               widened from V15.5's 0.80 / 1.40).  Designed
+                               narrower than the env swing so leverage acts
+                               as a tiebreaker, not an override.
       5. stack_bonus         — 1.10 if PATH 1 blowout-favorite team, else 1.0.
       6. dnp_adj             — Always 1.0 (strict-mode: invalid candidates excluded
                                upstream by the DNP filter; raises if batting_order=None
@@ -941,22 +951,24 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
                   × leverage_factor × stack_bonus × dnp_adj × position_mult × 100
     """
     raw_env = max(candidate.env_score, 0.0)
-    # V10.6 (April 28-29 evaluation): asymmetric env ceiling — pitchers cap at
-    # PITCHER_ENV_MODIFIER_CEILING (1.55, V13) vs batters at ENV_MODIFIER_CEILING
-    # (1.30).  Pitcher outcomes are 1-player-dependent, so over-saturating
-    # pitcher EV (5 env factors trivially → 1.0 saturation → 1.30 multiplier)
-    # priced batters out of the top-10 even on shootout slates.  The harness
-    # showed 54% of model top-10 were pitchers (target ~40%); tightening the
-    # pitcher band lets exceptional batter env situations compete.
+    # V15.7 (May 7, 2026): pitcher and batter env ceilings symmetric at
+    # ENV_MODIFIER_CEILING / PITCHER_ENV_MODIFIER_CEILING (both 1.30).
+    # The V13 asymmetry (1.55 pitcher / 1.30 batter) was justified by
+    # pitcher RS being +38% over batter RS — but TV-target audit on the
+    # 42-slate corpus showed pitcher TV is -21% vs batter TV (slate
+    # top-5-TV is only 13.3% pitchers) because pitchers concentrate in
+    # the high-fame / low-boost end of platform pricing.  Keeping the
+    # asymmetric ceiling under TV calibration would over-rank pitchers
+    # in EV against their actual TV outcomes.
     #
     # V13.3 (May 2026): rookie-track players cap at ROOKIE_ENV_MODIFIER_CEILING
     # (1.10).  Their trait_factor is fixed at 1.0 (neutral, by score_rookie),
     # so without an env cap a rookie pitcher in the V13 underdog-peak ML zone
-    # (mild underdog +100..+150, low O/U, pitcher park) saturates env to 1.55
-    # and tops EV — exactly the wrong outcome (debutants/spot starters with
-    # no MLB track record beating established arms).  Same logic on the
-    # batter side: a rookie call-up in a stack-eligible game shouldn't out-EV
-    # a proven veteran in the same context.  Cap rookies just above neutral.
+    # (mild underdog +100..+150, low O/U, pitcher park) saturates env to the
+    # full pitcher ceiling and tops EV — exactly the wrong outcome (debutants
+    # /spot starters with no MLB track record beating established arms).
+    # Same logic on the batter side: a rookie call-up in a stack-eligible
+    # game shouldn't out-EV a proven veteran.  Cap rookies just above neutral.
     if candidate.is_rookie_track:
         env_ceiling = ROOKIE_ENV_MODIFIER_CEILING
     elif candidate.is_pitcher:
