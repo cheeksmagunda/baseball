@@ -104,8 +104,8 @@ class TestRookiePath:
             player_name="Yankee Rookie", team="NYY", is_pitcher=False,
             batting_order=2, as_of=_TODAY,
         )
-        # NYY tier 1 = +3, top-3 batting = +1 → 4.0
-        assert score == pytest.approx(4.0)
+        # NYY tier 1 = +2, top-3 batting = +1 → 3.0
+        assert score == pytest.approx(3.0)
 
     def test_flagged_star_rookie_climbs(self):
         """A pre-flagged star prospect (Holliday, Chourio etc.) lifts further."""

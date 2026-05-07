@@ -734,7 +734,7 @@ def compute_batter_env_score(
             score += 0.3
             factors.append(f"Underdog premium (ML=+{ml})")
         elif ml <= -250:
-            score -= 0.5
+            score -= 0.4
             factors.append(f"Very heavy favorite (ML={ml}) — HV tank")
         elif ml <= -200:
             score -= 0.3
