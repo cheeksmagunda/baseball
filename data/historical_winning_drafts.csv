@@ -2207,3 +2207,103 @@ date,winner_rank,slot_index,player_name,team,position,real_score,slot_mult
 2026-05-06,20,3,Pete Crow-Armstrong,CHC,OF,4.0,1.6
 2026-05-06,20,4,Juan Soto,NYM,OF,2.3,1.4
 2026-05-06,20,5,Kyle Tucker,LAD,OF,1.4,1.2
+2026-05-07,1,1,Aaron Judge,NYY,OF,0.5,2.0
+2026-05-07,1,2,Cody Bellinger,NYY,OF,4.5,1.8
+2026-05-07,1,3,Trent Grisham,NYY,OF,6.0,1.6
+2026-05-07,1,4,Bobby Witt Jr.,KC,OF,4.0,1.4
+2026-05-07,1,5,Paul Blackburn,NYY,P,-0.2,1.2
+2026-05-07,2,1,Pete Crow-Armstrong,CHC,OF,1.8,2.0
+2026-05-07,2,2,Shota Imanaga,CHC,P,4.4,1.8
+2026-05-07,2,3,Junior Caminero,TB,OF,3.5,1.6
+2026-05-07,2,4,Miguel Amaya,CHC,OF,2.3,1.4
+2026-05-07,2,5,Michael Conforto,CHC,OF,4.6,1.2
+2026-05-07,3,1,Cody Bellinger,NYY,OF,4.5,2.0
+2026-05-07,3,2,Nick Kurtz,ATH,OF,1.1,1.8
+2026-05-07,3,3,Bobby Witt Jr.,KC,OF,4.0,1.6
+2026-05-07,3,4,Taylor Ward,BAL,OF,0.0,1.4
+2026-05-07,3,5,Chandler Simpson,TB,OF,4.5,1.2
+2026-05-07,4,1,J.T. Ginn,ATH,P,6.9,2.0
+2026-05-07,4,2,Trent Grisham,NYY,OF,6.0,1.8
+2026-05-07,4,3,Zack Gelof,ATH,OF,3.4,1.6
+2026-05-07,4,4,Nolan Gorman,STL,OF,-0.3,1.4
+2026-05-07,4,5,Konnor Griffin,PIT,OF,-0.7,1.2
+2026-05-07,5,1,Michael King,SD,P,5.0,2.0
+2026-05-07,5,2,Griffin Jax,TB,P,3.0,1.8
+2026-05-07,5,3,Junior Caminero,TB,OF,3.5,1.6
+2026-05-07,5,4,Bobby Witt Jr.,KC,OF,4.0,1.4
+2026-05-07,5,5,Jose Ramirez,CLE,OF,0.8,1.2
+2026-05-07,6,1,Trent Grisham,NYY,OF,6.0,2.0
+2026-05-07,6,2,Aaron Judge,NYY,OF,0.5,1.8
+2026-05-07,6,3,Ryan McMahon,NYY,OF,2.3,1.6
+2026-05-07,6,4,Oneil Cruz,PIT,OF,0.4,1.4
+2026-05-07,6,5,Cody Bellinger,NYY,OF,4.5,1.2
+2026-05-07,7,1,Aaron Judge,NYY,OF,0.5,2.0
+2026-05-07,7,2,Cody Bellinger,NYY,OF,4.5,1.8
+2026-05-07,7,3,Ryan Jeffers,MIN,OF,4.7,1.6
+2026-05-07,7,4,Brooks Lee,MIN,OF,3.5,1.4
+2026-05-07,7,5,Luke Keaschall,MIN,OF,0.9,1.2
+2026-05-07,8,1,Griffin Jax,TB,P,3.0,2.0
+2026-05-07,8,2,Junior Caminero,TB,OF,3.5,1.8
+2026-05-07,8,3,Jonathan Aranda,TB,OF,-0.7,1.6
+2026-05-07,8,4,Chandler Simpson,TB,OF,4.5,1.4
+2026-05-07,8,5,Yandy Diaz,TB,OF,1.7,1.2
+2026-05-07,9,1,Shea Langeliers,ATH,OF,3.6,2.0
+2026-05-07,9,2,Jordan Walker,STL,OF,2.0,1.8
+2026-05-07,9,3,Cody Bellinger,NYY,OF,4.5,1.6
+2026-05-07,9,4,Corbin Carroll,ARI,OF,2.6,1.4
+2026-05-07,9,5,Kyle Schwarber,PHI,OF,1.7,1.2
+2026-05-07,10,1,Bobby Witt Jr.,KC,OF,4.0,2.0
+2026-05-07,10,2,Corbin Carroll,ARI,OF,2.6,1.8
+2026-05-07,10,3,Cody Bellinger,NYY,OF,4.5,1.6
+2026-05-07,10,4,Nico Hoerner,CHC,OF,0.8,1.4
+2026-05-07,10,5,Nick Kurtz,ATH,OF,1.1,1.2
+2026-05-07,11,1,Aaron Judge,NYY,OF,0.5,2.0
+2026-05-07,11,2,Trent Grisham,NYY,OF,6.0,1.8
+2026-05-07,11,3,Cody Bellinger,NYY,OF,4.5,1.6
+2026-05-07,11,4,Kyle Schwarber,PHI,OF,1.7,1.4
+2026-05-07,11,5,Bryce Harper,PHI,OF,0.0,1.2
+2026-05-07,12,1,Aaron Judge,NYY,OF,0.5,2.0
+2026-05-07,12,2,Cody Bellinger,NYY,OF,4.5,1.8
+2026-05-07,12,3,Paul Goldschmidt,NYY,OF,1.9,1.6
+2026-05-07,12,4,Trent Grisham,NYY,OF,6.0,1.4
+2026-05-07,12,5,Jazz Chisholm Jr.,NYY,OF,-0.3,1.2
+2026-05-07,13,1,Paul Blackburn,NYY,P,-0.2,2.0
+2026-05-07,13,2,Cody Bellinger,NYY,OF,4.5,1.8
+2026-05-07,13,3,Aaron Judge,NYY,OF,0.5,1.6
+2026-05-07,13,4,Trent Grisham,NYY,OF,6.0,1.4
+2026-05-07,13,5,Corbin Carroll,ARI,OF,2.6,1.2
+2026-05-07,14,1,Aaron Judge,NYY,OF,0.5,2.0
+2026-05-07,14,2,Trent Grisham,NYY,OF,6.0,1.8
+2026-05-07,14,3,Cody Bellinger,NYY,OF,4.5,1.6
+2026-05-07,14,4,Jasson Dominguez,NYY,OF,0.0,1.4
+2026-05-07,14,5,Alec Burleson,STL,OF,1.9,1.2
+2026-05-07,15,1,Griffin Jax,TB,P,3.0,2.0
+2026-05-07,15,2,Jonathan Aranda,TB,OF,-0.7,1.8
+2026-05-07,15,3,Yandy Diaz,TB,OF,1.7,1.6
+2026-05-07,15,4,Junior Caminero,TB,OF,3.5,1.4
+2026-05-07,15,5,Chandler Simpson,TB,OF,4.5,1.2
+2026-05-07,16,1,J.T. Ginn,ATH,P,6.9,2.0
+2026-05-07,16,2,Michael King,SD,P,5.0,1.8
+2026-05-07,16,3,Max Meyer,MIA,P,2.1,1.6
+2026-05-07,16,4,Matthew Liberatore,STL,P,5.2,1.4
+2026-05-07,16,5,Brent Rooker,ATH,OF,3.7,1.2
+2026-05-07,17,1,Shota Imanaga,CHC,P,4.4,2.0
+2026-05-07,17,2,Aaron Judge,NYY,OF,0.5,1.8
+2026-05-07,17,3,Cody Bellinger,NYY,OF,4.5,1.6
+2026-05-07,17,4,Trent Grisham,NYY,OF,6.0,1.4
+2026-05-07,17,5,Jazz Chisholm Jr.,NYY,OF,-0.3,1.2
+2026-05-07,18,1,Michael King,SD,P,5.0,2.0
+2026-05-07,18,2,Aaron Judge,NYY,OF,0.5,1.8
+2026-05-07,18,3,Cody Bellinger,NYY,OF,4.5,1.6
+2026-05-07,18,4,Jazz Chisholm Jr.,NYY,OF,-0.3,1.4
+2026-05-07,18,5,Trent Grisham,NYY,OF,6.0,1.2
+2026-05-07,19,1,Aaron Judge,NYY,OF,0.5,2.0
+2026-05-07,19,2,Cody Bellinger,NYY,OF,4.5,1.8
+2026-05-07,19,3,Jazz Chisholm Jr.,NYY,OF,-0.3,1.6
+2026-05-07,19,4,Trent Grisham,NYY,OF,6.0,1.4
+2026-05-07,19,5,Paul Goldschmidt,NYY,OF,1.9,1.2
+2026-05-07,20,1,Aaron Judge,NYY,OF,0.5,2.0
+2026-05-07,20,2,Cody Bellinger,NYY,OF,4.5,1.8
+2026-05-07,20,3,Jazz Chisholm Jr.,NYY,OF,-0.3,1.6
+2026-05-07,20,4,Paul Goldschmidt,NYY,OF,1.9,1.4
+2026-05-07,20,5,Trent Grisham,NYY,OF,6.0,1.2
