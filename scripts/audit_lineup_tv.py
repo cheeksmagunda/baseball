@@ -29,7 +29,6 @@ Sweep parameters via env vars (same as audit_hv_hit_rate.py):
     BO_OVERRIDE_STACK_BONUS
     BO_OVERRIDE_MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE
     BO_OVERRIDE_MAX_PLAYERS_PER_GAME_BATTERS
-    BO_DROP_POSITION_VOLUME=1                # bypass POSITION_VOLUME_MULTIPLIER
     V16_REAL_TRAIT=1                         # use Statcast-driven trait_factor
                                              # (default: flat 1.0 for V15.7 parity)
 """
@@ -70,7 +69,7 @@ def _get(name: str) -> float:
 # scorer's first call so it picks up the patched constants.
 import scripts.audit_hv_hit_rate as h  # noqa: E402
 from scripts.audit_hv_hit_rate import (  # noqa: E402
-    _maybe_override,
+    apply_sweep_overrides,
     load_slate_envs,
     neutral_total_score,
     score_one_player,
@@ -79,26 +78,8 @@ from scripts.audit_hv_hit_rate import (  # noqa: E402
 )
 
 
-def _setup_overrides() -> None:
-    for v in [
-        "ENV_MODIFIER_FLOOR",
-        "ENV_MODIFIER_CEILING",
-        "PITCHER_ENV_MODIFIER_CEILING",
-        "ROOKIE_ENV_MODIFIER_CEILING",
-        "POPULARITY_NEUTRAL_SCORE",
-        "POPULARITY_SLOPE",
-        "POPULARITY_MULT_FLOOR",
-        "POPULARITY_MULT_CEILING",
-        "STACK_BONUS",
-        "TRAIT_MODIFIER_FLOOR",
-        "TRAIT_MODIFIER_CEILING",
-        "MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE",
-        "MAX_PLAYERS_PER_GAME_BATTERS",
-    ]:
-        _maybe_override(v)
-
-
-_setup_overrides()
+# Apply overrides BEFORE the scorer's first call.
+apply_sweep_overrides()
 
 if os.environ.get("V16_REAL_TRAIT") != "1":
     # Default: flat trait to match V15.7 baseline.
@@ -344,22 +325,17 @@ def main() -> int:
             f"  {label}: n={n}  mean={mean:.1f}  median={median:.1f}  p25={p25:.1f}  p75={p75:.1f}  min={min(vals):.1f}  max={max(vals):.1f}"
         )
 
-    print("=== V16 Phase 1: Lineup TV outcome audit ===")
+    print("=== V16 Phase 2: Lineup TV outcome audit ===")
     print()
     if os.environ.get("V16_REAL_TRAIT") == "1":
         print("  trait_factor: V16 real Statcast-driven")
     else:
         print("  trait_factor: FLAT 1.0 (V15.7 baseline parity)")
-    pos_vol_dict = getattr(_C, "POSITION_VOLUME_MULTIPLIER", {})
-    if os.environ.get("BO_DROP_POSITION_VOLUME") == "1":
-        print("  POSITION_VOLUME_MULTIPLIER: DISABLED via env override")
-    elif not pos_vol_dict:
-        print(
-            "  POSITION_VOLUME_MULTIPLIER: removed (V16 Phase 1) — empty dict, all positions = 1.0"
-        )
-    else:
-        print(f"  POSITION_VOLUME_MULTIPLIER: active {dict(pos_vol_dict)}")
     print(f"  TRAIT band [{_get('TRAIT_MODIFIER_FLOOR')}, {_get('TRAIT_MODIFIER_CEILING')}]")
+    print(
+        f"  Leverage band [{_get('POPULARITY_MULT_FLOOR')}, {_get('POPULARITY_MULT_CEILING')}], "
+        f"slope={_get('POPULARITY_SLOPE')}"
+    )
     print(
         f"  Stack cap: {_get('MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE')} batters/team in stack-eligible games"
     )

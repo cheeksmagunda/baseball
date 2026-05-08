@@ -755,6 +755,137 @@ The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each
 
 **Stacking** is still capped at 2 batters per team AND 2 per game and only fires on overwhelmingly clear game scripts.
 
+### V16 Phase 2 — Trait sub-weight DRY refactor + corpus-saturation finding (May 8)
+
+Phase 2 is **a no-behavior-change refactor + a calibration null result.**
+
+**The refactor (real value, ships):**
+
+Extracted every inline trait sub-weight to named constants in
+`app/core/constants.py` so the audit harness can sweep them via
+`BO_OVERRIDE_<NAME>` env vars, eliminating the previous
+source-of-truth duplication that required parallel edits in
+scoring_engine.py + the harness for every calibration sweep:
+
+- `OFFENSIVE_PROFILE_OPS_WEIGHT`, `_X_WOBA_WEIGHT`, `_HARD_HIT_WEIGHT`,
+  `_BARREL_WEIGHT`, `_AVG_EV_WEIGHT` (5 sub-weights inside batter
+  offensive_profile, previously inline 10/7/5/4/4)
+- `KINEMATIC_BLEND_KIN_WEIGHT`, `KINEMATIC_BLEND_K9_WEIGHT` (pitcher
+  k_rate kinematic-vs-K9 blend, previously inline 0.70 / 0.30)
+- `ERA_WHIP_ERA_WEIGHT`, `ERA_WHIP_WHIP_WEIGHT` (pitcher era_whip
+  blend, previously inline 0.60 / 0.40)
+- `PITCHER_WEIGHT_*` and `BATTER_WEIGHT_*` (outer trait weights;
+  `app/core/weights.py` dataclass defaults now read from these)
+
+`scoring_engine.py` reads the sub-weights via `from app.core import
+constants` and dotted access (`constants.OFFENSIVE_PROFILE_OPS_WEIGHT`)
+so monkey-patching at runtime is picked up correctly — the harness
+patches the module attribute, the scorer sees the new value on the
+next call.
+
+`scripts/audit_hv_hit_rate.py::compute_trait_score_from_csv` was
+rewritten to be a **faithful mirror** of `score_offensive_profile`,
+`score_pitcher_k_rate`, and `score_pitcher_era_whip`:
+- Reads the same threshold constants the live engine uses
+  (`OFFENSIVE_PROFILE_OPS_FLOOR`, `POWER_PROFILE_X_WOBA_FLOOR`, etc.).
+  Pre-Phase-2 the harness had its OWN `_TRAIT_*` constants that drifted
+  from the live values — OPS floor 0.65 vs live 0.70, x_woba ceiling
+  0.45 vs 0.40, hard_hit floor 25 vs 30, barrel floor 3 vs 4, avg_ev
+  floor 86 vs 85, ceiling 95 vs 92.  Six of seven batter thresholds
+  differed.  Those duplicates are gone.
+- Uses the same outer trait weights (`PITCHER_WEIGHT_ACE_STATUS`,
+  `PITCHER_WEIGHT_K_RATE`, `PITCHER_WEIGHT_ERA_WHIP`,
+  `BATTER_WEIGHT_OFFENSIVE_PROFILE`).
+- Composes pitcher trait by mirroring the engine's three pitcher
+  scorers (ace_status + k_rate + era_whip — recent_form skipped
+  because it needs game logs not in the CSV).
+
+`SWEEPABLE_CONSTANTS` tuple in `audit_hv_hit_rate.py` is now the single
+source of truth for which `BO_OVERRIDE_<NAME>` env vars take effect;
+both `audit_hv_hit_rate.py` and `audit_lineup_tv.py` call
+`apply_sweep_overrides()` from there (was duplicated as two local
+override lists pre-Phase-2 — `audit_lineup_tv.py`'s local list missed
+the trait-sub-weight entries, silently nullifying half of the early
+sweep results until the dedup landed).
+
+**Dead code deletion (DRY audit):**
+
+- `POSITION_VOLUME_MULTIPLIER = {}` in `app/core/constants.py` deleted
+  entirely (V16 Phase 1 had left it as an empty-dict import-stub; no
+  app code imports it anymore).
+- `BO_DROP_POSITION_VOLUME` env-var override path in both audit
+  harnesses removed (was a no-op since the dict was empty).
+- `position_mult` variable, CSV column, `position_haircut` miss-cause
+  classification all removed from `audit_hv_hit_rate.py`; replaced
+  with `trait_factor` exposure (the new actual lever).
+
+**The calibration sweep — null result:**
+
+Ran ~30 calibration configurations against the lineup-TV harness on
+the now-43-slate corpus.  Surface area swept:
+
+- Trait modifier band: [0.95, 1.05] / [0.90, 1.10] / [0.90, 1.15] /
+  [0.85, 1.15] / [0.70, 1.20] / [0.70, 1.30]
+- Batter sub-weights: OPS-heavy (18-6-3-2-1, 30-0-0-0-0), Statcast-
+  heavy (5-12-5-4-4), xwOBA-paired (15-12-1-1-1), 2× / 3× OPS
+- Pitcher sub-weights: kinematic blend 30/70 / 50/50 / 70/30 / 90/10;
+  era_whip 50/50 / 60/40 / 70/30; ace_status / k_rate / era_whip
+  outer weight reshuffles
+- Leverage band: [0.75, 1.55] (V15.6) / [0.80, 1.30] (V16) / [0.85,
+  1.30] / [0.90, 1.30] / [0.80, 1.35] / [0.85, 1.40]
+- Popularity slope: 0.15 / 0.20 / 0.22 (V16) / 0.25 / 0.30
+- Popularity neutral: 4.0 / 4.5 (V16) / 5.0
+- Env band: floor 0.10 / 0.15 / 0.20 (V16) / 0.25 / 0.30; ceiling
+  1.25 / 1.30 (V16) / 1.35
+- Stack bonus: 1.00 / 1.05 / 1.10 (V16) / 1.15 / 1.20
+
+**Best lineup TV mean across all configs: 81.6.  V16 baseline: 81.5.
+Within noise.  No config produces a meaningful win.**
+
+The structural reason: trait and leverage are anti-correlated on the
+corpus.  High-trait players (OPS-Q4 batters, sub-3-ERA pitchers) are
+disproportionately popular (high pop_score → leverage discount).
+Low-trait players are disproportionately unpopular (low pop_score →
+leverage premium).  A multiplicative formula `env × trait × leverage`
+has those two terms cancelling each other — adding more trait signal
+just shifts mass between two flavours of cancellation, doesn't
+improve net ranking.
+
+The user-validated within-sleeper finding still holds: among NOT-MP
+batters (n=812), Q4 OPS hits HV at 90.5% vs Q1 64% (26.5pp swing).
+But pulling that signal into the ranking via heavier OPS weighting
+also pulls IN-MP players up via the same OPS, where leverage discount
+nullifies the lift.  No clean way to extract the within-sleeper
+gradient without conditioning on pop_score (which is a structural
+formula change, not a constant tweak — Phase 3 candidate, gated on
+out-of-sample validation that V16 holds first).
+
+**What ships in V16 Phase 2:**
+
+1. The DRY refactor (trait sub-weights extracted to constants;
+   harness mirrors engine; SWEEPABLE_CONSTANTS single source of truth).
+   Future calibration sweeps need only env vars, no code edits.
+2. Dead-code deletion (POSITION_VOLUME_MULTIPLIER stub,
+   BO_DROP_POSITION_VOLUME, position_mult column).
+3. **No constant value changes.**  All weights stay at V16 Phase 1
+   levels.  V16 Phase 1's lineup-TV mean 81.5 (vs rank-1 winning 78.2)
+   is the corpus-saturation point.
+
+**Verification**: 258/258 tests pass; ruff lint + format clean;
+audit_live_isolation clean (the harness still reads outcome columns
+in `/scripts/`-only paths, app stays clean).  Live runtime smoke-test
+verified the constants-based sweep mechanism works end-to-end —
+monkey-patching `constants.OFFENSIVE_PROFILE_OPS_WEIGHT` and
+re-calling `score_offensive_profile` produces the expected
+re-weighted score.
+
+**V16 Phase 2 explicitly does NOT change:** any weight VALUES, V13 ML
+curves, V13 wind-direction split, V13 catcher framing, V13.3 rookie
+env ceiling, V13.3 STACK_BONUS, V15.4 trait band, V15.7 symmetric env
+ceiling, V15.3 MAX_PITCHERS_PER_LINEUP cap, V12 composition,
+per-team / per-game caps, anti-correlation guard, slot-display rule,
+T-65 timing, no-fallbacks rule, no-historical-bleed rule.
+
 ### V16 Phase 1 — Lineup-TV calibration: leverage tightened, POSITION_VOLUME_MULTIPLIER removed (May 8)
 
 V16 Phase 1 is the structural unification commit promised by V16

@@ -11,6 +11,13 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+# V16 Phase 2: trait sub-weights (OFFENSIVE_PROFILE_*_WEIGHT,
+# KINEMATIC_BLEND_*_WEIGHT, ERA_WHIP_*_WEIGHT) are read via the `constants`
+# module rather than imported by name.  This lets audit sweeps in
+# scripts/audit_hv_hit_rate.py monkey-patch them via BO_OVERRIDE_ env vars
+# at call time without reimporting this module.  The fixed thresholds
+# (floors / ceilings) are imported normally — they aren't sweep targets.
+from app.core import constants
 from app.core.constants import (
     PITCHER_POSITIONS,
     OFFENSIVE_PROFILE_OPS_CEILING,
@@ -75,6 +82,7 @@ class PlayerScoreResult:
 # ---------------------------------------------------------------------------
 # Pitcher trait scorers
 # ---------------------------------------------------------------------------
+
 
 def score_ace_status(stats: PlayerStats | None, max_pts: float) -> TraitResult:
     """Score based on pitcher quality indicators (IP, ERA as proxy for rotation rank)."""
@@ -146,21 +154,57 @@ def score_pitcher_k_rate(
 
     subs: list[tuple[str, float]] = []
     if stats.fb_velocity is not None:
-        subs.append(("FB_velo", scale_score(stats.fb_velocity, SCORING_FB_VELOCITY_FLOOR, SCORING_FB_VELOCITY_CEILING, 1.0)))
+        subs.append(
+            (
+                "FB_velo",
+                scale_score(
+                    stats.fb_velocity, SCORING_FB_VELOCITY_FLOOR, SCORING_FB_VELOCITY_CEILING, 1.0
+                ),
+            )
+        )
     if stats.fb_ivb is not None:
-        subs.append(("IVB", scale_score(stats.fb_ivb, SCORING_FB_IVB_FLOOR, SCORING_FB_IVB_CEILING, 1.0)))
+        subs.append(
+            ("IVB", scale_score(stats.fb_ivb, SCORING_FB_IVB_FLOOR, SCORING_FB_IVB_CEILING, 1.0))
+        )
     if stats.fb_extension is not None:
-        subs.append(("ext", scale_score(stats.fb_extension, SCORING_FB_EXTENSION_FLOOR, SCORING_FB_EXTENSION_CEILING, 1.0)))
+        subs.append(
+            (
+                "ext",
+                scale_score(
+                    stats.fb_extension,
+                    SCORING_FB_EXTENSION_FLOOR,
+                    SCORING_FB_EXTENSION_CEILING,
+                    1.0,
+                ),
+            )
+        )
     if stats.whiff_pct is not None:
-        subs.append(("whiff%", scale_score(stats.whiff_pct, SCORING_WHIFF_PCT_FLOOR, SCORING_WHIFF_PCT_CEILING, 1.0)))
+        subs.append(
+            (
+                "whiff%",
+                scale_score(
+                    stats.whiff_pct, SCORING_WHIFF_PCT_FLOOR, SCORING_WHIFF_PCT_CEILING, 1.0
+                ),
+            )
+        )
     if stats.chase_pct is not None:
-        subs.append(("chase%", scale_score(stats.chase_pct, SCORING_CHASE_PCT_FLOOR, SCORING_CHASE_PCT_CEILING, 1.0)))
+        subs.append(
+            (
+                "chase%",
+                scale_score(
+                    stats.chase_pct, SCORING_CHASE_PCT_FLOOR, SCORING_CHASE_PCT_CEILING, 1.0
+                ),
+            )
+        )
 
     if len(subs) >= 3:
         kinematic = sum(v for _, v in subs) / len(subs)  # 0.0-1.0
         if stats.k_per_9 is not None:
             k9_norm = scale_score(stats.k_per_9, SCORING_K9_FLOOR, SCORING_K9_CEILING, 1.0)
-            combined = 0.70 * kinematic + 0.30 * k9_norm
+            combined = (
+                constants.KINEMATIC_BLEND_KIN_WEIGHT * kinematic
+                + constants.KINEMATIC_BLEND_K9_WEIGHT * k9_norm
+            )
         else:
             combined = kinematic
         score = combined * max_pts
@@ -229,10 +273,7 @@ def _apply_framing_adjustment(
     return max(0.0, min(max_pts, adjusted))
 
 
-
-def score_pitcher_recent_form(
-    game_logs: list[PlayerGameLog], max_pts: float
-) -> TraitResult:
+def score_pitcher_recent_form(game_logs: list[PlayerGameLog], max_pts: float) -> TraitResult:
     """Score based on last 3 starts with trajectory signal. Rewards pitchers trending up."""
     if not game_logs:
         raise RuntimeError(
@@ -265,9 +306,9 @@ def score_pitcher_recent_form(
         prior_avg = sum(start_scores[1:]) / len(start_scores[1:])
         if prior_avg > 0:
             if most_recent >= prior_avg * 1.15:
-                traj_mult = 1.10   # trending up: +15% vs own recent baseline
+                traj_mult = 1.10  # trending up: +15% vs own recent baseline
             elif most_recent <= prior_avg * 0.85:
-                traj_mult = 0.90   # trending down: -15% vs own recent baseline
+                traj_mult = 0.90  # trending down: -15% vs own recent baseline
             else:
                 traj_mult = 1.0
         else:
@@ -314,7 +355,9 @@ def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitRe
     # ERA + WHIP both inverted (lower is better)
     era_score = scale_score(SCORING_ERA_CEILING - era, 0, SCORING_ERA_RANGE, 1.0)
     whip_score = scale_score(SCORING_WHIP_CEILING - whip, 0, SCORING_WHIP_RANGE, 1.0)
-    combined = (era_score * 0.6 + whip_score * 0.4) * max_pts
+    combined = (
+        era_score * constants.ERA_WHIP_ERA_WEIGHT + whip_score * constants.ERA_WHIP_WHIP_WEIGHT
+    ) * max_pts
 
     return TraitResult(
         "era_whip",
@@ -327,6 +370,7 @@ def score_pitcher_era_whip(stats: PlayerStats | None, max_pts: float) -> TraitRe
 # ---------------------------------------------------------------------------
 # Batter trait scorers
 # ---------------------------------------------------------------------------
+
 
 def score_offensive_profile(stats: PlayerStats | None, max_pts: float) -> TraitResult:
     """Score holistic offensive output: OPS-anchored season aggregate plus
@@ -372,20 +416,39 @@ def score_offensive_profile(stats: PlayerStats | None, max_pts: float) -> TraitR
 
     # Each sub-score is 0.0–1.0, then weighted by its point allotment.
     ops_score = scale_score(ops, OFFENSIVE_PROFILE_OPS_FLOOR, OFFENSIVE_PROFILE_OPS_CEILING, 1.0)
-    avg_ev_score = scale_score(avg_ev, POWER_PROFILE_AVG_EV_FLOOR, POWER_PROFILE_AVG_EV_MAX, 1.0) if avg_ev is not None else None
-    hard_hit_score = scale_score(hard_hit, POWER_PROFILE_HARD_HIT_FLOOR, POWER_PROFILE_HARD_HIT_MAX, 1.0) if hard_hit is not None else None
-    barrel_score = scale_score(barrel_pct, POWER_PROFILE_BARREL_PCT_FLOOR, POWER_PROFILE_BARREL_PCT_MAX, 1.0) if barrel_pct is not None else None
-    x_woba_score = scale_score(x_woba, POWER_PROFILE_X_WOBA_FLOOR, POWER_PROFILE_X_WOBA_CEILING, 1.0) if x_woba is not None else None
+    avg_ev_score = (
+        scale_score(avg_ev, POWER_PROFILE_AVG_EV_FLOOR, POWER_PROFILE_AVG_EV_MAX, 1.0)
+        if avg_ev is not None
+        else None
+    )
+    hard_hit_score = (
+        scale_score(hard_hit, POWER_PROFILE_HARD_HIT_FLOOR, POWER_PROFILE_HARD_HIT_MAX, 1.0)
+        if hard_hit is not None
+        else None
+    )
+    barrel_score = (
+        scale_score(barrel_pct, POWER_PROFILE_BARREL_PCT_FLOOR, POWER_PROFILE_BARREL_PCT_MAX, 1.0)
+        if barrel_pct is not None
+        else None
+    )
+    x_woba_score = (
+        scale_score(x_woba, POWER_PROFILE_X_WOBA_FLOOR, POWER_PROFILE_X_WOBA_CEILING, 1.0)
+        if x_woba is not None
+        else None
+    )
 
     # Weighted sum. Missing Statcast sub-scores drop out of the numerator AND
     # denominator so call-ups with partial Savant coverage aren't penalised
     # for sparse kinematics data.  OPS is always present (strict).
+    # V16 Phase 2: sub-weights extracted to constants.py for sweepability
+    # (see scripts/audit_hv_hit_rate.py BO_OVERRIDE_OFFENSIVE_PROFILE_*_WEIGHT).
+    # Read via the `constants` module so monkey-patched overrides apply.
     components = [
-        (ops_score, 10.0, "OPS"),
-        (x_woba_score, 7.0, "xwOBA"),
-        (hard_hit_score, 5.0, "HH%"),
-        (barrel_score, 4.0, "brl%"),
-        (avg_ev_score, 4.0, "EV"),
+        (ops_score, constants.OFFENSIVE_PROFILE_OPS_WEIGHT, "OPS"),
+        (x_woba_score, constants.OFFENSIVE_PROFILE_X_WOBA_WEIGHT, "xwOBA"),
+        (hard_hit_score, constants.OFFENSIVE_PROFILE_HARD_HIT_WEIGHT, "HH%"),
+        (barrel_score, constants.OFFENSIVE_PROFILE_BARREL_WEIGHT, "brl%"),
+        (avg_ev_score, constants.OFFENSIVE_PROFILE_AVG_EV_WEIGHT, "EV"),
     ]
     weighted_sum = sum(s * w for s, w, _ in components if s is not None)
     denom = sum(w for s, w, _ in components if s is not None)
@@ -411,11 +474,7 @@ def score_offensive_profile(stats: PlayerStats | None, max_pts: float) -> TraitR
     )
 
 
-
-
-def score_batter_recent_form(
-    game_logs: list[PlayerGameLog], max_pts: float
-) -> TraitResult:
+def score_batter_recent_form(game_logs: list[PlayerGameLog], max_pts: float) -> TraitResult:
     """Score last 7 games with trajectory weighting.
 
     Primary signal is last 2 games (who they are right now). A trajectory
@@ -432,8 +491,8 @@ def score_batter_recent_form(
         )
 
     recent7 = get_recent_games(game_logs, 7)
-    window_new = recent7[:2]   # most recent 2 — primary signal
-    window_old = recent7[2:]   # prior 5 — trend baseline
+    window_new = recent7[:2]  # most recent 2 — primary signal
+    window_old = recent7[2:]  # prior 5 — trend baseline
 
     def _production(games: list) -> float:
         if not games:
@@ -468,7 +527,7 @@ def score_batter_recent_form(
     if per_game_prod:
         mean_prod = sum(per_game_prod) / len(per_game_prod)
         variance = sum((p - mean_prod) ** 2 for p in per_game_prod) / len(per_game_prod)
-        std_prod = variance ** 0.5
+        std_prod = variance**0.5
         cv = std_prod / mean_prod if mean_prod > 0 else 0.0
     else:
         cv = 0.0
@@ -484,13 +543,13 @@ def score_batter_recent_form(
     else:
         ratio = 1.0
     if ratio >= 1.30:
-        traj_mult = 1.15   # clearly ascending
+        traj_mult = 1.15  # clearly ascending
     elif ratio >= 1.10:
-        traj_mult = 1.08   # trending up
+        traj_mult = 1.08  # trending up
     elif ratio <= 0.70:
-        traj_mult = 0.85   # clearly declining
+        traj_mult = 0.85  # clearly declining
     elif ratio <= 0.90:
-        traj_mult = 0.92   # slightly declining
+        traj_mult = 0.92  # slightly declining
     else:
         traj_mult = 1.0
 
@@ -508,7 +567,6 @@ def score_batter_recent_form(
         f"7G: {all_h}/{all_ab} {all_hr}HR {all_rbi}RBI {traj_str}",
         {"recent_form_cv": cv},
     )
-
 
 
 def score_hot_streak(game_logs: list[PlayerGameLog], max_pts: float) -> TraitResult:
@@ -667,7 +725,6 @@ def score_batter(
     )
 
 
-
 # estimate_rs_probability REMOVED — it accepted card_boost as an input,
 # but card_boost is only revealed during/after the draft.  The scoring
 # engine runs pre-game and must not depend on during-draft variables.
@@ -693,9 +750,7 @@ def score_player(
 
     weights = ScoringWeights()
     stats = (
-        db.query(PlayerStats)
-        .filter_by(player_id=player.id, season=settings.current_season)
-        .first()
+        db.query(PlayerStats).filter_by(player_id=player.id, season=settings.current_season).first()
     )
     game_logs = (
         db.query(PlayerGameLog)
@@ -712,7 +767,9 @@ def score_player(
         # value before the inevitable downstream raise.
         logger.debug(
             "score_player: no season-%d stats for %s (%s) — will raise downstream",
-            settings.current_season, player.name, player.team,
+            settings.current_season,
+            player.name,
+            player.team,
         )
 
     # Caller override takes precedence; fall back to DB position.
@@ -725,17 +782,25 @@ def score_player(
         logger.info(
             "score_player: %s (%s, %s) on rookie scoring track — "
             "neutral total_score, env-driven EV.",
-            player.name, player.team, player.position,
+            player.name,
+            player.team,
+            player.position,
         )
         return score_rookie(player)
 
     logger.debug(
         "scoring %s (%s, %s) as_pitcher=%s stats=%s game_logs=%d",
-        player.name, player.team, player.position, is_pitcher,
-        "yes" if stats else "none", len(game_logs),
+        player.name,
+        player.team,
+        player.position,
+        is_pitcher,
+        "yes" if stats else "none",
+        len(game_logs),
     )
 
     if is_pitcher:
-        return score_pitcher(player, stats, game_logs, weights=weights, team_framing_runs=team_framing_runs)
+        return score_pitcher(
+            player, stats, game_logs, weights=weights, team_framing_runs=team_framing_runs
+        )
     else:
         return score_batter(player, stats, game_logs, weights=weights)

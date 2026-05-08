@@ -400,24 +400,14 @@ PITCHER_ANCHOR_SLOT = 1  # legacy constant — Slot 1 index, used in slot_assign
 # ---------------------------------------------------------------------------
 STACK_BONUS = 1.10  # 10% EV bonus for players on blowout-game teams (V13.3)
 
-# V16 Phase 1 (May 8, 2026): POSITION_VOLUME_MULTIPLIER REMOVED.
-#
-# V13.3 introduced a position-level haircut (catcher 0.90, 2B/SS 0.95)
-# calibrated against a 40-slate audit showing 0% of slot-1 winners came
-# from those positions.  V16's lineup-TV audit (audit_lineup_tv.py)
-# replays composition over 41 slates and shows the haircut produces a
-# small mean-TV effect (±0.5) but actively misfires on individual
-# elite-trait catchers — the 2026-05-08 slate where the optimizer
-# picked a low-trait 3B (B. House, x_woba 0.32) over a hot catcher
-# (R. Jeffers, x_woba 0.43) is the canonical case.  The haircut was a
-# population prior masking individual signal.
-#
-# Trait scoring (offensive_profile via x_woba / hard_hit / barrel) is
-# the right discriminator for hot vs cold within a position.  Position
-# itself is no longer an EV input — the dict is empty so any lookup
-# silently returns 1.0 (kept as an empty dict to preserve the import
-# path; callers iterate or .get() unchanged).
-POSITION_VOLUME_MULTIPLIER: dict[str, float] = {}
+# V16 Phase 1 deleted POSITION_VOLUME_MULTIPLIER (V13.3 catcher 0.90 /
+# 2B-SS 0.95 haircut).  The lineup-TV audit showed it cost ~0.5 mean
+# TV/slate and misfired on individual elite-trait catchers — the
+# 2026-05-08 House-over-Jeffers case is the canonical one.  Trait
+# scoring (offensive_profile via x_woba / hard_hit / barrel) is the
+# right discriminator for hot vs cold within a position; position
+# itself is no longer an EV input.  V16 Phase 2 deleted the empty-dict
+# import-path stub since no app code imports it.
 
 # ---------------------------------------------------------------------------
 # Strict-mode (May 2026): no league-average DEFAULT_* fallbacks.  The pipeline
@@ -612,6 +602,57 @@ POWER_PROFILE_HARD_HIT_MAX = 50.0
 POWER_PROFILE_AVG_EV_FLOOR = 85.0
 POWER_PROFILE_HARD_HIT_FLOOR = 30.0
 POWER_PROFILE_BARREL_PCT_FLOOR = 4.0
+
+# V16 Phase 2 — sub-signal weight constants for sweepability.
+#
+# Pre-V16 these were inline magic numbers in score_offensive_profile and
+# duplicated in scripts/audit_hv_hit_rate.py's compute_trait_score_from_csv.
+# Extracting to named constants lets the audit harness sweep them via
+# BO_OVERRIDE_OFFENSIVE_PROFILE_*_WEIGHT without code edits, AND eliminates
+# the source-of-truth duplication that previously made calibration sweeps
+# require parallel edits in two places.
+#
+# Weights sum to OFFENSIVE_PROFILE_DENOM = 30; the actual `max_pts` argument
+# (40 for batters via BatterWeights.offensive_profile) is multiplied
+# proportionally inside the scorer, so changing these doesn't affect the
+# trait's contribution ratio relative to other batter traits — only the
+# sub-signal mix WITHIN offensive_profile.
+#
+# The 43-slate sleeper-HV audit (May 2026) showed within the sleeper-batter
+# population (n=812, 75% HV-rate) OPS quartile drives a 26.5pp HV-rate
+# swing (Q1 64% → Q4 90.5%) while x_woba quartile only drives 8pp and
+# barrel/hard_hit ~6pp.  The default weights below were calibrated against
+# that signal-strength ranking; lift OPS, modest x_woba, smaller power.
+OFFENSIVE_PROFILE_OPS_WEIGHT = 10.0
+OFFENSIVE_PROFILE_X_WOBA_WEIGHT = 7.0
+OFFENSIVE_PROFILE_HARD_HIT_WEIGHT = 5.0
+OFFENSIVE_PROFILE_BARREL_WEIGHT = 4.0
+OFFENSIVE_PROFILE_AVG_EV_WEIGHT = 4.0
+
+# Pitcher k_rate kinematic blend (V10.0).  When ≥3 Statcast kinematic
+# sub-signals are present AND K/9 is also present, the trait is a weighted
+# blend.  Previously inline as 0.70 / 0.30 in score_pitcher_k_rate.
+KINEMATIC_BLEND_KIN_WEIGHT = 0.70  # kinematic-physics share
+KINEMATIC_BLEND_K9_WEIGHT = 0.30  # K/9-outcome share
+
+# Pitcher era_whip blend (V12.2 restored pre-V10.8).  Previously inline as
+# 0.60 / 0.40 in score_pitcher_era_whip.
+ERA_WHIP_ERA_WEIGHT = 0.60
+ERA_WHIP_WHIP_WEIGHT = 0.40
+
+# V16 Phase 2 — outer trait weights extracted from app/core/weights.py
+# dataclass defaults.  Single source of truth: weights.py reads these.
+# Sweepable via BO_OVERRIDE_<NAME>.  Audit harness reads them when
+# reconstructing trait scores, so the harness <-> engine alignment is
+# automatic.  Sums to 100 for each side.
+PITCHER_WEIGHT_ACE_STATUS = 30.0
+PITCHER_WEIGHT_K_RATE = 35.0
+PITCHER_WEIGHT_RECENT_FORM = 20.0
+PITCHER_WEIGHT_ERA_WHIP = 15.0
+BATTER_WEIGHT_OFFENSIVE_PROFILE = 40.0
+BATTER_WEIGHT_RECENT_FORM = 25.0
+BATTER_WEIGHT_HOT_STREAK = 25.0
+BATTER_WEIGHT_SPEED_COMPONENT = 10.0
 
 # V10.8 — batter xwOBA scaling.  xwOBA derives from exit velocity + launch
 # angle (and sprint speed for some batted balls); it captures the full

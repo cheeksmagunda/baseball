@@ -50,10 +50,7 @@ os.environ.setdefault("BO_CURRENT_SEASON", "2026")
 from app.core import constants as _C  # noqa: E402
 from app.core.constants import (  # noqa: E402
     MIN_SCORE_THRESHOLD,
-    POSITION_VOLUME_MULTIPLIER,
     STACK_BONUS,
-    TRAIT_MODIFIER_CEILING,
-    TRAIT_MODIFIER_FLOOR,
     canonicalize_team,
     is_stack_eligible_game,
 )
@@ -64,43 +61,51 @@ def _get(name: str) -> float:
     return getattr(_C, name)
 
 
-# ---- V16 Phase 1 trait-score reconstruction from CSV columns ----
+# ---- V16 Phase 2 trait-score reconstruction from CSV columns ----
 #
-# Mirrors app/services/scoring_engine.py on the sub-signals we have data
-# for in historical_players.csv (Statcast + season aggregates).  Skips
-# game-log-derived sub-signals (recent_form, hot_streak) — the harness
-# has no per-game logs.  Re-normalises across the available components.
+# Mirrors app/services/scoring_engine.py FAITHFULLY on the sub-signals we
+# have CSV data for.  All thresholds and sub-weights are read live from
+# app.core.constants (single source of truth) so:
+#   1. BO_OVERRIDE_<NAME> sweeps the SAME constant the live runtime uses
+#   2. Drift between harness and live engine is impossible
+#   3. Pre-V16-Phase-2 the harness had its own _TRAIT_* constants that
+#      DIFFERED from the live thresholds (e.g. OPS floor 0.65 vs live
+#      0.70).  Those duplicates are gone — the harness now scores against
+#      the same gates the live engine uses.
 #
-# Floors/ceilings come from app/core/constants.py SCORING_* and
-# OFFENSIVE_PROFILE_* constants; duplicated here verbatim so a sweep
-# that overrides them via BO_OVERRIDE_ stays consistent with what the
-# live runtime would do.
-_TRAIT_OPS_FLOOR = 0.65
-_TRAIT_OPS_CEILING = 0.95
-_TRAIT_X_WOBA_FLOOR = 0.30
-_TRAIT_X_WOBA_CEILING = 0.45
-_TRAIT_HARD_HIT_FLOOR = 25.0
-_TRAIT_HARD_HIT_CEILING = 50.0
-_TRAIT_BARREL_FLOOR = 3.0
-_TRAIT_BARREL_CEILING = 14.0
-_TRAIT_AVG_EV_FLOOR = 86.0
-_TRAIT_AVG_EV_CEILING = 95.0
+# Skipped sub-signals (game-log dependent — harness can't reconstruct):
+#   - score_batter_recent_form (game logs)
+#   - score_hot_streak (game logs)
+#   - score_speed_component (sb / games not in CSV)
+#   - score_pitcher_recent_form (game logs)
+#
+# Re-normalisation:
+#   batter total = offensive_profile / 40 × 100  (one of 4 traits, 40 of 100)
+#   pitcher total = (ace_status + k_rate + era_whip) / 80 × 100  (3 of 4
+#       pitcher traits, 80 of 100; recent_form skipped)
 
-# Pitcher (descending: lower ERA/WHIP/x_woba_against = better trait → higher score)
-_TRAIT_ERA_FLOOR = 5.5
-_TRAIT_ERA_CEILING = 2.5
-_TRAIT_WHIP_FLOOR = 1.50
-_TRAIT_WHIP_CEILING = 1.00
-_TRAIT_K9_FLOOR = 6.0
-_TRAIT_K9_CEILING = 11.0
-_TRAIT_X_WOBA_AGAINST_FLOOR = 0.350
-_TRAIT_X_WOBA_AGAINST_CEILING = 0.250
-_TRAIT_FB_VELO_FLOOR = 91.0
-_TRAIT_FB_VELO_CEILING = 97.5
-_TRAIT_WHIFF_FLOOR = 22.0
-_TRAIT_WHIFF_CEILING = 32.0
-_TRAIT_CHASE_FLOOR = 26.0
-_TRAIT_CHASE_CEILING = 36.0
+
+# Pitcher ace_status ERA buckets — kept inline as they're not currently
+# sweep targets.  If you want to sweep the bucket boundaries, extract them
+# to constants.py first.
+_ACE_STATUS_BUCKETS = [
+    (2.5, 1.00),
+    (3.0, 0.85),
+    (3.5, 0.70),
+    (4.0, 0.50),
+    (4.5, 0.30),
+    (float("inf"), 0.10),
+]
+
+
+def _ace_status_score(era: float | None) -> float | None:
+    """Mirror score_ace_status: ERA-bucketed quality multiplier on [0, 1]."""
+    if era is None:
+        return None
+    for cutoff, frac in _ACE_STATUS_BUCKETS:
+        if era < cutoff:
+            return frac
+    return _ACE_STATUS_BUCKETS[-1][1]
 
 
 def _scale(value: float | None, floor: float, ceil: float) -> float | None:
@@ -125,54 +130,124 @@ def _weighted_normalize(components: list[tuple[float | None, float]]) -> float |
     return num / den
 
 
+def _compute_offensive_profile_score(row: dict) -> float | None:
+    """Mirror app.services.scoring_engine.score_offensive_profile.
+
+    Returns 0-1 normalised score (None if OPS missing).  Live engine
+    multiplies by max_pts=40; we re-normalise to 100 at the caller.
+    """
+    ops = _opt_float(row.get("ops_at_slate"))
+    if ops is None:
+        return None
+    x_woba = _opt_float(row.get("x_woba"))
+    hard_hit = _opt_float(row.get("hard_hit_pct"))
+    barrel = _opt_float(row.get("barrel_pct"))
+    avg_ev = _opt_float(row.get("avg_ev"))
+    components = [
+        (
+            _scale(ops, _C.OFFENSIVE_PROFILE_OPS_FLOOR, _C.OFFENSIVE_PROFILE_OPS_CEILING),
+            _C.OFFENSIVE_PROFILE_OPS_WEIGHT,
+        ),
+        (
+            _scale(x_woba, _C.POWER_PROFILE_X_WOBA_FLOOR, _C.POWER_PROFILE_X_WOBA_CEILING),
+            _C.OFFENSIVE_PROFILE_X_WOBA_WEIGHT,
+        ),
+        (
+            _scale(hard_hit, _C.POWER_PROFILE_HARD_HIT_FLOOR, _C.POWER_PROFILE_HARD_HIT_MAX),
+            _C.OFFENSIVE_PROFILE_HARD_HIT_WEIGHT,
+        ),
+        (
+            _scale(barrel, _C.POWER_PROFILE_BARREL_PCT_FLOOR, _C.POWER_PROFILE_BARREL_PCT_MAX),
+            _C.OFFENSIVE_PROFILE_BARREL_WEIGHT,
+        ),
+        (
+            _scale(avg_ev, _C.POWER_PROFILE_AVG_EV_FLOOR, _C.POWER_PROFILE_AVG_EV_MAX),
+            _C.OFFENSIVE_PROFILE_AVG_EV_WEIGHT,
+        ),
+    ]
+    return _weighted_normalize(components)
+
+
+def _compute_pitcher_k_rate_score(row: dict) -> float | None:
+    """Mirror app.services.scoring_engine.score_pitcher_k_rate.
+
+    Returns 0-1 normalised score.  When ≥3 kinematic sub-signals are
+    present AND K/9 is also present, the result is a weighted blend
+    (KIN_WEIGHT * kinematic + K9_WEIGHT * k9_norm).  Otherwise falls back
+    to K/9 alone.
+    """
+    k9 = _opt_float(row.get("k9_at_slate"))
+    fb_velo = _opt_float(row.get("fb_velo"))
+    whiff = _opt_float(row.get("whiff_pct"))
+    chase = _opt_float(row.get("chase_pct"))
+    # Note: fb_ivb and fb_extension aren't in the historical CSV, so the
+    # harness has at most 3 of the engine's 5 kinematic sub-signals.
+    kin_subs = [
+        _scale(fb_velo, _C.SCORING_FB_VELOCITY_FLOOR, _C.SCORING_FB_VELOCITY_CEILING),
+        _scale(whiff, _C.SCORING_WHIFF_PCT_FLOOR, _C.SCORING_WHIFF_PCT_CEILING),
+        _scale(chase, _C.SCORING_CHASE_PCT_FLOOR, _C.SCORING_CHASE_PCT_CEILING),
+    ]
+    kin_present = [v for v in kin_subs if v is not None]
+    if len(kin_present) >= 3:
+        kinematic = sum(kin_present) / len(kin_present)
+        if k9 is not None:
+            k9_norm = _scale(k9, _C.SCORING_K9_FLOOR, _C.SCORING_K9_CEILING)
+            return (
+                _C.KINEMATIC_BLEND_KIN_WEIGHT * kinematic + _C.KINEMATIC_BLEND_K9_WEIGHT * k9_norm
+            )
+        return kinematic
+    # Fallback: K/9 alone.
+    if k9 is None:
+        return None
+    return _scale(k9, _C.SCORING_K9_FLOOR, _C.SCORING_K9_CEILING)
+
+
+def _compute_pitcher_era_whip_score(row: dict) -> float | None:
+    """Mirror app.services.scoring_engine.score_pitcher_era_whip."""
+    era = _opt_float(row.get("era_at_slate"))
+    whip = _opt_float(row.get("whip_at_slate"))
+    if era is None or whip is None:
+        return None
+    era_score = _scale(_C.SCORING_ERA_CEILING - era, 0.0, _C.SCORING_ERA_RANGE)
+    whip_score = _scale(_C.SCORING_WHIP_CEILING - whip, 0.0, _C.SCORING_WHIP_RANGE)
+    if era_score is None or whip_score is None:
+        return None
+    return era_score * _C.ERA_WHIP_ERA_WEIGHT + whip_score * _C.ERA_WHIP_WHIP_WEIGHT
+
+
 def compute_trait_score_from_csv(row: dict, is_pitcher: bool) -> float | None:
     """Reconstruct a 0-100 trait_score from CSV columns.
 
-    V16 Phase 1: previously the harness held trait_factor = 1.0 because
-    Statcast aggregates weren't in historical_players.csv.  Phase 0
-    (commit 06bde49) backfilled those columns at 91.4% coverage.  This
-    function consumes them, so a non-flat trait_factor flows through
-    the harness's filter_ev computation and TV-rate measurement.
+    Faithful mirror of app.services.scoring_engine via the sub-scorers
+    above.  Re-normalises to 0-100 across the engine traits the harness
+    can compute (skipping recent_form / hot_streak / speed_component
+    which all need game-log data not in the CSV).
 
-    Re-normalises across present components — a row with all five batter
-    sub-signals contributes the full 30 weight; a row missing avg_ev
-    contributes 26 weight, with the same proportional sum.  Same posture
-    as the live offensive_profile / pitcher_k_rate scorers.
+    Engine weight budget covered:
+      - Batter: offensive_profile (40 of 100)  → renormed to 100
+      - Pitcher: ace_status + k_rate + era_whip (80 of 100) → renormed to 100
+
+    Returns None if the row has no usable signal — caller falls back to
+    neutral trait_factor (1.0), same as the live rookie path.
     """
     if is_pitcher:
-        era = _opt_float(row.get("era_at_slate"))
-        whip = _opt_float(row.get("whip_at_slate"))
-        k9 = _opt_float(row.get("k9_at_slate"))
-        x_woba_against = _opt_float(row.get("x_woba_against"))
-        fb_velo = _opt_float(row.get("fb_velo"))
-        whiff = _opt_float(row.get("whiff_pct"))
-        chase = _opt_float(row.get("chase_pct"))
-        components = [
-            (_scale(era, _TRAIT_ERA_FLOOR, _TRAIT_ERA_CEILING), 30.0),
-            (_scale(whip, _TRAIT_WHIP_FLOOR, _TRAIT_WHIP_CEILING), 15.0),
-            (_scale(k9, _TRAIT_K9_FLOOR, _TRAIT_K9_CEILING), 15.0),
-            (
-                _scale(x_woba_against, _TRAIT_X_WOBA_AGAINST_FLOOR, _TRAIT_X_WOBA_AGAINST_CEILING),
-                10.0,
-            ),
-            (_scale(fb_velo, _TRAIT_FB_VELO_FLOOR, _TRAIT_FB_VELO_CEILING), 10.0),
-            (_scale(whiff, _TRAIT_WHIFF_FLOOR, _TRAIT_WHIFF_CEILING), 12.0),
-            (_scale(chase, _TRAIT_CHASE_FLOOR, _TRAIT_CHASE_CEILING), 8.0),
-        ]
-    else:
-        ops = _opt_float(row.get("ops_at_slate"))
-        x_woba = _opt_float(row.get("x_woba"))
-        hard_hit = _opt_float(row.get("hard_hit_pct"))
-        barrel = _opt_float(row.get("barrel_pct"))
-        avg_ev = _opt_float(row.get("avg_ev"))
-        components = [
-            (_scale(ops, _TRAIT_OPS_FLOOR, _TRAIT_OPS_CEILING), 10.0),
-            (_scale(x_woba, _TRAIT_X_WOBA_FLOOR, _TRAIT_X_WOBA_CEILING), 7.0),
-            (_scale(hard_hit, _TRAIT_HARD_HIT_FLOOR, _TRAIT_HARD_HIT_CEILING), 5.0),
-            (_scale(barrel, _TRAIT_BARREL_FLOOR, _TRAIT_BARREL_CEILING), 4.0),
-            (_scale(avg_ev, _TRAIT_AVG_EV_FLOOR, _TRAIT_AVG_EV_CEILING), 4.0),
-        ]
-    norm = _weighted_normalize(components)
+        ace = _ace_status_score(_opt_float(row.get("era_at_slate")))
+        krt = _compute_pitcher_k_rate_score(row)
+        ewh = _compute_pitcher_era_whip_score(row)
+        # Engine's pitcher trait sum (recent_form skipped) = 30+35+15 = 80.
+        # Re-normalise to 100 at the end.
+        wts = (
+            (ace, _C.PITCHER_WEIGHT_ACE_STATUS),
+            (krt, _C.PITCHER_WEIGHT_K_RATE),
+            (ewh, _C.PITCHER_WEIGHT_ERA_WHIP),
+        )
+        norm = _weighted_normalize(list(wts))
+        if norm is None:
+            return None
+        return norm * 100.0
+    # Batter — only offensive_profile is reconstructable; the other three
+    # batter traits (recent_form, hot_streak, speed) need game logs.
+    norm = _compute_offensive_profile_score(row)
     if norm is None:
         return None
     return norm * 100.0
@@ -220,9 +295,9 @@ def neutral_total_score() -> float:
     Returns score in [0, 100] suitable to pass on a candidate.
     """
     trait_floor_frac = MIN_SCORE_THRESHOLD / 100.0
-    raw_trait = trait_floor_frac + (1.0 - TRAIT_MODIFIER_FLOOR) * (1.0 - trait_floor_frac) / (
-        TRAIT_MODIFIER_CEILING - TRAIT_MODIFIER_FLOOR
-    )
+    floor = _get("TRAIT_MODIFIER_FLOOR")
+    ceiling = _get("TRAIT_MODIFIER_CEILING")
+    raw_trait = trait_floor_frac + (1.0 - floor) * (1.0 - trait_floor_frac) / (ceiling - floor)
     return raw_trait * 100.0
 
 
@@ -413,13 +488,6 @@ def score_one_player(
     in_blowout = (not is_pitcher) and (team in eligible)
     stack_bonus = STACK_BONUS if in_blowout else 1.0
 
-    if is_pitcher:
-        position_mult = 1.0
-    elif os.environ.get("BO_DROP_POSITION_VOLUME") == "1":
-        position_mult = 1.0
-    else:
-        position_mult = POSITION_VOLUME_MULTIPLIER.get((row["position"] or "").upper(), 1.0)
-
     # V16 Phase 1: real trait_factor from Statcast + season aggregates in CSV.
     # Pre-V16 the harness held trait_factor = 1.0 because Statcast wasn't in
     # the CSV (V15.5 known limitation).  Phase 0 backfilled those columns;
@@ -432,15 +500,11 @@ def score_one_player(
     volatility_amp = 1.0
     dnp_adj = 1.0
 
+    # V16 Phase 2: position_mult removed.  V13.3's catcher / 2B-SS haircut
+    # was deleted in V16 Phase 1 (single source of truth: app/core/constants.py
+    # no longer defines POSITION_VOLUME_MULTIPLIER).  Mirrors live runtime.
     filter_ev = (
-        env_factor
-        * volatility_amp
-        * trait_factor
-        * leverage_factor
-        * stack_bonus
-        * dnp_adj
-        * position_mult
-        * 100.0
+        env_factor * volatility_amp * trait_factor * leverage_factor * stack_bonus * dnp_adj * 100.0
     )
 
     # tv is read strictly as an OUTCOME LABEL.  It is never an input to
@@ -468,7 +532,7 @@ def score_one_player(
         "env_factor": env_factor,
         "leverage_factor": leverage_factor,
         "stack_bonus": stack_bonus,
-        "position_mult": position_mult,
+        "trait_factor": trait_factor,
         "pop_score": pop_score,
         # outcome labels (NEVER inputs to scoring — see module docstring)
         "rs_outcome": rs_outcome,
@@ -481,7 +545,7 @@ def primary_miss_cause(c: dict) -> str:
     deficits = {
         "low_env": max(0.0, 1.0 - c["env_factor"]),
         "leverage_discount": max(0.0, 1.0 - c["leverage_factor"]),
-        "position_haircut": max(0.0, 1.0 - c["position_mult"]),
+        "low_trait": max(0.0, 1.0 - c["trait_factor"]),
     }
     cause = max(deficits, key=lambda k: deficits[k])
     if deficits[cause] < 0.05:
@@ -508,22 +572,55 @@ def _maybe_override(varname: str) -> None:
         setattr(_pop, varname, typed)
 
 
-def main() -> int:
-    # Allow constant overrides for parameter sweeps (env-driven, no code edits).
-    for v in [
-        "ENV_MODIFIER_FLOOR",
-        "ENV_MODIFIER_CEILING",
-        "PITCHER_ENV_MODIFIER_CEILING",
-        "ROOKIE_ENV_MODIFIER_CEILING",
-        "POPULARITY_NEUTRAL_SCORE",
-        "POPULARITY_SLOPE",
-        "POPULARITY_MULT_FLOOR",
-        "POPULARITY_MULT_CEILING",
-        "STACK_BONUS",
-        "TRAIT_MODIFIER_FLOOR",
-        "TRAIT_MODIFIER_CEILING",
-    ]:
+SWEEPABLE_CONSTANTS = (
+    # Env modifier band (per-position ceilings)
+    "ENV_MODIFIER_FLOOR",
+    "ENV_MODIFIER_CEILING",
+    "PITCHER_ENV_MODIFIER_CEILING",
+    "ROOKIE_ENV_MODIFIER_CEILING",
+    # Popularity / leverage curve (V15.6, retuned V16 Phase 1)
+    "POPULARITY_NEUTRAL_SCORE",
+    "POPULARITY_SLOPE",
+    "POPULARITY_MULT_FLOOR",
+    "POPULARITY_MULT_CEILING",
+    # Stack bonus (V13.3)
+    "STACK_BONUS",
+    # Trait modifier band (V15.4)
+    "TRAIT_MODIFIER_FLOOR",
+    "TRAIT_MODIFIER_CEILING",
+    # V16 Phase 2 — trait sub-weights
+    "OFFENSIVE_PROFILE_OPS_WEIGHT",
+    "OFFENSIVE_PROFILE_X_WOBA_WEIGHT",
+    "OFFENSIVE_PROFILE_HARD_HIT_WEIGHT",
+    "OFFENSIVE_PROFILE_BARREL_WEIGHT",
+    "OFFENSIVE_PROFILE_AVG_EV_WEIGHT",
+    "KINEMATIC_BLEND_KIN_WEIGHT",
+    "KINEMATIC_BLEND_K9_WEIGHT",
+    "ERA_WHIP_ERA_WEIGHT",
+    "ERA_WHIP_WHIP_WEIGHT",
+    "PITCHER_WEIGHT_ACE_STATUS",
+    "PITCHER_WEIGHT_K_RATE",
+    "PITCHER_WEIGHT_ERA_WHIP",
+    "BATTER_WEIGHT_OFFENSIVE_PROFILE",
+    # Composition caps
+    "MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE",
+    "MAX_PLAYERS_PER_GAME_BATTERS",
+)
+
+
+def apply_sweep_overrides() -> None:
+    """Read every BO_OVERRIDE_<name> env var and patch app.core.constants.
+
+    Single source of truth for which constants are sweepable.  Both
+    audit_hv_hit_rate.py and audit_lineup_tv.py call this so the override
+    surface is consistent across harnesses.
+    """
+    for v in SWEEPABLE_CONSTANTS:
         _maybe_override(v)
+
+
+def main() -> int:
+    apply_sweep_overrides()
 
     historical_csv = ROOT / "data" / "historical_players.csv"
     slate_results_json = ROOT / "data" / "historical_slate_results.json"
@@ -621,7 +718,7 @@ def main() -> int:
                         "env_factor": round(c["env_factor"], 3),
                         "leverage_factor": round(c["leverage_factor"], 3),
                         "stack_bonus": round(c["stack_bonus"], 3),
-                        "position_mult": round(c["position_mult"], 3),
+                        "trait_factor": round(c["trait_factor"], 3),
                         "pop_score": round(c["pop_score"], 2),
                         "primary_miss_cause": primary_miss_cause(c),
                     }
@@ -642,7 +739,7 @@ def main() -> int:
                 "env_factor",
                 "leverage_factor",
                 "stack_bonus",
-                "position_mult",
+                "trait_factor",
                 "pop_score",
                 "primary_miss_cause",
             ],
@@ -725,17 +822,16 @@ def main() -> int:
     print(
         f"  POPULARITY: NEUTRAL={_get('POPULARITY_NEUTRAL_SCORE')}, SLOPE={_get('POPULARITY_SLOPE')}, mult range [{_get('POPULARITY_MULT_FLOOR')}, {_get('POPULARITY_MULT_CEILING')}]"
     )
-    pos_vol_dict = POSITION_VOLUME_MULTIPLIER
-    if os.environ.get("BO_DROP_POSITION_VOLUME") == "1":
-        pos_vol_status = "DISABLED via env override"
-    elif not pos_vol_dict:
-        pos_vol_status = "removed (V16 Phase 1) — empty dict"
-    else:
-        pos_vol_status = f"active {dict(pos_vol_dict)}"
     print(
         f"  TRAIT band [{_get('TRAIT_MODIFIER_FLOOR')}, {_get('TRAIT_MODIFIER_CEILING')}]  (V16 Phase 1: real Statcast-driven trait_factor)"
     )
-    print(f"  POSITION_VOLUME_MULTIPLIER: {pos_vol_status}")
+    print(
+        f"  Trait sub-weights — OPS={_get('OFFENSIVE_PROFILE_OPS_WEIGHT')} "
+        f"xwOBA={_get('OFFENSIVE_PROFILE_X_WOBA_WEIGHT')} "
+        f"HH%={_get('OFFENSIVE_PROFILE_HARD_HIT_WEIGHT')} "
+        f"brl%={_get('OFFENSIVE_PROFILE_BARREL_WEIGHT')} "
+        f"EV={_get('OFFENSIVE_PROFILE_AVG_EV_WEIGHT')}"
+    )
     return 0
 
 
