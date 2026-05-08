@@ -222,7 +222,6 @@ def aggregate_batter_through(df: pd.DataFrame, slate_date: str) -> dict[int, dic
         x_slg = group["estimated_slg_using_speedangle"].mean()
 
         ls = group["launch_speed"].dropna()
-        la = group["launch_angle"].dropna()
         avg_ev = ls.mean() if len(ls) > 0 else None
         max_ev = ls.max() if len(ls) > 0 else None
         hh_count = (ls >= 95).sum() if len(ls) > 0 else 0
