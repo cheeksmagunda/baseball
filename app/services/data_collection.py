@@ -282,6 +282,48 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict[str, int]:
 
     db.commit()
 
+    # Single shared RotoWire fetch.  RotoWire is a hard dependency at T-65
+    # for two distinct enrichments and we don't want to hit their endpoint
+    # twice in the same pipeline run:
+    #   (a) backfilling MLB-API-unannounced probable starters on SlateGame
+    #       rows from RotoWire's beat-reporter projections;
+    #   (b) batting order on SlatePlayer rows.
+    # Failure raises here so the pipeline crashes and /optimize returns 503,
+    # identical posture to the prior single-purpose RotoWire fetch.
+    from app.core.rotowire import fetch_expected_lineups
+
+    try:
+        rw_games = await fetch_expected_lineups()
+    except Exception as exc:
+        raise RuntimeError(
+            f"RotoWire expected-lineup fetch failed: {exc}. RotoWire is the "
+            "single source of truth for batting orders and pre-card probable "
+            "pitchers at T-65 — no fallback. Investigate immediately."
+        ) from exc
+
+    if not rw_games:
+        raise RuntimeError(
+            "RotoWire returned 0 parseable games — their HTML markup may have "
+            "changed. Cannot proceed without batting orders / probable pitchers. "
+            "Inspect app/core/rotowire.py::parse_lineups_html and update the parser."
+        )
+
+    # Backfill SlateGame probable starters from RotoWire BEFORE the
+    # _ensure_probable_starters_present hydrate.  The MLB Stats API's
+    # /schedule?hydrate=probablePitcher only reflects what teams have
+    # OFFICIALLY announced, but at T-65 some teams haven't yet (especially
+    # for late-window games or after weather/scheduling churn).  RotoWire's
+    # beat-reporter "expected" probable pitcher is the industry-standard
+    # source for that gap (every open-source MLB DFS optimizer uses it).
+    # When RotoWire and MLB agree, no-op; when MLB has nothing and RotoWire
+    # has an expected starter, we adopt the RotoWire pick — still real
+    # data, sourced from beat reporters, never a synthetic fallback.
+    rw_starter_backfilled = await _backfill_probable_starters_from_rotowire(
+        db, slate, rw_games, logger
+    )
+    if rw_starter_backfilled:
+        db.commit()
+
     # Ensure every probable starter has a Player + SlatePlayer row, even if
     # they didn't appear on their team's active roster fetch (recent call-up
     # or transaction not yet reflected in /teams/{id}/roster?rosterType=active).
@@ -292,17 +334,17 @@ async def populate_slate_players(db: Session, slate: Slate) -> dict[str, int]:
     if starter_added:
         db.commit()
 
-    # Enrich with batting order from RotoWire expected lineups. RotoWire is
+    # Enrich with batting order from the same RotoWire fetch.  RotoWire is
     # the single source of truth at T-65 — beat-reporter projections are
     # published hours before MLB's official card (which only appears 30-60 min
     # before each game's first pitch, i.e. usually AFTER T-65 for all but the
-    # earliest game on the slate). Hard dependency: failure raises, the entire
-    # T-65 pipeline crashes, and /optimize returns HTTP 503.
-    rw_enriched = await _enrich_batting_order_from_rotowire(db, slate, logger)
+    # earliest game on the slate).
+    rw_enriched = _populate_batting_order_from_rotowire(db, slate, rw_games, logger)
 
     logger.info(
-        "Populated %d slate players (%d skipped/existing, %d batting orders enriched from RotoWire)",
-        added, skipped, rw_enriched,
+        "Populated %d slate players (%d skipped/existing, %d probable starters "
+        "backfilled from RotoWire, %d batting orders enriched from RotoWire)",
+        added, skipped, rw_starter_backfilled, rw_enriched,
     )
     return {"added": added, "skipped": skipped}
 
@@ -459,47 +501,148 @@ async def _ensure_probable_starters_present(db: Session, slate: Slate) -> int:
     return added
 
 
-async def _enrich_batting_order_from_rotowire(db: Session, slate: Slate, logger) -> int:
+async def _backfill_probable_starters_from_rotowire(
+    db: Session, slate: Slate, rw_games: list, logger
+) -> int:
+    """Backfill SlateGame.{home,away}_starter from RotoWire when MLB hydrate
+    didn't return a probable pitcher.
+
+    Some teams haven't officially announced their probable starter at T-65
+    (most common: late-window games where the team is waiting on bullpen-
+    day decisions, doubleheader splits, weather-affected days). MLB Stats
+    API's `/schedule?hydrate=probablePitcher` only reflects official team
+    announcements; the resulting `home_starter` / `away_starter` field is
+    None for those games. RotoWire's beat-reporter projection covers that
+    gap — it's the same source every open-source MLB DFS optimizer
+    (chanzer0/MLB-DFS-Tools, evolve-dfs, etc.) uses for expected starters.
+
+    Resolution order for each missing slot:
+      1. Match RotoWire's full-name pitcher against the active-roster
+         Player table by `(team, name_normalized)`. ~95% of expected
+         starters are on the active roster — typical case.
+      2. Fall back to MLB's `/people/search` for the rare case where the
+         starter isn't on the active roster (recent call-up, IL stash
+         starting today). The mlb_id we get back lets the existing
+         `_ensure_probable_starters_present` and `fetch_player_season_stats`
+         hydrates run their normal paths.
+      3. If both fail, leave the SlateGame fields None — the strict
+         assertion at the end of `run_fetch_player_stats` surfaces the
+         specific game so ops can investigate. We never invent a starter.
+
+    Returns the number of (game, side) slots backfilled.
     """
-    Pre-fill SlatePlayer.batting_order from RotoWire's expected lineups.
-
-    RotoWire publishes beat-reporter projections hours before first pitch —
-    much earlier than MLB's official card serialisation. They are the
-    de-facto industry source for expected lineups and the single source of
-    truth for batting order at T-65.
-
-    Hard dependency under the no-fallbacks rule: a network failure, non-200
-    response, parse failure, or zero parseable games all raise RuntimeError.
-    The slate monitor's top-level handler converts the exception to HTTP 503
-    on /optimize so users see a clear error rather than a degraded lineup.
-    RotoWire is required infrastructure at T-65 — it is the only source of
-    batting order data before the official MLB card drops.
-
-    Sets `batting_order_source` to "rotowire_confirmed" or "rotowire_expected"
-    based on RotoWire's own status flag.
-    """
-    from app.core.rotowire import LineupStatus, fetch_expected_lineups
     from app.models.player import Player, normalize_name
 
-    try:
-        games = await fetch_expected_lineups()
-    except Exception as exc:
-        raise RuntimeError(
-            f"RotoWire expected-lineup fetch failed: {exc}. RotoWire is the "
-            "single source of truth for batting orders at T-65 — no fallback. "
-            "Investigate immediately."
-        ) from exc
-
+    games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+    games = [g for g in games if is_game_remaining(g.game_status)]
     if not games:
-        raise RuntimeError(
-            "RotoWire returned 0 parseable games — their HTML markup may have "
-            "changed. Cannot proceed without batting orders. Inspect "
-            "app/core/rotowire.py::parse_lineups_html and update the parser."
-        )
+        return 0
+
+    # Index RotoWire's expected pitchers by team for O(1) lookup.
+    rw_pitcher_by_team: dict[str, tuple[str, str | None]] = {}
+    for rw_game in rw_games:
+        for team_lineup in (rw_game.visitor, rw_game.home):
+            if team_lineup.starting_pitcher:
+                rw_pitcher_by_team[team_lineup.team.upper()] = (
+                    team_lineup.starting_pitcher,
+                    team_lineup.pitcher_throws,
+                )
+
+    if not rw_pitcher_by_team:
+        return 0
+
+    backfilled = 0
+    for game in games:
+        for side, name_field, mlb_id_field, hand_field, team in [
+            ("home", "home_starter", "home_starter_mlb_id", "home_starter_hand", game.home_team),
+            ("away", "away_starter", "away_starter_mlb_id", "away_starter_hand", game.away_team),
+        ]:
+            if getattr(game, name_field):
+                continue  # Already populated by MLB hydrate — leave it alone.
+            rw = rw_pitcher_by_team.get(team.upper())
+            if rw is None:
+                continue
+            rw_name, rw_throws = rw
+
+            # Step 1: try to resolve mlb_id from the in-memory active roster.
+            norm = normalize_name(rw_name)
+            roster_match = (
+                db.query(Player)
+                .filter(Player.team == team, Player.name_normalized == norm)
+                .first()
+            )
+            mlb_id: int | None = None
+            if roster_match is not None and roster_match.mlb_id is not None:
+                mlb_id = roster_match.mlb_id
+
+            # Step 2: fall back to MLB's player search for off-roster
+            # call-ups / IL-return debuts.  Strict team match required;
+            # we never guess.
+            if mlb_id is None:
+                try:
+                    results = await search_player(rw_name)
+                except Exception as exc:
+                    logger.warning(
+                        "RotoWire-projected starter %s (%s) for %s@%s: "
+                        "MLB /people/search raised %s — leaving slot empty so "
+                        "the strict assertion in stage 2 surfaces the gap.",
+                        rw_name, team, game.away_team, game.home_team, exc,
+                    )
+                    continue
+                for r in results or []:
+                    if r.get("currentTeam", {}).get("abbreviation", "") == team:
+                        mlb_id = r.get("id")
+                        break
+                if mlb_id is None:
+                    logger.warning(
+                        "RotoWire-projected starter %s (%s) for %s@%s: "
+                        "no active-roster Player and /people/search returned "
+                        "no exact-team match — leaving slot empty so the "
+                        "strict assertion in stage 2 surfaces the gap. "
+                        "Likely a stale RotoWire scrape (DFS feed lagging "
+                        "trade) or MLB people index lag.",
+                        rw_name, team, game.away_team, game.home_team,
+                    )
+                    continue
+
+            # Set name + mlb_id so `_ensure_probable_starters_present` will
+            # create the Player + SlatePlayer row if it doesn't already
+            # exist, and `fetch_player_season_stats` will hydrate ERA/WHIP/K9
+            # downstream.  Set hand only if MLB hydrate didn't provide it.
+            setattr(game, name_field, rw_name)
+            setattr(game, mlb_id_field, mlb_id)
+            if rw_throws and not getattr(game, hand_field):
+                setattr(game, hand_field, rw_throws)
+            backfilled += 1
+            logger.info(
+                "RotoWire backfill: %s@%s %s starter set to %s "
+                "(mlb_id=%s, throws=%s) — MLB schedule hydrate had no "
+                "probable pitcher.",
+                game.away_team, game.home_team, side, rw_name,
+                mlb_id, rw_throws or "?",
+            )
+
+    return backfilled
+
+
+def _populate_batting_order_from_rotowire(
+    db: Session, slate: Slate, rw_games: list, logger
+) -> int:
+    """Pre-fill SlatePlayer.batting_order from a pre-fetched RotoWire result.
+
+    Pure DB-side helper; the network fetch is owned by `populate_slate_players`
+    so RotoWire is hit once per pipeline run and the same result feeds both
+    probable-starter backfill and batting-order enrichment.
+    """
+    from app.core.rotowire import LineupStatus
+    from app.models.player import Player, normalize_name
+
+    if not rw_games:
+        return 0
 
     # Build lookup: (team_uppercase, normalized_full_name) -> (order, source)
     lookup: dict[tuple[str, str], tuple[int, str]] = {}
-    for game in games:
+    for game in rw_games:
         for team_lineup in (game.visitor, game.home):
             source = (
                 "rotowire_confirmed" if team_lineup.status == LineupStatus.CONFIRMED
@@ -512,7 +655,6 @@ async def _enrich_batting_order_from_rotowire(db: Session, slate: Slate, logger)
     if not lookup:
         return 0
 
-    # Match against this slate's SlatePlayers via Player.name_normalized + team.
     sps = (
         db.query(SlatePlayer)
         .join(Player, SlatePlayer.player_id == Player.id)
@@ -533,6 +675,42 @@ async def _enrich_batting_order_from_rotowire(db: Session, slate: Slate, logger)
     if enriched:
         db.commit()
     return enriched
+
+
+async def _enrich_batting_order_from_rotowire(db: Session, slate: Slate, logger) -> int:
+    """
+    Pre-fill SlatePlayer.batting_order from RotoWire's expected lineups.
+
+    Standalone wrapper that owns its own fetch — kept for direct test use
+    and for any caller that doesn't already have a parsed RotoWire result.
+    The T-65 pipeline goes through `populate_slate_players`, which fetches
+    RotoWire once and feeds the result into both probable-starter backfill
+    and `_populate_batting_order_from_rotowire`.
+
+    Hard dependency under the no-fallbacks rule: a network failure, non-200
+    response, parse failure, or zero parseable games all raise RuntimeError.
+    The slate monitor's top-level handler converts the exception to HTTP 503
+    on /optimize so users see a clear error rather than a degraded lineup.
+    """
+    from app.core.rotowire import fetch_expected_lineups
+
+    try:
+        games = await fetch_expected_lineups()
+    except Exception as exc:
+        raise RuntimeError(
+            f"RotoWire expected-lineup fetch failed: {exc}. RotoWire is the "
+            "single source of truth for batting orders at T-65 — no fallback. "
+            "Investigate immediately."
+        ) from exc
+
+    if not games:
+        raise RuntimeError(
+            "RotoWire returned 0 parseable games — their HTML markup may have "
+            "changed. Cannot proceed without batting orders. Inspect "
+            "app/core/rotowire.py::parse_lineups_html and update the parser."
+        )
+
+    return _populate_batting_order_from_rotowire(db, slate, games, logger)
 
 
 async def fetch_boxscore_results(db: Session, slate: Slate) -> int:

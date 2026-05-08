@@ -294,16 +294,39 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
         if ps_row is not None:
             starter_rookie_lookup[p.mlb_id] = bool(ps_row.is_rookie_track)
 
-    missing: list[str] = []
-    for game in [g for g in games if is_game_remaining(g.game_status)]:
+    # Per-game tolerance for residual probable-starter gaps after RotoWire
+    # backfill.  By the time we reach this gate, two upstream sources have
+    # already been consulted:
+    #   1. MLB Stats API /schedule?hydrate=probablePitcher (official team
+    #      announcement) — populates home_starter / away_starter on the
+    #      SlateGame at fetch time.
+    #   2. RotoWire daily-lineups beat-reporter projection — backfills any
+    #      slot MLB left empty (see _backfill_probable_starters_from_rotowire).
+    # If a slot is STILL empty after those two, no live source on the open
+    # internet knows tonight's starter for that team yet.  Per the no-
+    # fallback rule we never invent ERA/WHIP/K9, so the only correct
+    # posture is to DROP that game from the slate (Vegas-lines partial-
+    # coverage pattern, see enrich_slate_game_vegas_lines).  The same drop
+    # fires when an announced starter has missing ERA/WHIP/K9 and isn't
+    # rookie-track — that's a real data-collection bug for that one
+    # player, but its blast radius is bounded to the one game it lives
+    # in, so dropping the game lets the rest of the slate score.
+    #
+    # Full-outage check: if EVERY remaining game fails the gate, BOTH MLB
+    # and RotoWire are down or our hydrate is broken — raise loudly.
+    remaining_games = [g for g in games if is_game_remaining(g.game_status)]
+    games_to_drop: list[SlateGame] = []
+    drop_reasons: dict[int, list[str]] = {}
+    for game in remaining_games:
+        reasons: list[str] = []
         for side, name_field, mlb_id_field, era_field, whip_field, k9_field in [
             ("home", "home_starter", "home_starter_mlb_id", "home_starter_era", "home_starter_whip", "home_starter_k_per_9"),
             ("away", "away_starter", "away_starter_mlb_id", "away_starter_era", "away_starter_whip", "away_starter_k_per_9"),
         ]:
             starter_name = getattr(game, name_field)
             if not starter_name:
-                missing.append(
-                    f"{game.away_team}@{game.home_team} {side} starter NOT ANNOUNCED"
+                reasons.append(
+                    f"{side} starter unannounced (neither MLB nor RotoWire)"
                 )
                 continue
             era = getattr(game, era_field)
@@ -319,19 +342,83 @@ async def run_fetch_player_stats(db: Session, game_date: date) -> dict:
                         game.away_team, game.home_team, side, starter_name, starter_mlb_id,
                     )
                     continue
-                missing.append(
-                    f"{game.away_team}@{game.home_team} {side}={starter_name} "
-                    f"era={era} whip={whip} k9={k9}"
+                reasons.append(
+                    f"{side}={starter_name} stats unhydratable "
+                    f"(era={era} whip={whip} k9={k9})"
                 )
-    if missing:
-        raise RuntimeError(
-            "Probable-starter stat enrichment incomplete after stage 2:\n  "
-            + "\n  ".join(missing)
-            + "\nEvery announced non-rookie starter must have ERA/WHIP/K9 in "
-            "PlayerStats — no fallbacks. Investigate /people/{mlb_id} stats "
-            "hydrate or active-roster vs probable-pitcher mismatch.  True "
-            "rookie debutants are auto-flagged for the rookie track in "
-            "fetch_player_season_stats and skip this gate."
+        if reasons:
+            games_to_drop.append(game)
+            drop_reasons[game.id] = reasons
+
+    if games_to_drop:
+        kept = [g for g in remaining_games if g not in games_to_drop]
+        if not kept:
+            raise RuntimeError(
+                "Probable-starter stat enrichment failed for ALL "
+                f"{len(games_to_drop)} remaining game(s) on {game_date}:\n  "
+                + "\n  ".join(
+                    f"{g.away_team}@{g.home_team}: " + "; ".join(drop_reasons[g.id])
+                    for g in games_to_drop
+                )
+                + "\nBoth the MLB Stats API probablePitcher hydrate and the "
+                "RotoWire expected-lineup scrape returned nothing for every "
+                "game — full upstream outage suspected.  Pipeline cannot "
+                "proceed.  Investigate /people/{mlb_id} stats hydrate, the "
+                "active-roster fetch, and RotoWire scraper before retrying."
+            )
+
+        # Cascade-delete dropped games: their SlatePlayers, those players'
+        # PlayerScores + ScoreBreakdowns, and the SlateGames themselves.
+        # Same cascade order as enrich_slate_game_vegas_lines.
+        drop_ids = [g.id for g in games_to_drop]
+        sp_ids = [
+            r for (r,) in db.query(SlatePlayer.id).filter(
+                SlatePlayer.game_id.in_(drop_ids)
+            )
+        ]
+        if sp_ids:
+            ps_ids = [
+                r for (r,) in db.query(PlayerScore.id).filter(
+                    PlayerScore.slate_player_id.in_(sp_ids)
+                )
+            ]
+            if ps_ids:
+                db.query(ScoreBreakdown).filter(
+                    ScoreBreakdown.player_score_id.in_(ps_ids)
+                ).delete(synchronize_session=False)
+            db.query(PlayerScore).filter(
+                PlayerScore.slate_player_id.in_(sp_ids)
+            ).delete(synchronize_session=False)
+        db.query(SlatePlayer).filter(
+            SlatePlayer.game_id.in_(drop_ids)
+        ).delete(synchronize_session=False)
+        db.query(SlateGame).filter(
+            SlateGame.id.in_(drop_ids)
+        ).delete(synchronize_session=False)
+        db.commit()
+
+        for game in games_to_drop:
+            logger.warning(
+                "Probable-starter gate: dropping %s@%s from %s slate due to %s. "
+                "Pipeline continues with remaining games.",
+                game.away_team, game.home_team, game_date,
+                "; ".join(drop_reasons[game.id]),
+            )
+        logger.warning(
+            "Probable-starter gate: dropped %d of %d remaining game(s) from %s slate. "
+            "Pipeline continues with %d game(s).",
+            len(games_to_drop), len(remaining_games), game_date, len(kept),
+        )
+
+        # Refresh local mirrors of the now-shrunk slate so the downstream
+        # batter-OPS gate, team-stats enrichment, and platoon-advantage
+        # loop only see the games (and their SlatePlayers) that survived.
+        games = db.query(SlateGame).filter_by(slate_id=slate.id).all()
+        slate_players = (
+            db.query(SlatePlayer)
+            .options(joinedload(SlatePlayer.player))
+            .filter_by(slate_id=slate.id)
+            .all()
         )
 
     # Strict assertion (V13.1): every RotoWire-projected batter MUST have OPS

@@ -262,6 +262,151 @@ class TestRookieTrackBatterTolerance:
 
 
 # ---------------------------------------------------------------------------
+# pipeline.run_fetch_player_stats — per-game drop on residual starter gaps
+# ---------------------------------------------------------------------------
+
+class TestRunFetchPlayerStatsPerGameDrop:
+    """The May 2026 fix: when both the MLB Stats API probablePitcher hydrate
+    AND the RotoWire expected-lineup scrape return no probable starter for
+    a given game, drop that game from the slate (cascade-delete its
+    SlatePlayers, PlayerScores, ScoreBreakdowns, and the SlateGame itself)
+    and continue with the rest of the slate.  Mirrors the Vegas-lines
+    partial-coverage pattern so a single unannounced starter no longer
+    crashes the whole T-65 pipeline.
+
+    Pre-fix the strict assertion raised RuntimeError("...home starter NOT
+    ANNOUNCED..."); the entire slate produced zero picks even when 14 of
+    15 games had perfectly hydratable starters.
+    """
+
+    @pytest.mark.asyncio
+    async def test_unannounced_starter_drops_game_and_continues(
+        self, db_session, monkeypatch
+    ):
+        from app.models.slate import SlatePlayer
+        from app.services import pipeline as pipeline_module
+
+        slate = Slate(date=date(2026, 5, 8), game_count=2, status="pending")
+        db_session.add(slate)
+        db_session.flush()
+
+        # Game A: NYY @ BOS, both starters fully populated — should survive.
+        good_game = SlateGame(
+            slate_id=slate.id,
+            home_team="BOS", away_team="NYY",
+            game_status="Preview",
+            home_starter="Brayan Bello", away_starter="Carlos Rodon",
+            home_starter_era=4.20, home_starter_whip=1.30, home_starter_k_per_9=8.5,
+            away_starter_era=3.50, away_starter_whip=1.20, away_starter_k_per_9=10.0,
+        )
+        db_session.add(good_game)
+
+        # Game B: PIT @ SF, SF starter unannounced (the user's bug).
+        bad_game = SlateGame(
+            slate_id=slate.id,
+            home_team="SF", away_team="PIT",
+            game_status="Preview",
+            home_starter=None,                  # unannounced
+            away_starter="Mitch Keller",
+            home_starter_era=None, home_starter_whip=None, home_starter_k_per_9=None,
+            away_starter_era=4.10, away_starter_whip=1.25, away_starter_k_per_9=8.0,
+        )
+        db_session.add(bad_game)
+        db_session.flush()
+
+        # SlatePlayer rows for the to-be-dropped game so we verify cascade.
+        ghost = Player(
+            name="SF Bench Bat", name_normalized=normalize_name("SF Bench Bat"),
+            team="SF", position="OF", mlb_id=900_001,
+        )
+        db_session.add(ghost)
+        db_session.flush()
+        ghost_sp = SlatePlayer(
+            slate_id=slate.id, player_id=ghost.id,
+            game_id=bad_game.id, batting_order=1, player_status="active",
+        )
+        db_session.add(ghost_sp)
+
+        bos_bat = Player(
+            name="Rafael Devers", name_normalized=normalize_name("Rafael Devers"),
+            team="BOS", position="3B", mlb_id=646240,
+        )
+        db_session.add(bos_bat)
+        db_session.flush()
+        bos_sp = SlatePlayer(
+            slate_id=slate.id, player_id=bos_bat.id,
+            game_id=good_game.id, batting_order=3, player_status="active",
+        )
+        db_session.add(bos_sp)
+
+        # Surviving batter must have OPS to clear the strict OPS gate.
+        db_session.add(PlayerStats(player_id=bos_bat.id, season=2026, ops=0.880))
+
+        db_session.commit()
+        bad_game_id = bad_game.id
+        ghost_sp_id = ghost_sp.id
+
+        async def _noop(_db, _player):
+            return None
+
+        monkeypatch.setattr(pipeline_module, "fetch_player_season_stats", _noop)
+        monkeypatch.setattr(
+            pipeline_module, "enrich_slate_game_team_stats",
+            _noop_enrich,
+        )
+
+        await pipeline_module.run_fetch_player_stats(db_session, date(2026, 5, 8))
+
+        # The bad game and its SlatePlayer are gone; the good game survives.
+        assert db_session.query(SlateGame).filter_by(id=bad_game_id).first() is None
+        assert db_session.query(SlatePlayer).filter_by(id=ghost_sp_id).first() is None
+        assert db_session.query(SlateGame).filter_by(id=good_game.id).first() is not None
+        assert db_session.query(SlatePlayer).filter_by(id=bos_sp.id).first() is not None
+
+    @pytest.mark.asyncio
+    async def test_all_games_unannounced_raises_full_outage(
+        self, db_session, monkeypatch
+    ):
+        """Full-outage check: when EVERY remaining game lacks a starter
+        from both MLB and RotoWire, the pipeline must crash loudly so ops
+        investigates a vendor-side issue rather than silently producing
+        an empty slate."""
+        import pytest as _pytest
+
+        from app.services import pipeline as pipeline_module
+
+        slate = Slate(date=date(2026, 5, 8), game_count=2, status="pending")
+        db_session.add(slate)
+        db_session.flush()
+
+        for home, away in [("SF", "PIT"), ("LAA", "TEX")]:
+            db_session.add(SlateGame(
+                slate_id=slate.id,
+                home_team=home, away_team=away,
+                game_status="Preview",
+                home_starter=None, away_starter=None,
+            ))
+        db_session.commit()
+
+        async def _noop(_db, _player):
+            return None
+
+        monkeypatch.setattr(pipeline_module, "fetch_player_season_stats", _noop)
+
+        with _pytest.raises(RuntimeError, match="failed for ALL"):
+            await pipeline_module.run_fetch_player_stats(
+                db_session, date(2026, 5, 8)
+            )
+
+
+async def _noop_enrich(*args, **kwargs):
+    """Stand-in for `enrich_slate_game_team_stats` in tests that bypass
+    the team-stats network fetch.  Returns None silently — the team-
+    stats column data isn't asserted in these tests."""
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # lineup_cache
 # ---------------------------------------------------------------------------
 
