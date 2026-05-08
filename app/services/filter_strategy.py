@@ -431,15 +431,30 @@ def compute_pitcher_env_score(
       - Home-field flat +0.5 (no audit separation; ML / O/U / park already
         capture the meaningful asymmetry)
     """
-    # Strict-mode precondition (May 2026): every live pitcher env signal must
-    # be present.  Vegas (ML, O/U), park, season stats (K/9, ERA), and team
-    # OPS are all mandatory T-65 inputs.  A None here is a data-collection bug.
+    # Strict-mode precondition (May 2026): every VENDOR-mandatory live pitcher
+    # env signal must be present.  Vegas (ML, O/U), park, and team OPS are
+    # always available for every game on every slate; a None here is a real
+    # data-collection bug (Odds API outage, MLB team-stats fetch failure,
+    # etc.) and the pipeline must crash loud.
+    #
+    # `pitcher_k_per_9` and `own_starter_era` are EXEMPT from the strict
+    # precondition because rookie-track pitchers (true MLB debutants flagged
+    # by `fetch_player_season_stats` and admitted by the rookie carve-out in
+    # `run_fetch_player_stats`'s per-game drop) legitimately have None for
+    # both.  They're tail-bonus signals — the function body already None-
+    # handles them and the bulk of the env score comes from ML / O/U / park /
+    # opp_team_ops, which DO fire for rookies.  Without this carve-out, every
+    # rookie spot-starter would crash the slate at scoring time, recreating
+    # the failure mode V13.2 was specifically built to prevent.
+    #
+    # For non-rookie pitchers missing ERA/K9, the per-game drop in
+    # `run_fetch_player_stats` already catches the bug upstream and drops
+    # the offending game from the slate, so this code path is never reached
+    # for veteran data-collection failures.
     _required = {
         "team_moneyline": team_moneyline,
         "vegas_total": vegas_total,
         "park_team": park_team,
-        "pitcher_k_per_9": pitcher_k_per_9,
-        "own_starter_era": own_starter_era,
         "opp_team_ops": opp_team_ops,
     }
     _missing = [k for k, v in _required.items() if v is None]
@@ -647,18 +662,28 @@ def compute_batter_env_score(
     by `_compute_dnp_adjustment` to distinguish "lineup not yet published"
     from "confirmed not starting".
     """
-    # Strict-mode precondition (May 2026, hardened May 5): every live batter
-    # env signal must be present.  RotoWire DNP filter ensures batting_order;
-    # Vegas / MLB / weather enrichment provides the rest.  A None here means
-    # upstream filter or enrichment broke.  Weather is included because the
-    # CLAUDE.md "Weather, Vegas, and team stats are NOT exceptions to strict
-    # mode" rule applies — Open-Meteo serves every park on every slate; a
-    # missing wind/temp is a vendor outage or app misconfiguration, not a
-    # legitimate missing-data event.  unknown_count is preserved at 0 for
-    # back-compat.
+    # Strict-mode precondition (May 2026, hardened May 5): every VENDOR-
+    # mandatory live batter env signal must be present.  RotoWire DNP filter
+    # ensures batting_order; Vegas / MLB / weather enrichment provides the
+    # rest.  A None here means upstream filter or enrichment broke.
+    # Weather is included because the CLAUDE.md "Weather, Vegas, and team
+    # stats are NOT exceptions to strict mode" rule applies — Open-Meteo
+    # serves every park on every slate; a missing wind/temp is a vendor
+    # outage or app misconfiguration, not a legitimate missing-data event.
+    #
+    # `opp_pitcher_era` and `opp_starter_whip` are EXEMPT from the strict
+    # precondition because they're sourced from the OPPOSING starter's
+    # PlayerStats — and a rookie-track opposing starter (true MLB debutant
+    # admitted by the rookie carve-out in `run_fetch_player_stats`) has
+    # neither.  The function body already None-handles both signals; the
+    # batter still scores on Vegas (O/U redundant — already deleted in V12)
+    # / wind / park / batting order / ML / temp / platoon when facing a
+    # rookie.  Without this carve-out, every batter facing a rookie debut
+    # crashes the slate at scoring time.  For non-rookie opposing starters
+    # missing ERA/WHIP, the per-game drop in `run_fetch_player_stats`
+    # already catches the data-collection bug upstream and drops the game
+    # from the slate, so this code path never runs for veteran failures.
     _required = {
-        "opp_pitcher_era": opp_pitcher_era,
-        "opp_starter_whip": opp_starter_whip,
         "park_team": park_team,
         "team_moneyline": team_moneyline,
         "batting_order": batting_order,

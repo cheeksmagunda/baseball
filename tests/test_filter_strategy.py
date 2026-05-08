@@ -328,10 +328,35 @@ class TestPitcherEnvScore:
         assert any("Underdog" in f for f in factors)
 
     def test_strict_raises_on_missing(self):
-        """Strict-mode (May 2026): every required signal must be present.
-        Calling with no args raises with a list of missing signals."""
+        """Strict-mode (May 2026): every VENDOR-mandatory signal must be
+        present.  Calling with no args raises with a list of missing
+        signals (Vegas / park / opp_team_ops — always available per slate)."""
         with pytest.raises(RuntimeError, match="missing required live signals"):
             compute_pitcher_env_score()
+
+    def test_strict_does_not_require_pitcher_k9_or_own_era(self):
+        """Rookie-track carve-out (May 8): a true MLB-debutant probable
+        starter has no current/prior-season ERA/WHIP/K9 by design — they're
+        admitted by the rookie carve-out in run_fetch_player_stats's
+        per-game drop and routed to score_rookie (neutral trait).  Env
+        scoring still runs for them on Vegas / park / opp_team_ops; the
+        K/9 / ERA tail bonuses are gated internally on `is not None`.
+        Without this carve-out every rookie spot-starter crashes the slate."""
+        base = _baseline_pitcher_env_kwargs()
+        # Drop the rookie-affected signals — must NOT raise.
+        kwargs = {**base, "pitcher_k_per_9": None, "own_starter_era": None}
+        score, factors = compute_pitcher_env_score(**kwargs)
+        assert 0.0 <= score <= 1.0
+        assert isinstance(factors, list)
+
+    def test_strict_still_requires_vendor_signals(self):
+        """Vendor-mandatory inputs (Vegas, park, team OPS) MUST still raise
+        when missing — those serve every game on every slate."""
+        base = _baseline_pitcher_env_kwargs()
+        for vendor_field in ("team_moneyline", "vegas_total", "park_team", "opp_team_ops"):
+            kwargs = {**base, vendor_field: None}
+            with pytest.raises(RuntimeError, match=vendor_field):
+                compute_pitcher_env_score(**kwargs)
 
     def test_ml_peak_at_underdog(self):
         """V13: 38-slate audit shows underdog (≥+100) HV 37.7% beats mild fav 29.8%
@@ -405,9 +430,24 @@ class TestBatterEnvScore:
         assert any("Bloated" in f or "Weak" in f for f in factors)
 
     def test_strict_raises_on_missing(self):
-        """Strict-mode (May 2026): every required signal must be present."""
+        """Strict-mode (May 2026): every VENDOR-mandatory signal must be
+        present.  Calling with no args raises with a list of missing
+        signals (park / ML / batting_order / weather — always available
+        per slate)."""
         with pytest.raises(RuntimeError, match="missing required live signals"):
             compute_batter_env_score()
+
+    def test_strict_does_not_require_opp_pitcher_era_or_whip(self):
+        """Rookie-track opposing-starter carve-out (May 8): when the
+        opposing starter is a true MLB debutant (no current/prior-season
+        ERA/WHIP), the batter still scores on park, weather, ML, batting
+        order, platoon — the body already None-handles ERA/WHIP.  Without
+        this carve-out every batter facing a rookie debut crashes the slate."""
+        base = _baseline_batter_env_kwargs()
+        kwargs = {**base, "opp_pitcher_era": None, "opp_starter_whip": None}
+        score, factors, unknown = compute_batter_env_score(**kwargs)
+        assert 0.0 <= score <= 1.0
+        assert isinstance(factors, list)
 
     def test_strict_raises_on_missing_weather(self):
         """Strict-mode hardened (May 5): weather inputs are required.
