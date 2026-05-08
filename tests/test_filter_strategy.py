@@ -38,6 +38,7 @@ from app.services.filter_strategy import StackableGame
 # Helpers — build test candidates quickly
 # ---------------------------------------------------------------------------
 
+
 def _make_candidate(
     name: str = "Test Player",
     team: str = "NYY",
@@ -105,7 +106,9 @@ def _default_slate() -> SlateClassification:
     )
 
 
-def _stack_eligible_slate(favored_team: str, moneyline: int = -220, vegas_total: float = 9.5) -> SlateClassification:
+def _stack_eligible_slate(
+    favored_team: str, moneyline: int = -220, vegas_total: float = 9.5
+) -> SlateClassification:
     """Slate classification where `favored_team` clears the stack-eligibility gate.
 
     A team is stack-eligible iff its game has moneyline ≤ -200 AND O/U ≥ 9.0.
@@ -143,24 +146,28 @@ def _make_pool(n_pitchers: int = 2, n_batters: int = 10) -> list[FilteredCandida
     pool = []
     idx = 0
     for i in range(n_pitchers):
-        pool.append(_make_candidate(
-            name=f"Pitcher_{i}",
-            team=teams[idx % len(teams)],
-            is_pitcher=True,
-            game_id=100 + idx,
-            total_score=60 + i * 5,
-            env_score=0.85,
-        ))
+        pool.append(
+            _make_candidate(
+                name=f"Pitcher_{i}",
+                team=teams[idx % len(teams)],
+                is_pitcher=True,
+                game_id=100 + idx,
+                total_score=60 + i * 5,
+                env_score=0.85,
+            )
+        )
         idx += 1
     for i in range(n_batters):
-        pool.append(_make_candidate(
-            name=f"Batter_{i}",
-            team=teams[idx % len(teams)],
-            is_pitcher=False,
-            game_id=100 + idx,
-            total_score=40 + i * 3,
-            env_score=0.5 + i * 0.03,
-        ))
+        pool.append(
+            _make_candidate(
+                name=f"Batter_{i}",
+                team=teams[idx % len(teams)],
+                is_pitcher=False,
+                game_id=100 + idx,
+                total_score=40 + i * 3,
+                env_score=0.5 + i * 0.03,
+            )
+        )
         idx += 1
     return pool
 
@@ -168,6 +175,7 @@ def _make_pool(n_pitchers: int = 2, n_batters: int = 10) -> list[FilteredCandida
 # ===================================================================
 # 1. Slate Classification
 # ===================================================================
+
 
 class TestSlateClassification:
     def test_tiny_slate(self):
@@ -209,13 +217,19 @@ class TestSlateClassification:
         cap on the favored side, even when ML/OU don't satisfy PATH 1 or 2.
         Example: ARI@CHC with Merrill Kelly (9.95 ERA) — CHC was capped at 1
         pre-V13.3 but its 0.78 OPS lineup feasted in actual outcome data."""
-        games = [{
-            "home_team": "CHC", "away_team": "ARI",
-            "home_moneyline": -174, "away_moneyline": 146,
-            "vegas_total": 7.5,
-            "home_starter_era": 6.0, "away_starter_era": 9.95,
-            "home_team_ops": 0.783, "away_team_ops": 0.716,
-        }]
+        games = [
+            {
+                "home_team": "CHC",
+                "away_team": "ARI",
+                "home_moneyline": -174,
+                "away_moneyline": 146,
+                "vegas_total": 7.5,
+                "home_starter_era": 6.0,
+                "away_starter_era": 9.95,
+                "home_team_ops": 0.783,
+                "away_team_ops": 0.716,
+            }
+        ]
         result = classify_slate(5, games=games)
         chc_entries = [s for s in result.stackable_games if s.favored_team == "CHC"]
         ari_entries = [s for s in result.stackable_games if s.favored_team == "ARI"]
@@ -228,27 +242,37 @@ class TestSlateClassification:
 
     def test_path3_below_era_floor_not_stackable(self):
         """PATH 3 must NOT fire when opp SP ERA is below 6.5, even with strong offense."""
-        games = [{
-            "home_team": "NYY", "away_team": "BAL",
-            "home_moneyline": -162, "away_moneyline": 136,
-            "vegas_total": 8.5,
-            "home_starter_era": 2.39, "away_starter_era": 5.79,  # 5.79 < 6.5
-            "home_team_ops": 0.785, "away_team_ops": 0.700,
-        }]
+        games = [
+            {
+                "home_team": "NYY",
+                "away_team": "BAL",
+                "home_moneyline": -162,
+                "away_moneyline": 136,
+                "vegas_total": 8.5,
+                "home_starter_era": 2.39,
+                "away_starter_era": 5.79,  # 5.79 < 6.5
+                "home_team_ops": 0.785,
+                "away_team_ops": 0.700,
+            }
+        ]
         result = classify_slate(5, games=games)
-        assert result.stackable_games == [], (
-            "5.79 ERA is below the conservative 6.5 PATH 3 floor"
-        )
+        assert result.stackable_games == [], "5.79 ERA is below the conservative 6.5 PATH 3 floor"
 
     def test_path3_below_ops_floor_not_stackable(self):
         """PATH 3 must NOT fire when own team OPS is below 0.760, even vs awful SP."""
-        games = [{
-            "home_team": "BOS", "away_team": "HOU",
-            "home_moneyline": -124, "away_moneyline": 106,
-            "vegas_total": 9.0,
-            "home_starter_era": 2.77, "away_starter_era": 7.63,
-            "home_team_ops": 0.671, "away_team_ops": 0.730,  # both < 0.760
-        }]
+        games = [
+            {
+                "home_team": "BOS",
+                "away_team": "HOU",
+                "home_moneyline": -124,
+                "away_moneyline": 106,
+                "vegas_total": 9.0,
+                "home_starter_era": 2.77,
+                "away_starter_era": 7.63,
+                "home_team_ops": 0.671,
+                "away_team_ops": 0.730,  # both < 0.760
+            }
+        ]
         result = classify_slate(5, games=games)
         assert result.stackable_games == [], (
             "Bad SP doesn't help if neither lineup is above-average"
@@ -276,6 +300,7 @@ class TestSlateClassification:
 # 2. Pitcher Env Score
 # ===================================================================
 
+
 class TestPitcherEnvScore:
     """V13 pitcher env tests — recalibrated against 244-pitcher 38-slate audit.
 
@@ -291,12 +316,12 @@ class TestPitcherEnvScore:
     def test_perfect_env(self):
         # V13: underdog now beats mild fav.  Use underdog ML for the perfect case.
         score, factors = compute_pitcher_env_score(
-            team_moneyline=+150,           # underdog peak → +1.0
-            vegas_total=7.0,               # low total → +1.0
-            park_team="LAD",               # pitcher-ish park → ≤0.95 → +0.6
-            pitcher_k_per_9=11.0,          # elite → +0.4
-            own_starter_era=2.5,           # elite → +0.3
-            opp_team_ops=0.660,            # weak opp → +0.3
+            team_moneyline=+150,  # underdog peak → +1.0
+            vegas_total=7.0,  # low total → +1.0
+            park_team="LAD",  # pitcher-ish park → ≤0.95 → +0.6
+            pitcher_k_per_9=11.0,  # elite → +0.4
+            own_starter_era=2.5,  # elite → +0.3
+            opp_team_ops=0.660,  # weak opp → +0.3
         )
         # Expected total ≈ 3.6 / 4.0 ≈ 0.90 (saturates if more signals stack)
         assert score >= 0.85
@@ -347,6 +372,7 @@ class TestPitcherEnvScore:
 # 3. Batter Env Score
 # ===================================================================
 
+
 class TestBatterEnvScore:
     """V12 batter env tests — calibrated against 994-batter historical audit.
 
@@ -363,15 +389,15 @@ class TestBatterEnvScore:
     def test_perfect_env(self):
         # Lit up: weak opp ERA + WHIP, hitter park, wind out, underdog, top order
         score, factors, unknown = compute_batter_env_score(
-            opp_pitcher_era=6.0,             # +1.4
-            opp_starter_whip=1.55,           # +0.9
-            park_team="COL",                 # +0.3
+            opp_pitcher_era=6.0,  # +1.4
+            opp_starter_whip=1.55,  # +0.9
+            park_team="COL",  # +0.3
             wind_speed_mph=12,
-            wind_direction="OUT TO CF",      # +0.6
-            team_moneyline=+150,             # +0.3 (underdog premium)
-            batting_order=2,                 # +0.4
-            temperature_f=80,                # +0.1
-            platoon_advantage=True,          # +0.3
+            wind_direction="OUT TO CF",  # +0.6
+            team_moneyline=+150,  # +0.3 (underdog premium)
+            batting_order=2,  # +0.4
+            temperature_f=80,  # +0.1
+            platoon_advantage=True,  # +0.3
         )
         # Total ~4.3 / 4.0 → saturates at 1.0
         assert score >= 0.95
@@ -398,15 +424,18 @@ class TestBatterEnvScore:
         series_*, team_l10_wins, opp_team_rest_days from the env score.
         Passing them should have ZERO effect on the result."""
         base = _baseline_batter_env_kwargs()
-        score_with_dead, _, _ = compute_batter_env_score(**{
-            **base,
-            "vegas_total": 10.0,
-            "opp_bullpen_era": 5.5,
-            "opp_starter_k_per_9": 6.0,
-            "series_team_wins": 3, "series_opp_wins": 0,
-            "team_l10_wins": 8,
-            "opp_team_rest_days": 0,
-        })
+        score_with_dead, _, _ = compute_batter_env_score(
+            **{
+                **base,
+                "vegas_total": 10.0,
+                "opp_bullpen_era": 5.5,
+                "opp_starter_k_per_9": 6.0,
+                "series_team_wins": 3,
+                "series_opp_wins": 0,
+                "team_l10_wins": 8,
+                "opp_team_rest_days": 0,
+            }
+        )
         score_without_dead, _, _ = compute_batter_env_score(**base)
         assert score_with_dead == pytest.approx(score_without_dead, abs=0.001)
 
@@ -463,6 +492,7 @@ class TestBatterEnvScore:
 # 4. DNP Adjustment
 # ===================================================================
 
+
 class TestDNPAdjustment:
     """Strict-mode (May 2026): the DNP filter excludes any batter without a
     projected batting order, so `_compute_dnp_adjustment` always returns 1.0
@@ -478,6 +508,7 @@ class TestDNPAdjustment:
 
     def test_batter_no_order_raises(self):
         import pytest
+
         c = _make_candidate(batting_order=None)
         with pytest.raises(RuntimeError, match="DNP filter"):
             _compute_dnp_adjustment(c)
@@ -486,6 +517,7 @@ class TestDNPAdjustment:
 # ===================================================================
 # 7. Base EV Computation
 # ===================================================================
+
 
 class TestBaseEV:
     def test_ev_is_positive(self):
@@ -511,6 +543,7 @@ class TestBaseEV:
 # ===================================================================
 # 7b. V16 Phase 1 — POSITION_VOLUME_MULTIPLIER REMOVED + V13.3 rookie env cap
 # ===================================================================
+
 
 class TestV133PositionAndRookie:
     """V13.3 catcher/2B/SS haircut was removed in V16 Phase 1 (May 8, 2026).
@@ -628,6 +661,7 @@ class TestV133PositionAndRookie:
 # 92.5% of historical winning lineups contained at least one HV player
 # not on the Most Popular leaderboard.
 
+
 class TestLeverageFactor:
     """V15: continuous popularity-score → multiplier curve (replaces V14 buckets)."""
 
@@ -636,13 +670,17 @@ class TestLeverageFactor:
         the predicted-sleeper above the predicted-consensus pick.  This is
         the central contrarian invariant."""
         consensus = _make_candidate(
-            name="Consensus", team="NYY",
-            total_score=70.0, env_score=0.7,
+            name="Consensus",
+            team="NYY",
+            total_score=70.0,
+            env_score=0.7,
             predicted_ownership_score=8.0,  # Tier 1 + star + fame
         )
         sleeper = _make_candidate(
-            name="Sleeper", team="KC",
-            total_score=70.0, env_score=0.7,
+            name="Sleeper",
+            team="KC",
+            total_score=70.0,
+            env_score=0.7,
             predicted_ownership_score=0.0,  # Tier 4, no fame
         )
         ev_consensus = _compute_base_ev(consensus)
@@ -687,8 +725,8 @@ class TestLeverageFactor:
         # Strictly non-increasing (allows equal at clamps)
         for i in range(len(multipliers) - 1):
             assert multipliers[i] >= multipliers[i + 1], (
-                f"Curve non-monotonic at score {scores[i]}→{scores[i+1]}: "
-                f"{multipliers[i]:.3f} → {multipliers[i+1]:.3f}"
+                f"Curve non-monotonic at score {scores[i]}→{scores[i + 1]}: "
+                f"{multipliers[i]:.3f} → {multipliers[i + 1]:.3f}"
             )
 
     def test_none_score_is_neutral(self):
@@ -696,6 +734,7 @@ class TestLeverageFactor:
         to neutral 1.0 multiplier (only place a default is acceptable)."""
         none_pred = _make_candidate(predicted_ownership_score=None)
         from app.core.constants import POPULARITY_NEUTRAL_SCORE
+
         neutral_pred = _make_candidate(predicted_ownership_score=POPULARITY_NEUTRAL_SCORE)
         ev_none = _compute_base_ev(none_pred)
         ev_neutral = _compute_base_ev(neutral_pred)
@@ -706,11 +745,15 @@ class TestLeverageFactor:
         is not elevated to the top just because the player is a sleeper.
         A high-env consensus pick must still rank above a low-env sleeper."""
         weak_sleeper = _make_candidate(
-            name="WeakSleeper", total_score=20.0, env_score=0.2,
+            name="WeakSleeper",
+            total_score=20.0,
+            env_score=0.2,
             predicted_ownership_score=0.0,  # max sleeper boost
         )
         strong_consensus = _make_candidate(
-            name="StrongConsensus", total_score=85.0, env_score=0.85,
+            name="StrongConsensus",
+            total_score=85.0,
+            env_score=0.85,
             predicted_ownership_score=10.0,  # max consensus discount
         )
         assert _compute_base_ev(strong_consensus) > _compute_base_ev(weak_sleeper)
@@ -729,6 +772,7 @@ class TestLeverageFactor:
 # ===================================================================
 # 8. Composition Enforcement
 # ===================================================================
+
 
 class TestComposition:
     def test_exactly_5_players(self):
@@ -755,6 +799,7 @@ class TestComposition:
             c.filter_ev = _compute_base_ev(c)
         lineup = _enforce_composition(pool, _default_slate())
         from collections import Counter
+
         batter_team_counts = Counter(c.team for c in lineup if not c.is_pitcher)
         for team, count in batter_team_counts.items():
             assert count <= MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT, (
@@ -764,13 +809,52 @@ class TestComposition:
     def test_stack_eligible_team_allows_mini_stack(self):
         """V10.1: a team in a blowout + high-total game may contribute up to 2 batters (mini-stack)."""
         pool = [
-            _make_candidate(name="SP_0", team="BOS", is_pitcher=True, game_id=1, total_score=80, env_score=0.7),
-            _make_candidate(name="NYY_1", team="NYY", is_pitcher=False, game_id=2, total_score=75, env_score=0.95),
-            _make_candidate(name="NYY_2", team="NYY", is_pitcher=False, game_id=2, total_score=72, env_score=0.93),
-            _make_candidate(name="NYY_3", team="NYY", is_pitcher=False, game_id=2, total_score=70, env_score=0.92),
-            _make_candidate(name="NYY_4", team="NYY", is_pitcher=False, game_id=2, total_score=68, env_score=0.90),
-            _make_candidate(name="LAD_1", team="LAD", is_pitcher=False, game_id=3, total_score=55, env_score=0.6),
-            _make_candidate(name="HOU_1", team="HOU", is_pitcher=False, game_id=4, total_score=50, env_score=0.55),
+            _make_candidate(
+                name="SP_0", team="BOS", is_pitcher=True, game_id=1, total_score=80, env_score=0.7
+            ),
+            _make_candidate(
+                name="NYY_1",
+                team="NYY",
+                is_pitcher=False,
+                game_id=2,
+                total_score=75,
+                env_score=0.95,
+            ),
+            _make_candidate(
+                name="NYY_2",
+                team="NYY",
+                is_pitcher=False,
+                game_id=2,
+                total_score=72,
+                env_score=0.93,
+            ),
+            _make_candidate(
+                name="NYY_3",
+                team="NYY",
+                is_pitcher=False,
+                game_id=2,
+                total_score=70,
+                env_score=0.92,
+            ),
+            _make_candidate(
+                name="NYY_4",
+                team="NYY",
+                is_pitcher=False,
+                game_id=2,
+                total_score=68,
+                env_score=0.90,
+            ),
+            _make_candidate(
+                name="LAD_1", team="LAD", is_pitcher=False, game_id=3, total_score=55, env_score=0.6
+            ),
+            _make_candidate(
+                name="HOU_1",
+                team="HOU",
+                is_pitcher=False,
+                game_id=4,
+                total_score=50,
+                env_score=0.55,
+            ),
         ]
         for c in pool:
             c.filter_ev = _compute_base_ev(c)
@@ -782,15 +866,54 @@ class TestComposition:
     def test_per_game_cap_two(self):
         """V10.1: never more than 2 batters from the same game, even across teams."""
         pool = [
-            _make_candidate(name="SP_0", team="CHC", is_pitcher=True, game_id=99, total_score=80, env_score=0.7),
+            _make_candidate(
+                name="SP_0", team="CHC", is_pitcher=True, game_id=99, total_score=80, env_score=0.7
+            ),
             # Two NYY + two BOS batters all from the same game (game_id=2)
-            _make_candidate(name="NYY_1", team="NYY", is_pitcher=False, game_id=2, total_score=75, env_score=0.95),
-            _make_candidate(name="NYY_2", team="NYY", is_pitcher=False, game_id=2, total_score=74, env_score=0.94),
-            _make_candidate(name="BOS_1", team="BOS", is_pitcher=False, game_id=2, total_score=73, env_score=0.93),
-            _make_candidate(name="BOS_2", team="BOS", is_pitcher=False, game_id=2, total_score=72, env_score=0.92),
+            _make_candidate(
+                name="NYY_1",
+                team="NYY",
+                is_pitcher=False,
+                game_id=2,
+                total_score=75,
+                env_score=0.95,
+            ),
+            _make_candidate(
+                name="NYY_2",
+                team="NYY",
+                is_pitcher=False,
+                game_id=2,
+                total_score=74,
+                env_score=0.94,
+            ),
+            _make_candidate(
+                name="BOS_1",
+                team="BOS",
+                is_pitcher=False,
+                game_id=2,
+                total_score=73,
+                env_score=0.93,
+            ),
+            _make_candidate(
+                name="BOS_2",
+                team="BOS",
+                is_pitcher=False,
+                game_id=2,
+                total_score=72,
+                env_score=0.92,
+            ),
             # Fallback picks from other games
-            _make_candidate(name="LAD_1", team="LAD", is_pitcher=False, game_id=3, total_score=55, env_score=0.6),
-            _make_candidate(name="HOU_1", team="HOU", is_pitcher=False, game_id=4, total_score=50, env_score=0.55),
+            _make_candidate(
+                name="LAD_1", team="LAD", is_pitcher=False, game_id=3, total_score=55, env_score=0.6
+            ),
+            _make_candidate(
+                name="HOU_1",
+                team="HOU",
+                is_pitcher=False,
+                game_id=4,
+                total_score=50,
+                env_score=0.55,
+            ),
         ]
         for c in pool:
             c.filter_ev = _compute_base_ev(c)
@@ -809,6 +932,7 @@ class TestComposition:
         )
         lineup = _enforce_composition(pool, slate)
         from collections import Counter
+
         game_counts = Counter(c.game_id for c in lineup if not c.is_pitcher)
         assert all(v <= 2 for v in game_counts.values()), f"Per-game cap violated: {game_counts}"
 
@@ -817,12 +941,39 @@ class TestComposition:
         a low total below the shootout threshold (10.5) also fails PATH 2.
         With ML=-230 and O/U=7.5, neither path fires → no stack unlocked."""
         pool = [
-            _make_candidate(name="SP_0", team="BOS", is_pitcher=True, game_id=1, total_score=80, env_score=0.7),
-            _make_candidate(name="NYY_1", team="NYY", is_pitcher=False, game_id=2, total_score=75, env_score=0.95),
-            _make_candidate(name="NYY_2", team="NYY", is_pitcher=False, game_id=2, total_score=72, env_score=0.93),
-            _make_candidate(name="LAD_1", team="LAD", is_pitcher=False, game_id=3, total_score=55, env_score=0.6),
-            _make_candidate(name="HOU_1", team="HOU", is_pitcher=False, game_id=4, total_score=50, env_score=0.55),
-            _make_candidate(name="SF_1", team="SF", is_pitcher=False, game_id=5, total_score=48, env_score=0.5),
+            _make_candidate(
+                name="SP_0", team="BOS", is_pitcher=True, game_id=1, total_score=80, env_score=0.7
+            ),
+            _make_candidate(
+                name="NYY_1",
+                team="NYY",
+                is_pitcher=False,
+                game_id=2,
+                total_score=75,
+                env_score=0.95,
+            ),
+            _make_candidate(
+                name="NYY_2",
+                team="NYY",
+                is_pitcher=False,
+                game_id=2,
+                total_score=72,
+                env_score=0.93,
+            ),
+            _make_candidate(
+                name="LAD_1", team="LAD", is_pitcher=False, game_id=3, total_score=55, env_score=0.6
+            ),
+            _make_candidate(
+                name="HOU_1",
+                team="HOU",
+                is_pitcher=False,
+                game_id=4,
+                total_score=50,
+                env_score=0.55,
+            ),
+            _make_candidate(
+                name="SF_1", team="SF", is_pitcher=False, game_id=5, total_score=48, env_score=0.5
+            ),
         ]
         for c in pool:
             c.filter_ev = _compute_base_ev(c)
@@ -830,6 +981,7 @@ class TestComposition:
         slate = _stack_eligible_slate(favored_team="NYY", moneyline=-230, vegas_total=7.5)
         lineup = _enforce_composition(pool, slate)
         from collections import Counter
+
         nyy_count = Counter(c.team for c in lineup if not c.is_pitcher)["NYY"]
         assert nyy_count <= MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT, (
             f"Low-O/U game should not unlock NYY stack, got {nyy_count}"
@@ -854,11 +1006,41 @@ class TestComposition:
     def test_anchor_teammate_allowed_when_stack_eligible(self):
         """V10.1: anchor + teammate-stack in a stack-eligible game is permitted."""
         pool = [
-            _make_candidate(name="SP_0", team="NYY", is_pitcher=True, game_id=1, total_score=80, env_score=0.8),
-            _make_candidate(name="Teammate_1", team="NYY", is_pitcher=False, game_id=1, total_score=70, env_score=0.9),
-            _make_candidate(name="Bat_Bos", team="BOS", is_pitcher=False, game_id=2, total_score=60, env_score=0.8),
-            _make_candidate(name="Bat_Lad", team="LAD", is_pitcher=False, game_id=3, total_score=55, env_score=0.75),
-            _make_candidate(name="Bat_Hou", team="HOU", is_pitcher=False, game_id=4, total_score=50, env_score=0.7),
+            _make_candidate(
+                name="SP_0", team="NYY", is_pitcher=True, game_id=1, total_score=80, env_score=0.8
+            ),
+            _make_candidate(
+                name="Teammate_1",
+                team="NYY",
+                is_pitcher=False,
+                game_id=1,
+                total_score=70,
+                env_score=0.9,
+            ),
+            _make_candidate(
+                name="Bat_Bos",
+                team="BOS",
+                is_pitcher=False,
+                game_id=2,
+                total_score=60,
+                env_score=0.8,
+            ),
+            _make_candidate(
+                name="Bat_Lad",
+                team="LAD",
+                is_pitcher=False,
+                game_id=3,
+                total_score=55,
+                env_score=0.75,
+            ),
+            _make_candidate(
+                name="Bat_Hou",
+                team="HOU",
+                is_pitcher=False,
+                game_id=4,
+                total_score=50,
+                env_score=0.7,
+            ),
         ]
         for c in pool:
             c.filter_ev = _compute_base_ev(c)
@@ -883,6 +1065,7 @@ class TestComposition:
     def test_too_few_batters_no_pitcher_raises(self):
         """If there's no pitcher AND fewer than 5 batters, neither variant works."""
         from app.services.filter_strategy import _enforce_composition
+
         too_few = [
             _make_candidate(name=f"B{i}", team=t, game_id=i)
             for i, t in enumerate(["NYY", "BOS", "LAD"])
@@ -898,14 +1081,21 @@ class TestComposition:
         unlocks the 4-of-5-winners-yesterday shootout shape."""
         # Single weak pitcher
         weak_pitcher = _make_candidate(
-            "WeakP", is_pitcher=True, env_score=0.4, total_score=30,
-            game_id=99, team="WSH",
+            "WeakP",
+            is_pitcher=True,
+            env_score=0.4,
+            total_score=30,
+            game_id=99,
+            team="WSH",
         )
         # 5 strong batters on different teams
         strong_batters = [
             _make_candidate(
-                name=f"StrongB{i}", team=t, game_id=i,
-                env_score=0.9, total_score=85,
+                name=f"StrongB{i}",
+                team=t,
+                game_id=i,
+                env_score=0.9,
+                total_score=85,
             )
             for i, t in enumerate(["NYY", "BOS", "LAD", "HOU", "ATL"])
         ]
@@ -922,13 +1112,20 @@ class TestComposition:
         """When the best pitcher has a strong EV edge over the marginal batter,
         the 1P+4B shape should win.  Sanity check that V10.5 doesn't regress."""
         strong_pitcher = _make_candidate(
-            "AcePitcher", is_pitcher=True, env_score=0.95, total_score=95,
-            game_id=99, team="WSH",
+            "AcePitcher",
+            is_pitcher=True,
+            env_score=0.95,
+            total_score=95,
+            game_id=99,
+            team="WSH",
         )
         weak_batters = [
             _make_candidate(
-                name=f"WeakB{i}", team=t, game_id=i,
-                env_score=0.30, total_score=20,
+                name=f"WeakB{i}",
+                team=t,
+                game_id=i,
+                env_score=0.30,
+                total_score=20,
             )
             for i, t in enumerate(["NYY", "BOS", "LAD", "HOU", "ATL"])
         ]
@@ -944,6 +1141,7 @@ class TestComposition:
 # ===================================================================
 # 10. Slot Assignment
 # ===================================================================
+
 
 class TestSlotAssignment:
     def test_5_slots_assigned(self):
@@ -973,6 +1171,7 @@ class TestSlotAssignment:
 # 11. Full Pipeline: run_filter_strategy
 # ===================================================================
 
+
 class TestRunFilterStrategy:
     def test_produces_valid_lineup(self):
         """V12: any pitcher count 0..5 is legal; chooser picks best by EV."""
@@ -999,8 +1198,14 @@ class TestRunFilterStrategy:
         """
         pool = []
         for i in range(6):
-            c = _make_candidate(name=f"P{i}", team=f"T{i}", is_pitcher=True,
-                                game_id=i, env_score=0.85, total_score=70)
+            c = _make_candidate(
+                name=f"P{i}",
+                team=f"T{i}",
+                is_pitcher=True,
+                game_id=i,
+                env_score=0.85,
+                total_score=70,
+            )
             pool.append(c)
         with pytest.raises(ValueError, match="lineup variant"):
             run_filter_strategy(pool, _default_slate())
@@ -1008,24 +1213,50 @@ class TestRunFilterStrategy:
     def test_anti_correlation_guard_blocks_opposing_batter(self):
         """V12: a high-EV opposing batter must NOT be drafted alongside our pitcher."""
         pool = [
-            _make_candidate(name="ACE", team="NYY", is_pitcher=True,
-                            game_id=1, env_score=1.0, total_score=95),
-            _make_candidate(name="OPP_BAT", team="BOS", is_pitcher=False,
-                            game_id=1, env_score=0.99, total_score=95, batting_order=1),
-            _make_candidate(name="TEAMMATE", team="NYY", is_pitcher=False,
-                            game_id=1, env_score=0.85, total_score=80, batting_order=2),
+            _make_candidate(
+                name="ACE", team="NYY", is_pitcher=True, game_id=1, env_score=1.0, total_score=95
+            ),
+            _make_candidate(
+                name="OPP_BAT",
+                team="BOS",
+                is_pitcher=False,
+                game_id=1,
+                env_score=0.99,
+                total_score=95,
+                batting_order=1,
+            ),
+            _make_candidate(
+                name="TEAMMATE",
+                team="NYY",
+                is_pitcher=False,
+                game_id=1,
+                env_score=0.85,
+                total_score=80,
+                batting_order=2,
+            ),
         ]
         for i in range(5):
-            pool.append(_make_candidate(
-                name=f"OTHER_{i}", team=f"T{10+i}", game_id=10+i,
-                env_score=0.6, total_score=55, batting_order=4,
-            ))
+            pool.append(
+                _make_candidate(
+                    name=f"OTHER_{i}",
+                    team=f"T{10 + i}",
+                    game_id=10 + i,
+                    env_score=0.6,
+                    total_score=55,
+                    batting_order=4,
+                )
+            )
         # Pre-set filter_ev so ACE wins (forces 1P+4B variant)
         for c in pool:
-            c.filter_ev = (200.0 if c.player_name == "ACE"
-                           else 150.0 if c.player_name == "OPP_BAT"
-                           else 130.0 if c.player_name == "TEAMMATE"
-                           else 80.0)
+            c.filter_ev = (
+                200.0
+                if c.player_name == "ACE"
+                else 150.0
+                if c.player_name == "OPP_BAT"
+                else 130.0
+                if c.player_name == "TEAMMATE"
+                else 80.0
+            )
         result = run_filter_strategy(pool, _default_slate())
         names = {s.candidate.player_name for s in result.slots}
         # Our pitcher should be in (highest EV by design)
@@ -1034,5 +1265,3 @@ class TestRunFilterStrategy:
         assert "OPP_BAT" not in names, "Anti-correlation guard failed"
         # Teammate is allowed
         assert "TEAMMATE" in names
-
-

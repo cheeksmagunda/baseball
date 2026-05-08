@@ -110,6 +110,7 @@ logger = logging.getLogger(__name__)
 # Filter 1: Slate Classification (§4.2 Filter 1)
 # ---------------------------------------------------------------------------
 
+
 class SlateType(str, Enum):
     TINY = "tiny"
     PITCHER_DAY = "pitcher_day"
@@ -133,6 +134,7 @@ class StackableGame:
     favored team gets a PATH 1 entry (with STACK_BONUS) and the opposing
     team gets a PATH 2 entry (stack-eligible, no bonus).
     """
+
     game_id: int | str | None = None
     favored_team: str = ""
     moneyline: int | None = None
@@ -155,9 +157,12 @@ class SlateClassification:
 
 def _path3_qualifies(opp_era: float | None, own_ops: float | None) -> bool:
     """Return True if PATH 3 stack eligibility is met (bad SP vs good lineup)."""
-    return (opp_era is not None and own_ops is not None
-            and opp_era >= STACK_ELIGIBILITY_PATH3_OPP_SP_ERA
-            and own_ops >= STACK_ELIGIBILITY_PATH3_OWN_TEAM_OPS)
+    return (
+        opp_era is not None
+        and own_ops is not None
+        and opp_era >= STACK_ELIGIBILITY_PATH3_OPP_SP_ERA
+        and own_ops >= STACK_ELIGIBILITY_PATH3_OWN_TEAM_OPS
+    )
 
 
 def classify_slate(
@@ -205,36 +210,74 @@ def classify_slate(
         path1_ou_ok = vt is not None and vt >= STACK_ELIGIBILITY_VEGAS_TOTAL
         if home_ml is not None and home_ml <= BLOWOUT_MONEYLINE_THRESHOLD and path1_ou_ok:
             blowout_games += 1
-            stackable.append(StackableGame(
-                game_id=g.get("game_id"),
-                favored_team=home_team,
-                moneyline=home_ml,
-                vegas_total=vt,
-                opp_starter_era=away_sp_era,
-                own_team_ops=home_ops,
-                is_blowout_favorite=True,
-            ))
+            stackable.append(
+                StackableGame(
+                    game_id=g.get("game_id"),
+                    favored_team=home_team,
+                    moneyline=home_ml,
+                    vegas_total=vt,
+                    opp_starter_era=away_sp_era,
+                    own_team_ops=home_ops,
+                    is_blowout_favorite=True,
+                )
+            )
         elif away_ml is not None and away_ml <= BLOWOUT_MONEYLINE_THRESHOLD and path1_ou_ok:
             blowout_games += 1
-            stackable.append(StackableGame(
-                game_id=g.get("game_id"),
-                favored_team=away_team,
-                moneyline=away_ml,
-                vegas_total=vt,
-                opp_starter_era=home_sp_era,
-                own_team_ops=away_ops,
-                is_blowout_favorite=True,
-            ))
+            stackable.append(
+                StackableGame(
+                    game_id=g.get("game_id"),
+                    favored_team=away_team,
+                    moneyline=away_ml,
+                    vegas_total=vt,
+                    opp_starter_era=home_sp_era,
+                    own_team_ops=away_ops,
+                    is_blowout_favorite=True,
+                )
+            )
 
         # PATH 2: extreme shootout (O/U ≥ SHOOTOUT_TOTAL, ML-agnostic).
         # Both teams become stack-eligible but neither earns STACK_BONUS —
         # they're not heavy favorites, just in a high-run game script.
         if vt is not None and vt >= STACK_ELIGIBILITY_SHOOTOUT_TOTAL:
-            already_listed = {
-                s.favored_team for s in stackable if s.game_id == g.get("game_id")
-            }
+            already_listed = {s.favored_team for s in stackable if s.game_id == g.get("game_id")}
             if home_team and home_team not in already_listed:
-                stackable.append(StackableGame(
+                stackable.append(
+                    StackableGame(
+                        game_id=g.get("game_id"),
+                        favored_team=home_team,
+                        moneyline=home_ml,
+                        vegas_total=vt,
+                        opp_starter_era=away_sp_era,
+                        own_team_ops=home_ops,
+                        is_blowout_favorite=False,
+                    )
+                )
+            if away_team and away_team not in already_listed:
+                stackable.append(
+                    StackableGame(
+                        game_id=g.get("game_id"),
+                        favored_team=away_team,
+                        moneyline=away_ml,
+                        vegas_total=vt,
+                        opp_starter_era=home_sp_era,
+                        own_team_ops=away_ops,
+                        is_blowout_favorite=False,
+                    )
+                )
+
+        # PATH 3: catastrophic opposing starter facing an above-average lineup.
+        # Conservative two-gate (opp_SP_ERA + own_team_OPS) — fires on ~32% of
+        # slates.  Each side evaluated independently against its own opposing
+        # SP.  No STACK_BONUS — bonus stays gated to PATH 1 blowouts.  Only
+        # add if not already listed for this game (PATH 1/2 take precedence).
+        already_listed = {s.favored_team for s in stackable if s.game_id == g.get("game_id")}
+        if (
+            home_team
+            and home_team not in already_listed
+            and _path3_qualifies(away_sp_era, home_ops)
+        ):
+            stackable.append(
+                StackableGame(
                     game_id=g.get("game_id"),
                     favored_team=home_team,
                     moneyline=home_ml,
@@ -242,9 +285,15 @@ def classify_slate(
                     opp_starter_era=away_sp_era,
                     own_team_ops=home_ops,
                     is_blowout_favorite=False,
-                ))
-            if away_team and away_team not in already_listed:
-                stackable.append(StackableGame(
+                )
+            )
+        if (
+            away_team
+            and away_team not in already_listed
+            and _path3_qualifies(home_sp_era, away_ops)
+        ):
+            stackable.append(
+                StackableGame(
                     game_id=g.get("game_id"),
                     favored_team=away_team,
                     moneyline=away_ml,
@@ -252,38 +301,8 @@ def classify_slate(
                     opp_starter_era=home_sp_era,
                     own_team_ops=away_ops,
                     is_blowout_favorite=False,
-                ))
-
-        # PATH 3: catastrophic opposing starter facing an above-average lineup.
-        # Conservative two-gate (opp_SP_ERA + own_team_OPS) — fires on ~32% of
-        # slates.  Each side evaluated independently against its own opposing
-        # SP.  No STACK_BONUS — bonus stays gated to PATH 1 blowouts.  Only
-        # add if not already listed for this game (PATH 1/2 take precedence).
-        already_listed = {
-            s.favored_team for s in stackable if s.game_id == g.get("game_id")
-        }
-        if (home_team and home_team not in already_listed
-                and _path3_qualifies(away_sp_era, home_ops)):
-            stackable.append(StackableGame(
-                game_id=g.get("game_id"),
-                favored_team=home_team,
-                moneyline=home_ml,
-                vegas_total=vt,
-                opp_starter_era=away_sp_era,
-                own_team_ops=home_ops,
-                is_blowout_favorite=False,
-            ))
-        if (away_team and away_team not in already_listed
-                and _path3_qualifies(home_sp_era, away_ops)):
-            stackable.append(StackableGame(
-                game_id=g.get("game_id"),
-                favored_team=away_team,
-                moneyline=away_ml,
-                vegas_total=vt,
-                opp_starter_era=home_sp_era,
-                own_team_ops=away_ops,
-                is_blowout_favorite=False,
-            ))
+                )
+            )
 
         # Check home starter as quality matchup
         h_era = g.get("home_starter_era")
@@ -322,8 +341,7 @@ def classify_slate(
         )
 
     # Blowout games trigger hitter/stack day even without high O/U counts
-    if (high_total >= HITTER_DAY_MIN_HIGH_TOTAL
-            or blowout_games >= BLOWOUT_MIN_GAMES_FOR_STACK_DAY):
+    if high_total >= HITTER_DAY_MIN_HIGH_TOTAL or blowout_games >= BLOWOUT_MIN_GAMES_FOR_STACK_DAY:
         stack_reason = []
         if high_total >= HITTER_DAY_MIN_HIGH_TOTAL:
             stack_reason.append(f"{high_total} high O/U games")
@@ -366,9 +384,11 @@ def classify_slate(
 # Filter 2: Environmental Advantage (§4.2 Filter 2)
 # ---------------------------------------------------------------------------
 
+
 def compute_pitcher_env_score(
     opp_team_ops: float | None = None,
-    opp_team_k_pct: float | None = None,  # V12: ignored — audit shows this signal is dead (Q1=25% vs Q4=23% HV)
+    opp_team_k_pct: float
+    | None = None,  # V12: ignored — audit shows this signal is dead (Q1=25% vs Q4=23% HV)
     pitcher_k_per_9: float | None = None,
     park_team: str | None = None,
     is_home: bool = False,
@@ -521,6 +541,7 @@ def compute_pitcher_env_score(
 # means adding the kwarg here once, and both pipelines pick it up.
 # ---------------------------------------------------------------------------
 
+
 def build_pitcher_env_kwargs(game: Any, is_home: bool) -> dict[str, Any]:
     """Resolve every (home_X / away_X) pair on a SlateGame for the pitcher's
     side and return the kwargs for compute_pitcher_env_score(**...)."""
@@ -572,7 +593,7 @@ def build_batter_env_kwargs(
 
 
 def compute_batter_env_score(
-    vegas_total: float | None = None,             # V12: ignored — Q1 50%/Q4 47% HV, dead signal
+    vegas_total: float | None = None,  # V12: ignored — Q1 50%/Q4 47% HV, dead signal
     opp_pitcher_era: float | None = None,
     platoon_advantage: bool = False,
     batting_order: int | None = None,
@@ -581,13 +602,13 @@ def compute_batter_env_score(
     wind_direction: str | None = None,
     temperature_f: int | None = None,
     team_moneyline: int | None = None,
-    opp_bullpen_era: float | None = None,         # V12: ignored — non-monotonic
-    series_team_wins: int | None = None,          # V12: ignored — V10.7 already neutralized
-    series_opp_wins: int | None = None,           # V12: ignored
-    team_l10_wins: int | None = None,             # V12: ignored — INVERTED (cold>hot for HV)
+    opp_bullpen_era: float | None = None,  # V12: ignored — non-monotonic
+    series_team_wins: int | None = None,  # V12: ignored — V10.7 already neutralized
+    series_opp_wins: int | None = None,  # V12: ignored
+    team_l10_wins: int | None = None,  # V12: ignored — INVERTED (cold>hot for HV)
     opp_starter_whip: float | None = None,
-    opp_starter_k_per_9: float | None = None,     # V12: ignored — Q1 49%/Q4 45% HV, dead
-    opp_team_rest_days: int | None = None,        # V12: ignored — small N, no audit signal
+    opp_starter_k_per_9: float | None = None,  # V12: ignored — Q1 49%/Q4 45% HV, dead
+    opp_team_rest_days: int | None = None,  # V12: ignored — small N, no audit signal
 ) -> tuple[float, list[str], int]:
     """
     V12 batter env score (0-1.0) — calibrated against 35-slate / 994-batter
@@ -785,11 +806,11 @@ def compute_batter_env_score(
     return env_score, factors, unknown_count
 
 
-
 # ---------------------------------------------------------------------------
 # Filter 4+5: Boost Optimization & Lineup Construction
 # These are integrated into the FilterStrategyOptimizer below.
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class FilteredCandidate:
@@ -817,11 +838,12 @@ class FilteredCandidate:
       total_score  — season-level trait quality (K/9, ISO, barrel%, speed, recent form)
       ownership    — predicted bucket from team market, fame, batting order, season stats
     """
+
     player_name: str
     team: str
     position: str
-    total_score: float    # 0-100 from scoring engine (pre-game season stats)
-    env_score: float      # 0-1.0 from environmental filter (pre-game conditions)
+    total_score: float  # 0-100 from scoring engine (pre-game season stats)
+    env_score: float  # 0-1.0 from environmental filter (pre-game conditions)
     env_factors: list[str] = field(default_factory=list)
     env_unknown_count: int = 0  # how many env factors were missing data
     game_id: int | str | None = None  # for diversification tracking
@@ -833,9 +855,9 @@ class FilteredCandidate:
     # Series/momentum context — populated from SlateGame series fields.
     # Used by Group D env scoring and the momentum gate in _compute_base_ev().
     # None = data unavailable (treated as neutral, no penalty).
-    series_team_wins: int | None = None   # wins by this player's team in current series
-    series_opp_wins: int | None = None    # wins by the opponent in current series
-    team_l10_wins: int | None = None      # this team's wins in last 10 games
+    series_team_wins: int | None = None  # wins by this player's team in current series
+    series_opp_wins: int | None = None  # wins by the opponent in current series
+    team_l10_wins: int | None = None  # this team's wins in last 10 games
 
     # Two-way player detection: True if stored as non-pitcher (e.g., DH) but detected as a
     # confirmed starter (e.g., Ohtani pitching). Used to annotate the candidate in outputs
@@ -1125,9 +1147,7 @@ def _build_variant(
     chosen_pitchers = sorted_pitchers[:n_pitchers]
     # Map of (game_id -> team_we_pitched_for) — opposing batters in those games are blocked.
     pitcher_games_to_protect = {
-        p.game_id: p.team.upper()
-        for p in chosen_pitchers
-        if p.game_id is not None
+        p.game_id: p.team.upper() for p in chosen_pitchers if p.game_id is not None
     }
 
     chosen_batters: list[FilteredCandidate] = []
@@ -1207,21 +1227,24 @@ def _enforce_composition(
 
     if not best_lineup:
         raise ValueError(
-            "Candidate pool could not produce any 0P-5P lineup variant. "
-            "Cannot build a lineup."
+            "Candidate pool could not produce any 0P-5P lineup variant. Cannot build a lineup."
         )
 
     from collections import Counter
+
     stack_teams = [
         t for t, n in Counter(c.team for c in best_lineup if not c.is_pitcher).items() if n >= 2
     ]
     logger.info(
         "V12 composition: chose %dP+%dB (ev=%.2f) — variant_evs=%s — "
         "stack_eligible=%s mini_stacks_used=%s (candidates: %d)",
-        best_n_p, 5 - best_n_p, best_ev,
+        best_n_p,
+        5 - best_n_p,
+        best_ev,
         {k: round(v, 2) for k, v in variant_evs.items()},
         sorted(stack_eligible_teams) or "none",
-        stack_teams or "none", len(candidates),
+        stack_teams or "none",
+        len(candidates),
     )
     return best_lineup
 
@@ -1248,13 +1271,13 @@ def _apply_game_diversification(
     games_represented = len(game_counts) if game_counts else 0
 
     from collections import Counter
+
     batter_team_counts = Counter(c.team for c in lineup if not c.is_pitcher)
-    stack_teams = [
-        f"{t}x{n}" for t, n in batter_team_counts.items() if n >= 2
-    ]
+    stack_teams = [f"{t}x{n}" for t, n in batter_team_counts.items() if n >= 2]
     logger.info(
         "Lineup spread: %d games, batter stacks: %s",
-        games_represented, ", ".join(stack_teams) if stack_teams else "none",
+        games_represented,
+        ", ".join(stack_teams) if stack_teams else "none",
     )
 
     return warnings
@@ -1285,23 +1308,27 @@ def _smart_slot_assignment(
 
     pitchers = sorted(
         [c for c in candidates if c.is_pitcher],
-        key=lambda c: c.filter_ev, reverse=True,
+        key=lambda c: c.filter_ev,
+        reverse=True,
     )
     batters = sorted(
         [c for c in candidates if not c.is_pitcher],
-        key=lambda c: c.filter_ev, reverse=True,
+        key=lambda c: c.filter_ev,
+        reverse=True,
     )
     ordered = pitchers + batters
 
     assignments: list[FilterSlotAssignment] = []
     for player, (slot_idx, slot_mult) in zip(ordered, slots_desc):
         slot_value = player.filter_ev * (slot_mult / BASE_MULTIPLIER)
-        assignments.append(FilterSlotAssignment(
-            slot_index=slot_idx,
-            slot_mult=slot_mult,
-            candidate=player,
-            expected_slot_value=round(slot_value, 2),
-        ))
+        assignments.append(
+            FilterSlotAssignment(
+                slot_index=slot_idx,
+                slot_mult=slot_mult,
+                candidate=player,
+                expected_slot_value=round(slot_value, 2),
+            )
+        )
 
     assignments.sort(key=lambda a: a.slot_index)
     return assignments
@@ -1310,6 +1337,7 @@ def _smart_slot_assignment(
 # ---------------------------------------------------------------------------
 # Main filter pipeline
 # ---------------------------------------------------------------------------
+
 
 def run_filter_strategy(
     candidates: list[FilteredCandidate],

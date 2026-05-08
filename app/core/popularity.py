@@ -163,10 +163,7 @@ def get_fame_rate(
     (rate=0, denom>0) — the runtime score function should award fame
     points only when there's a meaningful denominator.
     """
-    window = (
-        LEVERAGE_FAME_INDEX_DAYS_PITCHER if is_pitcher
-        else LEVERAGE_FAME_INDEX_DAYS_BATTER
-    )
+    window = LEVERAGE_FAME_INDEX_DAYS_PITCHER if is_pitcher else LEVERAGE_FAME_INDEX_DAYS_BATTER
     lookup = _load_fame_rate_index(as_of, window)
     mp, total = lookup.get(
         (_normalize(player_name), canonicalize_team(team)),
@@ -382,16 +379,17 @@ def predict_rookie_popularity_score(
     Note: the V13.3 env cap (ROOKIE_ENV_MODIFIER_CEILING = 1.10) still
     applies to all rookies, so the popularity boost from a low score
     keeps rookies competitive in strong env without letting them
-    dominate.  Under V15.7 (pitcher ceiling 1.30, popularity range
-    [0.75, 1.55]) a rookie pitcher in a good matchup can earn
-    ~1.10 × 1.0 × 1.55 = 1.705 EV multiplier, vs ~1.30 × 1.10 × 0.75
-    = 1.073 for a comparable popular veteran ace — the rookie can
-    actually beat a max-fame veteran on env+leverage in the same
-    matchup, which is the V15.7 intent (pitcher TV is structurally
-    capped, leverage is the dominant lever).  Veterans with strong
-    trait_factor (1.20) and modest popularity (score 4-5, mult ~0.95)
-    still out-EV rookies via trait, since rookie trait_factor is
-    fixed at 1.0.
+    dominate.  Under V16 Phase 1 (pitcher ceiling 1.30, popularity
+    range [0.80, 1.30] — tightened from V15.6's [0.75, 1.55] against
+    lineup-TV outcomes) a rookie pitcher in a good matchup can earn
+    ~1.10 × 1.0 × 1.30 = 1.43 EV multiplier, vs ~1.30 × 1.10 × 0.80
+    = 1.144 for a comparable popular veteran ace — the rookie can
+    still beat a max-fame veteran on env+leverage, but the gap is
+    narrower than under V15.7's wider band, which matches the V16
+    intent (less aggressive contrarian premium).  Veterans with
+    strong trait_factor (1.20) and modest popularity (score 4-5,
+    mult ~1.0) still out-EV rookies via trait, since rookie
+    trait_factor is fixed at 1.0.
     """
     score = _team_market_score(team, is_pitcher, player_name)
 

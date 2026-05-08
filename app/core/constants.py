@@ -25,6 +25,7 @@ def canonicalize_team(abbr: str) -> str:
     upper = abbr.strip().upper()
     return TEAM_ABBR_ALIASES.get(upper, upper)
 
+
 # Ballpark HR factors (relative to league average = 1.0)
 # Values > 1.0 favor hitters; < 1.0 favor pitchers
 PARK_HR_FACTORS = {
@@ -47,13 +48,13 @@ PARK_HR_FACTORS = {
     "STL": 0.98,  # Busch
     "CWS": 0.97,  # Guaranteed Rate
     "WSH": 0.97,  # Nationals Park
-    "KC": 0.96,   # Kauffman
+    "KC": 0.96,  # Kauffman
     "PIT": 0.96,  # PNC Park
     "LAA": 0.95,  # Angel Stadium
     "NYM": 0.95,  # Citi Field
-    "TB": 0.94,   # Tropicana
-    "SD": 0.93,   # Petco Park
-    "SF": 0.92,   # Oracle Park
+    "TB": 0.94,  # Tropicana
+    "SD": 0.93,  # Petco Park
+    "SF": 0.92,  # Oracle Park
     "SEA": 0.91,  # T-Mobile
     "MIA": 0.90,  # loanDepot
     "ATH": 1.09,  # Sacramento (Sutter Health Park) — 2026 Statcast PF = 1.091; short porch RF favors LHB
@@ -79,8 +80,8 @@ MIN_SCORE_THRESHOLD = 15  # out of 100
 # Slate classification thresholds (Filter 1)
 # Historical distribution: Pitcher Day = 23% of slates, Hitter/Stack Day = 38%
 TINY_SLATE_MAX_GAMES = 3
-PITCHER_DAY_MIN_QUALITY_SP = 4   # 4+ quality SP matchups → pitcher day (§3)
-HITTER_DAY_MIN_HIGH_TOTAL = 4    # 4+ games with O/U >= 9.0 → hitter day (§3)
+PITCHER_DAY_MIN_QUALITY_SP = 4  # 4+ quality SP matchups → pitcher day (§3)
+HITTER_DAY_MIN_HIGH_TOTAL = 4  # 4+ games with O/U >= 9.0 → hitter day (§3)
 HITTER_DAY_VEGAS_TOTAL_THRESHOLD = 9.0
 
 # Blowout detection (§2 Pillar 2 + §3 checklist)
@@ -125,17 +126,17 @@ BLOWOUT_MIN_GAMES_FOR_STACK_DAY = 1  # 1+ blowout game → stack day eligible
 # All other teams fall back to the one-batter-per-team default.  A heavy
 # favorite in a low-scoring pitcher's duel (-220 with O/U 7.0) is NOT
 # stack-eligible — fails all three paths.
-STACK_ELIGIBILITY_MONEYLINE = -200     # favorite threshold (PATH 1)
-STACK_ELIGIBILITY_VEGAS_TOTAL = 9.0    # min O/U paired with ML in PATH 1
+STACK_ELIGIBILITY_MONEYLINE = -200  # favorite threshold (PATH 1)
+STACK_ELIGIBILITY_VEGAS_TOTAL = 9.0  # min O/U paired with ML in PATH 1
 STACK_ELIGIBILITY_SHOOTOUT_TOTAL = 10.5  # min O/U for ML-agnostic shootout PATH 2
-STACK_ELIGIBILITY_PATH3_OPP_SP_ERA = 6.5   # opp starter ERA floor for PATH 3
+STACK_ELIGIBILITY_PATH3_OPP_SP_ERA = 6.5  # opp starter ERA floor for PATH 3
 STACK_ELIGIBILITY_PATH3_OWN_TEAM_OPS = 0.760  # own team OPS floor for PATH 3 (above-avg offense)
 
 # Caps applied downstream of the stack-eligibility gate.  MAX=2 is the
 # deliberate mini-stack ceiling — never more than two teammates in a
 # lineup, regardless of how overwhelming the game script is.
 MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE = 2  # 2-batter mini-stack on eligible teams
-MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT = 1    # every other team: one batter per lineup
+MAX_PLAYERS_PER_TEAM_BATTERS_DEFAULT = 1  # every other team: one batter per lineup
 
 # Independent per-game cap: even across opposing teams, never more than two
 # batters from the same game.  Combined with the "no opposing batter in the
@@ -157,7 +158,7 @@ MAX_PLAYERS_PER_GAME_BATTERS = 2
 # now iterates only over n_p in [0, MAX_PITCHERS_PER_LINEUP].
 MAX_PITCHERS_PER_LINEUP = 1
 
-MIN_GAMES_REPRESENTED = 2        # pipeline-level data-sufficiency guard (not a lineup rule)
+MIN_GAMES_REPRESENTED = 2  # pipeline-level data-sufficiency guard (not a lineup rule)
 
 
 # ---------------------------------------------------------------------------
@@ -178,8 +179,8 @@ MIN_GAMES_REPRESENTED = 2        # pipeline-level data-sufficiency guard (not a 
 # These thresholds also gate the strict-assertion bypass in
 # pipeline.run_fetch_player_stats — a 5-year veteran missing ERA is still
 # a hard crash (real bug), only true debutants skip the gate.
-ROOKIE_GAMES_THRESHOLD = 3        # batters: < this many career MLB games
-ROOKIE_PITCHER_IP_THRESHOLD = 5.0 # pitchers: < this much career MLB IP
+ROOKIE_GAMES_THRESHOLD = 3  # batters: < this many career MLB games
+ROOKIE_PITCHER_IP_THRESHOLD = 5.0  # pitchers: < this much career MLB IP
 
 # V13.3 (May 2026): tighten the rookie-pitcher gate.  A pitcher with
 # current-season IP=0 AND prior-season IP < this threshold has too thin
@@ -220,9 +221,12 @@ def is_stack_eligible_game(
     Unknown O/U returns False on PATH 1/2 (no fallback).  PATH 3 ignores O/U
     but requires both opp_starter_era and own_team_ops to be supplied.
     """
-    if (opp_starter_era is not None and own_team_ops is not None
-            and opp_starter_era >= STACK_ELIGIBILITY_PATH3_OPP_SP_ERA
-            and own_team_ops >= STACK_ELIGIBILITY_PATH3_OWN_TEAM_OPS):
+    if (
+        opp_starter_era is not None
+        and own_team_ops is not None
+        and opp_starter_era >= STACK_ELIGIBILITY_PATH3_OPP_SP_ERA
+        and own_team_ops >= STACK_ELIGIBILITY_PATH3_OWN_TEAM_OPS
+    ):
         return True
     if vegas_total is None:
         return False
@@ -230,15 +234,13 @@ def is_stack_eligible_game(
         return True
     if moneyline is None:
         return False
-    return (
-        moneyline <= STACK_ELIGIBILITY_MONEYLINE
-        and vegas_total >= STACK_ELIGIBILITY_VEGAS_TOTAL
-    )
+    return moneyline <= STACK_ELIGIBILITY_MONEYLINE and vegas_total >= STACK_ELIGIBILITY_VEGAS_TOTAL
+
 
 # Environmental filter thresholds (Filter 2)
 # Pitcher environmental pass conditions
-PITCHER_ENV_WEAK_OPP_OPS = 0.700      # bottom-10 offense OPS threshold
-PITCHER_ENV_MIN_K_PER_9 = 8.0         # min K/9 for "K upside"
+PITCHER_ENV_WEAK_OPP_OPS = 0.700  # bottom-10 offense OPS threshold
+PITCHER_ENV_MIN_K_PER_9 = 8.0  # min K/9 for "K upside"
 
 # ---------------------------------------------------------------------------
 # Bifurcated missing-data handling
@@ -257,16 +259,16 @@ PITCHER_ENV_MIN_K_PER_9 = 8.0         # min K/9 for "K upside"
 # 1.30 (was 1.55 / 1.30 asymmetric before V15.7) — see
 # PITCHER_ENV_MODIFIER_CEILING block below for the TV-target rationale.
 # The rookie carve-out remains; see ROOKIE_ENV_MODIFIER_CEILING.
-ENV_MODIFIER_FLOOR = 0.20   # V12.1: lowered from 0.40 (which was already cut
-                             # from V11 0.70).  Tuning sweep across 35-slate
-                             # backtest showed lower floors improve mean
-                             # slot-weighted RS without hurting beat-winner
-                             # rate (steady at 51.4% from floor 0.10-0.40).
-                             # 0.20 is the sweet spot: meaningful EV signal
-                             # spread (env=0 → 0.20 multiplier, env=1 → 1.30),
-                             # yet still floors a "no info" candidate with a
-                             # base value (so the variant chooser doesn't try
-                             # to fill slots with zero-EV stragglers).
+ENV_MODIFIER_FLOOR = 0.20  # V12.1: lowered from 0.40 (which was already cut
+# from V11 0.70).  Tuning sweep across 35-slate
+# backtest showed lower floors improve mean
+# slot-weighted RS without hurting beat-winner
+# rate (steady at 51.4% from floor 0.10-0.40).
+# 0.20 is the sweet spot: meaningful EV signal
+# spread (env=0 → 0.20 multiplier, env=1 → 1.30),
+# yet still floors a "no info" candidate with a
+# base value (so the variant chooser doesn't try
+# to fill slots with zero-EV stragglers).
 # V15.3 (May 6, 2026): V15.2 batter ceiling tighten REVERTED.  V15.2
 # moved batter ceiling 1.30 → 1.20 to let elite trait compete with
 # saturated-env weak bats — but kept pitcher ceiling at 1.55, which
@@ -381,7 +383,7 @@ BATTER_FORM_VOLATILITY_MAX = 0.20
 # Stacking up to 4 teammates (all batter slots) is explicitly allowed.
 # V12: pitcher count is unconstrained (0..5).  Slot 1 (2.0×) goes to the
 # highest-EV player regardless of position (rearrangement inequality).
-PITCHER_ANCHOR_SLOT = 1              # legacy constant — Slot 1 index, used in slot_assignment
+PITCHER_ANCHOR_SLOT = 1  # legacy constant — Slot 1 index, used in slot_assignment
 
 # ---------------------------------------------------------------------------
 # Blowout game stack bonus (4-term EV formula)
@@ -455,36 +457,37 @@ def is_game_remaining(game_status: str | None) -> bool:
     """True if the game hasn't started. Null status = safe default (remaining)."""
     return game_status not in STARTED_GAME_STATUSES
 
+
 # Scoring engine scaling (K/9 shared between scoring_engine and filter_strategy)
-SCORING_K9_FLOOR = 6.0                # K/9 at or below → 0 pts
-SCORING_K9_CEILING = 12.0             # K/9 at or above → max pts
+SCORING_K9_FLOOR = 6.0  # K/9 at or below → 0 pts
+SCORING_K9_CEILING = 12.0  # K/9 at or above → max pts
 
 # UNKNOWN_SCORE_RATIO removed in May-2026 strict pass.  Trait scorers now
 # raise RuntimeError instead of returning a "neutral" 0.5 × max_pts, since
 # the upstream DNP filter guarantees every scored player has full live data.
 
 # Scoring engine — pitcher matchup thresholds
-SCORING_PITCHER_OPS_CEILING = 0.800   # opponent OPS at or above → 0 score
-SCORING_PITCHER_OPS_RANGE = 0.150     # OPS scoring range
-SCORING_PITCHER_K_PCT_FLOOR = 0.18    # opponent K% at or below → 0 score
-SCORING_PITCHER_K_PCT_RANGE = 0.10    # K% scoring range
+SCORING_PITCHER_OPS_CEILING = 0.800  # opponent OPS at or above → 0 score
+SCORING_PITCHER_OPS_RANGE = 0.150  # OPS scoring range
+SCORING_PITCHER_K_PCT_FLOOR = 0.18  # opponent K% at or below → 0 score
+SCORING_PITCHER_K_PCT_RANGE = 0.10  # K% scoring range
 
 # Scoring engine — pitcher ERA/WHIP thresholds
-SCORING_ERA_CEILING = 5.0             # ERA at or above → 0 score
-SCORING_ERA_RANGE = 3.0               # ERA scoring range (5.0 - 2.0)
-SCORING_WHIP_CEILING = 1.5            # WHIP at or above → 0 score
-SCORING_WHIP_RANGE = 0.6              # WHIP scoring range (1.5 - 0.9)
+SCORING_ERA_CEILING = 5.0  # ERA at or above → 0 score
+SCORING_ERA_RANGE = 3.0  # ERA scoring range (5.0 - 2.0)
+SCORING_WHIP_CEILING = 1.5  # WHIP at or above → 0 score
+SCORING_WHIP_RANGE = 0.6  # WHIP scoring range (1.5 - 0.9)
 
 # Scoring engine — batter matchup thresholds
-SCORING_BATTER_ERA_FLOOR = 2.5        # opposing ERA at or below → 0 score
-SCORING_BATTER_ERA_RANGE = 2.5        # ERA scoring range (5.0 - 2.5)
-SCORING_BATTER_WHIP_FLOOR = 0.9       # opposing WHIP at or below → 0 score
-SCORING_BATTER_WHIP_RANGE = 0.6       # WHIP scoring range (1.5 - 0.9)
+SCORING_BATTER_ERA_FLOOR = 2.5  # opposing ERA at or below → 0 score
+SCORING_BATTER_ERA_RANGE = 2.5  # ERA scoring range (5.0 - 2.5)
+SCORING_BATTER_WHIP_FLOOR = 0.9  # opposing WHIP at or below → 0 score
+SCORING_BATTER_WHIP_RANGE = 0.6  # WHIP scoring range (1.5 - 0.9)
 
 # Scoring engine — batter OPS-split matchup thresholds (handedness-specific)
 # When starter_hand and batter splits are known, blended into matchup score.
-SCORING_BATTER_OPS_SPLIT_FLOOR = 0.600   # batter OPS-vs-hand at or below → 0 split score
-SCORING_BATTER_OPS_SPLIT_RANGE = 0.300   # range for full split score (0.600 → 0.900)
+SCORING_BATTER_OPS_SPLIT_FLOOR = 0.600  # batter OPS-vs-hand at or below → 0 split score
+SCORING_BATTER_OPS_SPLIT_RANGE = 0.300  # range for full split score (0.600 → 0.900)
 
 # V10.6 (Apr 28-29 evaluation, follow-up): batter K-vulnerability signal.
 # Closes the floor-risk gap surfaced by user feedback on the eval results:
@@ -508,14 +511,14 @@ SCORING_BATTER_OPS_SPLIT_RANGE = 0.300   # range for full split score (0.600 →
 #
 # Floor=0.18 (elite contact, e.g., Arraez/Tucker tier) → no penalty.
 # Ceiling=0.30 (high-whiff bat) → full sub-signal contribution to penalty.
-SCORING_BATTER_K_PCT_FLOOR = 0.18         # batter K% at or below → 0 vulnerability score
-SCORING_BATTER_K_PCT_CEILING = 0.30       # batter K% at or above → full vulnerability score
+SCORING_BATTER_K_PCT_FLOOR = 0.18  # batter K% at or below → 0 vulnerability score
+SCORING_BATTER_K_PCT_CEILING = 0.30  # batter K% at or above → full vulnerability score
 # K-vulnerability cross-axis: opposing-starter K/9 thresholds.
 # These are tighter than the env A6 thresholds (10.5 / 6.5) because we
 # want the trait penalty to fire on truly-elite K-arms only — Group A6
 # already broadly de-rates batters in any high-K matchup at the env layer.
-SCORING_OPP_K9_VULN_FLOOR = 7.5           # opp K/9 at or below → 0 cross contribution
-SCORING_OPP_K9_VULN_CEILING = 11.0        # opp K/9 at or above → full cross contribution
+SCORING_OPP_K9_VULN_FLOOR = 7.5  # opp K/9 at or below → 0 cross contribution
+SCORING_OPP_K9_VULN_CEILING = 11.0  # opp K/9 at or above → full cross contribution
 
 # V10.8 — opposing-starter xwOBA-against thresholds for batter matchup_quality.
 # This is the simplified pitch-arsenal-mismatch signal: a single number
@@ -527,8 +530,10 @@ SCORING_OPP_K9_VULN_CEILING = 11.0        # opp K/9 at or above → full cross c
 # elite arsenal (full penalty for the opposing batter's matchup quality).
 # The descending range mirrors the scale: lower xwOBA-against = better
 # arsenal = worse for the batter.
-SCORING_OPP_X_WOBA_AGAINST_FLOOR = 0.330      # at or above → 0 contribution (weak arsenal, batter favored)
-SCORING_OPP_X_WOBA_AGAINST_CEILING = 0.265    # at or below → full contribution (elite arsenal)
+SCORING_OPP_X_WOBA_AGAINST_FLOOR = (
+    0.330  # at or above → 0 contribution (weak arsenal, batter favored)
+)
+SCORING_OPP_X_WOBA_AGAINST_CEILING = 0.265  # at or below → full contribution (elite arsenal)
 
 # V10.8 — catcher framing adjustment to pitcher k_rate trait.
 #
@@ -554,15 +559,15 @@ SCORING_OPP_X_WOBA_AGAINST_CEILING = 0.265    # at or below → full contributio
 # `framing_runs_floor` / `_ceiling`: the team-level framing_runs values
 # that map to ±max adjustment.  A team at +12 runs/season gets +12% on k_rate;
 # a team at -12 runs/season gets -12%.  Mid-pack teams (~0 runs) → no change.
-SCORING_FRAMING_RUNS_CEILING = 12.0           # at or above → +max k_rate adjustment
-SCORING_FRAMING_RUNS_FLOOR = -12.0            # at or below → -max k_rate adjustment
-SCORING_FRAMING_K_RATE_MAX_ADJ = 0.12         # V13: ±12% (was ±5%)
-                                              # (deliberately conservative for ABS era)
+SCORING_FRAMING_RUNS_CEILING = 12.0  # at or above → +max k_rate adjustment
+SCORING_FRAMING_RUNS_FLOOR = -12.0  # at or below → -max k_rate adjustment
+SCORING_FRAMING_K_RATE_MAX_ADJ = 0.12  # V13: ±12% (was ±5%)
+# (deliberately conservative for ABS era)
 
 # Scoring engine — park factor range boundaries (LAD floor, COL ceiling)
 # Used in score_ballpark_factor() to normalise the effective park factor.
-PARK_HR_FACTOR_MIN = 0.89             # lowest value in PARK_HR_FACTORS (LAD)
-PARK_HR_FACTOR_MAX = 1.38             # highest value in PARK_HR_FACTORS (COL)
+PARK_HR_FACTOR_MIN = 0.89  # lowest value in PARK_HR_FACTORS (LAD)
+PARK_HR_FACTOR_MAX = 1.38  # highest value in PARK_HR_FACTORS (COL)
 
 # Slate classification — quality-SP matchup ERA threshold.
 # A starter with ERA below this is eligible to be counted as a "quality SP"
@@ -616,8 +621,8 @@ POWER_PROFILE_BARREL_PCT_FLOOR = 4.0
 #
 # Floor 0.300 = league-average wOBA (no credit), ceiling 0.400 = elite
 # (Judge / Soto / Ohtani tier, full credit).
-POWER_PROFILE_X_WOBA_FLOOR = 0.300        # at or below → 0 contribution
-POWER_PROFILE_X_WOBA_CEILING = 0.400      # at or above → full contribution
+POWER_PROFILE_X_WOBA_FLOOR = 0.300  # at or below → 0 contribution
+POWER_PROFILE_X_WOBA_CEILING = 0.400  # at or above → full contribution
 
 # V10.8 — pitcher xERA scaling for era_whip trait.  xERA is a 1:1 conversion
 # of xwOBA-against onto the ERA scale; widely-used in DFS to flag regression
@@ -628,16 +633,16 @@ POWER_PROFILE_X_WOBA_CEILING = 0.400      # at or above → full contribution
 # (perceived velo), whiff %, and chase %.  When Statcast is available, a
 # blended kinematic score replaces raw K/9 because the physics are predictive
 # while K/9 is retrospective.
-SCORING_FB_VELOCITY_FLOOR = 92.0     # mph — league-avg four-seam
-SCORING_FB_VELOCITY_CEILING = 99.0   # mph — elite velocity tier
-SCORING_FB_IVB_FLOOR = 13.0          # inches — below this = flat fastball
-SCORING_FB_IVB_CEILING = 19.0        # inches — elite ride (Schlittler/Abel tier)
-SCORING_FB_EXTENSION_FLOOR = 5.8     # feet — short release
-SCORING_FB_EXTENSION_CEILING = 7.0   # feet — elite perceived-velo gain
-SCORING_WHIFF_PCT_FLOOR = 20.0       # %
-SCORING_WHIFF_PCT_CEILING = 35.0     # % — elite swing-and-miss
-SCORING_CHASE_PCT_FLOOR = 24.0       # %
-SCORING_CHASE_PCT_CEILING = 38.0     # % — elite o-swing generator
+SCORING_FB_VELOCITY_FLOOR = 92.0  # mph — league-avg four-seam
+SCORING_FB_VELOCITY_CEILING = 99.0  # mph — elite velocity tier
+SCORING_FB_IVB_FLOOR = 13.0  # inches — below this = flat fastball
+SCORING_FB_IVB_CEILING = 19.0  # inches — elite ride (Schlittler/Abel tier)
+SCORING_FB_EXTENSION_FLOOR = 5.8  # feet — short release
+SCORING_FB_EXTENSION_CEILING = 7.0  # feet — elite perceived-velo gain
+SCORING_WHIFF_PCT_FLOOR = 20.0  # %
+SCORING_WHIFF_PCT_CEILING = 35.0  # % — elite swing-and-miss
+SCORING_CHASE_PCT_FLOOR = 24.0  # %
+SCORING_CHASE_PCT_CEILING = 38.0  # % — elite o-swing generator
 
 # ET → UTC offset used to derive the weather-lookup hour from a game's
 # ET clock time.  Regular season is entirely on EDT (UTC-4), so this is
@@ -789,14 +794,39 @@ POPULARITY_MULT_CEILING = 1.30
 # historical drafts column.  Static; updated once per offseason.
 TEAM_MARKET_TIER = {
     # Tier 1 — national-television regulars, premium markets
-    "NYY": 1, "LAD": 1, "BOS": 1, "CHC": 1, "PHI": 1, "NYM": 1,
+    "NYY": 1,
+    "LAD": 1,
+    "BOS": 1,
+    "CHC": 1,
+    "PHI": 1,
+    "NYM": 1,
     # Tier 2 — large markets, strong regional followings
-    "ATL": 2, "STL": 2, "SF": 2, "HOU": 2, "TOR": 2, "SD": 2, "SEA": 2,
+    "ATL": 2,
+    "STL": 2,
+    "SF": 2,
+    "HOU": 2,
+    "TOR": 2,
+    "SD": 2,
+    "SEA": 2,
     # Tier 3 — mid-market
-    "TEX": 3, "MIN": 3, "BAL": 3, "CLE": 3, "MIL": 3, "DET": 3,
-    "ARI": 3, "CIN": 3, "WSH": 3, "LAA": 3,
+    "TEX": 3,
+    "MIN": 3,
+    "BAL": 3,
+    "CLE": 3,
+    "MIL": 3,
+    "DET": 3,
+    "ARI": 3,
+    "CIN": 3,
+    "WSH": 3,
+    "LAA": 3,
     # Tier 4 — small-market, persistently under-drafted
-    "KC": 4, "PIT": 4, "MIA": 4, "ATH": 4, "COL": 4, "TB": 4, "CWS": 4,
+    "KC": 4,
+    "PIT": 4,
+    "MIA": 4,
+    "ATH": 4,
+    "COL": 4,
+    "TB": 4,
+    "CWS": 4,
 }
 
 # Star-player allowlist — players whose name recognition consistently drives
@@ -805,29 +835,76 @@ TEAM_MARKET_TIER = {
 # Gold Glove winners.  NOT sourced from the drafts column.  Updated once
 # per offseason.  Names stored in the same normalised form used by
 # app.core.utils.find_player_by_name (accent-stripped, lowercased).
-STAR_PLAYER_FLAGS = frozenset({
-    # 2025 MVP top-5 (each league)
-    "aaron judge", "shohei ohtani", "jose ramirez", "bobby witt jr",
-    "juan soto", "freddie freeman", "francisco lindor", "mookie betts",
-    "ketel marte", "yordan alvarez",
-    # 2025 Cy Young top-5
-    "tarik skubal", "garrett crochet", "paul skenes", "chris sale",
-    "zack wheeler", "logan webb", "tyler glasnow", "blake snell",
-    "yoshinobu yamamoto", "max fried",
-    # Returning stars / household names (multi-time All-Stars, perennial fame)
-    "mike trout", "manny machado", "fernando tatis jr", "ronald acuna jr",
-    "vladimir guerrero jr", "rafael devers", "kyle tucker", "corey seager",
-    "bryce harper", "trea turner", "carlos correa", "jose altuve",
-    "matt olson", "pete alonso", "alex bregman", "anthony rizzo",
-    "salvador perez", "nolan arenado", "marcell ozuna", "william contreras",
-    "gunnar henderson", "elly de la cruz", "wyatt langford",
-    "jackson chourio", "jackson holliday", "jackson merrill",
-    # Pitchers with crossover fame
-    "spencer strider", "jacob degrom", "shane mcclanahan", "corbin burnes",
-    "kevin gausman", "freddy peralta", "framber valdez", "george kirby",
-    "logan gilbert", "dylan cease", "joe ryan", "ranger suarez",
-    "aaron nola", "sonny gray", "justin verlander", "clayton kershaw",
-})
+STAR_PLAYER_FLAGS = frozenset(
+    {
+        # 2025 MVP top-5 (each league)
+        "aaron judge",
+        "shohei ohtani",
+        "jose ramirez",
+        "bobby witt jr",
+        "juan soto",
+        "freddie freeman",
+        "francisco lindor",
+        "mookie betts",
+        "ketel marte",
+        "yordan alvarez",
+        # 2025 Cy Young top-5
+        "tarik skubal",
+        "garrett crochet",
+        "paul skenes",
+        "chris sale",
+        "zack wheeler",
+        "logan webb",
+        "tyler glasnow",
+        "blake snell",
+        "yoshinobu yamamoto",
+        "max fried",
+        # Returning stars / household names (multi-time All-Stars, perennial fame)
+        "mike trout",
+        "manny machado",
+        "fernando tatis jr",
+        "ronald acuna jr",
+        "vladimir guerrero jr",
+        "rafael devers",
+        "kyle tucker",
+        "corey seager",
+        "bryce harper",
+        "trea turner",
+        "carlos correa",
+        "jose altuve",
+        "matt olson",
+        "pete alonso",
+        "alex bregman",
+        "anthony rizzo",
+        "salvador perez",
+        "nolan arenado",
+        "marcell ozuna",
+        "william contreras",
+        "gunnar henderson",
+        "elly de la cruz",
+        "wyatt langford",
+        "jackson chourio",
+        "jackson holliday",
+        "jackson merrill",
+        # Pitchers with crossover fame
+        "spencer strider",
+        "jacob degrom",
+        "shane mcclanahan",
+        "corbin burnes",
+        "kevin gausman",
+        "freddy peralta",
+        "framber valdez",
+        "george kirby",
+        "logan gilbert",
+        "dylan cease",
+        "joe ryan",
+        "ranger suarez",
+        "aaron nola",
+        "sonny gray",
+        "justin verlander",
+        "clayton kershaw",
+    }
+)
 
 # V15.1 (May 2026) — continuous fame index, position-aware window.
 # Replaces V14/V15's binary thresholds (>=1 → +1, >=3 → +2) with a
@@ -886,6 +963,7 @@ LEVERAGE_STAR_PITCHER_ERA = LEVERAGE_ELITE_PITCHER_ERA_FLOOR
 # floor set above its ceiling, or an env modifier inverted.
 # ---------------------------------------------------------------------------
 
+
 def _validate_constants() -> None:
     # Env modifier band must be ascending and centred around 1.0
     assert ENV_MODIFIER_FLOOR < 1.0 < ENV_MODIFIER_CEILING, (
@@ -925,6 +1003,7 @@ def _validate_constants() -> None:
     # _lineup_total_ev to slot-weight variants).  Drift here would break
     # the EV math silently.
     from app.core.utils import BASE_MULTIPLIER
+
     assert sum(SLOT_MULTIPLIERS.values()) > 0, "SLOT_MULTIPLIERS must have positive values"
     assert SLOT_MULTIPLIERS[1] > SLOT_MULTIPLIERS[5], "Slot 1 must have the highest multiplier"
     assert SLOT_MULTIPLIERS[1] == BASE_MULTIPLIER, (
@@ -950,8 +1029,7 @@ def _validate_constants() -> None:
         f"[{POPULARITY_MULT_FLOOR}, {POPULARITY_MULT_CEILING}]"
     )
     assert POPULARITY_SLOPE > 0, (
-        f"POPULARITY_SLOPE must be positive (higher score → lower multiplier): "
-        f"{POPULARITY_SLOPE}"
+        f"POPULARITY_SLOPE must be positive (higher score → lower multiplier): {POPULARITY_SLOPE}"
     )
     assert POPULARITY_NEUTRAL_SCORE > 0, (
         f"POPULARITY_NEUTRAL_SCORE must be positive: {POPULARITY_NEUTRAL_SCORE}"

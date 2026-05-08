@@ -65,16 +65,18 @@ def _get(name: str) -> float:
     return getattr(_C, name)
 
 
-def _maybe_override(varname: str) -> None:
-    env_key = f"BO_OVERRIDE_{varname}"
-    val = os.environ.get(env_key)
-    if val is None:
-        return
-    typed = type(getattr(_C, varname))(val)
-    setattr(_C, varname, typed)
-    from app.core import popularity as _pop
-    if hasattr(_pop, varname):
-        setattr(_pop, varname, typed)
+# Reuse the override helper + scoring from audit_hv_hit_rate to keep a
+# single source of truth.  Apply BO_OVERRIDE_ env vars BEFORE the
+# scorer's first call so it picks up the patched constants.
+import scripts.audit_hv_hit_rate as h  # noqa: E402
+from scripts.audit_hv_hit_rate import (  # noqa: E402
+    _maybe_override,
+    load_slate_envs,
+    neutral_total_score,
+    score_one_player,
+    slate_stack_eligible_teams,
+    is_pitcher_pos,
+)
 
 
 def _setup_overrides() -> None:
@@ -96,19 +98,7 @@ def _setup_overrides() -> None:
         _maybe_override(v)
 
 
-# Apply overrides BEFORE importing the audit harness so it picks up the
-# new constants at score-one-player time.
 _setup_overrides()
-
-# Import after overrides so trait/env constants are in effect.
-import scripts.audit_hv_hit_rate as h  # noqa: E402
-from scripts.audit_hv_hit_rate import (  # noqa: E402
-    load_slate_envs,
-    neutral_total_score,
-    score_one_player,
-    slate_stack_eligible_teams,
-    is_pitcher_pos,
-)
 
 if os.environ.get("V16_REAL_TRAIT") != "1":
     # Default: flat trait to match V15.7 baseline.
@@ -210,17 +200,21 @@ def make_slate_class(eligible_teams: set[str], slate_games: list) -> SimpleNames
             if team not in eligible_teams:
                 continue
             ml = g.get(f"{side}_moneyline")
-            opp_era = g.get(f"{opp.lower() if False else 'home' if side == 'away' else 'away'}_starter_era")
+            opp_era = g.get(
+                f"{opp.lower() if False else 'home' if side == 'away' else 'away'}_starter_era"
+            )
             # Simpler: read opp_era from the opposite-side fields
             opp_era = g.get("away_starter_era") if side == "home" else g.get("home_starter_era")
             own_ops = g.get(f"{side}_team_ops")
-            stackable.append(SimpleNamespace(
-                favored_team=team,
-                moneyline=ml,
-                vegas_total=g.get("vegas_total"),
-                opp_starter_era=opp_era,
-                own_team_ops=own_ops,
-            ))
+            stackable.append(
+                SimpleNamespace(
+                    favored_team=team,
+                    moneyline=ml,
+                    vegas_total=g.get("vegas_total"),
+                    opp_starter_era=opp_era,
+                    own_team_ops=own_ops,
+                )
+            )
     return SimpleNamespace(stackable_games=stackable)
 
 
@@ -286,21 +280,27 @@ def main() -> int:
                 continue
             team = canonicalize_team(row["team"])
             game_pk = team_pk.get(team)
-            candidates.append(_Cand(
-                player_name=row["player_name"],
-                team=team,
-                position=row.get("position", ""),
-                is_pitcher=is_pitcher_pos(row.get("position", "")),
-                game_id=game_pk,
-                filter_ev=rec["filter_ev"],
-            ))
+            candidates.append(
+                _Cand(
+                    player_name=row["player_name"],
+                    team=team,
+                    position=row.get("position", ""),
+                    is_pitcher=is_pitcher_pos(row.get("position", "")),
+                    game_id=game_pk,
+                    filter_ev=rec["filter_ev"],
+                )
+            )
 
         if len(candidates) < 5:
             continue
 
         # Build lineup using runtime composition (V15.3 1P-cap).
-        sorted_pitchers = sorted([c for c in candidates if c.is_pitcher], key=lambda c: c.filter_ev, reverse=True)
-        sorted_batters = sorted([c for c in candidates if not c.is_pitcher], key=lambda c: c.filter_ev, reverse=True)
+        sorted_pitchers = sorted(
+            [c for c in candidates if c.is_pitcher], key=lambda c: c.filter_ev, reverse=True
+        )
+        sorted_batters = sorted(
+            [c for c in candidates if not c.is_pitcher], key=lambda c: c.filter_ev, reverse=True
+        )
 
         best_lineup: list = []
         best_ev: float = -1.0
@@ -340,7 +340,9 @@ def main() -> int:
         median = s[n // 2]
         p25 = s[n // 4]
         p75 = s[3 * n // 4]
-        print(f"  {label}: n={n}  mean={mean:.1f}  median={median:.1f}  p25={p25:.1f}  p75={p75:.1f}  min={min(vals):.1f}  max={max(vals):.1f}")
+        print(
+            f"  {label}: n={n}  mean={mean:.1f}  median={median:.1f}  p25={p25:.1f}  p75={p75:.1f}  min={min(vals):.1f}  max={max(vals):.1f}"
+        )
 
     print("=== V16 Phase 1: Lineup TV outcome audit ===")
     print()
@@ -352,11 +354,15 @@ def main() -> int:
     if os.environ.get("BO_DROP_POSITION_VOLUME") == "1":
         print("  POSITION_VOLUME_MULTIPLIER: DISABLED via env override")
     elif not pos_vol_dict:
-        print("  POSITION_VOLUME_MULTIPLIER: removed (V16 Phase 1) — empty dict, all positions = 1.0")
+        print(
+            "  POSITION_VOLUME_MULTIPLIER: removed (V16 Phase 1) — empty dict, all positions = 1.0"
+        )
     else:
         print(f"  POSITION_VOLUME_MULTIPLIER: active {dict(pos_vol_dict)}")
     print(f"  TRAIT band [{_get('TRAIT_MODIFIER_FLOOR')}, {_get('TRAIT_MODIFIER_CEILING')}]")
-    print(f"  Stack cap: {_get('MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE')} batters/team in stack-eligible games")
+    print(
+        f"  Stack cap: {_get('MAX_PLAYERS_PER_TEAM_BATTERS_STACKABLE')} batters/team in stack-eligible games"
+    )
     print(f"  Per-game cap: {_get('MAX_PLAYERS_PER_GAME_BATTERS')} batters/game")
     print(f"  STACK_BONUS: {_get('STACK_BONUS')}")
     print()

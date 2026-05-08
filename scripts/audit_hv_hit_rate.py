@@ -151,7 +151,10 @@ def compute_trait_score_from_csv(row: dict, is_pitcher: bool) -> float | None:
             (_scale(era, _TRAIT_ERA_FLOOR, _TRAIT_ERA_CEILING), 30.0),
             (_scale(whip, _TRAIT_WHIP_FLOOR, _TRAIT_WHIP_CEILING), 15.0),
             (_scale(k9, _TRAIT_K9_FLOOR, _TRAIT_K9_CEILING), 15.0),
-            (_scale(x_woba_against, _TRAIT_X_WOBA_AGAINST_FLOOR, _TRAIT_X_WOBA_AGAINST_CEILING), 10.0),
+            (
+                _scale(x_woba_against, _TRAIT_X_WOBA_AGAINST_FLOOR, _TRAIT_X_WOBA_AGAINST_CEILING),
+                10.0,
+            ),
             (_scale(fb_velo, _TRAIT_FB_VELO_FLOOR, _TRAIT_FB_VELO_CEILING), 10.0),
             (_scale(whiff, _TRAIT_WHIFF_FLOOR, _TRAIT_WHIFF_CEILING), 12.0),
             (_scale(chase, _TRAIT_CHASE_FLOOR, _TRAIT_CHASE_CEILING), 8.0),
@@ -189,6 +192,8 @@ def trait_score_to_factor(trait_score: float) -> float:
         return floor
     factor = floor + (raw_trait - trait_floor_frac) * (ceiling - floor) / (1.0 - trait_floor_frac)
     return max(floor, min(ceiling, factor))
+
+
 from app.core.popularity import (  # noqa: E402
     popularity_score_to_multiplier,
     predict_popularity_score,
@@ -215,9 +220,9 @@ def neutral_total_score() -> float:
     Returns score in [0, 100] suitable to pass on a candidate.
     """
     trait_floor_frac = MIN_SCORE_THRESHOLD / 100.0
-    raw_trait = trait_floor_frac + (1.0 - TRAIT_MODIFIER_FLOOR) * (
-        1.0 - trait_floor_frac
-    ) / (TRAIT_MODIFIER_CEILING - TRAIT_MODIFIER_FLOOR)
+    raw_trait = trait_floor_frac + (1.0 - TRAIT_MODIFIER_FLOOR) * (1.0 - trait_floor_frac) / (
+        TRAIT_MODIFIER_CEILING - TRAIT_MODIFIER_FLOOR
+    )
     return raw_trait * 100.0
 
 
@@ -268,27 +273,31 @@ def slate_stack_eligible_teams(team_to_game: dict[str, tuple[dict, bool]]) -> se
         # only PATH 1 favored teams flip is_in_blowout_game.
         # Evaluate each side for PATH 1 (blowout fav) and PATH 3 (catastrophic
         # opp SP) — these are the bonus-bearing paths.
-        if home_ml is not None and is_stack_eligible_game(
-            home_ml, vt, away_starter_era, home_team_ops
-        ) and (
-            (home_ml <= -200 and vt is not None and vt >= 9.0)
-            or (
-                away_starter_era is not None
-                and home_team_ops is not None
-                and away_starter_era >= 6.5
-                and home_team_ops >= 0.760
+        if (
+            home_ml is not None
+            and is_stack_eligible_game(home_ml, vt, away_starter_era, home_team_ops)
+            and (
+                (home_ml <= -200 and vt is not None and vt >= 9.0)
+                or (
+                    away_starter_era is not None
+                    and home_team_ops is not None
+                    and away_starter_era >= 6.5
+                    and home_team_ops >= 0.760
+                )
             )
         ):
             eligible.add(home)
-        if away_ml is not None and is_stack_eligible_game(
-            away_ml, vt, home_starter_era, away_team_ops
-        ) and (
-            (away_ml <= -200 and vt is not None and vt >= 9.0)
-            or (
-                home_starter_era is not None
-                and away_team_ops is not None
-                and home_starter_era >= 6.5
-                and away_team_ops >= 0.760
+        if (
+            away_ml is not None
+            and is_stack_eligible_game(away_ml, vt, home_starter_era, away_team_ops)
+            and (
+                (away_ml <= -200 and vt is not None and vt >= 9.0)
+                or (
+                    home_starter_era is not None
+                    and away_team_ops is not None
+                    and home_starter_era >= 6.5
+                    and away_team_ops >= 0.760
+                )
             )
         ):
             eligible.add(away)
@@ -354,9 +363,7 @@ def score_one_player(
         return None
 
     # ---- popularity score ----
-    is_rookie = (
-        season_era is None if is_pitcher else season_ops is None
-    )
+    is_rookie = season_era is None if is_pitcher else season_ops is None
     try:
         if is_rookie:
             pop_score = predict_rookie_popularity_score(
@@ -411,9 +418,7 @@ def score_one_player(
     elif os.environ.get("BO_DROP_POSITION_VOLUME") == "1":
         position_mult = 1.0
     else:
-        position_mult = POSITION_VOLUME_MULTIPLIER.get(
-            (row["position"] or "").upper(), 1.0
-        )
+        position_mult = POSITION_VOLUME_MULTIPLIER.get((row["position"] or "").upper(), 1.0)
 
     # V16 Phase 1: real trait_factor from Statcast + season aggregates in CSV.
     # Pre-V16 the harness held trait_factor = 1.0 because Statcast wasn't in
@@ -498,6 +503,7 @@ def _maybe_override(varname: str) -> None:
     setattr(_C, varname, typed)
     # Patch downstream modules that bound this name at import time.
     from app.core import popularity as _pop
+
     if hasattr(_pop, varname):
         setattr(_pop, varname, typed)
 
@@ -562,9 +568,7 @@ def main() -> int:
 
         # Per-slate TV ranking — computed once and attached to each record
         # so the miss CSV can flag "missed top-K-TV" as well as "missed HV".
-        for tv_rank, c in enumerate(
-            sorted(scored, key=lambda x: -x["tv_outcome"]), start=1
-        ):
+        for tv_rank, c in enumerate(sorted(scored, key=lambda x: -x["tv_outcome"]), start=1):
             c["tv_rank"] = tv_rank
         # Top-K-TV reference set for the per-slate hit-rate
         top5_tv = {(c["name"], c["team"]) for c in scored if c["tv_rank"] <= 5}
@@ -585,36 +589,64 @@ def main() -> int:
         # Slot-1 TV: was our #1 filter_ev pick also a top-K-TV winner?
         slot1_in_top5_tv = 1 if scored and scored[0]["tv_rank"] <= 5 else 0
         slot1_tv_outcome = scored[0]["tv_outcome"] if scored else 0.0
-        per_slate.append((
-            date_str, hv5, hv10, hv20, total_hv, len(scored), skipped,
-            tv5, tv10, tv20, slot1_in_top5_tv, slot1_tv_outcome,
-        ))
+        per_slate.append(
+            (
+                date_str,
+                hv5,
+                hv10,
+                hv20,
+                total_hv,
+                len(scored),
+                skipped,
+                tv5,
+                tv10,
+                tv20,
+                slot1_in_top5_tv,
+                slot1_tv_outcome,
+            )
+        )
 
         for c in scored:
             if c["is_hv"] == 1 and c["rank"] > 5:
-                miss_rows.append({
-                    "date": date_str,
-                    "name": c["name"],
-                    "team": c["team"],
-                    "position": c["position"],
-                    "is_pitcher": int(c["is_pitcher"]),
-                    "is_rookie": int(c["is_rookie"]),
-                    "rank": c["rank"],
-                    "filter_ev": round(c["filter_ev"], 2),
-                    "env_factor": round(c["env_factor"], 3),
-                    "leverage_factor": round(c["leverage_factor"], 3),
-                    "stack_bonus": round(c["stack_bonus"], 3),
-                    "position_mult": round(c["position_mult"], 3),
-                    "pop_score": round(c["pop_score"], 2),
-                    "primary_miss_cause": primary_miss_cause(c),
-                })
+                miss_rows.append(
+                    {
+                        "date": date_str,
+                        "name": c["name"],
+                        "team": c["team"],
+                        "position": c["position"],
+                        "is_pitcher": int(c["is_pitcher"]),
+                        "is_rookie": int(c["is_rookie"]),
+                        "rank": c["rank"],
+                        "filter_ev": round(c["filter_ev"], 2),
+                        "env_factor": round(c["env_factor"], 3),
+                        "leverage_factor": round(c["leverage_factor"], 3),
+                        "stack_bonus": round(c["stack_bonus"], 3),
+                        "position_mult": round(c["position_mult"], 3),
+                        "pop_score": round(c["pop_score"], 2),
+                        "primary_miss_cause": primary_miss_cause(c),
+                    }
+                )
 
     with output_csv.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=[
-            "date", "name", "team", "position", "is_pitcher", "is_rookie",
-            "rank", "filter_ev", "env_factor", "leverage_factor",
-            "stack_bonus", "position_mult", "pop_score", "primary_miss_cause",
-        ])
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "date",
+                "name",
+                "team",
+                "position",
+                "is_pitcher",
+                "is_rookie",
+                "rank",
+                "filter_ev",
+                "env_factor",
+                "leverage_factor",
+                "stack_bonus",
+                "position_mult",
+                "pop_score",
+                "primary_miss_cause",
+            ],
+        )
         writer.writeheader()
         writer.writerows(miss_rows)
 
@@ -640,9 +672,15 @@ def main() -> int:
     print(f"HV winners total: {total_hv}")
     print()
     print("=== HV-rate (binary leaderboard hit) ===")
-    print(f"HV captured @5:   {total_at_5} / {total_hv} ({total_at_5/total_hv:.1%})  avg/slate {total_at_5/n_slates:.2f}")
-    print(f"HV captured @10:  {total_at_10} / {total_hv} ({total_at_10/total_hv:.1%})  avg/slate {total_at_10/n_slates:.2f}")
-    print(f"HV captured @20:  {total_at_20} / {total_hv} ({total_at_20/total_hv:.1%})  avg/slate {total_at_20/n_slates:.2f}")
+    print(
+        f"HV captured @5:   {total_at_5} / {total_hv} ({total_at_5 / total_hv:.1%})  avg/slate {total_at_5 / n_slates:.2f}"
+    )
+    print(
+        f"HV captured @10:  {total_at_10} / {total_hv} ({total_at_10 / total_hv:.1%})  avg/slate {total_at_10 / n_slates:.2f}"
+    )
+    print(
+        f"HV captured @20:  {total_at_20} / {total_hv} ({total_at_20 / total_hv:.1%})  avg/slate {total_at_20 / n_slates:.2f}"
+    )
     print()
     # TV-rate denominators are slate-bounded: each slate has exactly K
     # top-K-TV winners, so the corpus-level cap is K * n_slates.
@@ -650,11 +688,17 @@ def main() -> int:
     cap10 = 10 * n_slates
     cap20 = 20 * n_slates
     print("=== TV-rate (top-K by total_value, the actual draft-win currency) ===")
-    print(f"TV captured @5:   {total_tv5} / {cap5} ({total_tv5/cap5:.1%})  avg/slate {total_tv5/n_slates:.2f}")
-    print(f"TV captured @10:  {total_tv10} / {cap10} ({total_tv10/cap10:.1%})  avg/slate {total_tv10/n_slates:.2f}")
-    print(f"TV captured @20:  {total_tv20} / {cap20} ({total_tv20/cap20:.1%})  avg/slate {total_tv20/n_slates:.2f}")
-    print(f"Slot-1 in top-5 TV:  {slot1_top5_tv}/{n_slates} ({slot1_top5_tv/n_slates:.1%})")
-    print(f"Mean slot-1 TV outcome: {slot1_tv_total/n_slates:.2f}")
+    print(
+        f"TV captured @5:   {total_tv5} / {cap5} ({total_tv5 / cap5:.1%})  avg/slate {total_tv5 / n_slates:.2f}"
+    )
+    print(
+        f"TV captured @10:  {total_tv10} / {cap10} ({total_tv10 / cap10:.1%})  avg/slate {total_tv10 / n_slates:.2f}"
+    )
+    print(
+        f"TV captured @20:  {total_tv20} / {cap20} ({total_tv20 / cap20:.1%})  avg/slate {total_tv20 / n_slates:.2f}"
+    )
+    print(f"Slot-1 in top-5 TV:  {slot1_top5_tv}/{n_slates} ({slot1_top5_tv / n_slates:.1%})")
+    print(f"Mean slot-1 TV outcome: {slot1_tv_total / n_slates:.2f}")
     print()
 
     cause_counts: dict[str, int] = defaultdict(int)
@@ -675,8 +719,12 @@ def main() -> int:
     print()
     print(f"Decomposition CSV: {output_csv}")
     print("Calibration constants used:")
-    print(f"  ENV_FLOOR / batter_CEIL / pitcher_CEIL / rookie_CEIL = {_get('ENV_MODIFIER_FLOOR')} / {_get('ENV_MODIFIER_CEILING')} / {_get('PITCHER_ENV_MODIFIER_CEILING')} / {_get('ROOKIE_ENV_MODIFIER_CEILING')}")
-    print(f"  POPULARITY: NEUTRAL={_get('POPULARITY_NEUTRAL_SCORE')}, SLOPE={_get('POPULARITY_SLOPE')}, mult range [{_get('POPULARITY_MULT_FLOOR')}, {_get('POPULARITY_MULT_CEILING')}]")
+    print(
+        f"  ENV_FLOOR / batter_CEIL / pitcher_CEIL / rookie_CEIL = {_get('ENV_MODIFIER_FLOOR')} / {_get('ENV_MODIFIER_CEILING')} / {_get('PITCHER_ENV_MODIFIER_CEILING')} / {_get('ROOKIE_ENV_MODIFIER_CEILING')}"
+    )
+    print(
+        f"  POPULARITY: NEUTRAL={_get('POPULARITY_NEUTRAL_SCORE')}, SLOPE={_get('POPULARITY_SLOPE')}, mult range [{_get('POPULARITY_MULT_FLOOR')}, {_get('POPULARITY_MULT_CEILING')}]"
+    )
     pos_vol_dict = POSITION_VOLUME_MULTIPLIER
     if os.environ.get("BO_DROP_POSITION_VOLUME") == "1":
         pos_vol_status = "DISABLED via env override"
@@ -684,7 +732,9 @@ def main() -> int:
         pos_vol_status = "removed (V16 Phase 1) — empty dict"
     else:
         pos_vol_status = f"active {dict(pos_vol_dict)}"
-    print(f"  TRAIT band [{_get('TRAIT_MODIFIER_FLOOR')}, {_get('TRAIT_MODIFIER_CEILING')}]  (V16 Phase 1: real Statcast-driven trait_factor)")
+    print(
+        f"  TRAIT band [{_get('TRAIT_MODIFIER_FLOOR')}, {_get('TRAIT_MODIFIER_CEILING')}]  (V16 Phase 1: real Statcast-driven trait_factor)"
+    )
     print(f"  POSITION_VOLUME_MULTIPLIER: {pos_vol_status}")
     return 0
 
