@@ -172,13 +172,20 @@ def parse_lineups_html(html: str) -> list[GameLineup]:
 def _parse_team_block(ul, team_abbr: str, *, is_home: bool) -> TeamLineup | None:
     """Parse a single <ul class='lineup__list is-visit/is-home'> block."""
     # Starting pitcher — the lineup__player-highlight item, if present.
+    # Prefer the <a title="..."> attribute (always the FULL name — same
+    # convention RotoWire uses for batters) over the link's display text,
+    # which is sometimes abbreviated (e.g. "L. Webb").  The full name is
+    # what data_collection's `_backfill_probable_starters_from_rotowire`
+    # uses to resolve the mlb_id against the active-roster Player table,
+    # so abbreviated text would silently fail the lookup for ~half of
+    # RotoWire-projected starters.
     pitcher_name = None
     pitcher_throws = None
     sp = ul.select_one("li.lineup__player-highlight .lineup__player-highlight-name")
     if sp is not None:
         link = sp.select_one("a")
         if link:
-            pitcher_name = link.get_text(strip=True)
+            pitcher_name = (link.get("title") or link.get_text(strip=True)).strip() or None
         throws = sp.select_one(".lineup__throws")
         if throws:
             pitcher_throws = (throws.get_text(strip=True) or None)
