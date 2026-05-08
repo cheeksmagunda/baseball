@@ -755,6 +755,153 @@ The optimizer builds variants 0P+5B, 1P+4B, 2P+3B, 3P+2B, 4P+1B, 5P+0B. For each
 
 **Stacking** is still capped at 2 batters per team AND 2 per game and only fires on overwhelmingly clear game scripts.
 
+### V16 Phase 1 — Lineup-TV calibration: leverage tightened, POSITION_VOLUME_MULTIPLIER removed (May 8)
+
+V16 Phase 1 is the structural unification commit promised by V16
+Phase 0 (commit 06bde49) Statcast backfill.  Two changes:
+
+1. **POPULARITY_MULT_FLOOR / CEILING**: 0.75 / 1.55 → **0.80 / 1.30**
+2. **POSITION_VOLUME_MULTIPLIER**: removed (V13.3 catcher 0.90 / 2B-SS
+   0.95 haircut deleted)
+
+Trigger: 2026-05-08 user complaint — the optimizer picked B. House
+(WSH 3B, x_woba 0.32) over R. Jeffers (MIN C, x_woba 0.43) on the
+same slate.  House busted; Jeffers would have hit.  Diagnosis showed
+two independent miscalibrations: the V13.3 catcher haircut applied
+a 10% population-level penalty to Jeffers as an individual elite-
+trait catcher, AND the V15.6 leverage band [0.75, 1.55] amplified
+House's contrarian premium beyond Jeffers' trait edge.
+
+**The metric that drove V16: full lineup TV outcome, not per-player hit rate.**
+
+`scripts/audit_lineup_tv.py` (new) replays the live runtime composition
+(V15.3 1P-cap, per-team / per-game caps, anti-correlation guard) on
+every slate in the 41-slate corpus, then sums the slot-weighted
+total_value outcome.  The per-PLAYER TV-rate@K metric V15.6 was
+tuned against ("did our top-K contain a top-TV winner?") rewards
+aggressive contrarianism.  The per-LINEUP metric ("what's the SUM
+across our 5 picks?") penalises the same aggressive contrarianism —
+when 2-3 of our 5 picks are extreme contrarians from the same
+low-pop_score slice, they bust together and tank the lineup.
+
+**Calibration evidence (41-slate corpus, V15.7 → V16 Phase 1):**
+
+| Metric                       | V15.7  | V16    | Δ      |
+|------------------------------|--------|--------|--------|
+| Lineup TV mean               |  78.6  |  81.7  | **+3.1** |
+| Lineup TV median             |  80.6  |  85.8  | **+5.2** |
+| Lineup TV p75                |  92.0  |  99.3  | **+7.3** |
+| Lineup TV max                | 149.3  | 148.8  |  -0.5  |
+
+Rank context: rank-1 winning lineup mean TV across the corpus is
+**78.2**.  V15.7 mean (78.6) was tied with rank-1.  **V16 mean (81.7)
+BEATS rank-1 by 3.5 TV/slate.**  p75 99.3 means 25% of slates produce
+a rank-1-equivalent (~100 TV) lineup, up from very rare in V15.7.
+
+**Leverage band sweep (the dominant lever):**
+
+| Leverage band  | Lineup TV mean | Δ vs V15.7 |
+|----------------|---------------:|-----------:|
+| [0.75, 1.55] (V15.6) | 78.6 |  baseline  |
+| [0.80, 1.45]   |  79.0  |  +0.4  |
+| [0.85, 1.40]   |  80.0  |  +1.4  |
+| [0.90, 1.35]   |  80.8  |  +2.2  |
+| [0.85, 1.30]   |  82.0  |  +3.4  |
+| **[0.80, 1.30]** (V16) | **81.9** | **+3.3** |
+| [1.00, 1.30]   |  80.6  |  +2.0  |
+
+Optimum at CEILING 1.30 (down from V15.6's 1.55).  FLOOR is in noise
+between 0.80 and 0.95; 0.80 chosen to preserve a meaningful contrarian
+discount magnitude.
+
+**Why V15.6's wider band was wrong**: V15.6 calibrated against per-
+PLAYER TV-rate@K.  A wide leverage band rewards the rare big payoff
+of nailing a top-TV-winning sleeper as ONE of K picks.  But the same
+band over-builds all-contrarian LINEUPS — the contrarians are picked
+from a correlated slice of the player pool (low pop_score) and bust
+together when none of them hit.  Per-LINEUP TV is the actual win
+condition; per-player TV-rate is a proxy that disagrees with reality
+at the lineup-construction level.
+
+**Configurations tested but NOT shipped:**
+
+- **Real Statcast-driven trait_factor (Phase 0 unblocked it)**: the
+  harness measurement consistently HURT (real trait + any band <
+  flat-trait baseline).  Reason: per fangraphs.com research, xwOBA
+  is *descriptive not predictive* (R²=0.218 next-year-wOBA).  Live
+  runtime already uses Statcast via `score_offensive_profile` and
+  `score_pitcher_k_rate`; the live trait_factor is not flat 1.0.  The
+  HARNESS's measurement was on a CSV-only proxy (skipping game-log
+  derived recent_form / hot_streak that the live runtime computes).
+  V16 trait band stays at V15.4's [0.70, 1.20].
+- **Increasing stack cap (2 → 3 or 4)**: zero measurable effect.
+  Stack-eligible games are rare AND individual EV ranking doesn't
+  pull a 3rd batter from the stack into the lineup over a different
+  team's higher-EV pick.  Stacking is correlation-driven, not
+  individual-EV-driven; the cap relax doesn't help without
+  correlation-aware composition (Phase 2 candidate).
+- **Increasing STACK_BONUS** (1.10 → 1.20 / 1.25): -0.5 TV mean.
+  Stack-eligible teams already hit the 2-cap; the bonus mostly
+  affects single-batter-on-stack-eligible-team cases.
+- **Wider leverage** (e.g. [0.65, 1.70]): -2.0 TV mean.  Confirms V16's
+  tightening direction.
+
+**Per-PLAYER metric regressions (acceptable):**
+
+| Metric              | V15.7 | V16  |
+|---------------------|------:|-----:|
+| HV captured @5      |  160  | 156  |
+| HV captured @10     |  303  | 281  |
+| TV captured @5      |   58  |  54  |
+| Slot-1 in top-5 TV  |   17  |  14  |
+| Mean slot-1 TV      |  19.2 | 17.4 |
+
+These are PROXY metrics — V15.6 calibrated for them, V16 trades them
+for the actual win condition.  Net: +3.1 TV/slate on lineup TV vs
+~3 fewer per-player hits.  Positive trade for "win the draft."
+
+**Implementation surface:**
+
+- `app/core/constants.py` — POPULARITY_MULT_FLOOR 0.75 → 0.80,
+  POPULARITY_MULT_CEILING 1.55 → 1.30, POSITION_VOLUME_MULTIPLIER
+  set to empty dict (kept for import-path compat; any `.get()`
+  silently returns 1.0).
+- `app/services/filter_strategy.py` — `_compute_base_ev` no longer
+  computes `position_mult`.  EV formula collapses to
+  `env × volatility × trait × leverage × stack × dnp × 100`.
+- `scripts/audit_lineup_tv.py` (new) — the lineup-TV harness V16 was
+  calibrated against.  Reuses `score_one_player` from
+  `audit_hv_hit_rate.py`; constructs duck-typed candidates that feed
+  `_build_variant` directly so the runtime composition logic is the
+  one being measured.
+- `scripts/audit_hv_hit_rate.py` — extended with Statcast-driven
+  trait reconstruction (`compute_trait_score_from_csv`, opt-in via
+  `V16_REAL_TRAIT=1`).  Default still flat for V15.7 parity.  Adds
+  `BO_DROP_POSITION_VOLUME` toggle for sweeps.
+- `tests/test_filter_strategy.py::TestV133PositionAndRookie` —
+  rewritten.  Catcher EV now EQUALS OF EV at matched env+trait
+  (no haircut).  Rookie env-cap tests preserved.
+
+**V16 Phase 1 explicitly does NOT change**: V13 ML curves, V13 wind-
+direction split, V13 catcher framing K-rate adjustment, V13.3 rookie
+env ceiling (1.10), V13.3 STACK_BONUS=1.10, V15.4 trait band [0.70,
+1.20], V15.7 symmetric env ceiling (pitcher / batter both 1.30),
+V15.3 MAX_PITCHERS_PER_LINEUP=1 cap, V12 composition chooser,
+per-team / per-game caps, anti-correlation guard, slot-display rule,
+T-65 timing, no-fallbacks rule, no-historical-bleed rule.
+
+**Verification**: 258/258 tests pass; ruff clean; audit_live_isolation
+clean.  The lineup-TV harness is reproducible — `BO_CURRENT_SEASON=2026
+.venv/bin/python scripts/audit_lineup_tv.py` re-runs the audit any
+time the corpus grows.
+
+**Phase 2 candidates (pending out-of-sample validation of V16)**:
+correlation-aware composition (true 3+ batter stacks via joint upside
+scoring), and slot-1 ceiling-probability term structurally distinct
+from the multiplicative trait term.  Both are structural changes,
+not constant tweaks; V16 first to confirm the [0.80, 1.30] band
+holds up on the next ~10-15 slates.
+
 ### V15.7 Symmetric env ceiling — pitcher 1.55 → 1.30 (May 7, T-65 ship #2)
 
 V15.7 reverts the V13 asymmetric env ceiling architecture after the
@@ -1754,23 +1901,29 @@ section headers above for context.  None of those sections describe
   rebalanced trait weights to remove env double-counting.  Documented
   in the V12.x section at the top of this file.
 
-### Active behavior summary (V14 — read this, not the changelog)
+### Active behavior summary (V16 Phase 1 — read this, not the changelog)
 
 EV formula (`_compute_base_ev` in `app/services/filter_strategy.py`):
 ```
 filter_ev = env_factor × volatility_amplifier × trait_factor
-          × leverage_factor × stack_bonus × dnp_adj × position_mult × 100
+          × leverage_factor × stack_bonus × dnp_adj × 100
 
-env_factor:        floor 0.20  (V13.3 ceilings — first match wins)
+env_factor:        floor 0.20  (V15.7 ceilings — symmetric pitcher/batter)
                    rookie ceiling 1.10  (rookie-track players, V13.3)
-                   pitcher ceiling 1.55 (non-rookie pitchers, V13)
+                   pitcher ceiling 1.30 (non-rookie pitchers, V15.7)
                    batter ceiling 1.30  (non-rookie batters)
 volatility_amplifier: 1 + cv × 0.20 × (env − 0.5) × 2  (batters only)
-trait_factor:      floor 0.85, ceiling 1.15
-leverage_factor:   0.85 (top_decile) → 1.20 (bottom_decile), 1.0 mid (V14)
-stack_bonus:       1.0 / 1.10 (PATH 1 blowout-fav teams only, V13.3 — was 1.20)
-dnp_adj:           0.70 (confirmed-bad) / 0.93 (unknown) / 1.0 (known order)
-position_mult:     1.0 default; C 0.90, 2B 0.95, SS 0.95 (V13.3, batters only)
+trait_factor:      floor 0.70, ceiling 1.20  (V15.4 widened band)
+leverage_factor:   0.80 (top_decile / consensus) → 1.30 (bottom_decile /
+                   sleeper) continuous popularity curve (V16 Phase 1
+                   tightened from V15.6's 0.75 / 1.55 against
+                   lineup-TV outcomes)
+stack_bonus:       1.0 / 1.10 (PATH 1 blowout-fav teams only, V13.3)
+dnp_adj:           always 1.0 (strict-mode DNP filter excludes invalid
+                   candidates upstream)
+position_mult:     REMOVED in V16 Phase 1 (V13.3 catcher 0.90 / 2B-SS
+                   0.95 haircut deleted — population prior misfired
+                   on individual elite-trait players)
 ```
 
 V14 leverage_factor pulls from `predicted_ownership_bucket` on the

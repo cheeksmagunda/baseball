@@ -29,7 +29,6 @@ from app.core.constants import (
     SLOT_MULTIPLIERS,
     STACK_BONUS,
     ROOKIE_ENV_MODIFIER_CEILING,
-    POSITION_VOLUME_MULTIPLIER,
     PITCHER_ENV_MODIFIER_CEILING,
 )
 from app.services.filter_strategy import StackableGame
@@ -510,63 +509,56 @@ class TestBaseEV:
 
 
 # ===================================================================
-# 7b. V13.3 — Position multiplier + rookie env cap
+# 7b. V16 Phase 1 — POSITION_VOLUME_MULTIPLIER REMOVED + V13.3 rookie env cap
 # ===================================================================
 
 class TestV133PositionAndRookie:
-    """Regression tests for V13.3: catcher/2B/SS volume haircut + rookie env cap."""
+    """V13.3 catcher/2B/SS haircut was removed in V16 Phase 1 (May 8, 2026).
+    The lineup-TV audit showed it costs ~0.5 mean lineup TV and misfires on
+    individual elite-trait catchers.  Trait scoring discriminates hot vs
+    cold within a position; position itself is no longer an EV input.
 
-    def test_catcher_ev_less_than_outfielder_same_context(self):
-        """Catcher EV is haircut by POSITION_VOLUME_MULTIPLIER vs OF (same env+trait)."""
+    Rookie env cap (V13.3) survives — it's a position-agnostic guard."""
+
+    def test_position_does_not_affect_ev_under_v16(self):
+        """V16 Phase 1: every batter position gets the same EV at matched env+trait."""
         of = _make_candidate(position="OF", env_score=0.8, total_score=70.0)
         c = _make_candidate(position="C", env_score=0.8, total_score=70.0)
         ev_of = _compute_base_ev(of)
         ev_c = _compute_base_ev(c)
-        assert ev_c < ev_of
-        # The C multiplier (0.90) should be the precise ratio
-        assert ev_c == pytest.approx(ev_of * POSITION_VOLUME_MULTIPLIER["C"], rel=0.001)
+        # V16: catcher no longer pays a haircut — EV should be exactly equal.
+        assert ev_c == pytest.approx(ev_of, rel=1e-6)
 
-    def test_middle_infield_takes_smaller_haircut(self):
-        """2B and SS take 0.95 haircut (less than C's 0.90)."""
+    def test_middle_infield_no_haircut_under_v16(self):
+        """V16 Phase 1: 2B / SS / OF / 1B / 3B / DH all score equal at matched env+trait."""
         of = _make_candidate(position="OF", env_score=0.7, total_score=60.0)
         ss = _make_candidate(position="SS", env_score=0.7, total_score=60.0)
+        two_b = _make_candidate(position="2B", env_score=0.7, total_score=60.0)
         ev_of = _compute_base_ev(of)
         ev_ss = _compute_base_ev(ss)
-        assert ev_ss == pytest.approx(ev_of * POSITION_VOLUME_MULTIPLIER["SS"], rel=0.001)
+        ev_2b = _compute_base_ev(two_b)
+        assert ev_ss == pytest.approx(ev_of, rel=1e-6)
+        assert ev_2b == pytest.approx(ev_of, rel=1e-6)
 
-    def test_pitcher_does_not_pay_position_multiplier(self):
-        """Pitchers bypass the position multiplier entirely.
+    def test_pitcher_and_batter_equal_at_matched_env_trait(self):
+        """V16 Phase 1: pitcher and any batter at matched env+trait have EQUAL EV.
 
-        Under V15.7 the pitcher and batter env ceilings are both 1.30
-        (V13's asymmetric 1.55 / 1.30 was reverted after the TV-target
-        audit showed pitcher TV is -21% vs batter TV).  So a pitcher
-        and an OF batter at matched env+trait have EQUAL EV (no
-        asymmetry to exploit).  The "no position haircut" invariant
-        is verified against a CATCHER, where the haircut would apply
-        on the batter side: a pitcher must outrank a catcher in
-        matched env+trait by exactly the catcher haircut (0.90).
+        Under V15.7 (symmetric env ceiling 1.30) and V16 Phase 1 (no
+        position haircut), every position is on the same EV curve when
+        env and trait match.  The previous V13.3 assertion that pitchers
+        outranked catchers by 0.90 is gone — Jeffers-style elite catchers
+        no longer pay a structural haircut.
         """
         p = _make_candidate(is_pitcher=True, env_score=0.7, total_score=60.0)
-        ev_p = _compute_base_ev(p)
-        assert ev_p > 0
-
-        # Pitcher vs OF — under V15.7 should be exactly equal (same env
-        # ceiling, both have position_mult=1.0).
         of = _make_candidate(position="OF", env_score=0.7, total_score=60.0)
-        ev_of = _compute_base_ev(of)
-        assert ev_p == pytest.approx(ev_of, rel=1e-6), (
-            "Under V15.7 (symmetric env ceiling) a pitcher and an OF "
-            "with matched env+trait should have equal EV — both bypass "
-            "the position haircut and both saturate to 1.30."
-        )
-
-        # Pitcher vs CATCHER — pitcher should outrank by the C haircut.
         c = _make_candidate(position="C", env_score=0.7, total_score=60.0)
+        ev_p = _compute_base_ev(p)
+        ev_of = _compute_base_ev(of)
         ev_c = _compute_base_ev(c)
-        assert ev_p > ev_c
-        assert ev_c == pytest.approx(
-            ev_p * POSITION_VOLUME_MULTIPLIER["C"], rel=1e-6
-        )
+        assert ev_p > 0
+        assert ev_p == pytest.approx(ev_of, rel=1e-6)
+        assert ev_p == pytest.approx(ev_c, rel=1e-6)
+        assert ev_of == pytest.approx(ev_c, rel=1e-6)
 
     def test_rookie_pitcher_env_capped_at_rookie_ceiling(self):
         """Rookie-track pitcher in saturated env can't exceed ROOKIE_ENV_MODIFIER_CEILING."""

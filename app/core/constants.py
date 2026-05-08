@@ -398,20 +398,24 @@ PITCHER_ANCHOR_SLOT = 1              # legacy constant — Slot 1 index, used in
 # ---------------------------------------------------------------------------
 STACK_BONUS = 1.10  # 10% EV bonus for players on blowout-game teams (V13.3)
 
-# V13.3 (May 2026): position-volume multiplier for batters.  Catchers win
-# 0% of slot-1 spots in 40 historical slates (rest days, pinch-hits,
-# pulls — ~3.0 PAs/game vs 4.2 for OF).  2B/SS win 0% of slot-1 too
-# (lower OPS distributions).  Apply a small structural haircut so an
-# elite-OPS catcher cannot outscore a non-catcher with the same trait
-# in the same env.  Default 1.0 for OF / 1B / 3B / DH / P (pitchers
-# bypass this term — they have their own pitcher_ev_ceiling).
-# Reads via .get(position.upper(), 1.0) so unknown positions default to
-# no penalty rather than crashing.
-POSITION_VOLUME_MULTIPLIER = {
-    "C": 0.90,
-    "2B": 0.95,
-    "SS": 0.95,
-}
+# V16 Phase 1 (May 8, 2026): POSITION_VOLUME_MULTIPLIER REMOVED.
+#
+# V13.3 introduced a position-level haircut (catcher 0.90, 2B/SS 0.95)
+# calibrated against a 40-slate audit showing 0% of slot-1 winners came
+# from those positions.  V16's lineup-TV audit (audit_lineup_tv.py)
+# replays composition over 41 slates and shows the haircut produces a
+# small mean-TV effect (±0.5) but actively misfires on individual
+# elite-trait catchers — the 2026-05-08 slate where the optimizer
+# picked a low-trait 3B (B. House, x_woba 0.32) over a hot catcher
+# (R. Jeffers, x_woba 0.43) is the canonical case.  The haircut was a
+# population prior masking individual signal.
+#
+# Trait scoring (offensive_profile via x_woba / hard_hit / barrel) is
+# the right discriminator for hot vs cold within a position.  Position
+# itself is no longer an EV input — the dict is empty so any lookup
+# silently returns 1.0 (kept as an empty dict to preserve the import
+# path; callers iterate or .get() unchanged).
+POSITION_VOLUME_MULTIPLIER: dict[str, float] = {}
 
 # ---------------------------------------------------------------------------
 # Strict-mode (May 2026): no league-average DEFAULT_* fallbacks.  The pipeline
@@ -733,6 +737,40 @@ ET_TO_UTC_OFFSET_HOURS = 4
 #   score 7  → mult 0.75 (FLOOR / max consensus discount)
 #   score 9  → mult 0.75 (saturated)
 #
+# V16 Phase 1 (May 8, 2026): retuned to [0.80, 1.30] against LINEUP-TV
+# outcomes.  V15.6 calibrated against per-PLAYER TV-rate@K (does our
+# top-K contain a top-TV winner?), which favours aggressive contrarian
+# saturation because it rewards "at least one big hit".  But the
+# user's actual win condition is per-LINEUP TV (sum across 5 slots),
+# which penalises the same aggressive contrarian band: when 2-3 of our
+# 5 picks are extreme contrarians, they bust together and tank the
+# whole lineup.  The narrower [0.80, 1.30] band keeps the contrarian
+# premium meaningful but bounded — enough to fade clear consensus
+# stars who get low boost, not so wide that we routinely build
+# all-contrarian lineups.
+#
+# Calibration evidence (scripts/audit_lineup_tv.py, 41-slate corpus):
+#
+# | band         | mean | median | p75  | p25  | max   | min  |
+# |--------------|------|--------|------|------|-------|------|
+# | [0.75, 1.55] | 78.6 |  80.6  | 92.0 | 69.2 | 149.3 | 21.0 | (V15.6)
+# | [0.85, 1.40] | 80.0 |  81.3  | 92.5 | 67.7 | 148.8 | 12.8 |
+# | [0.85, 1.30] | 82.0 |  82.4  | 94.1 | 69.2 | 148.8 | 11.9 |
+# | [0.80, 1.30] | 81.9 |  82.4  | 94.1 | 69.2 | 148.8 | 11.9 | (V16)
+# | [0.80, 1.30]+dropPos | 81.7 | 85.8 | 99.3 | 68.5 | 148.8 | 12.8 |
+#
+# The +dropPos row is the actual V16 ship config: removing
+# POSITION_VOLUME_MULTIPLIER on top of the band tighten gives:
+#   - mean lineup TV +3.1 (78.6 → 81.7)
+#   - median lineup TV +5.2 (80.6 → 85.8)
+#   - p75 lineup TV +7.3 (92.0 → 99.3) — 25% of slates now produce
+#     rank-1-equivalent (~100 TV) lineups, up from very rare
+#   - max preserved (149.3 → 148.8)
+#
+# Cost: per-PLAYER metrics regress slightly (HV@5 160→156, slot-1 hits
+# 17→14, mean slot-1 TV 19.16→17.41).  These are proxies; the
+# per-LINEUP win condition is what matters for "win the draft".
+#
 # CRITICAL: TV is used here ONLY as an outcome label for calibration.
 # The runtime never reads total_value, real_score, or card_boost.  No
 # boost predictor, no slot-ordering heuristic that uses boost.  The
@@ -741,8 +779,8 @@ ET_TO_UTC_OFFSET_HOURS = 4
 # popularity and the platform-set boost; it does not predict boost.
 POPULARITY_NEUTRAL_SCORE = 4.5
 POPULARITY_SLOPE = 0.22
-POPULARITY_MULT_FLOOR = 0.75
-POPULARITY_MULT_CEILING = 1.55
+POPULARITY_MULT_FLOOR = 0.80
+POPULARITY_MULT_CEILING = 1.30
 
 # Team market tier — drives one of four families of popularity features.
 # Tier 1 = national following (top of every casual fan's mind), tier 4 =

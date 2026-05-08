@@ -16,9 +16,9 @@ Internal helpers:
   _smart_slot_assignment — sort-by-EV, assign multipliers desc
   _compute_dnp_adjustment, _compute_stack_eligible_teams, _team_batter_cap
 
-EV formula (V15):
+EV formula (V16 Phase 1):
     filter_ev = env_factor × volatility_amplifier × trait_factor
-              × leverage_factor × stack_bonus × dnp_adj × position_mult × 100
+              × leverage_factor × stack_bonus × dnp_adj × 100
 
     env_factor:    floor 0.20, rookie ceiling 1.10 (V13.3),
                    pitcher / batter ceiling 1.30 (V15.7 symmetric, was
@@ -26,10 +26,15 @@ EV formula (V15):
                    showed pitcher TV is -21% vs batter TV)
     volatility_amplifier: env-conditional, batters only
     trait_factor:  0.70-1.20 (V15.4 widened band)
-    leverage_factor: 0.75-1.55 continuous popularity curve (V15.6)
+    leverage_factor: 0.80-1.30 continuous popularity curve (V16 Phase 1
+                   tightened from V15.6's 0.75-1.55 against lineup-TV
+                   outcomes — wider band over-built all-contrarian
+                   lineups that bust together)
     stack_bonus:   1.0 / 1.10 (PATH 1 blowout-fav teams only, V13.3)
     dnp_adj:       always 1.0 (strict-mode DNP filter excludes invalid candidates)
-    position_mult: 1.0 default; C 0.90, 2B/SS 0.95 (V13.3, batters only)
+    position_mult: REMOVED in V16 Phase 1 (V13.3 catcher/2B/SS haircut
+                   was a population prior that misfired on hot
+                   individual catchers like 2026-05-08 Jeffers)
 
 Composition: builds 0P+5B and 1P+4B variants (platform cap MAX_PITCHERS_PER_LINEUP=1),
 returns highest slot-weighted total EV.
@@ -92,9 +97,8 @@ from app.core.constants import (
     QUALITY_SP_ERA_THRESHOLD,
     # V10.6 — asymmetric pitcher env ceiling (vs batter)
     PITCHER_ENV_MODIFIER_CEILING,
-    # V13.3 — rookie env cap + position-volume haircut
+    # V13.3 — rookie env cap (POSITION_VOLUME_MULTIPLIER removed in V16 Phase 1)
     ROOKIE_ENV_MODIFIER_CEILING,
-    POSITION_VOLUME_MULTIPLIER,
 )
 from app.core.popularity import popularity_score_to_multiplier
 from app.core.utils import BASE_MULTIPLIER, graduated_scale
@@ -935,20 +939,28 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
       4. leverage_factor     — V15: contrarian-edge multiplier from predicted
                                popularity score.  Continuous curve in
                                [POPULARITY_MULT_FLOOR, POPULARITY_MULT_CEILING]
-                               = [0.75, 1.55] (V15.6 TV-target retune,
-                               widened from V15.5's 0.80 / 1.40).  Designed
-                               narrower than the env swing so leverage acts
-                               as a tiebreaker, not an override.
+                               = [0.80, 1.30] (V16 Phase 1 retune against
+                               lineup-TV outcomes, tightened from V15.6's
+                               [0.75, 1.55]).  Designed narrower than the
+                               env swing so leverage acts as a tiebreaker,
+                               not an override.
       5. stack_bonus         — 1.10 if PATH 1 blowout-favorite team, else 1.0.
       6. dnp_adj             — Always 1.0 (strict-mode: invalid candidates excluded
                                upstream by the DNP filter; raises if batting_order=None
                                somehow reaches this function).
-      7. position_mult       — C 0.90, 2B/SS 0.95, all others 1.0 (V13.3,
-                               batters only; pitchers bypass).
+
+    V16 Phase 1 (May 8, 2026) — POSITION_VOLUME_MULTIPLIER REMOVED.
+    V13.3's catcher 0.90 / 2B-SS 0.95 haircut was a population prior
+    that systematically misfired on individual elite-trait players in
+    those positions (canonical case: 2026-05-08 picked B. House
+    x_woba 0.32 over R. Jeffers x_woba 0.43 because Jeffers was a
+    catcher).  Trait scoring (offensive_profile via x_woba / hard_hit /
+    barrel) is the right discriminator for hot vs cold within a position;
+    position itself is no longer an EV input.
 
     Formula:
         base_ev = env_factor × volatility_amplifier × trait_factor
-                  × leverage_factor × stack_bonus × dnp_adj × position_mult × 100
+                  × leverage_factor × stack_bonus × dnp_adj × 100
     """
     raw_env = max(candidate.env_score, 0.0)
     # V15.7 (May 7, 2026): pitcher and batter env ceilings symmetric at
@@ -1015,20 +1027,6 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
     stack_bonus = STACK_BONUS if candidate.is_in_blowout_game else 1.0
     dnp_adj = _compute_dnp_adjustment(candidate)
 
-    # V13.3 (May 2026): position-volume multiplier.  Pitchers bypass — they
-    # already have their own env ceiling.  For batters, catchers and middle
-    # infielders historically win 0% of slot-1 spots (40-slate audit) due to
-    # ~30% fewer PAs/game (rest days, pinch-hits, late-inning pulls).
-    # Without this haircut, an elite-OPS catcher in a stack-eligible game
-    # tops EV over outfielders / 1B / DH with the same trait + env, but
-    # never delivers the slot-1 winning RS in practice.
-    if candidate.is_pitcher:
-        position_mult = 1.0
-    else:
-        position_mult = POSITION_VOLUME_MULTIPLIER.get(
-            (candidate.position or "").upper(), 1.0
-        )
-
     # V15 — leverage_factor from continuous popularity score.  None falls
     # back to neutral 1.0; the leverage signal is genuinely additive and a
     # missing prediction must not corrupt a valid performance projection.
@@ -1036,6 +1034,16 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
     leverage_factor = popularity_score_to_multiplier(candidate.predicted_ownership_score)
     candidate.leverage_factor = leverage_factor
 
+    # V16 Phase 1 (May 8, 2026): POSITION_VOLUME_MULTIPLIER removed.  V13.3's
+    # catcher/2B/SS haircut was a population prior calibrated against
+    # slot-1 win frequency in a 40-slate audit.  V16's lineup-TV audit
+    # showed it costs ~0.5 mean lineup TV and actively misfires on
+    # individual elite-trait catchers (canonical case: 2026-05-08 picked
+    # x_woba 0.32 House over x_woba 0.43 Jeffers because of the catcher
+    # 0.90 haircut).  Trait scoring (x_woba / hard_hit / barrel via
+    # offensive_profile) is the right discriminator for hot vs cold
+    # within a position.  See app/core/constants.py for the full audit
+    # table and rationale.
     return (
         env_factor
         * volatility_amplifier
@@ -1043,7 +1051,6 @@ def _compute_base_ev(candidate: FilteredCandidate) -> float:
         * leverage_factor
         * stack_bonus
         * dnp_adj
-        * position_mult
         * 100.0
     )
 
