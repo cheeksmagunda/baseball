@@ -1,0 +1,448 @@
+==============================================================================
+Migration parity baseline — captured 2026-05-09T13:08:06.062367+00:00
+Source: existing CSV/JSON paths (pre-migration).
+==============================================================================
+
+--- $ /Users/hanslarson/Desktop/baseball-main/.claude/worktrees/gracious-kapitsa-093618/scripts/audit_hv_hit_rate.py ---
+
+Slates scored:    43
+Players ranked:   1623  (skipped 21)
+HV winners total: 737
+
+=== HV-rate (binary leaderboard hit) ===
+HV captured @5:   163 / 737 (22.1%)  avg/slate 3.79
+HV captured @10:  292 / 737 (39.6%)  avg/slate 6.79
+HV captured @20:  480 / 737 (65.1%)  avg/slate 11.16
+
+=== TV-rate (top-K by total_value, the actual draft-win currency) ===
+TV captured @5:   56 / 215 (26.0%)  avg/slate 1.30
+TV captured @10:  198 / 430 (46.0%)  avg/slate 4.60
+TV captured @20:  551 / 860 (64.1%)  avg/slate 12.81
+Slot-1 in top-5 TV:  12/43 (27.9%)
+Mean slot-1 TV outcome: 17.63
+
+Miss decomposition (HV winners outside top-5, n=574):
+  low_env                 427  (pitcher=44, batter=383)
+  low_trait               106  (pitcher=20, batter=86)
+  leverage_discount        39  (pitcher=5, batter=34)
+  outranked                 2  (pitcher=0, batter=2)
+
+Decomposition CSV: /Users/hanslarson/Desktop/baseball-main/.claude/worktrees/gracious-kapitsa-093618/scripts/output/hv_miss_decomposition.csv
+Calibration constants used:
+  ENV_FLOOR / batter_CEIL / pitcher_CEIL / rookie_CEIL = 0.2 / 1.3 / 1.3 / 1.1
+  POPULARITY: NEUTRAL=4.5, SLOPE=0.22, mult range [0.8, 1.3]
+  TRAIT band [0.7, 1.2]  (V16 Phase 1: real Statcast-driven trait_factor)
+  Trait sub-weights — OPS=10.0 xwOBA=7.0 HH%=5.0 brl%=4.0 EV=4.0
+
+[exit=0; elapsed=1.0s]
+
+
+--- $ /Users/hanslarson/Desktop/baseball-main/.claude/worktrees/gracious-kapitsa-093618/scripts/audit_lineup_tv.py ---
+
+=== V16 Phase 2: Lineup TV outcome audit ===
+
+  trait_factor: FLAT 1.0 (V15.7 baseline parity)
+  TRAIT band [0.7, 1.2]
+  Leverage band [0.8, 1.3], slope=0.22
+  Stack cap: 2 batters/team in stack-eligible games
+  Per-game cap: 2 batters/game
+  STACK_BONUS: 1.1
+
+  Our lineup TV: n=42  mean=81.5  median=85.8  p25=68.5  p75=99.3  min=12.8  max=148.8
+  Slates with all 5 picks scoring: 42/42
+  Slates skipped (no legal lineup): 1
+
+  Rank-1 winning lineup TV: n=42  mean=77.9  median=78.9  p25=70.1  p75=86.2  min=47.6  max=109.8
+  Mean of top-3 winning lineups TV: n=42  mean=74.6  median=76.1  p25=65.2  p75=80.4  min=46.5  max=103.8
+  Mean of top-20 winning lineups TV: n=42  mean=68.6  median=67.1  p25=59.8  p75=77.7  min=42.1  max=101.6
+
+  Gap to rank-1 mean:  -3.6 TV/slate
+  Gap to top-20 mean:  -12.9 TV/slate
+
+[exit=0; elapsed=1.0s]
+
+
+--- $ /Users/hanslarson/Desktop/baseball-main/.claude/worktrees/gracious-kapitsa-093618/scripts/audit_slot1_quality.py ---
+
+date         slot-1 pick               RS HV  slate top               topRS  swRS
+2026-03-25   Jake Bird                0.8 Y   Max Fried                 6.0   13.30
+2026-03-26   Cristopher Sánchez       6.8 Y   Cristopher Sánchez        6.8   32.80
+2026-03-27   Cam Schlittler           6.1 Y   Kevin Gausman             6.6   36.04
+2026-03-28   Corey Seager             2.6 n   Shea Langeliers           5.7   26.70
+2026-03-29   Colson Montgomery        6.3 Y   Yandy Díaz                7.5   28.56
+2026-03-30   Kyle Isbel               4.5 Y   Miguel Vargas             6.2   29.20
+2026-03-31   Oneil Cruz               5.7 Y   Shohei Ohtani             5.8   28.02
+2026-04-01   Liam Hicks               5.4 Y   Sandy Alcantara           9.5   44.98
+2026-04-02   Michael Harris II        1.8 Y   Matt Olson                5.6   19.88
+2026-04-03   Max Muncy                4.6 Y   Aaron Judge               5.6   24.20
+2026-04-04   Munetaka Murakami        3.9 Y   Jordan Walker             6.8   28.58
+2026-04-05   Mickey Moniak            4.2 Y   Brent Rooker              9.8   35.92
+2026-04-06   José Soriano             8.2 Y   José Soriano              8.2   35.72
+2026-04-07   Moisés Ballesteros       3.5 Y   Sandy Alcantara           7.5   28.56
+2026-04-08   Edouard Julien           3.6 Y   Angel Martínez            6.9   30.98
+2026-04-09   Jaden Hill               2.1 Y   Xander Bogaerts           7.6   17.92
+2026-04-10   Ezequiel Tovar           0.0 n   Max Muncy                 9.6   22.60
+2026-04-11   Sal Stewart              1.6 n   Tyler Soderstrom          7.1   40.12
+2026-04-12   Gary Sánchez             4.4 Y   Brandon Lowe              6.3   24.76
+2026-04-13   Jeremiah Jackson         7.4 Y   Mike Trout                8.0   43.28
+2026-04-14   Carson Kelly             4.3 Y   Mick Abel                 7.7   20.14
+2026-04-15   Dansby Swanson           3.2 Y   Sal Stewart               7.8   38.78
+2026-04-16   Hunter Goodman           2.9 Y   Oswald Peraza             5.8   30.64
+2026-04-17   Michael Harris II        2.8 n   Ranger Suarez             7.7   26.56
+2026-04-18   Kerry Carpenter          3.3 Y   Corbin Carroll            6.4   23.78
+2026-04-19   Mickey Moniak            4.8 Y   Dillon Dingler            7.1   39.80
+2026-04-20   Dansby Swanson           3.2 Y   Seth Lugo                 6.8   23.18
+2026-04-21   Munetaka Murakami        3.1 Y   Elly De La Cruz           6.8   28.76
+2026-04-22   Carter Jensen            3.8 Y   Ildemaro Vargas           7.4   29.32
+2026-04-23   Mickey Moniak            6.2 Y   Tyler Glasnow             9.0   33.54
+2026-04-24   Kerry Carpenter          3.5 Y   Adley Rutschman           7.1   33.58
+2026-04-25   Willson Contreras        4.4 Y   Sal Stewart               7.0   33.88
+2026-04-26   Fernando Tatis Jr.       0.8 n   Kyle Harrison             7.5   20.02
+2026-04-27   Ryan Jeffers             3.3 Y   Ranger Suarez             8.9   31.98
+2026-04-28   Ryan O'Hearn             3.4 Y   Jesus Luzardo             7.5   26.58
+2026-04-29   Hunter Goodman           5.4 Y   Gavin Williams            8.2   42.36
+2026-04-30   Nathaniel Lowe           3.1 Y   William Contreras         7.2   31.24
+2026-05-01   Kazuma Okamoto           5.7 Y   Julio Rodriguez           6.0   25.52
+2026-05-02   Nick Kurtz               1.6 n   Cody Bellinger            8.5   34.48
+2026-05-03   Mickey Moniak            5.6 Y   Chase Burns               7.1   29.50
+2026-05-05   Wilyer Abreu             3.3 Y   Cristopher Sanchez        8.6   28.00
+2026-05-06   Matt Wallner             3.9 Y   Paul Skenes               8.7   27.08
+2026-05-07   Bobby Witt Jr.           4.0 Y   Jake McCarthy             7.2   26.40
+
+Slates: 43
+Slot-1 HV-hit rate:     86.0%
+Avg slot-1 RS:          3.93
+Avg slot-weighted RS:   29.70
+Avg slate top-HV RS:    7.33
+Captured slate top-HV:  2/43 (4.7%)
+
+Per-slate CSV: /Users/hanslarson/Desktop/baseball-main/.claude/worktrees/gracious-kapitsa-093618/scripts/output/slot1_quality_per_slate.csv
+
+[exit=0; elapsed=1.0s]
+
+
+--- $ /Users/hanslarson/Desktop/baseball-main/.claude/worktrees/gracious-kapitsa-093618/scripts/audit_tv_signals.py ---
+
+Loaded 1617 records (1339 batters, 278 pitchers) from 43 slates
+  pool HV-rate:   45.6%
+  pool MP-rate:   44.8%
+  mean RS:        2.64
+  mean TV:       10.98
+
+=== Popularity score × outcome metrics ===
+(low pop → contrarian; high pop → consensus pick)
+
+pop_bucket                n     rs     tv  boost    HV%  top5_TV%  top5_RS%
+0-2  (max sleeper)      222   3.25  15.00   2.68  71.2%     18.5%     14.4%
+2-4  (mild sleeper)     504   3.15  14.12   2.48  65.9%     19.6%     16.1%
+4-6  (mid-fame)         472   2.35   9.57   2.07  37.7%     11.9%     11.0%
+6-8  (popular)          284   1.90   6.43   1.63  17.3%      5.3%     13.0%
+8+   (max consensus)    135   2.27   7.21   1.43  14.8%      3.0%      9.6%
+
+=== RS needed to reach top-5 TV, stratified by popularity bucket ===
+pop_bucket                n  mean_rs  min_rs  mean_boost  mean_tv
+0-2  (max sleeper)       41     5.47    3.30        2.81    26.23
+2-4  (mild sleeper)      99     5.48    1.80        2.69    25.78
+4-6  (mid-fame)          56     5.63    1.70        2.35    24.41
+6-8  (popular)           15     5.91    4.70        2.48    26.30
+8+   (max consensus)      4     5.25    4.60        2.88    25.64
+
+
+========== BATTER ENV SIGNALS  (TV-target view) ==========
+
+=== Opp starter ERA  (breaks: ≤3.10, ≤4.31, ≤5.79) ===
+bucket    n     rs     tv    HV%  top5_TV%  top10_TV%
+Q1      343   1.79   8.13  34.1%      6.7%      15.7%
+Q2      328   2.57  12.00  52.4%     15.9%      29.3%
+Q3      336   2.50  11.43  50.9%     14.6%      31.2%
+Q4      332   3.01  14.13  57.8%     19.0%      37.3%
+
+=== Opp starter WHIP  (breaks: ≤1.12, ≤1.34, ≤1.55) ===
+bucket    n     rs     tv    HV%  top5_TV%  top10_TV%
+Q1      343   2.04   9.33  40.5%      8.2%      19.8%
+Q2      336   2.38  10.94  46.4%     14.3%      27.4%
+Q3      328   2.53  11.80  51.8%     15.5%      30.8%
+Q4      332   2.91  13.58  56.3%     18.1%      35.5%
+
+=== Opp starter K/9  (breaks: ≤6.57, ≤8.13, ≤9.76) ===
+bucket    n     rs     tv    HV%  top5_TV%  top10_TV%
+Q1      335   2.55  11.82  47.5%     15.2%      28.1%
+Q2      341   2.39  11.08  50.1%     13.8%      28.7%
+Q3      330   2.52  11.71  51.2%     15.8%      31.5%
+Q4      333   2.38  10.97  45.9%     11.1%      24.9%
+
+=== Vegas O/U  (breaks: ≤8.00, ≤8.50, ≤9.00) ===
+bucket    n     rs     tv    HV%  top5_TV%  top10_TV%
+Q1      542   2.42  11.16  50.9%     13.8%      30.1%
+Q2      411   2.41  11.07  46.2%     12.2%      24.1%
+Q3      155   2.63  12.30  49.0%     18.7%      33.5%
+Q4      231   2.52  11.90  47.6%     14.3%      28.1%
+
+=== Own moneyline  (breaks: ≤-158.00, ≤-118.00, ≤106.00) ===
+bucket    n     rs     tv    HV%  top5_TV%  top10_TV%
+Q1      339   2.21  10.00  37.8%     13.0%      23.9%
+Q2      351   2.52  11.76  52.4%     12.8%      26.8%
+Q3      318   2.50  11.68  50.9%     14.8%      32.7%
+Q4      331   2.63  12.15  53.8%     15.4%      30.2%
+
+=== Wind speed (mph)  (breaks: ≤5.40, ≤7.80, ≤9.80) ===
+bucket    n     rs     tv    HV%  top5_TV%  top10_TV%
+Q1      339   2.32  10.66  44.2%     14.2%      26.3%
+Q2      351   2.46  11.45  47.6%     13.7%      26.5%
+Q3      320   2.30  10.64  48.8%     11.2%      26.2%
+Q4      329   2.77  12.82  54.4%     16.7%      34.3%
+
+=== Temperature (F)  (breaks: ≤56.00, ≤67.00, ≤75.00) ===
+bucket    n     rs     tv    HV%  top5_TV%  top10_TV%
+Q1      347   2.32  10.64  46.1%     13.0%      25.9%
+Q2      361   2.52  11.82  49.9%     15.0%      28.8%
+Q3      307   2.32  10.62  47.9%     12.4%      29.0%
+Q4      324   2.68  12.45  50.9%     15.4%      29.6%
+
+
+========== PITCHER ENV SIGNALS  (TV-target view) ==========
+
+=== Vegas O/U (pitcher)  (breaks: ≤7.50, ≤8.00, ≤8.50) ===
+bucket    n     rs     tv    HV%  top5_TV%  top10_TV%
+Q1       99   3.54   9.45  35.4%     12.1%      24.2%
+Q2       60   3.99   9.53  33.3%     13.3%      18.3%
+Q3       74   3.31   8.78  28.4%      8.1%      16.2%
+Q4       45   3.05   7.75  20.0%      4.4%       8.9%
+
+=== Own moneyline (pitcher)  (breaks: ≤-168.00, ≤-124.00, ≤106.00) ===
+bucket    n     rs     tv    HV%  top5_TV%  top10_TV%
+Q1       70   3.38   7.60  12.9%      5.7%       7.1%
+Q2       70   4.26  10.55  34.3%     10.0%      20.0%
+Q3       71   3.15   8.53  31.0%     12.7%      19.7%
+Q4       67   3.20   9.40  44.8%     11.9%      26.9%
+
+=== Own K/9 (pitcher)  (breaks: ≤7.01, ≤9.25, ≤10.36) ===
+bucket    n     rs     tv    HV%  top5_TV%  top10_TV%
+Q1       74   2.84   7.92  32.4%      6.8%      18.9%
+Q2       66   3.27   9.49  37.9%     12.1%      25.8%
+Q3       72   4.08   9.56  22.2%      6.9%      11.1%
+Q4       66   3.84   9.18  30.3%     15.2%      18.2%
+
+=== Own ERA (pitcher)  (breaks: ≤2.48, ≤3.18, ≤4.97) ===
+bucket    n     rs     tv    HV%  top5_TV%  top10_TV%
+Q1       78   4.41   9.78  23.1%      5.1%      14.1%
+Q2       62   3.88   8.41  25.8%      9.7%      16.1%
+Q3       69   3.70  10.69  37.7%     15.9%      23.2%
+Q4       69   1.92   7.03  36.2%     10.1%      20.3%
+
+=== Opp team OPS (pitcher)  (breaks: ≤0.69, ≤0.70, ≤0.72) ===
+bucket    n     rs     tv    HV%  top5_TV%  top10_TV%
+Q1       71   3.97   9.73  38.0%      9.9%      21.1%
+Q2       70   3.42   9.61  28.6%     11.4%      20.0%
+Q3       68   3.74   9.02  26.5%     10.3%      16.2%
+Q4       69   2.86   7.66  29.0%      8.7%      15.9%
+
+Full records CSV: /Users/hanslarson/Desktop/baseball-main/.claude/worktrees/gracious-kapitsa-093618/scripts/output/tv_signal_records.csv
+
+[exit=0; elapsed=1.0s]
+
+
+--- $ /Users/hanslarson/Desktop/baseball-main/.claude/worktrees/gracious-kapitsa-093618/scripts/calibrate_popularity_curve.py ---
+
+Loaded 1644 player-slate rows from historical_players.csv
+Built fame indexes: batter (14d) 1644 entries / pitcher (28d) 1644 entries
+Skipped 1 unscoreable rows (date/team missing or unknown team)
+
+============================================================================================
+Per-score-bin distribution (popularity-score → outcome rates):
+============================================================================================
+ score      n   %pool   hv_rate   mp_rate    alpha   mean_rs
+--------------------------------------------------------------------------------------------
+   0.0     50    3.0%    68.0%     8.0%    8.500     2.948
+   0.5     19    1.2%    78.9%     5.3%   15.000     3.747
+   1.0     79    4.8%    64.6%    17.7%    3.643     3.101
+   1.5     54    3.3%    70.4%    16.7%    4.222     3.263
+   2.0    117    7.1%    65.0%    17.9%    3.619     2.912
+   2.5    122    7.4%    76.2%    11.5%    6.643     3.562
+   3.0    128    7.8%    62.5%    15.6%    4.000     2.991
+   3.5    122    7.4%    64.8%    19.7%    3.292     3.248
+   4.0    111    6.8%    48.6%    41.4%    1.174     2.811
+   4.5    108    6.6%    48.1%    39.8%    1.209     2.712
+   5.0    107    6.5%    33.6%    61.7%    0.545     2.298
+   5.5     92    5.6%    46.7%    53.3%    0.878     2.588
+   6.0    147    8.9%    26.5%    68.7%    0.386     1.924
+   6.5     50    3.0%    22.0%    76.0%    0.289     1.836
+   7.0     85    5.2%    17.6%    78.8%    0.224     1.759
+   7.5     39    2.4%     7.7%    79.5%    0.097     1.879
+   8.0     84    5.1%    13.1%    88.1%    0.149     2.060
+   8.5     44    2.7%    15.9%    93.2%    0.171     2.207
+   9.0     85    5.2%    15.3%    90.6%    0.169     2.208
+
+============================================================================================
+Recommended continuous-curve constants:
+============================================================================================
+Weighted-mean popularity score across pool: 4.502
+  → POPULARITY_NEUTRAL_SCORE = 4.50
+Pool 10th pct: 1.5, 90th pct: 8.0
+  → POPULARITY_SLOPE = 0.0786  (floor-side 0.0572, ceiling-side 0.0999)
+  → POPULARITY_MULT_FLOOR = 0.8
+  → POPULARITY_MULT_CEILING = 1.3
+
+============================================================================================
+Curve preview (multiplier at each score bin, given recommended constants):
+============================================================================================
+  score  0.0 (n=  50)  →  multiplier 1.300  |  hv_rate 68.0%
+  score  0.5 (n=  19)  →  multiplier 1.300  |  hv_rate 78.9%
+  score  1.0 (n=  79)  →  multiplier 1.275  |  hv_rate 64.6%
+  score  1.5 (n=  54)  →  multiplier 1.236  |  hv_rate 70.4%
+  score  2.0 (n= 117)  →  multiplier 1.197  |  hv_rate 65.0%
+  score  2.5 (n= 122)  →  multiplier 1.157  |  hv_rate 76.2%
+  score  3.0 (n= 128)  →  multiplier 1.118  |  hv_rate 62.5%
+  score  3.5 (n= 122)  →  multiplier 1.079  |  hv_rate 64.8%
+  score  4.0 (n= 111)  →  multiplier 1.039  |  hv_rate 48.6%
+  score  4.5 (n= 108)  →  multiplier 1.000  |  hv_rate 48.1%
+  score  5.0 (n= 107)  →  multiplier 0.961  |  hv_rate 33.6%
+  score  5.5 (n=  92)  →  multiplier 0.922  |  hv_rate 46.7%
+  score  6.0 (n= 147)  →  multiplier 0.882  |  hv_rate 26.5%
+  score  6.5 (n=  50)  →  multiplier 0.843  |  hv_rate 22.0%
+  score  7.0 (n=  85)  →  multiplier 0.804  |  hv_rate 17.6%
+  score  7.5 (n=  39)  →  multiplier 0.800  |  hv_rate  7.7%
+  score  8.0 (n=  84)  →  multiplier 0.800  |  hv_rate 13.1%
+  score  8.5 (n=  44)  →  multiplier 0.800  |  hv_rate 15.9%
+  score  9.0 (n=  85)  →  multiplier 0.800  |  hv_rate 15.3%
+
+Done.  Paste constants into app/core/constants.py.
+
+[exit=0; elapsed=0.3s]
+
+
+--- $ /Users/hanslarson/Desktop/baseball-main/.claude/worktrees/gracious-kapitsa-093618/scripts/calibrate_popularity_components.py ---
+
+Loaded 1644 player-slate rows from historical_players.csv
+  Pitchers: 286  Batters: 1358
+
+==============================================================================
+COMPONENT 1: Team market tier
+==============================================================================
+tier      n   n_mp   mp_rate  recommended_score_pts
+----------------------------------------------------------------
+   1    457    251    54.9%  delta_vs_pool=+9.9%
+   2    424    176    41.5%  delta_vs_pool=-3.5%
+   3    478    213    44.6%  delta_vs_pool=-0.5%
+   4    284    100    35.2%  delta_vs_pool=-9.8%
+
+Pool baseline MP-rate: 45.0%
+Recommended: KEEP existing tier→pts mapping {1:3, 2:2, 3:1, 4:0} if monotone.
+
+==============================================================================
+COMPONENT 2: Fame index (rate-based, 14-day window) — Batters (14d window)
+==============================================================================
+No prior appearances in window: n=364  mp_rate=9.9%
+Has prior appearances:          n=994  mp_rate=51.2%
+
+For players with >=1 prior appearance, bucket by MP-rate over 14d:
+          rate      n   n_mp   mp_rate
+             0    420     58    13.8%
+      (0,0.25]     36     18    50.0%
+   (0.25,0.50]    108     63    58.3%
+   (0.50,0.75]     95     81    85.3%
+    (0.75,1.0]    335    289    86.3%
+
+==============================================================================
+COMPONENT 2: Fame index (rate-based, 28-day window) — Pitchers (28d window)
+==============================================================================
+No prior appearances in window: n=129  mp_rate=54.3%
+Has prior appearances:          n=157  mp_rate=79.6%
+
+For players with >=1 prior appearance, bucket by MP-rate over 28d:
+          rate      n   n_mp   mp_rate
+             0     20     12    60.0%
+      (0,0.25]      0      0     0.0%
+   (0.25,0.50]     15     10    66.7%
+   (0.50,0.75]      5      5   100.0%
+    (0.75,1.0]    117     98    83.8%
+
+==============================================================================
+COMPONENT 3: Pitcher ERA at slate (continuous) — n=281
+==============================================================================
+        bucket      n   n_mp   mp_rate
+          <2.5     98     68    69.4%
+     [2.5,3.0)     31     27    87.1%
+     [3.0,3.5)     32     24    75.0%
+     [3.5,4.0)     17     13    76.5%
+     [4.0,4.5)     17      7    41.2%
+     [4.5,5.0)     11      8    72.7%
+         >=5.0     75     48    64.0%
+
+Filtered to ERA > 0 (drops opening-week 0-IP rows): n=258
+        bucket      n   n_mp   mp_rate
+          <2.5     75     59    78.7%
+     [2.5,3.0)     31     27    87.1%
+     [3.0,3.5)     32     24    75.0%
+     [3.5,4.0)     17     13    76.5%
+     [4.0,4.5)     17      7    41.2%
+     [4.5,5.0)     11      8    72.7%
+         >=5.0     75     48    64.0%
+
+==============================================================================
+COMPONENT 4: Batter OPS at slate (continuous) — n=1346
+==============================================================================
+        bucket      n   n_mp   mp_rate
+          <0.5     43     14    32.6%
+    [0.5,0.65)    135     16    11.9%
+   [0.65,0.75)    212     14     6.6%
+   [0.75,0.85)    235     67    28.5%
+   [0.85,0.95)    303    173    57.1%
+   [0.95,1.05)    206    134    65.0%
+        >=1.05    212    126    59.4%
+
+==============================================================================
+COMPONENT 5: STAR_PLAYER_FLAGS membership
+==============================================================================
+  Flagged star    n=  403  mp_rate=66.3%
+  Not flagged     n= 1241  mp_rate=38.1%
+
+==============================================================================
+MODEL COMPARISON: AUC for predicting is_most_popular
+==============================================================================
+V15  (current, binary thresholds)  AUC = 0.7763  n=1643
+V15.1 (continuous components)       AUC = 0.8235  n=1643
+Delta: +0.0472  (IMPROVEMENT)
+  Pitchers only: V15 AUC=0.7637  V15.1 AUC=0.7811  n=286
+  Batters only: V15 AUC=0.7977  V15.1 AUC=0.8483  n=1357
+
+------------------------------------------------------------------------------
+Spot check — Bello vs Elder on 2026-05-05:
+------------------------------------------------------------------------------
+  brayan bello         (BOS)  is_pitcher=True  era=7.44
+    V15 score: 4.0  V15.1 score: 6.00
+
+[exit=0; elapsed=0.4s]
+
+
+--- $ /Users/hanslarson/Desktop/baseball-main/.claude/worktrees/gracious-kapitsa-093618/scripts/validate_ingest.py --date 2026-05-07 ---
+
+
+Validating ingest for 2026-05-07
+=============================================
+
+[1] historical_players.csv
+  OK:    historical_players.csv: 42 rows for 2026-05-07
+  OK:    historical_players.csv: 42 unique (player, team) pairs — no duplicates
+
+[2] historical_winning_drafts.csv
+  OK:    historical_winning_drafts.csv: 100 rows for 2026-05-07
+
+[3] historical_slate_results.json
+  OK:    historical_slate_results.json: entry found for 2026-05-07
+
+[4] hv_player_game_stats.csv
+  OK:    hv_player_game_stats.csv: 20 rows for 2026-05-07
+
+[5] historical_player_game_logs.csv
+  OK:    historical_player_game_logs.csv: 406 rows / 42 players for 2026-05-07
+
+[6] Lockstep check
+  OK:    Lockstep: 2026-05-07 present in ['historical_players.csv', 'historical_winning_drafts.csv', 'historical_slate_results.json', 'hv_player_game_stats.csv']
+
+=============================================
+RESULT: all checks passed — safe to reseed
+
+[exit=0; elapsed=0.1s]
+
+

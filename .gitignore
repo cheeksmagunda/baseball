@@ -4,6 +4,10 @@ __pycache__/
 .env
 db/*.db
 *.db
+# Canonical historical calibration corpus is committed as a binary artifact
+# (see CLAUDE.md "Historical Data Store").  Schema diffs are reviewable via
+# `sqlite3 data/historical.db .dump | diff`.
+!data/historical.db
 *.egg-info/
 dist/
 build/
@@ -11,7 +15,14 @@ build/
 .pytest_cache/
 .claude/
 output/*.json
-scripts/output/
+# scripts/output/ contents are mostly transient (CSV diagnostic dumps,
+# resolver caches).  Migration parity reports are committed because they
+# document Step-1 / Step-4 / Step-5 numerical equivalence between the CSV
+# and SQLite paths; reviewers reference them on PR.
+scripts/output/*
+!scripts/output/.gitkeep
+!scripts/output/migration_parity_report.txt
+!scripts/output/migration_parity_diff.txt
 .venv-scraper/
 scratch/
 scraper/storage_state.json
