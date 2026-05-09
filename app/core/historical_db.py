@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS slate (
 CREATE TABLE IF NOT EXISTS slate_game (
     slate_date                  TEXT NOT NULL,
     game_pk                     INTEGER NOT NULL,
+    game_number                 INTEGER NOT NULL DEFAULT 1,  -- 1/2 for doubleheaders sharing a game_pk
     home_team                   TEXT NOT NULL,
     away_team                   TEXT NOT NULL,
     -- starter env signals
@@ -131,7 +132,7 @@ CREATE TABLE IF NOT EXISTS slate_game (
     loser                       TEXT,
     winner_score                INTEGER,
     loser_score                 INTEGER,
-    PRIMARY KEY (slate_date, game_pk),
+    PRIMARY KEY (slate_date, game_pk, game_number),
     FOREIGN KEY (slate_date) REFERENCES slate(slate_date)
 );
 CREATE INDEX IF NOT EXISTS idx_slate_game_pk ON slate_game(game_pk);
@@ -167,13 +168,25 @@ CREATE TABLE IF NOT EXISTS player_slate (
     chase_pct               REAL,
     fb_ivb                  REAL,
     fb_extension            REAL,
-    PRIMARY KEY (slate_date, mlb_id),
-    FOREIGN KEY (slate_date, game_pk) REFERENCES slate_game(slate_date, game_pk)
+    PRIMARY KEY (slate_date, mlb_id)
+    -- game_pk is informational only; player_slate cannot foreign-key to
+    -- slate_game because the latter's PK includes game_number (doubleheader
+    -- support) which player_slate has no way to disambiguate.
 );
 CREATE INDEX IF NOT EXISTS idx_player_slate_mlb_id ON player_slate(mlb_id);
 CREATE INDEX IF NOT EXISTS idx_player_slate_team ON player_slate(slate_date, team);
 
 CREATE TABLE IF NOT EXISTS player_game_log (
+    -- Implicit `rowid` is the primary key.  We do NOT add a (slate_date,
+    -- mlb_id, game_date) UNIQUE constraint because the historical CSV had
+    -- 63 duplicate rows for that triple — 35 of them with identical values
+    -- (harmless), 28 with conflicting box-score values (data-quality bug
+    -- from a backfill that ran twice for some games).  Preserving the dups
+    -- keeps calibration byte-identical with the CSV-era audit harness; the
+    -- inflight harness already handles the conflict by "last-row-wins" via
+    -- dict insertion order, and our export reproduces that order via
+    -- ingest sequence.
+    rowid_seq     INTEGER PRIMARY KEY AUTOINCREMENT,
     slate_date    TEXT NOT NULL,
     mlb_id        INTEGER NOT NULL,
     game_date     TEXT NOT NULL,
@@ -193,9 +206,10 @@ CREATE TABLE IF NOT EXISTS player_game_log (
     ip            REAL,
     er            INTEGER,
     k_pitching    INTEGER,
-    decision      TEXT,
-    PRIMARY KEY (slate_date, mlb_id, game_date)
+    decision      TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_player_game_log_key
+    ON player_game_log(slate_date, mlb_id, game_date);
 CREATE INDEX IF NOT EXISTS idx_player_game_log_game_date ON player_game_log(game_date);
 CREATE INDEX IF NOT EXISTS idx_player_game_log_mlb_id  ON player_game_log(mlb_id);
 
@@ -388,12 +402,26 @@ def update_player_slate_columns(
 
 
 def upsert_player_game_log(conn: sqlite3.Connection, row: dict) -> None:
-    cols = list(_table_columns(conn, "player_game_log"))
+    """Append a player_game_log row.  The table has no uniqueness constraint
+    on (slate_date, mlb_id, game_date) — historical duplicates are preserved
+    so calibration outputs remain byte-identical with the CSV era.  Callers
+    that want idempotent re-runs should DELETE rows first by their composite
+    key, or use `replace_player_game_log_by_key()` (Step 3 helper)."""
+    cols = [c for c in _table_columns(conn, "player_game_log") if c != "rowid_seq"]
     placeholders = ", ".join(["?"] * len(cols))
     conn.execute(
-        f"INSERT OR REPLACE INTO player_game_log ({', '.join(cols)}) VALUES ({placeholders})",
+        f"INSERT INTO player_game_log ({', '.join(cols)}) VALUES ({placeholders})",
         tuple(row.get(c) for c in cols),
     )
+
+
+def replace_player_game_log_for_slate(
+    conn: sqlite3.Connection, slate_date: str
+) -> None:
+    """Delete every player_game_log row for `slate_date`.  Backfills call
+    this before re-inserting to maintain idempotency without the (slate_date,
+    mlb_id, game_date) PK.  Cheap (indexed delete)."""
+    conn.execute("DELETE FROM player_game_log WHERE slate_date = ?", (slate_date,))
 
 
 def upsert_label_event(

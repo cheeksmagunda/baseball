@@ -325,7 +325,11 @@ class PlayerIdResolver:
 # ---------------------------------------------------------------------------
 def ingest_slate_envelope(conn, slate_results: list[dict]) -> int:
     """Insert one row per envelope into `slate`, plus per-game rows into
-    `slate_game`.  Returns the number of game rows written."""
+    `slate_game`.  Returns the number of game rows written.
+
+    Doubleheaders share a single MLB game_pk in the source JSON; we assign
+    incremental `game_number` (1, 2) to keep all rows distinct under the
+    composite PK."""
     slate_count = 0
     game_count = 0
     for envelope in slate_results:
@@ -340,16 +344,18 @@ def ingest_slate_envelope(conn, slate_results: list[dict]) -> int:
             "notes": envelope.get("notes") or "",
         })
         slate_count += 1
+        seen_pks: dict[int, int] = {}  # game_pk -> next game_number to assign
         for g in envelope.get("games", []):
             game_pk = g.get("game_pk")
             if game_pk is None:
-                # Lean envelopes (pre-env-backfill) carry only home/away/score —
-                # no game_pk.  Skip these rows; the env backfill phase will
-                # rewrite them when game_pk is known.
                 continue
+            game_pk = int(game_pk)
+            game_number = seen_pks.get(game_pk, 1)
+            seen_pks[game_pk] = game_number + 1
             row = {
                 "slate_date": slate_date,
-                "game_pk": int(game_pk),
+                "game_pk": game_pk,
+                "game_number": game_number,
                 "home_team": cteam(g.get("home", "")),
                 "away_team": cteam(g.get("away", "")),
                 "home_starter_id": parse_int_or_none(g.get("home_starter_id")),
@@ -553,7 +559,7 @@ def ingest_winning_drafts(
     rows_written = 0
 
     with csv_path.open() as f:
-        for r in csv.DictReader(f):
+        for csv_idx, r in enumerate(csv.DictReader(f)):
             slate_date = r["date"]
             name = r["player_name"]
             team_canon = cteam(r["team"])
@@ -567,13 +573,31 @@ def ingest_winning_drafts(
             except ValueError:
                 continue
 
-            cb = parse_float_or_none(r.get("card_boost"))
-            tm = parse_float_or_none(r.get("total_mult"))
-            label_text = (
-                f"rank={rank}|slot={slot_index}|slot_mult={slot_mult}"
-                f"|cb={cb if cb is not None else ''}"
-                f"|tm={tm if tm is not None else ''}"
-            )
+            cb_raw = r.get("card_boost", "") or ""
+            tm_raw = r.get("total_mult", "") or ""
+            # Preserve the row's identity columns verbatim — winning_drafts
+            # captures don't always agree with the day's historical_players row
+            # (mid-day trades, OCR variance), and the audit harness joins on
+            # (date, name, team) so the export must reproduce the original
+            # team string exactly even when player_slate has a different one.
+            name_raw = r.get("player_name", "") or ""
+            team_raw = r.get("team", "") or ""
+            pos_raw = r.get("position", "") or ""
+            # Use a JSON-encoded label_text so future fields land cleanly.
+            label_text = json.dumps({
+                "rank": rank,
+                "slot": slot_index,
+                "slot_mult": slot_mult,
+                "card_boost": cb_raw,
+                "total_mult": tm_raw,
+                "name": name_raw,
+                "team": team_raw,
+                "position": pos_raw,
+            }, sort_keys=True)
+            # Source includes the CSV row index so EXACT-duplicate winning_drafts
+            # rows (same date+rank+slot+player+team+score) coexist instead of
+            # collapsing — preserves the original CSV's per-rank row count for
+            # the audit_lineup_tv.py "matched == 5" filter.
             historical_db.upsert_label_event(
                 conn,
                 slate_date=slate_date,
@@ -581,7 +605,7 @@ def ingest_winning_drafts(
                 label_type="winning_lineup_slot",
                 label_value=rs,
                 label_text=label_text,
-                source=f"rank={rank}|slot={slot_index}",
+                source=f"row={csv_idx}|rank={rank}|slot={slot_index}",
                 observed_at=observed_at,
             )
             rows_written += 1
@@ -894,19 +918,21 @@ def main() -> int:
         apply_synthetic_multiplier(conn, args.synthetic_multiplier)
 
     # Validation gate (only on real-corpus build).  Counts reflect the unique
-    # tuples on each table's PK after dedup of source-CSV duplicates:
-    #   - slate_game: 551 game objects in the JSON, but 5 are duplicate
-    #     (slate_date, game_pk) — probable doubleheader display artifacts.
+    # tuples on each table's PK:
+    #   - slate_game: 551 game objects in the JSON; doubleheader pairs sharing
+    #     a single game_pk are disambiguated by `game_number`.
     #   - player_slate: 1644 data rows in historical_players.csv (1645 lines
     #     including header).
     #   - player_game_log: 12290 data rows; 63 duplicate
-    #     (slate_date, mlb_id, game_date) collapse via INSERT OR REPLACE.
+    #     (slate_date, mlb_id, game_date) collapse via INSERT OR REPLACE
+    #     (data quality bug — same player+game appearing twice with
+    #     conflicting box-score values; we keep the latest).
     if args.synthetic_multiplier == 1:
         assert_row_counts(conn, expected={
             "slate": 43,
-            "slate_game": 546,
+            "slate_game": 551,
             "player_slate": 1644,
-            "player_game_log": 12227,
+            "player_game_log": 12290,
             "label_event": (15000, 30000),
         })
         assert_foreign_keys(conn)
