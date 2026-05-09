@@ -53,7 +53,6 @@ Usage:
 """
 import argparse
 import csv
-import json
 import logging
 import sys
 import time
@@ -429,7 +428,7 @@ def main():
             failed_dates.append(d)
             continue
 
-    log.info(f"\n=== Summary ===")
+    log.info("\n=== Summary ===")
     log.info(f"Processed: {len(target_dates) - len(failed_dates)} / {len(target_dates)}")
     log.info(f"Matched rows: {total_matched}")
     log.info(f"Missed rows: {total_missed}")
