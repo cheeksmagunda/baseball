@@ -28,3 +28,4 @@ scripts/output/*
 .venv-scraper/
 scratch/
 scraper/storage_state.json
+!scripts/output/historical_corpus_audit.txt
