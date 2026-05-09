@@ -63,7 +63,6 @@ read is bounded to dates strictly before the current slate.
 
 from __future__ import annotations
 
-import csv
 import unicodedata
 from datetime import date, timedelta
 from functools import lru_cache
@@ -88,13 +87,10 @@ from app.core.constants import (
 )
 
 
-# Step 5 (May 2026): the rolling fame index now reads from
-# data/historical.db instead of historical_players.csv.  Both paths
-# produce byte-identical results — the CSV is a derived export of the DB
-# under Step 2's byte-stable contract.  The legacy CSV implementation is
-# preserved as `_load_fame_rate_index_csv_legacy` for the parity-verification
-# harness in scripts/verify_popularity_parity.py; Step 6 deletes it.
-_FAME_SOURCE = Path(__file__).resolve().parents[2] / "data" / "historical_players.csv"
+# Step 5+6 (May 2026): the rolling fame index reads from data/historical.db
+# (the canonical historical-corpus store).  The CSV-era legacy path was
+# verified byte-identical by scripts/verify_popularity_parity.py at Step 5
+# and dropped here.
 _HISTORICAL_DB = Path(__file__).resolve().parents[2] / "data" / "historical.db"
 
 
@@ -170,36 +166,6 @@ def _load_fame_rate_index(
             counts[key] = (mp + int(row["is_mp"]), total + 1)
     finally:
         conn.close()
-    return counts
-
-
-def _load_fame_rate_index_csv_legacy(
-    as_of: date,
-    window_days: int,
-) -> dict[tuple[str, str], tuple[int, int]]:
-    """Legacy CSV implementation — kept for parity verification only.
-
-    Identical semantics to `_load_fame_rate_index` (the SQLite path).
-    `scripts/verify_popularity_parity.py` calls both and asserts the
-    returned dicts are equal; Step 6 deletes this function once the
-    parity gate has been confirmed in CI."""
-    if not _FAME_SOURCE.exists():
-        return {}
-    cutoff = as_of - timedelta(days=window_days)
-    counts: dict[tuple[str, str], tuple[int, int]] = {}
-    with _FAME_SOURCE.open("r", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        for row in reader:
-            try:
-                row_date = date.fromisoformat(row["date"])
-            except (KeyError, ValueError):
-                continue
-            if row_date >= as_of or row_date < cutoff:
-                continue
-            key = (_normalize(row["player_name"]), canonicalize_team(row["team"]))
-            mp_inc = 1 if row.get("is_most_popular") == "1" else 0
-            mp, total = counts.get(key, (0, 0))
-            counts[key] = (mp + mp_inc, total + 1)
     return counts
 
 

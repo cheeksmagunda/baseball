@@ -226,6 +226,197 @@ class TestSchemaContract:
 
 
 # ---------------------------------------------------------------------------
+# Step 6: pin the historical-corpus SQLite schema and the derived-CSV column
+# contracts.  After Step 2, data/historical.db is the canonical store and the
+# CSVs in /data/ are byte-stable derived exports.  These tests catch:
+#   * accidental schema drift on rebuild (e.g. a backfill adds a column to a
+#     new table without updating SCHEMA_DDL)
+#   * accidental export-column drift (e.g. the union-merge logic in
+#     scripts/export_historical_csvs.py loses a column)
+# ---------------------------------------------------------------------------
+
+class TestHistoricalSqliteSchemaContract:
+    """Pin the schema of data/historical.db.  Any deliberate addition of a
+    column requires updating EXPECTED_COLUMNS — a forcing function that the
+    DDL change has been thought through."""
+
+    EXPECTED_TABLES = {
+        "slate", "slate_game", "player_slate", "player_game_log",
+        "label_event", "player_alias",
+    }
+
+    EXPECTED_COLUMNS = {
+        "slate": {
+            "slate_date", "game_count", "num_brawlers",
+            "season_stage", "source", "saved_at", "notes",
+        },
+        "slate_game": {
+            "slate_date", "game_pk", "game_number", "home_team", "away_team",
+            "home_starter_id", "home_starter_name", "home_starter_hand",
+            "home_starter_era", "home_starter_whip", "home_starter_k_per_9",
+            "home_starter_x_era", "home_starter_x_woba_against",
+            "away_starter_id", "away_starter_name", "away_starter_hand",
+            "away_starter_era", "away_starter_whip", "away_starter_k_per_9",
+            "away_starter_x_era", "away_starter_x_woba_against",
+            "home_team_ops", "home_team_k_pct", "home_bullpen_era",
+            "home_team_framing_runs", "home_team_framing_pct",
+            "away_team_ops", "away_team_k_pct", "away_bullpen_era",
+            "away_team_framing_runs", "away_team_framing_pct",
+            "home_team_record_w", "home_team_record_l", "home_team_rest_days",
+            "away_team_record_w", "away_team_record_l", "away_team_rest_days",
+            "home_l10_wins", "home_series_wins",
+            "away_l10_wins", "away_series_wins",
+            "vegas_total", "home_moneyline", "away_moneyline",
+            "park_team", "park_hr_factor",
+            "temperature_f", "wind_speed_mph",
+            "wind_direction", "wind_direction_deg", "datetime_utc",
+            "home_score", "away_score", "winner", "loser",
+            "winner_score", "loser_score",
+        },
+        "player_slate": {
+            "slate_date", "mlb_id", "player_name", "team", "position",
+            "game_pk",
+            "ops_at_slate", "iso_at_slate",
+            "era_at_slate", "whip_at_slate", "k9_at_slate",
+            "ops_vs_lhp_at_slate", "ops_vs_rhp_at_slate",
+            "batting_order_at_slate",
+            "x_woba", "x_ba", "x_slg",
+            "avg_ev", "hard_hit_pct", "barrel_pct", "max_ev",
+            "x_era", "x_woba_against",
+            "fb_velo", "whiff_pct", "chase_pct",
+            "fb_ivb", "fb_extension",
+        },
+        "player_game_log": {
+            "rowid_seq", "slate_date", "mlb_id", "game_date",
+            "player_name", "team", "position", "opponent", "is_home",
+            "ab", "runs", "hits", "hr", "rbi", "bb", "so", "sb",
+            "ip", "er", "k_pitching", "decision",
+        },
+        "label_event": {
+            "slate_date", "mlb_id", "label_type",
+            "label_value", "label_text", "source", "observed_at",
+        },
+        "player_alias": {
+            "name_normalized", "team", "mlb_id", "source", "observed_at",
+        },
+    }
+
+    def _connect(self):
+        from app.core import historical_db
+        return historical_db.connect_readonly()
+
+    def test_all_expected_tables_exist(self):
+        conn = self._connect()
+        try:
+            cur = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%'"
+            )
+            actual = {r[0] for r in cur.fetchall()}
+        finally:
+            conn.close()
+        missing = self.EXPECTED_TABLES - actual
+        unexpected = actual - self.EXPECTED_TABLES
+        assert not missing, f"missing tables: {missing}"
+        assert not unexpected, (
+            f"unexpected new tables: {unexpected}.  Update EXPECTED_TABLES "
+            "if intentional."
+        )
+
+    def test_table_columns_match_expected(self):
+        conn = self._connect()
+        try:
+            for table, expected in self.EXPECTED_COLUMNS.items():
+                cur = conn.execute(f"PRAGMA table_info({table})")
+                actual = {r[1] for r in cur.fetchall()}
+                missing = expected - actual
+                unexpected = actual - expected
+                assert not missing, f"{table}: missing columns {missing}"
+                assert not unexpected, (
+                    f"{table}: unexpected columns {unexpected}.  Update "
+                    "EXPECTED_COLUMNS in test_invariants.py if intentional."
+                )
+        finally:
+            conn.close()
+
+    def test_foreign_key_check_passes(self):
+        conn = self._connect()
+        try:
+            cur = conn.execute("PRAGMA foreign_key_check")
+            violations = cur.fetchall()
+        finally:
+            conn.close()
+        assert not violations, f"FK violations: {violations}"
+
+    def test_label_event_vocabulary_populated(self):
+        """Every label_type the build script emits is present in label_event."""
+        from app.core import historical_db
+        expected = (
+            historical_db.LABEL_TYPES_NUMERIC
+            + historical_db.LABEL_TYPES_FLAG
+            + historical_db.LABEL_TYPES_CATEGORICAL
+        )
+        conn = self._connect()
+        try:
+            cur = conn.execute(
+                "SELECT label_type, COUNT(*) FROM label_event GROUP BY label_type"
+            )
+            seen = {r[0] for r in cur.fetchall()}
+        finally:
+            conn.close()
+        missing = set(expected) - seen
+        assert not missing, (
+            f"label_types declared in historical_db but missing from corpus: "
+            f"{missing}"
+        )
+
+
+class TestExportColumnContract:
+    """Pin the column header of every CSV exported by
+    scripts.export_historical_csvs.  Catches accidental column-order changes
+    or column drops in the byte-stable export contract."""
+
+    EXPECTED_HEADERS = {
+        "historical_players.csv": (
+            "date,player_name,team,position,real_score,total_value,"
+            "is_highest_value,is_most_popular,is_most_drafted_3x,"
+            "ops_at_slate,iso_at_slate,era_at_slate,whip_at_slate,"
+            "k9_at_slate,x_woba,x_ba,x_slg,avg_ev,hard_hit_pct,barrel_pct,"
+            "max_ev,x_era,x_woba_against,fb_velo,whiff_pct,chase_pct,"
+            "fb_ivb,fb_extension,ops_vs_lhp_at_slate,ops_vs_rhp_at_slate,"
+            "batting_order_at_slate,card_boost,drafts,draft_count,"
+            "avg_draft_slot,most_common_slot,avg_draft_mult,avg_draft_tv,"
+            "highest_draft_tv,injury_status"
+        ),
+        "historical_winning_drafts.csv": (
+            "date,winner_rank,slot_index,player_name,team,position,"
+            "real_score,slot_mult,card_boost,total_mult"
+        ),
+        "hv_player_game_stats.csv": (
+            "date,player_name,team_actual,position,real_score,game_result,"
+            "ab,r,h,hr,rbi,bb,so,ip,er,k_pitching,decision,notes,"
+            "ops_at_slate,iso_at_slate"
+        ),
+        "historical_player_game_logs.csv": (
+            "slate_date,player_name,team,mlb_id,position,game_date,opponent,"
+            "is_home,ab,runs,hits,hr,rbi,bb,so,sb,ip,er,k_pitching,decision"
+        ),
+    }
+
+    def test_export_produces_expected_headers(self, tmp_path):
+        """Run the export into tmp_path and assert each CSV's header matches."""
+        from scripts.export_historical_csvs import export_all
+        export_all(out_dir=tmp_path)
+        for filename, expected in self.EXPECTED_HEADERS.items():
+            actual = (tmp_path / filename).read_text().splitlines()[0]
+            assert actual == expected, (
+                f"{filename} header drift:\n"
+                f"  expected: {expected}\n"
+                f"  actual:   {actual}"
+            )
+
+
+# ---------------------------------------------------------------------------
 # 3. Constant-perturbation rank stability
 # ---------------------------------------------------------------------------
 

@@ -251,12 +251,13 @@ LABEL_TYPES_NUMERIC = (
     "total_value",
     "card_boost",
     "drafts",
-    "total_mult",
     "draft_count",
     "avg_draft_slot",
     "avg_draft_mult",
     "avg_draft_tv",
     "highest_draft_tv",
+    # Note: `total_mult` is not a standalone label_type — it's encoded
+    # inside winning_lineup_slot.label_text JSON alongside rank/slot/etc.
 )
 
 # Boolean-flag leaderboard memberships — label_value=1.0 when the player landed
