@@ -464,4 +464,17 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    rc = main()
+    if rc == 0:
+        # Step 3 hook: re-ingest CSVs into data/historical.db so downstream
+        # readers (Step 4) see the new values.  Cheap (~1s) and idempotent.
+        # Ensure repo root on sys.path so app.core.historical_db imports
+        # work regardless of how the backfill was invoked.
+        import sys as _sys
+        from pathlib import Path as _Path
+        _repo = _Path(__file__).resolve().parents[1]
+        if str(_repo) not in _sys.path:
+            _sys.path.insert(0, str(_repo))
+        from app.core import historical_db
+        historical_db.rebuild_from_csvs_and_export()
+    sys.exit(rc)

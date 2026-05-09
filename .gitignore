@@ -4,6 +4,8 @@ __pycache__/
 .env
 db/*.db
 *.db
+*.db-wal
+*.db-shm
 # Canonical historical calibration corpus is committed as a binary artifact
 # (see CLAUDE.md "Historical Data Store").  Schema diffs are reviewable via
 # `sqlite3 data/historical.db .dump | diff`.

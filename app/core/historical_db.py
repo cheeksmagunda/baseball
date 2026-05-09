@@ -523,6 +523,46 @@ def has_label(
     return cur.fetchone() is not None
 
 
+def rebuild_from_csvs_and_export(
+    *, db_path: str | os.PathLike | None = None,
+    out_dir: str | os.PathLike | None = None,
+) -> None:
+    """Re-ingest the canonical store from the on-disk CSV/JSON files and
+    refresh the derived exports.  Called at the end of every Step-3 backfill
+    script so the DB and CSVs stay in sync without each backfill needing
+    bespoke per-table SQLite writes.
+
+    Pre-condition: the backfill has just written its updated CSV/JSON to /data/.
+    Post-condition: data/historical.db is rebuilt from those CSVs, and the
+    CSVs are re-exported in canonical form (column order, sort order,
+    formatting) so subsequent backfills see byte-stable inputs.
+    """
+    import subprocess
+    import sys
+    repo_root = Path(__file__).resolve().parents[2]
+    cmd = [
+        sys.executable,
+        str(repo_root / "scripts" / "build_historical_db.py"),
+        "--rebuild",
+    ]
+    if db_path is not None:
+        cmd += ["--db", str(db_path)]
+    env = {**os.environ}
+    env.setdefault("BO_CURRENT_SEASON", "2026")
+    env.setdefault("BO_ODDS_API_KEY", "backfill-rebuild-stub")
+    subprocess.run(cmd, check=True, env=env, cwd=str(repo_root))
+
+    cmd = [
+        sys.executable,
+        str(repo_root / "scripts" / "export_historical_csvs.py"),
+    ]
+    if db_path is not None:
+        cmd += ["--db", str(db_path)]
+    if out_dir is not None:
+        cmd += ["--out-dir", str(out_dir)]
+    subprocess.run(cmd, check=True, env=env, cwd=str(repo_root))
+
+
 def fetch_most_popular_index(
     conn: sqlite3.Connection,
     *,
