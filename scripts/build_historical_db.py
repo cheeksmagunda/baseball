@@ -818,29 +818,38 @@ def emit_parity_baseline(report_path: Path) -> None:
 def apply_synthetic_multiplier(conn, n: int) -> None:
     """Duplicate every row N-1 additional times under fake `slate_date` keys.
 
-    Used by Step 7 to verify the schema sustains 5x-10x the current corpus
-    without surprise NOT NULLs / size blowups.  Test-only path; never used in
-    production.  Fake dates are derived by adding (k * 1000) days to each
-    real date, which puts them ~3000 years in the future — guaranteed not
-    to collide with any real slate.
+    Step 7 readiness probe: confirms the schema sustains 5×-10× the current
+    corpus without size blowups or constraint violations.  Test-only path;
+    never used in production.  Fake dates are derived by shifting each real
+    date forward by (k × 1000) days (~3000 years in the future), guaranteed
+    not to collide with any real slate.
+
+    Implementation note: player_game_log carries an autoincrement rowid_seq
+    PK; we exclude it from the SELECT so SQLite assigns fresh values per
+    duplicated row.  The other tables use natural composite PKs and reuse
+    the source columns directly.
     """
     if n <= 1:
         return
-    from datetime import date as DateType
+    from datetime import date as DateType, timedelta as _td
     real_dates = [r[0] for r in conn.execute("SELECT slate_date FROM slate").fetchall()]
     for k in range(1, n):
         offset_days = k * 1000
         for real in real_dates:
-            base = DateType.fromisoformat(real)
-            fake = base.replace(year=base.year + (offset_days // 365))
+            fake = DateType.fromisoformat(real) + _td(days=offset_days)
             fake_str = fake.isoformat()
             for tbl in ("slate", "slate_game", "player_slate", "player_game_log", "label_event"):
+                cols = [
+                    c for c in historical_db._table_columns(conn, tbl)
+                    if c not in ("slate_date", "rowid_seq")
+                ]
+                col_select = ", ".join(cols) if cols else ""
+                col_insert = "slate_date" + (", " + col_select if cols else "")
                 conn.execute(
-                    f"INSERT OR REPLACE INTO {tbl} "
-                    f"SELECT REPLACE(slate_date, '{real}', '{fake_str}') AS slate_date, "
-                    f"{', '.join(c for c in historical_db._table_columns(conn, tbl) if c != 'slate_date')} "
+                    f"INSERT INTO {tbl} ({col_insert}) "
+                    f"SELECT ?{', ' + col_select if cols else ''} "
                     f"FROM {tbl} WHERE slate_date = ?",
-                    (real,),
+                    (fake_str, real),
                 )
     conn.commit()
     log.info("synthetic multiplier %d applied", n)
