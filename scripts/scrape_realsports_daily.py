@@ -27,6 +27,16 @@ Dependencies: playwright (and the project's existing dependencies).
 Auth: requires scraper/storage_state.json (created via --refresh-auth or
 login_save_state.py). The token in there has indefinite-ish lifetime; if you
 get 401s, run with --refresh-auth.
+
+DATE RANGE LIMITATION — IMPORTANT:
+    This scraper navigates the realsports.io UI date strip, which only shows
+    approximately the last 14 days of completed slates.  Any date older than
+    ~2 weeks is NOT accessible via this browser-based path.
+
+    For backfilling arbitrary past dates (e.g. the full historical corpus
+    starting 2026-03-25) use scripts/backfill_card_boost_and_drafts.py, which
+    calls the JSON API directly (web.realapp.com/home/mlb/day/next?day=YYYY-MM-DD)
+    and works for any date regardless of the UI date strip.
 """
 import argparse
 import csv
@@ -602,11 +612,37 @@ def _date_present_in_csv(path: Path, target_date: str) -> bool:
 
 
 def append_csv(path: Path, rows: list[dict], target_date: str, force: bool):
+    """Append rows for target_date to path, preserving all existing columns.
+
+    When the file already has backfilled columns (Statcast, at-slate stats,
+    card_boost, etc.) that the scraper doesn't produce, a naive rewrite using
+    only the new rows' fieldnames would silently strip those extra columns for
+    every kept row.  This function prevents that by:
+
+      1. Reading the existing file's fieldnames first.
+      2. Merging them with the new rows' fieldnames (union, existing order
+         preserved, new fields appended at the end).
+      3. Writing kept rows and new rows with the merged fieldname set.
+         Rows missing a field get an empty string for that column.
+    """
     if not rows:
         log.warning(f"  no rows to write to {path.name}")
         return
-    fieldnames = list(rows[0].keys())
+
+    new_fieldnames = list(rows[0].keys())
+
     if path.exists():
+        # Read existing fieldnames so we can preserve unknown/backfilled columns.
+        with open(path) as f:
+            reader = csv.DictReader(f)
+            existing_fieldnames = list(reader.fieldnames or [])
+
+        # Union: existing columns first (preserves order + extra backfilled cols),
+        # then any genuinely new columns from this scrape run appended at the end.
+        merged_fieldnames = existing_fieldnames + [
+            c for c in new_fieldnames if c not in existing_fieldnames
+        ]
+
         if _date_present_in_csv(path, target_date):
             if not force:
                 log.warning(f"  {path.name}: {target_date} already present, skipping (use --force to overwrite)")
@@ -614,20 +650,26 @@ def append_csv(path: Path, rows: list[dict], target_date: str, force: bool):
             log.info(f"  {path.name}: removing existing rows for {target_date}")
             with open(path) as f:
                 kept = [r for r in csv.DictReader(f) if r.get("date") != target_date]
+            # Rewrite file with merged fieldnames so kept rows keep all their columns.
             with open(path, "w", newline="") as f:
-                w = csv.DictWriter(f, fieldnames=fieldnames)
+                w = csv.DictWriter(f, fieldnames=merged_fieldnames, extrasaction="ignore")
                 w.writeheader()
-                w.writerows(kept)
-        # Append rows
+                for row in kept:
+                    w.writerow({col: row.get(col, "") for col in merged_fieldnames})
+
+        # Append new rows (fill any extra backfilled columns with empty string).
         with open(path, "a", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=fieldnames)
-            w.writerows(rows)
+            w = csv.DictWriter(f, fieldnames=merged_fieldnames, extrasaction="ignore")
+            for row in rows:
+                w.writerow({col: row.get(col, "") for col in merged_fieldnames})
     else:
         log.info(f"  {path.name}: creating new file")
+        merged_fieldnames = new_fieldnames
         with open(path, "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=fieldnames)
+            w = csv.DictWriter(f, fieldnames=merged_fieldnames)
             w.writeheader()
             w.writerows(rows)
+
     log.info(f"  {path.name}: appended {len(rows)} rows")
 
 
