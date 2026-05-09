@@ -1,0 +1,27 @@
+Migration parity diff — Step 4 (CSV-path vs SQLite-path readers)
+================================================================
+
+Each of the 7 calibration / audit / validate scripts was run twice:
+  $ BO_HISTORICAL_SOURCE=csv    python scripts/<reader>.py [args]
+  $ BO_HISTORICAL_SOURCE=sqlite python scripts/<reader>.py [args]
+
+The SQLite path materialises data/historical.db into a tempdir via
+scripts/export_historical_csvs.export_all() and rebinds the data file
+paths inside main() to that tempdir.  The CSV path reads from /data/
+directly.  Both produce byte-identical stdout because data/ files are
+the canonical export of data/historical.db (Step 2 byte-stable contract).
+
+Captured: 2026-05-09 by step 4 commit.
+
+Reader                                              csv vs sqlite
+------                                              -------------
+audit_hv_hit_rate.py                                BYTE-IDENTICAL
+audit_lineup_tv.py                                  BYTE-IDENTICAL
+audit_slot1_quality.py                              BYTE-IDENTICAL
+audit_tv_signals.py                                 BYTE-IDENTICAL
+calibrate_popularity_curve.py                       BYTE-IDENTICAL
+calibrate_popularity_components.py                  BYTE-IDENTICAL
+validate_ingest.py --date 2026-05-07                BYTE-IDENTICAL
+
+All 7 paths reproduce identical numerical output.  Step 6 will remove
+the BO_HISTORICAL_SOURCE=csv branch; the SQLite path stays.

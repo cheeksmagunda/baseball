@@ -71,12 +71,29 @@ SLOT_MULTIPLIERS = (2.0, 1.8, 1.6, 1.4, 1.2)
 
 
 def main() -> int:
+    # Step 4: optionally load through the SQLite store rather than direct
+    # /data/ reads.  Default is SQLite; BO_HISTORICAL_SOURCE=csv falls back
+    # to the on-disk CSVs (transitional, removed in Step 6).
+    import tempfile as _tempfile
+    import sys as _sys, pathlib as _pathlib
+    _repo = _pathlib.Path(__file__).resolve().parents[1]
+    if str(_repo) not in _sys.path:
+        _sys.path.insert(0, str(_repo))
+    from scripts._historical_loader import env_source as _env_source
+    _historical_source = _env_source()
+    if _historical_source == "sqlite":
+        from scripts.export_historical_csvs import export_all as _export_all
+        _hist_tmpdir = _tempfile.mkdtemp(prefix="hist_export_")
+        _export_all(out_dir=_pathlib.Path(_hist_tmpdir))
+        _hist_data_dir = _pathlib.Path(_hist_tmpdir)
+    else:
+        _hist_data_dir = ROOT / "data"
     rows_by_date: dict[str, list[dict]] = defaultdict(list)
-    with (ROOT / "data" / "historical_players.csv").open() as f:
+    with (_hist_data_dir / "historical_players.csv").open() as f:
         for row in csv.DictReader(f):
             rows_by_date[row["date"]].append(row)
 
-    slate_envs = load_slate_envs(ROOT / "data" / "historical_slate_results.json")
+    slate_envs = load_slate_envs(_hist_data_dir / "historical_slate_results.json")
     NEUTRAL = neutral_total_score()
     output_dir = ROOT / "scripts" / "output"
     output_dir.mkdir(exist_ok=True)

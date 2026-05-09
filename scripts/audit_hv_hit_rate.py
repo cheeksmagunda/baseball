@@ -620,10 +620,27 @@ def apply_sweep_overrides() -> None:
 
 
 def main() -> int:
+    # Step 4: optionally load through the SQLite store rather than direct
+    # /data/ reads.  Default is SQLite; BO_HISTORICAL_SOURCE=csv falls back
+    # to the on-disk CSVs (transitional, removed in Step 6).
+    import tempfile as _tempfile
+    import sys as _sys, pathlib as _pathlib
+    _repo = _pathlib.Path(__file__).resolve().parents[1]
+    if str(_repo) not in _sys.path:
+        _sys.path.insert(0, str(_repo))
+    from scripts._historical_loader import env_source as _env_source
+    _historical_source = _env_source()
+    if _historical_source == "sqlite":
+        from scripts.export_historical_csvs import export_all as _export_all
+        _hist_tmpdir = _tempfile.mkdtemp(prefix="hist_export_")
+        _export_all(out_dir=_pathlib.Path(_hist_tmpdir))
+        _hist_data_dir = _pathlib.Path(_hist_tmpdir)
+    else:
+        _hist_data_dir = ROOT / "data"
     apply_sweep_overrides()
 
-    historical_csv = ROOT / "data" / "historical_players.csv"
-    slate_results_json = ROOT / "data" / "historical_slate_results.json"
+    historical_csv = _hist_data_dir / "historical_players.csv"
+    slate_results_json = _hist_data_dir / "historical_slate_results.json"
     output_dir = ROOT / "scripts" / "output"
     output_dir.mkdir(exist_ok=True)
     output_csv = output_dir / "hv_miss_decomposition.csv"

@@ -288,6 +288,32 @@ def check_lockstep(target_date: str) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # Step 4: optionally load through the SQLite store rather than direct
+    # /data/ reads.  Default is SQLite; BO_HISTORICAL_SOURCE=csv falls back
+    # to the on-disk CSVs (transitional, removed in Step 6).
+    import tempfile as _tempfile
+    import sys as _sys, pathlib as _pathlib
+    _repo = _pathlib.Path(__file__).resolve().parents[1]
+    if str(_repo) not in _sys.path:
+        _sys.path.insert(0, str(_repo))
+    from scripts._historical_loader import env_source as _env_source
+    _historical_source = _env_source()
+    if _historical_source == "sqlite":
+        from scripts.export_historical_csvs import export_all as _export_all
+        _hist_tmpdir = _tempfile.mkdtemp(prefix="hist_export_")
+        _export_all(out_dir=_pathlib.Path(_hist_tmpdir))
+        _hist_data_dir = _pathlib.Path(_hist_tmpdir)
+    else:
+        _hist_data_dir = DATA
+    # validate_ingest's check_* functions read from module-level globals;
+    # the simplest safe approach is to monkey-patch the module-level constants
+    # for the duration of main().
+    global HISTORICAL_PLAYERS, WINNING_DRAFTS, SLATE_RESULTS, HV_STATS, PLAYER_GAME_LOGS
+    HISTORICAL_PLAYERS = _hist_data_dir / "historical_players.csv"
+    WINNING_DRAFTS = _hist_data_dir / "historical_winning_drafts.csv"
+    SLATE_RESULTS = _hist_data_dir / "historical_slate_results.json"
+    HV_STATS = _hist_data_dir / "hv_player_game_stats.csv"
+    PLAYER_GAME_LOGS = _hist_data_dir / "historical_player_game_logs.csv"
     parser = argparse.ArgumentParser(description="Validate a slate ingest before reseeding")
     parser.add_argument("--date", required=True, help="Slate date in YYYY-MM-DD format")
     args = parser.parse_args()
