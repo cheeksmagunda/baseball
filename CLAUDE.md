@@ -316,19 +316,38 @@ Net effect: a 15-game slate with first pitches spanning 17:35–22:05 ET produce
 
 ## Data Files (`/data/`)
 
-Current coverage (as of 2026-05-09): **43 slates, 2026-03-25 → 2026-05-07**. All five files stay in lockstep — every date present in one is present in all five (with the documented carve-outs for season-opener slates that have no prior-game corpus).
+Current coverage (as of 2026-05-09): **43 slates, 2026-03-25 → 2026-05-07**.
 
-**Two roles — do not confuse them:**
-- **Outcome labels** (`historical_players.csv`, `historical_winning_drafts.csv`) — retrospective results. What players scored, who won, what lineups paid off. Never used as live pipeline inputs.
-- **Calibration ground truth** (`hv_player_game_stats.csv`, `historical_slate_results.json`, `historical_player_game_logs.csv`) — what the conditions and player performances actually were. Used to validate that the live scoring signals correlate with real outcomes.
+**Canonical store: `data/historical.db`** (5 SQLite tables — see schema in `app/core/historical_db.py::SCHEMA_DDL`).  The 5 CSV/JSON files in `/data/` are byte-stable derived exports refreshed automatically by every writer (the daily scraper + the 11 backfill scripts).  Calibration / audit scripts read through the SQLite store; the CSVs remain on disk for ad-hoc inspection (`grep`, spreadsheet open) and as a human-readable diff target on PR review.  Schema diffs are reviewable via `sqlite3 data/historical.db .dump | diff`.
 
-| File | Role | Current size | Contents |
+Schema diff vs CSV era: see commits `step 1` … `step 8` on the migration branch.  Two corrections retracted vs prior CLAUDE.md revisions:
+- `historical_players.csv` is **40 columns** including `card_boost` (col 32) and `drafts` (col 33), restored by the May 2026 backfill cycle.  Earlier text claiming they were "explicitly NOT stored" is stale — both fields persist in `label_event` rows of types `card_boost` and `drafts`, and re-export to the CSV's existing column positions.
+- `historical_winning_drafts.csv` is **10 columns** (`date, winner_rank, slot_index, player_name, team, position, real_score, slot_mult, card_boost, total_mult`).  The `card_boost` and `total_mult` columns were added in May 2026.
+
+**SQLite tables** (5 logical, populated from live MLB API + Real Sports scrape + backfills):
+
+| Table | Rows | Role |
+|---|---|---|
+| `slate` | 43 | One per slate envelope: date, game_count, num_brawlers, season_stage, source, saved_at. |
+| `slate_game` | 551 | Per-game env signals + post-game scores.  PK `(slate_date, game_pk, game_number)` — `game_number` disambiguates doubleheaders that share an MLB game_pk (5 such pairs in current corpus). |
+| `player_slate` | 1644 | Per-(slate_date, mlb_id) identity + at-slate inputs (ops_at_slate, era_at_slate, Statcast x_woba / hard_hit_pct / etc., platoon splits, batting_order_at_slate). |
+| `player_game_log` | 12290 | Prior-game outcomes per (slate_date, mlb_id, game_date) for the trailing 10-game window.  No uniqueness constraint on the natural triple — the source CSV had 63 duplicate rows we preserve via autoincrement `rowid_seq` so calibration scripts behave identically to the CSV-era harness. |
+| `label_event` | 21945 | Typed/sourced/dated outcome labels.  `label_type` ∈ {real_score, total_value, card_boost, drafts, draft_count, avg_draft_slot, avg_draft_mult, avg_draft_tv, highest_draft_tv, most_common_slot, injury_status, highest_value, most_popular, most_drafted_3x, winning_lineup_slot, box_score}.  Presence of a row IS the signal: a player without a `most_popular` row is unambiguously "not on the leaderboard," distinct from "didn't appear at all" (no `player_slate` row). |
+
+**Derived exports** (refreshed on every write to `data/historical.db`):
+
+| File | Role | Current size | Source query |
 |---|---|---|---|
-| `historical_players.csv` | Outcome labels + at-slate features | 1644 rows / 43 dates | Master player ledger: real_score, total_value, leaderboard flags (HV/MP/3X), AND every at-slate feature the live pipeline reads — `ops_at_slate`/`iso_at_slate` (batters), `era_at_slate`/`whip_at_slate`/`k9_at_slate` (pitchers), Statcast batter (`x_woba`/`x_ba`/`x_slg`/`avg_ev`/`hard_hit_pct`/`barrel_pct`/`max_ev`), Statcast pitcher (`x_era`/`x_woba_against`/`fb_velo`/`whiff_pct`/`chase_pct`/`fb_ivb`/`fb_extension`), platoon (`ops_vs_lhp_at_slate`/`ops_vs_rhp_at_slate`), and lineup card (`batting_order_at_slate` — actual MLB box-score slot, post-hoc surrogate for RotoWire's pre-game expected). **Null `real_score` / `total_value` = DNP/scratch.** Avg ~38 rows/date. `card_boost` and `drafts` are explicitly NOT stored — not relevant to pipeline calibration. |
-| `historical_winning_drafts.csv` | Outcome labels | 2308 rows / 43 dates | Top-ranked lineups per date (5 rows per lineup). 3–20 ranks captured per date. |
-| `historical_slate_results.json` | Calibration ground truth | 43 entries / 551 games | Per-date game context: game results and scores PLUS every env field the live pipeline reads at T-65 — Vegas (moneyline + total), team records, starter (id, name, hand, ERA/WHIP/K9, x_era, x_woba_against), team season aggregates (OPS, K%, bullpen ERA, catcher framing runs/pct), series momentum (L10 wins, series_wins), opp rest days, weather (temp, wind speed/direction/deg), and park HR factor. Cross-reference with historical_players.csv by (date, team). |
-| `hv_player_game_stats.csv` | Calibration ground truth | 751 rows / 43 dates | Actual box scores for every Highest-Value player appearance. Batting (ab, r, h, hr, rbi, bb, so) and pitching (ip, er, k_pitching, decision) coexist — blanks = not applicable.  Also carries `ops_at_slate` / `iso_at_slate` for batter rows for trait calibration. |
-| `historical_player_game_logs.csv` | Calibration ground truth | ~12.3K rows / 41 dates | Per-(slate_date, player) ten-game pre-slate window pulled from MLB API gameLog.  Feeds `recent_form` and `hot_streak` trait calibration sweeps that V16 Phase 2 explicitly flagged as the previously-unmeasured signal.  Schema: `slate_date, player_name, team, mlb_id, position, game_date, opponent, is_home, ab, runs, hits, hr, rbi, bb, so, sb, ip, er, k_pitching, decision`.  Batter rows fill the `ab..sb` block; pitcher rows fill the `ip/er/k_pitching/decision` block.  Backfilled by `scripts/backfill_player_game_logs.py` with a `scripts/output/.gamelog_cache/` per-(mlb_id, season) JSON cache so re-runs are cheap. |
+| `historical_players.csv` | Outcome labels + at-slate features | 1644 rows / 43 dates | `player_slate LEFT JOIN label_event` for the 14 outcome / draft-shape / injury labels. |
+| `historical_winning_drafts.csv` | Outcome labels | 2308 rows / 43 dates | `label_event WHERE label_type='winning_lineup_slot'` (CSV row index encoded in `source` to preserve exact-duplicate rows). |
+| `historical_slate_results.json` | Calibration ground truth | 43 entries / 551 games | `slate JOIN slate_game` (column `home_team` exported as `home`, `away_team` as `away`; `game_number` dropped from output). |
+| `hv_player_game_stats.csv` | Calibration ground truth | 751 rows / 43 dates | `label_event WHERE label_type='box_score' JOIN player_slate` for identity columns (box-score values stored as JSON in `label_event.label_text`). |
+| `historical_player_game_logs.csv` | Calibration ground truth | 12290 rows / 41 dates | `player_game_log` ordered by `rowid_seq` (insertion order). |
+
+**Limitations on point-in-time fidelity** — explicitly named so a future calibration sweep doesn't conflate them with bugs:
+- `ops_vs_lhp_at_slate` / `ops_vs_rhp_at_slate` — MLB API does not honour `endDate` on `stats=statSplits`.  We backfill the season-total split (a single value per player, repeated across every slate the player appears on).  Approximation is exact for the most recent slates and slightly stale for late-March games.
+- `batting_order_at_slate` — actual lineup-card slot from the post-hoc MLB box score, NOT the RotoWire pre-game projection the live pipeline reads at T-65.  Pinch-hit / double-switch / late-scratch cases are baked in.  HV-leaderboard players who entered as pinch-hits get a blank slot (correct: they didn't start).
+- Statcast pitcher columns (`fb_velo`, `fb_ivb`, `fb_extension`, `whiff_pct`, `chase_pct`) — derived from pybaseball pitch-by-pitch with a 30-pitch minimum threshold.  Pitchers below the threshold leave columns blank rather than emit noisy values.
 
 **Limitations on point-in-time fidelity** — explicitly named so a future calibration sweep doesn't conflate them with bugs:
 - `ops_vs_lhp_at_slate` / `ops_vs_rhp_at_slate` — MLB API does not honour `endDate` on `stats=statSplits`.  We backfill the season-total split (a single value per player, repeated across every slate the player appears on).  Approximation is exact for the most recent slates and slightly stale for late-March games.
@@ -351,7 +370,7 @@ The env scoring thresholds in `app/core/constants.py` (BATTER_ENV_VEGAS_FLOOR, E
 
 ## Ingesting New Slate Data
 
-The default daily ingest is **automated via `scripts/scrape_realsports_daily.py`** — a Playwright-driven scrape against the Real Sports app that captures the day's leaderboards (HV/MP/3X), top-20 winning lineups, and game results from the platform's internal JSON endpoints. It writes to all four files in lockstep and is idempotent (re-run with `--force` to overwrite).
+The default daily ingest is **automated via `scripts/scrape_realsports_daily.py`** — a Playwright-driven scrape against the Real Sports app that captures the day's leaderboards (HV/MP/3X), top-20 winning lineups, and game results from the platform's internal JSON endpoints. It writes to `data/historical.db` first, then refreshes the 5 derived CSV/JSON files via `scripts/export_historical_csvs.export_all()`. Idempotent (re-run with `--force` to overwrite a date already present).
 
 Daily workflow (after a slate completes):
 
@@ -363,6 +382,8 @@ Daily workflow (after a slate completes):
 .venv/bin/python scripts/backfill_player_season_stats_at_slate.py       # OPS/ERA/WHIP/K9 at the time of the slate
 .venv/bin/python scripts/validate_ingest.py --date YYYY-MM-DD           # lockstep + duplicate check
 ```
+
+Each scraper / backfill ends with a hook that calls `app.core.historical_db.rebuild_from_csvs_and_export()` so `data/historical.db` and the on-disk CSVs stay in sync with no manual intervention.
 
 The scraper requires `scraper/storage_state.json` (Playwright auth state). If it returns 401 or zero parseable games, refresh the auth state once interactively:
 
@@ -376,34 +397,28 @@ The four-file ingest semantics below still apply — the scraper just automates 
 
 ### Per-slate ingest checklist (manual fallback)
 
-- [ ] Append player rows to `historical_players.csv`
-  - Columns: `date, player_name, team, position, real_score, total_value, is_highest_value, is_most_popular, is_most_drafted_3x`
-  - One row per player per slate day. Most Popular + Most Drafted 3x leaderboards are mandatory; Highest Value is optional (set `is_highest_value=1` only if captured).
-  - A player in multiple leaderboards = one row with multiple flags set.
-  - `total_value` is the platform-displayed boosted value (`real_score × (2 + card_boost)` on the platform). `card_boost` itself is not stored — only the post-boost `total_value` is persisted.
-  - `drafts` (raw draft count) is no longer captured. The boolean `is_most_popular` and `is_most_drafted_3x` flags carry the leaderboard signal needed for calibration.
-- [ ] Append winning-lineup rows to `historical_winning_drafts.csv`
-  - Columns: `date, winner_rank, slot_index, player_name, team, position, real_score, slot_mult`
-  - 5 rows per lineup (one per slot 1–5). Target top-20 ranks → 100 rows/day, but capture what is available.
-  - `slot_mult`: 2.0 (slot 1), 1.8, 1.6, 1.4, 1.2 (slot 5).
-- [ ] Append slate envelope to `historical_slate_results.json`
-  - Top-level array — push one object per slate day.
-  - Required fields: `date`, `game_count`, `games` (may be `[]`), `season_stage` ("regular-season"), `source` ("screenshot_ingest"), `saved_at` (ISO timestamp), `notes` (free text capturing ghost wins, boost traps, 3x busts, crowd overreactions — the V2 strategy validation raw material).
-  - Per-game shape when scores are captured: `{"home": "NYY", "away": "BOS", "home_score": 5, "away_score": 2, "winner": "NYY", "loser": "BOS", "winner_score": 5, "loser_score": 2}`.
-- [ ] Append HV box-score rows to `hv_player_game_stats.csv`
-  - Columns: `date, player_name, team_actual, position, real_score, game_result, ab, r, h, hr, rbi, bb, so, ip, er, k_pitching, decision, notes`
-  - One row per Highest-Value-leaderboard player appearance. Batters fill the `ab…so` columns; pitchers fill `ip/er/k_pitching/decision`. Leave non-applicable columns blank.
-  - `game_result`: free-form ("SF 0 NYY 7"). `notes`: short summary ("2-for-3 | vs SF (away)").
+The daily scrape is fully automated.  This checklist applies only when the scraper is unavailable (platform layout broke the selector, auth state expired and you can't refresh, etc.) and you need to ingest a slate by hand.
 
-### Platform → CSV column mapping (historical_players.csv)
+Use the SQLite store directly via the build script + your manually-prepared CSVs:
 
-The platform UI shows `Value`, `Multiplier`, `Drafts`, and a second `Value` (post-boost) column. We persist only `real_score` (the first Value) and `total_value` (the post-boost Value, when available). The `Multiplier` (card_boost) and `Drafts` columns are not stored — they don't inform pipeline calibration.
+1. Generate or hand-edit the relevant rows in the on-disk CSVs (`data/historical_players.csv`, `data/historical_winning_drafts.csv`, `data/historical_slate_results.json`, `data/hv_player_game_stats.csv`) using the column shapes documented in the `Derived exports` table above.
+2. Run `python scripts/build_historical_db.py --rebuild` to re-ingest the CSVs into `data/historical.db`.
+3. Run `python scripts/export_historical_csvs.py` to refresh the CSVs back from SQLite (canonicalises team strings, sort order, and number formatting).
+4. Run `python scripts/validate_ingest.py --date YYYY-MM-DD` to confirm the slate is well-formed.
 
-### Reloading the database after ingest
+Required column shapes (matches the byte-stable export):
+- `historical_players.csv`: 40 columns starting `date,player_name,team,position,real_score,total_value,is_highest_value,is_most_popular,is_most_drafted_3x,…`.  See `tests/test_invariants.py::TestExportColumnContract::EXPECTED_HEADERS` for the full list pinned in tests.
+- `historical_winning_drafts.csv`: 10 columns: `date,winner_rank,slot_index,player_name,team,position,real_score,slot_mult,card_boost,total_mult`.  5 rows per lineup, slot_mult ∈ {2.0, 1.8, 1.6, 1.4, 1.2}.
+- `historical_slate_results.json`: top-level array of envelopes; each envelope has `date, game_count, games[], num_brawlers, season_stage, source, saved_at`.  Per-game shape: `{home, away, home_score, away_score, winner, loser, winner_score, loser_score, …env-fields…, game_pk, datetime_utc}`.
+- `hv_player_game_stats.csv`: 20 columns: `date,player_name,team_actual,position,real_score,game_result,ab,r,h,hr,rbi,bb,so,ip,er,k_pitching,decision,notes,ops_at_slate,iso_at_slate`.
 
-The CSV/JSON files are the **only** historical-data store.  No part of the live runtime reads them; the calibration loop reads them by hand (Claude in a chat session) and edits `app/core/constants.py` / `app/core/weights.py` directly.
+### Reloading the historical SQLite store
 
-Old historical-into-DB seed paths (`app/seed.py`, the `draft_lineups` / `draft_slots` / `weight_history` tables) were removed.  The DB now stores **only current-cycle live state** — the T-65 monitor populates `slates` / `slate_games` / `slate_players` / `player_stats` / `player_game_log` / `team_season_stats` / `cached_lineups` / `player_scores` / `score_breakdowns` from live MLB API + Savant calls.
+`scripts/build_historical_db.py --rebuild` is the single command for re-ingesting CSVs/JSON into `data/historical.db`.  It is idempotent: re-running over the same input produces the same database (modulo timestamps in `observed_at` columns).  Backfill scripts call `app.core.historical_db.rebuild_from_csvs_and_export()` automatically after their CSV writes (Step 3 hook), so the DB stays in sync without manual intervention.
+
+The live operational DB (the T-65 monitor's ephemeral SQLite at `db/baseball.db`) is a SEPARATE store with 9 tables; see "Database Models (9 tables)" below.  The two stores never share data — `data/historical.db` is the calibration corpus, the operational DB is current-cycle live state.
+
+Old historical-into-DB seed paths (`app/seed.py`, the `draft_lineups` / `draft_slots` / `weight_history` tables) were removed.  The operational DB now stores **only current-cycle live state** — the T-65 monitor populates `slates` / `slate_games` / `slate_players` / `player_stats` / `player_game_log` / `team_season_stats` / `cached_lineups` / `player_scores` / `score_breakdowns` from live MLB API + Savant calls.
 
 **Schema is built from SQLAlchemy models, not migrations.** Because the DB is ephemeral by design (Railway containers wipe SQLite on every restart) and stores only current-cycle state, alembic migrations were the wrong tool — there's no historical state to evolve. `app/database.py::init_db()` calls `Base.metadata.create_all(engine)` at startup and the schema is whatever the models say. The `alembic/` directory and `alembic.ini` were deleted. Schema changes require: edit the SQLAlchemy model, restart the container, the new schema is created on the fresh DB.
 
@@ -633,6 +648,8 @@ The DB does not store historical data; appending to the four /data files is the 
 
 ## Database Models (9 tables)
 
+These are the live operational DB tables, populated by the T-65 monitor from live MLB API + Savant calls.  The DB is ephemeral by design (Railway containers wipe SQLite on every restart).  The historical calibration corpus lives in a SEPARATE store at `data/historical.db` (5 tables — `slate / slate_game / player_slate / player_game_log / label_event`); see "Data Files (`/data/`)" above.  The two stores never share data.
+
 | Model | Table | Key Fields |
 |---|---|---|
 | `Player` | players | name, name_normalized, team, position, mlb_id |
@@ -646,7 +663,7 @@ The DB does not store historical data; appending to the four /data files is the 
 | `ScoreBreakdown` | score_breakdowns | Per-trait sub-scores |
 | `CachedLineup` | cached_lineups | Frozen T-65 picks (one row per slate date) |
 
-The DB stores **only current-cycle live state**.  Historical reference data lives exclusively in `data/historical_*.csv` + `historical_slate_results.json`; nothing in the app reads those files at runtime.
+The operational DB stores **only current-cycle live state**.  Historical reference data lives exclusively in `data/historical.db` and its 5 derived export files; the only `app/` reader of the historical store is `app/core/popularity.py` (the rolling 14/28-day fame index, see scripts/audit_live_isolation.py for the carve-out).
 
 ## Scoring Engine (`app/services/scoring_engine.py`)
 

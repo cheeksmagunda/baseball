@@ -213,3 +213,11 @@ The honest summary is that the current pipeline is a high-quality solution to a 
 The empirical case is strong. Ninety-two percent of historical winners contain at least one sleeper HV. Eighty-eight percent contain at least one player drafted by under five hundred entrants. The popularity signal is highly autocorrelated and therefore predictable from the same kind of public observables the rest of the pipeline already uses. The proposed change is roughly three days of work plus a shadow week. It produces a model whose top output is, in the language of tournament theory, not the lineup with the highest mean projection but the lineup with the highest probability of finishing first, which is the only metric the contest actually pays out on.
 
 That is how Ben Oracle wins.
+
+---
+
+## Addendum: Historical-corpus storage migration (2026-05-08)
+
+This audit refers throughout to "the historical corpus" — the 43-slate calibration dataset spanning 2026-03-25 → 2026-05-07.  At the time the audit was written the corpus lived in 5 CSV/JSON files in `/data/`.  As of 2026-05-08, the canonical store has been migrated to `data/historical.db` (SQLite, 5 tables: `slate / slate_game / player_slate / player_game_log / label_event`) per CLAUDE.md "Data Files (`/data/`)".  The 5 CSV/JSON files remain on disk as byte-stable derived exports refreshed by every writer; the audit's empirical claims (forty-slate counts, win-share percentages, popularity autocorrelation, etc.) are unchanged because the underlying data is identical — only the storage layer moved.
+
+The popularity predictor proposed in Section 9 (`app/core/popularity.py`) was implemented in May 2026 and is now the single live-runtime read of the historical corpus, querying `data/historical.db` directly via `app.core.historical_db`.  See `scripts/verify_popularity_parity.py` for the parity gate that locked in the migration without behaviour change.
