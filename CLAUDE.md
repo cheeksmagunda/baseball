@@ -316,18 +316,24 @@ Net effect: a 15-game slate with first pitches spanning 17:35–22:05 ET produce
 
 ## Data Files (`/data/`)
 
-Current coverage (as of 2026-04-21): **28 slates, 2026-03-25 → 2026-04-21**. All four files stay in lockstep — every date present in one is present in all four.
+Current coverage (as of 2026-05-09): **43 slates, 2026-03-25 → 2026-05-07**. All five files stay in lockstep — every date present in one is present in all five (with the documented carve-outs for season-opener slates that have no prior-game corpus).
 
 **Two roles — do not confuse them:**
 - **Outcome labels** (`historical_players.csv`, `historical_winning_drafts.csv`) — retrospective results. What players scored, who won, what lineups paid off. Never used as live pipeline inputs.
-- **Calibration ground truth** (`hv_player_game_stats.csv`, `historical_slate_results.json`) — what the conditions and player performances actually were. Used to validate that the live scoring signals correlate with real outcomes.
+- **Calibration ground truth** (`hv_player_game_stats.csv`, `historical_slate_results.json`, `historical_player_game_logs.csv`) — what the conditions and player performances actually were. Used to validate that the live scoring signals correlate with real outcomes.
 
 | File | Role | Current size | Contents |
 |---|---|---|---|
-| `historical_players.csv` | Outcome labels | 1013 rows / 28 dates | Master player ledger: real_score, total_value, leaderboard flags (HV/MP/3X). **Null `real_score` / `total_value` = DNP/scratch.** Avg ~36 rows/date (range 22–56). `card_boost` and `drafts` were dropped — not relevant to pipeline calibration. |
-| `historical_winning_drafts.csv` | Outcome labels | 985 rows / 28 dates | Top-ranked lineups per date (5 rows per lineup). 3–12 ranks captured per date; target is 20. |
-| `historical_slate_results.json` | Calibration ground truth | 28 entries | Per-date game context: game results and scores. Game objects can be extended with env condition fields (Vegas lines, ERA/K9/WHIP/hand, team OPS/K%, bullpen ERA, series context, weather) when needed for manual calibration analysis. Cross-reference with historical_players.csv by (date, team). |
-| `hv_player_game_stats.csv` | Calibration ground truth | 446 rows / 28 dates | Actual box scores for every Highest-Value player appearance. Batting (ab, r, h, hr, rbi, bb, so) and pitching (ip, er, k_pitching, decision) coexist — blanks = not applicable. |
+| `historical_players.csv` | Outcome labels + at-slate features | 1644 rows / 43 dates | Master player ledger: real_score, total_value, leaderboard flags (HV/MP/3X), AND every at-slate feature the live pipeline reads — `ops_at_slate`/`iso_at_slate` (batters), `era_at_slate`/`whip_at_slate`/`k9_at_slate` (pitchers), Statcast batter (`x_woba`/`x_ba`/`x_slg`/`avg_ev`/`hard_hit_pct`/`barrel_pct`/`max_ev`), Statcast pitcher (`x_era`/`x_woba_against`/`fb_velo`/`whiff_pct`/`chase_pct`/`fb_ivb`/`fb_extension`), platoon (`ops_vs_lhp_at_slate`/`ops_vs_rhp_at_slate`), and lineup card (`batting_order_at_slate` — actual MLB box-score slot, post-hoc surrogate for RotoWire's pre-game expected). **Null `real_score` / `total_value` = DNP/scratch.** Avg ~38 rows/date. `card_boost` and `drafts` are explicitly NOT stored — not relevant to pipeline calibration. |
+| `historical_winning_drafts.csv` | Outcome labels | 2308 rows / 43 dates | Top-ranked lineups per date (5 rows per lineup). 3–20 ranks captured per date. |
+| `historical_slate_results.json` | Calibration ground truth | 43 entries / 551 games | Per-date game context: game results and scores PLUS every env field the live pipeline reads at T-65 — Vegas (moneyline + total), team records, starter (id, name, hand, ERA/WHIP/K9, x_era, x_woba_against), team season aggregates (OPS, K%, bullpen ERA, catcher framing runs/pct), series momentum (L10 wins, series_wins), opp rest days, weather (temp, wind speed/direction/deg), and park HR factor. Cross-reference with historical_players.csv by (date, team). |
+| `hv_player_game_stats.csv` | Calibration ground truth | 751 rows / 43 dates | Actual box scores for every Highest-Value player appearance. Batting (ab, r, h, hr, rbi, bb, so) and pitching (ip, er, k_pitching, decision) coexist — blanks = not applicable.  Also carries `ops_at_slate` / `iso_at_slate` for batter rows for trait calibration. |
+| `historical_player_game_logs.csv` | Calibration ground truth | ~12.3K rows / 41 dates | Per-(slate_date, player) ten-game pre-slate window pulled from MLB API gameLog.  Feeds `recent_form` and `hot_streak` trait calibration sweeps that V16 Phase 2 explicitly flagged as the previously-unmeasured signal.  Schema: `slate_date, player_name, team, mlb_id, position, game_date, opponent, is_home, ab, runs, hits, hr, rbi, bb, so, sb, ip, er, k_pitching, decision`.  Batter rows fill the `ab..sb` block; pitcher rows fill the `ip/er/k_pitching/decision` block.  Backfilled by `scripts/backfill_player_game_logs.py` with a `scripts/output/.gamelog_cache/` per-(mlb_id, season) JSON cache so re-runs are cheap. |
+
+**Limitations on point-in-time fidelity** — explicitly named so a future calibration sweep doesn't conflate them with bugs:
+- `ops_vs_lhp_at_slate` / `ops_vs_rhp_at_slate` — MLB API does not honour `endDate` on `stats=statSplits`.  We backfill the season-total split (a single value per player, repeated across every slate the player appears on).  Approximation is exact for the most recent slates and slightly stale for late-March games.
+- `batting_order_at_slate` — actual lineup-card slot from the post-hoc MLB box score, NOT the RotoWire pre-game projection the live pipeline reads at T-65.  Pinch-hit / double-switch / late-scratch cases are baked in.  HV-leaderboard players who entered as pinch-hits get a blank slot (correct: they didn't start).
+- Statcast pitcher columns (`fb_velo`, `fb_ivb`, `fb_extension`, `whiff_pct`, `chase_pct`) — derived from pybaseball pitch-by-pitch with a 30-pitch minimum threshold.  Pitchers below the threshold leave columns blank rather than emit noisy values.
 
 ## Env Scoring Calibration
 

@@ -24,6 +24,7 @@ HISTORICAL_PLAYERS = DATA / "historical_players.csv"
 WINNING_DRAFTS = DATA / "historical_winning_drafts.csv"
 SLATE_RESULTS = DATA / "historical_slate_results.json"
 HV_STATS = DATA / "hv_player_game_stats.csv"
+PLAYER_GAME_LOGS = DATA / "historical_player_game_logs.csv"
 
 VALID_SLOT_MULTS = {2.0, 1.8, 1.6, 1.4, 1.2}
 
@@ -211,6 +212,45 @@ def check_hv_stats(target_date: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# historical_player_game_logs.csv
+# ---------------------------------------------------------------------------
+
+def check_player_game_logs(target_date: str) -> None:
+    """Verify the per-game pre-slate window file has rows for this slate.
+
+    Each (slate_date, mlb_id) pair should have up to ~10 prior-game rows;
+    season-opener slates have fewer because the prior-game pool is small.
+    """
+    if not PLAYER_GAME_LOGS.exists():
+        warn(
+            f"historical_player_game_logs.csv: file does not exist — "
+            "run scripts/backfill_player_game_logs.py to populate."
+        )
+        return
+
+    rows = []
+    with open(PLAYER_GAME_LOGS, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row.get("slate_date") != target_date:
+                continue
+            rows.append(row)
+
+    if not rows:
+        warn(
+            f"historical_player_game_logs.csv: no rows for {target_date} — "
+            "either a season-opener slate (no prior games) or backfill not run."
+        )
+        return
+
+    distinct_players = len({r.get("mlb_id") for r in rows})
+    ok(
+        f"historical_player_game_logs.csv: {len(rows)} rows / {distinct_players} "
+        f"players for {target_date}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Cross-file lockstep check
 # ---------------------------------------------------------------------------
 
@@ -273,7 +313,10 @@ def main() -> None:
     print("\n[4] hv_player_game_stats.csv")
     check_hv_stats(target_date)
 
-    print("\n[5] Lockstep check")
+    print("\n[5] historical_player_game_logs.csv")
+    check_player_game_logs(target_date)
+
+    print("\n[6] Lockstep check")
     check_lockstep(target_date)
 
     print(f"\n{'=' * 45}")

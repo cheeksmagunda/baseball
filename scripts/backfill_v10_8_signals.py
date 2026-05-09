@@ -62,6 +62,17 @@ from app.core.statcast import (  # noqa: E402
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=logging.INFO)
 log = logging.getLogger("backfill_v10_8")
 
+# Early-season slates use vendor-style aliases ("AZ" instead of "ARI") that
+# Savant's leaderboard joins do not recognise.  Canonicalise before lookup.
+TEAM_ABBR_ALIASES = {
+    "KCR": "KC", "CHW": "CWS", "AZ": "ARI", "WSN": "WSH",
+    "TBR": "TB", "SDP": "SD", "SFG": "SF", "OAK": "ATH",
+}
+
+
+def _canon_team(team: str) -> str:
+    return TEAM_ABBR_ALIASES.get(team.strip().upper(), team.strip().upper())
+
 
 def load_slates() -> list[dict]:
     with open(SLATE_RESULTS) as f:
@@ -170,12 +181,13 @@ def annotate_team_framing(slates: list[dict], team_framing: dict[str, dict], for
     for slate in slates:
         for g in slate.get("games", []):
             for side in ("home", "away"):
-                team = (g.get(side) or "").upper()
-                if not team:
+                raw_team = (g.get(side) or "").upper()
+                if not raw_team:
                     continue
+                team = _canon_team(raw_team)
                 k_runs = f"{side}_team_framing_runs"
                 k_pct = f"{side}_team_framing_pct"
-                if not force and k_runs in g:
+                if not force and g.get(k_runs) is not None:
                     continue
                 row = team_framing.get(team)
                 g[k_runs] = (row or {}).get("framing_runs")
