@@ -64,7 +64,21 @@ import requests
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 PLAYERS_CSV = DATA_DIR / "historical_players.csv"
-STORAGE_STATE = ROOT / "scraper" / "storage_state.json"
+
+
+def _find_storage_state() -> Path:
+    """Locate storage_state.json — present in the main repo but not git worktrees."""
+    candidate = ROOT / "scraper" / "storage_state.json"
+    if candidate.exists():
+        return candidate
+    for parent in ROOT.parents:
+        c = parent / "scraper" / "storage_state.json"
+        if c.exists():
+            return c
+    return candidate  # non-existent path → caller emits a clear error
+
+
+STORAGE_STATE = _find_storage_state()
 
 sys.path.insert(0, str(ROOT))
 from scripts.scrape_realsports_daily import (  # noqa: E402
