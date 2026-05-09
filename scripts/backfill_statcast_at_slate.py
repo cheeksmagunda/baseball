@@ -19,9 +19,10 @@ Approach
    season_start ≤ game_date ≤ slate_date and aggregate per player.
 3. Resolve (player_name, team) → mlb_id via the same lookup the season-stats
    backfill uses (`resolve_mlb_id` shared from the sibling backfill).
-4. Upsert 12 new columns onto historical_players.csv:
+4. Upsert 14 new columns onto historical_players.csv:
      Batters:  x_woba, x_ba, x_slg, avg_ev, hard_hit_pct, barrel_pct, max_ev
-     Pitchers: x_era, x_woba_against, fb_velo, whiff_pct, chase_pct
+     Pitchers: x_era, x_woba_against, fb_velo, whiff_pct, chase_pct,
+               fb_ivb, fb_extension
 
 Idempotent.  Re-runs skip rows where the canary column (`x_woba` for batters,
 `x_woba_against` for pitchers) is already populated.  --force overrides.
@@ -97,7 +98,13 @@ NEW_BATTER_COLS = (
 NEW_PITCHER_COLS = (
     "x_era", "x_woba_against",
     "fb_velo", "whiff_pct", "chase_pct",
+    "fb_ivb", "fb_extension",
 )
+# Fastball pitch_type codes used for fb_ivb / fb_extension aggregations.  FF and
+# FA are the canonical 4-seam codes; FT, SI, FC are 2-seam / sinker / cutter
+# variants that share the "ride / extension" arsenal context score_pitcher_k_rate
+# blends in.  Savant's per-pitch leaderboard groups all of these as "fastballs".
+FASTBALL_PITCH_TYPES = ("FF", "FA", "FT", "SI", "FC")
 ALL_NEW_COLS = NEW_BATTER_COLS + NEW_PITCHER_COLS
 
 
@@ -173,6 +180,7 @@ def fetch_pitch_data(season_start: str, season_end: str) -> pd.DataFrame:
         "estimated_woba_using_speedangle", "estimated_ba_using_speedangle",
         "estimated_slg_using_speedangle", "events", "type", "description",
         "release_speed", "pitch_type", "zone",
+        "pfx_z", "release_extension",
     }
     missing = required - set(df.columns)
     if missing:
@@ -301,6 +309,16 @@ def aggregate_pitcher_through(df: pd.DataFrame, slate_date: str) -> dict[int, di
         ff_velo_series = ff["release_speed"].dropna()
         fb_velo = ff_velo_series.mean() if len(ff_velo_series) >= 30 else None
 
+        # IVB and release extension on the broader fastball arsenal (FF/FA/FT/SI/FC).
+        # pfx_z is in feet (Savant convention); multiply by 12 for inches.
+        # release_extension is in feet (typical 5.5-7.0 ft).  Min 30-pitch sample
+        # so a single appearance with a noisy release point doesn't register.
+        fb = group[group["pitch_type"].isin(FASTBALL_PITCH_TYPES)]
+        ivb_series = fb["pfx_z"].dropna()
+        fb_ivb = (ivb_series.mean() * 12.0) if len(ivb_series) >= 30 else None
+        ext_series = fb["release_extension"].dropna()
+        fb_extension = ext_series.mean() if len(ext_series) >= 30 else None
+
         # Whiff%: whiffs / swings
         swings = group[group["description"].isin(swing_descriptions)]
         whiffs = group[group["description"].isin(whiff_descriptions)]
@@ -319,6 +337,8 @@ def aggregate_pitcher_through(df: pd.DataFrame, slate_date: str) -> dict[int, di
             "fb_velo": round(float(fb_velo), 1) if fb_velo is not None else None,
             "whiff_pct": round(float(whiff_pct), 1) if whiff_pct is not None else None,
             "chase_pct": round(float(chase_pct), 1) if chase_pct is not None else None,
+            "fb_ivb": round(float(fb_ivb), 2) if fb_ivb is not None else None,
+            "fb_extension": round(float(fb_extension), 2) if fb_extension is not None else None,
         }
     return aggregates
 
