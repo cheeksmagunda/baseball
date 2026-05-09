@@ -62,7 +62,6 @@ import logging
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date as _date
 from pathlib import Path
 
 import requests

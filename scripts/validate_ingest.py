@@ -223,7 +223,7 @@ def check_player_game_logs(target_date: str) -> None:
     """
     if not PLAYER_GAME_LOGS.exists():
         warn(
-            f"historical_player_game_logs.csv: file does not exist — "
+            "historical_player_game_logs.csv: file does not exist — "
             "run scripts/backfill_player_game_logs.py to populate."
         )
         return
