@@ -420,19 +420,33 @@ def _name_for(player_id: int, player_info: dict[int, dict],
     return _name_normalize(info.get("fullName") or fallback_display_name)
 
 
+def _safe_round(v, dp: int):
+    if v is None:
+        return ""
+    try:
+        return round(float(v), dp)
+    except (TypeError, ValueError):
+        return ""
+
+
 def parse_players(stats_payload: dict, player_info: dict[int, dict],
                   target_date: str) -> list[dict]:
     """
     historical_players.csv columns:
       date, player_name, team, position, real_score, total_value,
-      is_highest_value, is_most_popular, is_most_drafted_3x
+      is_highest_value, is_most_popular, is_most_drafted_3x,
+      draft_count, avg_draft_slot, most_common_slot, avg_draft_mult,
+      avg_draft_tv, highest_draft_tv, injury_status
 
     Dedup by (player_name, team), merging flags from HV/MP/3X sections.
+    Rich stats (draft_count, avg_draft_slot, etc.) are taken from the section
+    with the highest count (MP = total drafters, most representative).
     real_score is rounded to 1 dp to match the platform display + manual ingest;
     total_value is computed from real_score and the per-row card_boost (boost
     itself is not persisted — only the post-boost value).
     """
     by_key: dict[tuple[str, str], dict] = {}
+    best_count: dict[tuple[str, str], int] = {}  # tracks which section had the highest count
 
     for sec in stats_payload.get("draftStats", []):
         # Use .get() — platform added a 'My draft' section without sectionName
@@ -457,6 +471,8 @@ def parse_players(stats_payload: dict, player_info: dict[int, dict],
             total_value = _round_dp(real_score * (BASE_SLOT_MULT + boost), 2)
             position = _position_for(pl["id"], player_info)
 
+            count = p.get("count") or 0
+
             if key not in by_key:
                 by_key[key] = {
                     "date": target_date,
@@ -468,12 +484,34 @@ def parse_players(stats_payload: dict, player_info: dict[int, dict],
                     "is_highest_value": 0,
                     "is_most_popular": 0,
                     "is_most_drafted_3x": 0,
+                    "draft_count": count,
+                    "avg_draft_slot": _safe_round(p.get("avgPosition"), 3),
+                    "most_common_slot": p.get("mostCommonPosition", ""),
+                    "avg_draft_mult": _safe_round(p.get("avgMultiplier"), 4),
+                    "avg_draft_tv": _safe_round(p.get("avgScore"), 4),
+                    "highest_draft_tv": _safe_round(p.get("highestScore"), 4),
+                    "injury_status": pl.get("injuryStatus", ""),
                 }
+                best_count[key] = count
             else:
                 row = by_key[key]
                 if abs(row["real_score"] - real_score) > 0.05:
                     log.warning(f"    {name} ({team}): real_score drift "
                                 f"{row['real_score']} vs {real_score}")
+                # draft_count: keep the max (MP section carries the total count)
+                if count > (row.get("draft_count") or 0):
+                    row["draft_count"] = count
+                # avg_draft_* fields: take from the section with highest count
+                if count > best_count.get(key, 0):
+                    row["avg_draft_slot"] = _safe_round(p.get("avgPosition"), 3)
+                    row["most_common_slot"] = p.get("mostCommonPosition", "")
+                    row["avg_draft_mult"] = _safe_round(p.get("avgMultiplier"), 4)
+                    row["avg_draft_tv"] = _safe_round(p.get("avgScore"), 4)
+                    row["highest_draft_tv"] = _safe_round(p.get("highestScore"), 4)
+                    best_count[key] = count
+                # injury_status: keep first non-empty value
+                if not row.get("injury_status") and pl.get("injuryStatus"):
+                    row["injury_status"] = pl["injuryStatus"]
 
             by_key[key][flag_field] = 1
 
@@ -485,7 +523,7 @@ def parse_winning_drafts(entries: list[dict], player_info: dict[int, dict],
     """
     historical_winning_drafts.csv columns:
       date, winner_rank, slot_index, player_name, team, position,
-      real_score, slot_mult
+      real_score, slot_mult, card_boost, total_mult
     """
     rows = []
     missing_teams: set[int] = set()
@@ -513,16 +551,18 @@ def parse_winning_drafts(entries: list[dict], player_info: dict[int, dict],
                 "position": _position_for(pid, player_info),
                 "real_score": _round_dp(float(player["value"]), 1),
                 "slot_mult": slot_mult,
+                "card_boost": player.get("multiplierBonus", ""),
+                "total_mult": player.get("multiplier", ""),
             })
     if missing_teams:
         log.warning(f"  no team_key for teamIds: {sorted(missing_teams)}")
     return rows
 
 
-def parse_games(daily_payload: dict, target_date: str) -> dict:
+def parse_games(daily_payload: dict, stats_payload: dict, target_date: str) -> dict:
     """
     historical_slate_results.json envelope:
-      {date, game_count, games[], season_stage, source, saved_at, notes}
+      {date, game_count, games[], num_brawlers, season_stage, source, saved_at, notes}
     """
     content = daily_payload["content"]
     games_in = content.get("games", [])
@@ -547,10 +587,13 @@ def parse_games(daily_payload: dict, target_date: str) -> dict:
             "winner_score": winner_score, "loser_score": loser_score,
         })
 
+    num_brawlers = stats_payload.get("contest", {}).get("numBrawlers") or 0
+
     return {
         "date": target_date,
         "game_count": len(games_in),
         "games": games_out,
+        "num_brawlers": num_brawlers,
         "season_stage": "regular-season",
         "source": "realsports_scraper",
         "saved_at": datetime.now(timezone.utc).isoformat(),
@@ -739,7 +782,7 @@ def main():
         log.info("  DEBUG: dumped stats payload to /tmp/scraper_stats_payload.json")
 
     log.info("Parsing payloads ...")
-    games_env = parse_games(payloads["daily"], target_date)
+    games_env = parse_games(payloads["daily"], payloads["stats"], target_date)
     log.info(f"  games: {games_env['game_count']} ({len(games_env['games'])} finalized)")
     players_rows = parse_players(payloads["stats"], player_info, target_date)
     log.info(f"  players: {len(players_rows)} unique")
