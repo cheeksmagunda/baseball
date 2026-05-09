@@ -88,10 +88,14 @@ from app.core.constants import (
 )
 
 
-# Path to the prior-slate fame source.  Same file as the calibration
-# corpus, but only its date + player_name + team + is_most_popular columns
-# are consumed here, and only for dates strictly before the current slate.
+# Step 5 (May 2026): the rolling fame index now reads from
+# data/historical.db instead of historical_players.csv.  Both paths
+# produce byte-identical results — the CSV is a derived export of the DB
+# under Step 2's byte-stable contract.  The legacy CSV implementation is
+# preserved as `_load_fame_rate_index_csv_legacy` for the parity-verification
+# harness in scripts/verify_popularity_parity.py; Step 6 deletes it.
 _FAME_SOURCE = Path(__file__).resolve().parents[2] / "data" / "historical_players.csv"
+_HISTORICAL_DB = Path(__file__).resolve().parents[2] / "data" / "historical.db"
 
 
 def _normalize(name: str) -> str:
@@ -114,22 +118,71 @@ def _load_fame_rate_index(
 
     Cached per (as_of, window_days) pair — a single T-65 pipeline run
     scores ~250 candidates split between pitchers (28-day window) and
-    batters (14-day window), and would otherwise re-read the CSV up to
-    that many times.
+    batters (14-day window), and would otherwise re-query the DB once per
+    candidate.
 
     Both the numerator (MP appearances) and denominator (total
     appearances) are scoped to the trailing `window_days` strictly before
-    `as_of`.  The current-slate row, even if present in the CSV ahead of
-    time (it is not), would be excluded — the function does not see
+    `as_of`.  The current-slate row, even if present in the corpus ahead
+    of time (it is not), would be excluded — the function does not see
     today's outcome.
 
     The denominator captures "any appearance in the leaderboard corpus"
-    — MP, HV, or 3X.  This is the right denominator for a "given the
-    field considered drafting you, how often did they make you popular"
-    rate; using it lets us distinguish a pitcher MP'd 1 of 2 starts (50%
-    rate) from one MP'd 2 of 2 starts (100% rate), which V15's binary
-    fame_count >= 1 collapsed to identical +1 contributions.
+    — MP, HV, or 3X (i.e. any player_slate row in the window).  This is
+    the right denominator for a "given the field considered drafting you,
+    how often did they make you popular" rate; using it lets us
+    distinguish a pitcher MP'd 1 of 2 starts (50% rate) from one MP'd 2
+    of 2 starts (100% rate).
     """
+    if not _HISTORICAL_DB.exists():
+        return {}
+    cutoff = as_of - timedelta(days=window_days)
+    counts: dict[tuple[str, str], tuple[int, int]] = {}
+    # Local import keeps app/core/popularity.py importable in environments
+    # where app.core.historical_db's helper imports are unwanted (legacy
+    # tests, offline notebooks).
+    import sqlite3 as _sqlite3
+    conn = _sqlite3.connect(f"file:{_HISTORICAL_DB}?mode=ro", uri=True)
+    conn.row_factory = _sqlite3.Row
+    try:
+        cur = conn.execute(
+            """
+            SELECT
+                ps.player_name,
+                ps.team,
+                CASE WHEN mp.mlb_id IS NOT NULL THEN 1 ELSE 0 END AS is_mp
+            FROM player_slate ps
+            LEFT JOIN (
+                SELECT DISTINCT slate_date, mlb_id
+                FROM label_event
+                WHERE label_type = 'most_popular'
+                  AND slate_date >= ? AND slate_date < ?
+            ) AS mp
+              ON mp.slate_date = ps.slate_date AND mp.mlb_id = ps.mlb_id
+            WHERE ps.slate_date >= ? AND ps.slate_date < ?
+            """,
+            (cutoff.isoformat(), as_of.isoformat(),
+             cutoff.isoformat(), as_of.isoformat()),
+        )
+        for row in cur:
+            key = (_normalize(row["player_name"]), canonicalize_team(row["team"]))
+            mp, total = counts.get(key, (0, 0))
+            counts[key] = (mp + int(row["is_mp"]), total + 1)
+    finally:
+        conn.close()
+    return counts
+
+
+def _load_fame_rate_index_csv_legacy(
+    as_of: date,
+    window_days: int,
+) -> dict[tuple[str, str], tuple[int, int]]:
+    """Legacy CSV implementation — kept for parity verification only.
+
+    Identical semantics to `_load_fame_rate_index` (the SQLite path).
+    `scripts/verify_popularity_parity.py` calls both and asserts the
+    returned dicts are equal; Step 6 deletes this function once the
+    parity gate has been confirmed in CI."""
     if not _FAME_SOURCE.exists():
         return {}
     cutoff = as_of - timedelta(days=window_days)

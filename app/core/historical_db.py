@@ -570,36 +570,40 @@ def fetch_most_popular_index(
     as_of_exclusive: str,
 ) -> list[sqlite3.Row]:
     """Read the rolling most_popular fame index used by app/core/popularity.py
-    after Step 5.  Returns one row per (slate_date, mlb_id) appearance in the
-    leaderboard window; the caller computes mp_appearances / total_appearances.
+    after Step 5.  Returns one row per (slate_date, mlb_id) appearance with
+    the player's name, team, and a 0/1 most_popular flag.
 
     Window: cutoff_inclusive <= slate_date < as_of_exclusive.
 
-    The numerator (most_popular flag) and denominator (any leaderboard
-    appearance) come from the same label_event table; the denominator is the
-    UNION of {most_popular, highest_value, most_drafted_3x} flag rows.
+    Semantics match the CSV-era _load_fame_rate_index byte-for-byte: the
+    denominator counts every player_slate row within the window (each row
+    is one leaderboard appearance — the CSV had no rows for non-leaderboard
+    players); the numerator counts the subset with a `most_popular`
+    label_event row.
+
+    Returns sqlite3.Row objects with columns: slate_date, mlb_id,
+    player_name, team, is_most_popular.
     """
     cur = conn.execute(
         """
-        WITH appearances AS (
+        SELECT
+            ps.slate_date,
+            ps.mlb_id,
+            ps.player_name,
+            ps.team,
+            CASE WHEN mp.mlb_id IS NOT NULL THEN 1 ELSE 0 END AS is_most_popular
+        FROM player_slate ps
+        LEFT JOIN (
             SELECT DISTINCT slate_date, mlb_id
-            FROM label_event
-            WHERE label_type IN ('most_popular', 'highest_value', 'most_drafted_3x')
-              AND slate_date >= ?
-              AND slate_date < ?
-        ),
-        mp AS (
-            SELECT DISTINCT slate_date, mlb_id, 1 AS mp_flag
             FROM label_event
             WHERE label_type = 'most_popular'
               AND slate_date >= ?
               AND slate_date < ?
-        )
-        SELECT a.slate_date, a.mlb_id,
-               COALESCE(mp.mp_flag, 0) AS is_most_popular
-        FROM appearances a
-        LEFT JOIN mp USING (slate_date, mlb_id)
-        ORDER BY a.slate_date, a.mlb_id
+        ) AS mp
+          ON mp.slate_date = ps.slate_date AND mp.mlb_id = ps.mlb_id
+        WHERE ps.slate_date >= ?
+          AND ps.slate_date < ?
+        ORDER BY ps.slate_date, ps.mlb_id
         """,
         (cutoff_inclusive, as_of_exclusive, cutoff_inclusive, as_of_exclusive),
     )
