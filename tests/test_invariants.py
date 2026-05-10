@@ -311,6 +311,17 @@ class TestHistoricalSqliteSchemaContract:
             "away_team_walks", "away_team_strikeouts",
             "away_team_left_on_base", "away_team_stolen_bases",
             "away_team_errors",
+            # Step 16: as-of-slate-date team standings snapshot
+            "home_team_games_back", "home_team_runs_scored",
+            "home_team_runs_allowed", "home_team_run_differential",
+            "home_team_streak", "home_team_division_rank",
+            "home_team_league_rank", "home_team_home_record",
+            "home_team_away_record", "home_team_winning_pct",
+            "away_team_games_back", "away_team_runs_scored",
+            "away_team_runs_allowed", "away_team_run_differential",
+            "away_team_streak", "away_team_division_rank",
+            "away_team_league_rank", "away_team_home_record",
+            "away_team_away_record", "away_team_winning_pct",
         },
         "player_slate": {
             "slate_date", "mlb_id", "player_name", "team", "position",

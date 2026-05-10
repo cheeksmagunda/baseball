@@ -234,6 +234,29 @@ CREATE TABLE IF NOT EXISTS slate_game (
     away_team_left_on_base      INTEGER,
     away_team_stolen_bases      INTEGER,
     away_team_errors            INTEGER,
+    -- Step 16: as-of-slate-date team standings snapshot from MLB Stats API
+    -- /standings endpoint.  Pre-existing home/away_team_record_w/_l capture
+    -- W-L only; these add the rest of the standings line.
+    home_team_games_back        REAL,    -- games behind division leader
+    home_team_runs_scored       INTEGER, -- season-to-date
+    home_team_runs_allowed      INTEGER,
+    home_team_run_differential  INTEGER,
+    home_team_streak            TEXT,    -- 'W3' / 'L2' / 'W1' etc.
+    home_team_division_rank     INTEGER,
+    home_team_league_rank       INTEGER,
+    home_team_home_record       TEXT,    -- '12-8' (W-L when at home)
+    home_team_away_record       TEXT,
+    home_team_winning_pct       REAL,
+    away_team_games_back        REAL,
+    away_team_runs_scored       INTEGER,
+    away_team_runs_allowed      INTEGER,
+    away_team_run_differential  INTEGER,
+    away_team_streak            TEXT,
+    away_team_division_rank     INTEGER,
+    away_team_league_rank       INTEGER,
+    away_team_home_record       TEXT,
+    away_team_away_record       TEXT,
+    away_team_winning_pct       REAL,
     PRIMARY KEY (slate_date, game_pk, game_number),
     FOREIGN KEY (slate_date) REFERENCES slate(slate_date)
 );
