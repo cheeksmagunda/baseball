@@ -311,6 +311,11 @@ class TestHistoricalSqliteSchemaContract:
             "bat_side", "pitch_hand", "birth_date", "mlb_debut_date",
             "height_in", "weight_lb", "birth_country",
             "primary_position_code", "jersey_number",
+            # Step 12: pitcher pitch-arsenal usage % from Savant
+            "arsenal_ff_pct", "arsenal_si_pct", "arsenal_fc_pct",
+            "arsenal_sl_pct", "arsenal_st_pct", "arsenal_cu_pct",
+            "arsenal_kc_pct", "arsenal_ch_pct", "arsenal_fs_pct",
+            "arsenal_kn_pct", "arsenal_sv_pct", "arsenal_dominant_pitch",
         },
         "player_game_log": {
             "rowid_seq", "slate_date", "mlb_id", "game_date",

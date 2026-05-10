@@ -247,6 +247,23 @@ CREATE TABLE IF NOT EXISTS player_slate (
     birth_country           TEXT,
     primary_position_code   TEXT,        -- '1B' / 'C' / 'SS' / 'OF' / 'SP' / etc.
     jersey_number           TEXT,        -- TEXT because some are '00' / '0'
+    -- Step 12: pitcher pitch-arsenal usage % from Savant.  Each column is
+    -- the season-to-date frequency of that pitch type as a percentage of
+    -- total pitches.  Pitch-type abbreviations: FF=4-seam, SI=sinker,
+    -- FC=cutter, SL=slider, ST=sweeper, CU=curveball, KC=knuckle-curve,
+    -- CH=changeup, FS=splitter, KN=knuckleball, SV=slurve.
+    arsenal_ff_pct          REAL,
+    arsenal_si_pct          REAL,
+    arsenal_fc_pct          REAL,
+    arsenal_sl_pct          REAL,
+    arsenal_st_pct          REAL,
+    arsenal_cu_pct          REAL,
+    arsenal_kc_pct          REAL,
+    arsenal_ch_pct          REAL,
+    arsenal_fs_pct          REAL,
+    arsenal_kn_pct          REAL,
+    arsenal_sv_pct          REAL,
+    arsenal_dominant_pitch  TEXT,        -- the most-thrown pitch type
     PRIMARY KEY (slate_date, mlb_id)
     -- game_pk is informational only; player_slate cannot foreign-key to
     -- slate_game because the latter's PK includes game_number (doubleheader
