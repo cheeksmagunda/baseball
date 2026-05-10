@@ -163,7 +163,8 @@ def main() -> int:
     # still produced by writers + backfills as a derived export, but
     # readers consume the canonical store directly.
     import tempfile as _tempfile
-    import sys as _sys, pathlib as _pathlib
+    import sys as _sys
+    import pathlib as _pathlib
     _repo = _pathlib.Path(__file__).resolve().parents[1]
     if str(_repo) not in _sys.path:
         _sys.path.insert(0, str(_repo))

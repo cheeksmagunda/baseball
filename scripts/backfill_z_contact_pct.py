@@ -28,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import logging
 import os
 import sys
@@ -69,9 +70,7 @@ def main() -> int:
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
-    try:
-        import pandas as pd
-    except ImportError:
+    if importlib.util.find_spec("pandas") is None:
         log.error("pandas required")
         return 1
 
