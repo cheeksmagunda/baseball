@@ -3,12 +3,17 @@ MLB Stats API `/api/v1/people?personIds=...` batch endpoint.
 
 External (no derivations):
   bat_side, pitch_hand, birth_date, mlb_debut_date, height_in,
-  weight_lb, birth_country, primary_position_code, jersey_number
+  weight_lb, birth_country, primary_position_code
 
 These are slowly-changing dimensions; we still snapshot per-slate so the
 corpus captures the as-of-date value (e.g. weight changes mid-season,
-position shifts).  For synthetic-mlb_id rows (the 5 V9.1-era junk rows
-with negative IDs) we leave columns NULL.
+position shifts).  Phase C of the May 2026 cleanup will lift these to a
+dedicated `player_dim` table; until then, per-slate snapshot stays.
+For synthetic-mlb_id rows (the 5 V9.1-era junk rows with negative IDs)
+we leave columns NULL.
+
+jersey_number was dropped in the May 2026 cleanup sweep — drifts mid-
+season but doesn't matter for prediction.
 
 Cache: scripts/output/.player_externals_cache/<mlb_id>.json (one file
 per unique mlb_id).  Re-runs are cheap.
@@ -127,7 +132,7 @@ def extract_externals(person: dict) -> dict:
         "weight_lb": _safe_int(person.get("weight")),
         "birth_country": person.get("birthCountry"),
         "primary_position_code": primary_pos.get("abbreviation"),
-        "jersey_number": person.get("primaryNumber"),
+        # jersey_number dropped in May 2026 cleanup (no predictive value).
     }
 
 
@@ -137,16 +142,26 @@ def main() -> int:
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
+    from datetime import datetime, timezone
+
     conn = historical_db.connect()
     try:
         historical_db.apply_schema(conn)
 
         if args.force:
-            where = "WHERE mlb_id > 0"
+            mlb_id_filter = "ps.mlb_id > 0"
         else:
-            where = "WHERE mlb_id > 0 AND birth_date IS NULL"
+            # Skip mlb_ids already populated in player_dim (Phase C migration:
+            # was `birth_date IS NULL` on player_slate).
+            mlb_id_filter = (
+                "ps.mlb_id > 0 AND NOT EXISTS ("
+                "    SELECT 1 FROM player_dim pd"
+                "    WHERE pd.mlb_id = ps.mlb_id AND pd.birth_date IS NOT NULL"
+                ")"
+            )
         cur = conn.execute(
-            f"SELECT DISTINCT mlb_id FROM player_slate {where} ORDER BY mlb_id"
+            f"SELECT DISTINCT ps.mlb_id FROM player_slate ps WHERE {mlb_id_filter} "
+            "ORDER BY ps.mlb_id"
         )
         unique_ids = [r["mlb_id"] for r in cur.fetchall()]
         log.info("unique mlb_ids needing external data: %d", len(unique_ids))
@@ -177,28 +192,39 @@ def main() -> int:
                          sample_id, json.dumps(extract_externals(person_by_id[sample_id]), indent=2))
             return 0
 
-        # Apply per-(slate_date, mlb_id) row in player_slate.
+        # Build slate-date envelope per mlb_id so first/last_observed_date
+        # accurately reflect the corpus we've ingested.
         cur = conn.execute(
-            "SELECT slate_date, mlb_id FROM player_slate WHERE mlb_id > 0 "
-            "ORDER BY slate_date, mlb_id"
+            "SELECT mlb_id, MIN(slate_date) AS first_d, MAX(slate_date) AS last_d "
+            "FROM player_slate WHERE mlb_id > 0 GROUP BY mlb_id"
         )
-        targets = cur.fetchall()
+        envelopes = {r["mlb_id"]: (r["first_d"], r["last_d"]) for r in cur.fetchall()}
+
+        observed_at = datetime.now(timezone.utc).isoformat()
         updates = 0
         missing = 0
-        for t in targets:
-            person = person_by_id.get(t["mlb_id"])
+        for mlb_id, person in person_by_id.items():
             if not person:
                 missing += 1
                 continue
             ext = extract_externals(person)
             if not any(v is not None for v in ext.values()):
                 continue
-            historical_db.update_player_slate_columns(
-                conn, t["slate_date"], t["mlb_id"], ext,
+            first_d, last_d = envelopes.get(mlb_id, (None, None))
+            historical_db.upsert_player_dim(
+                conn,
+                mlb_id=mlb_id,
+                first_observed_date=first_d,
+                last_observed_date=last_d,
+                observed_at=observed_at,
+                **ext,
             )
             updates += 1
+        # mlb_ids referenced by player_slate but missing from the API
+        missing += sum(1 for mid in unique_ids if mid not in person_by_id)
         conn.commit()
-        log.info("UPDATE rows: %d (missing person record: %d)", updates, missing)
+        log.info("UPSERT player_dim rows: %d (missing person record: %d)",
+                 updates, missing)
     finally:
         conn.close()
 

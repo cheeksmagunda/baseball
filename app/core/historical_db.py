@@ -113,10 +113,24 @@ CREATE TABLE IF NOT EXISTS slate_game (
     home_series_wins            INTEGER,
     away_l10_wins               INTEGER,
     away_series_wins            INTEGER,
-    -- Vegas
+    -- Vegas (closing snapshot at T-65)
     vegas_total                 REAL,
     home_moneyline              INTEGER,
     away_moneyline              INTEGER,
+    -- Tier 1 D4: Vegas line movement (open → close).  ML drift is a sharp-
+    -- money signal distinct from the closing line.  Sourced from The Odds
+    -- API /v4/historical/sports endpoint by backfill_vegas_line_movement.py.
+    opening_total               REAL,
+    opening_home_moneyline      INTEGER,
+    opening_away_moneyline      INTEGER,
+    line_open_at                TEXT,
+    -- Tier 2 D7: bullpen cumulative pitch counts (rolling 2/3-day window
+    -- per team).  Tired bullpens hand the late-inning advantage to the
+    -- offense.  Derived from player_game_log by backfill_bullpen_rest.py.
+    home_bullpen_2d_pitches     INTEGER,
+    away_bullpen_2d_pitches     INTEGER,
+    home_bullpen_3d_pitches     INTEGER,
+    away_bullpen_3d_pitches     INTEGER,
     -- park / weather
     park_team                   TEXT,
     park_hr_factor              REAL,
@@ -125,18 +139,13 @@ CREATE TABLE IF NOT EXISTS slate_game (
     wind_direction              TEXT,
     wind_direction_deg          INTEGER,
     datetime_utc                TEXT,
-    -- post-game outcomes
+    -- post-game outcomes (winner/loser/winner_score/loser_score derived on
+    -- export from home_team/away_team/home_score/away_score — not stored).
     home_score                  INTEGER,
     away_score                  INTEGER,
-    winner                      TEXT,
-    loser                       TEXT,
-    winner_score                INTEGER,
-    loser_score                 INTEGER,
     -- Step 9: external game-info from MLB Stats API live feed
     attendance                  INTEGER,
-    game_duration_minutes       INTEGER,
     day_night                   TEXT,
-    weather_condition           TEXT,
     -- Step 9: venue static info (snapshotted per-game so the corpus survives
     -- mid-season venue changes — e.g. Athletics moving to Sacramento mid-2025)
     venue_id                    INTEGER,
@@ -155,13 +164,11 @@ CREATE TABLE IF NOT EXISTS slate_game (
     venue_rcf_ft                INTEGER,
     venue_rf_ft                 INTEGER,
     venue_rf_line_ft            INTEGER,
-    -- Step 9: umpire crew (HP umpire is the highest-leverage; capture all 4
-    -- so a future calibration sweep can profile crew interaction effects)
+    -- Step 9: HP umpire only (only the HP ump calls balls/strikes; base umps
+    -- carry no measurable K-rate signal even before 2026 ABS-challenge
+    -- compression).
     ump_hp_id                   INTEGER,
     ump_hp_name                 TEXT,
-    ump_1b_id                   INTEGER,
-    ump_2b_id                   INTEGER,
-    ump_3b_id                   INTEGER,
     -- Step 9: actual catcher IDs (the team-season framing aggregate is
     -- already on home/away_team_framing_runs; this lets calibration ask
     -- "did the team's elite framer actually catch this game?")
@@ -211,11 +218,11 @@ CREATE TABLE IF NOT EXISTS slate_game (
     actual_cloud_cover_pct      INTEGER,
     -- Step 14: post-game box-score totals (per-team observables from
     -- linescore / boxscore.teams.{home|away}.teamStats).  Existing
-    -- home_score / away_score / winner / loser are runs only; these add
-    -- the rest of the team line.
-    innings_played              INTEGER,     -- 9 for regulation, 10+ for extras
+    -- home_score / away_score are runs only; these add the rest of the
+    -- team line.  innings_played dropped (~95% are 9; replace with a
+    -- went_extras flag if calibration motivates).  home/away_team_runs
+    -- dropped (duplicate of home_score / away_score).
     home_team_hits              INTEGER,
-    home_team_runs              INTEGER,     -- duplicates home_score, kept for symmetry
     home_team_doubles           INTEGER,
     home_team_triples           INTEGER,
     home_team_hr                INTEGER,
@@ -225,7 +232,6 @@ CREATE TABLE IF NOT EXISTS slate_game (
     home_team_stolen_bases      INTEGER,
     home_team_errors            INTEGER,
     away_team_hits              INTEGER,
-    away_team_runs              INTEGER,
     away_team_doubles           INTEGER,
     away_team_triples           INTEGER,
     away_team_hr                INTEGER,
@@ -236,36 +242,27 @@ CREATE TABLE IF NOT EXISTS slate_game (
     away_team_errors            INTEGER,
     -- Step 16: as-of-slate-date team standings snapshot from MLB Stats API
     -- /standings endpoint.  Pre-existing home/away_team_record_w/_l capture
-    -- W-L only; these add the rest of the standings line.
+    -- W-L only; these add the rest of the standings line.  run_differential
+    -- + winning_pct dropped (pure derivations of runs_scored − runs_allowed
+    -- and W / (W+L) respectively).
     home_team_games_back        REAL,    -- games behind division leader
     home_team_runs_scored       INTEGER, -- season-to-date
     home_team_runs_allowed      INTEGER,
-    home_team_run_differential  INTEGER,
     home_team_streak            TEXT,    -- 'W3' / 'L2' / 'W1' etc.
     home_team_division_rank     INTEGER,
     home_team_league_rank       INTEGER,
     home_team_home_record       TEXT,    -- '12-8' (W-L when at home)
     home_team_away_record       TEXT,
-    home_team_winning_pct       REAL,
     away_team_games_back        REAL,
     away_team_runs_scored       INTEGER,
     away_team_runs_allowed      INTEGER,
-    away_team_run_differential  INTEGER,
     away_team_streak            TEXT,
     away_team_division_rank     INTEGER,
     away_team_league_rank       INTEGER,
     away_team_home_record       TEXT,
     away_team_away_record       TEXT,
-    away_team_winning_pct       REAL,
-    -- Step 17: per-team mound visits + ABS challenges from gumbo feed.
-    -- Mound visits are limited per game (5 in 2026); challenges are per
-    -- team per game (2 in 2026 ABS regime).  Captures procedural intensity.
-    home_mound_visits_used      INTEGER,
-    away_mound_visits_used      INTEGER,
-    home_abs_challenges_used    INTEGER,
-    home_abs_challenges_won     INTEGER,
-    away_abs_challenges_used    INTEGER,
-    away_abs_challenges_won     INTEGER,
+    -- (Step 17 mound-visits + ABS-challenges columns dropped — caps of 5
+    -- and 2 respectively give too narrow a range for any predictive lift.)
     PRIMARY KEY (slate_date, game_pk, game_number),
     FOREIGN KEY (slate_date) REFERENCES slate(slate_date)
 );
@@ -302,20 +299,14 @@ CREATE TABLE IF NOT EXISTS player_slate (
     chase_pct               REAL,
     fb_ivb                  REAL,
     fb_extension            REAL,
-    -- Step 11: per-player externals from MLB Stats API /people endpoint.
-    -- Slowly-changing dimensions (debut_date is fixed; jersey_number drifts
-    -- mid-season; bat_side / pitch_hand stable except for rare switch-back
-    -- decisions); captured per-slate so the corpus reflects the as-of-date
-    -- attribute even if the player's MLB API record subsequently changes.
-    bat_side                TEXT,        -- 'R' / 'L' / 'S' (switch)
-    pitch_hand              TEXT,        -- 'R' / 'L' (pitchers only)
-    birth_date              TEXT,        -- ISO date
-    mlb_debut_date          TEXT,        -- ISO date — fixed once set
-    height_in               INTEGER,     -- inches
-    weight_lb               INTEGER,     -- pounds
-    birth_country           TEXT,
-    primary_position_code   TEXT,        -- '1B' / 'C' / 'SS' / 'OF' / 'SP' / etc.
-    jersey_number           TEXT,        -- TEXT because some are '00' / '0'
+    -- (Step 11 per-player externals — bat_side / pitch_hand / birth_date /
+    -- mlb_debut_date / height_in / weight_lb / birth_country /
+    -- primary_position_code — moved to the player_dim table in Phase C of
+    -- the May 2026 cleanup sweep.  These attributes are slowly-changing
+    -- dimensions of a player_id, not per-slate facts; storing one row per
+    -- (slate_date, mlb_id) was wasteful.  Joining via mlb_id gives the
+    -- same data with O(N_players) instead of O(N_slates × N_players)
+    -- storage.)
     -- Step 12: pitcher pitch-arsenal usage % from Savant.  Each column is
     -- the season-to-date frequency of that pitch type as a percentage of
     -- total pitches.  Pitch-type abbreviations: FF=4-seam, SI=sinker,
@@ -348,6 +339,44 @@ CREATE TABLE IF NOT EXISTS player_slate (
     squared_up_per_swing    REAL,        -- "squared up" contact rate per swing
     blast_per_swing         REAL,        -- top-tier "blast" contact rate per swing
     swords_count            INTEGER,     -- swings + miss with bat-on-ball expected
+    -- Tier 1 D2: per-catcher framing (replaces team-aggregate when the
+    -- team's elite framer isn't catching tonight).  NULL for non-catchers.
+    -- Sourced from Savant catcher-framing leaderboard by
+    -- backfill_catcher_framing.py.
+    framing_runs            REAL,
+    framing_strike_rate     REAL,
+    -- Tier 1 D3: pitcher rest days since last appearance with IP > 0.
+    -- Derived from player_game_log by backfill_pitcher_rest.py.  NULL for
+    -- batters and for true season-debut starters.
+    pitcher_rest_days       INTEGER,
+    -- Tier 2 D5: plate discipline metrics from FanGraphs / Savant.
+    -- Orthogonal to xwOBA — discipline is FLOOR (will this hitter get on
+    -- base when the matchup is hard) where xwOBA is CEILING (will the
+    -- contact be quality).
+    bb_pct                  REAL,
+    k_pct                   REAL,
+    o_swing_pct             REAL,        -- swings at pitches outside the zone
+    z_contact_pct           REAL,        -- contact rate on pitches in the zone
+    sw_str_pct              REAL,        -- swinging-strike rate
+    -- Tier 2 D6: BABIP / HR-FB regression flags.  Tells the model "the
+    -- surface stats lie" without retraining.
+    babip_at_slate          REAL,
+    hr_fb_at_slate          REAL,
+    babip_regression_flag   INTEGER,     -- 1 if luckier than league norm
+    hr_fb_regression_flag   INTEGER,
+    -- Tier 2 D8: rolling-window per-handedness OPS splits (last 20 days).
+    -- More responsive to hot-streak signal than the season-aggregate splits.
+    ops_vs_lhp_last_20      REAL,
+    ops_vs_rhp_last_20      REAL,
+    -- Tier 2 D9: DFS-site projected ownership.  V14's leverage_factor is
+    -- a rule-based predictor; vendor projections are a calibration target.
+    dfs_projected_ownership_pct  REAL,
+    dfs_projection_source        TEXT,
+    -- Tier 3 D10: vendor projected fantasy points (FantasyPros / RotoBaller).
+    -- Benchmark, NOT model input — measures whether our scoring engine
+    -- agrees with consensus.
+    vendor_projected_points       REAL,
+    vendor_projection_source      TEXT,
     PRIMARY KEY (slate_date, mlb_id)
     -- game_pk is informational only; player_slate cannot foreign-key to
     -- slate_game because the latter's PK includes game_number (doubleheader
@@ -407,6 +436,90 @@ CREATE INDEX IF NOT EXISTS idx_label_event_type   ON label_event(label_type);
 CREATE INDEX IF NOT EXISTS idx_label_event_player ON label_event(slate_date, mlb_id);
 CREATE INDEX IF NOT EXISTS idx_label_event_date_type ON label_event(slate_date, label_type);
 
+-- Side table: per-player slowly-changing dimensions.  One row per mlb_id.
+-- Populated by scripts/backfill_player_externals.py from the MLB Stats API
+-- /people endpoint.  Replaces the 8 per-slate snapshot columns that lived
+-- on player_slate before the May 2026 cleanup sweep — same data, ~40×
+-- less storage.  first_observed_date / last_observed_date track the slate-
+-- date range we've seen the row covering; if a value drifts (rare — trade
+-- changes primary_position_code occasionally; mid-season weight refresh
+-- updates weight_lb), the latest backfill run wins.
+CREATE TABLE IF NOT EXISTS player_dim (
+    mlb_id                 INTEGER PRIMARY KEY,
+    bat_side               TEXT,         -- 'R' / 'L' / 'S' (switch)
+    pitch_hand             TEXT,         -- 'R' / 'L' (pitchers only)
+    birth_date             TEXT,         -- ISO date — fixed once known
+    birth_country          TEXT,         -- fixed once known
+    mlb_debut_date         TEXT,         -- ISO date — fixed once set
+    height_in              INTEGER,      -- inches — slow drift on offseason refresh
+    weight_lb              INTEGER,      -- pounds — slow drift on offseason refresh
+    primary_position_code  TEXT,         -- '1B' / 'C' / 'SS' / 'OF' / 'SP' / etc.
+    first_observed_date    TEXT,         -- earliest slate_date this player appeared
+    last_observed_date     TEXT,         -- latest slate_date this player appeared
+    observed_at            TEXT NOT NULL -- ISO timestamp of the latest backfill
+);
+CREATE INDEX IF NOT EXISTS idx_player_dim_position
+    ON player_dim(primary_position_code);
+
+-- Tier 1 D1: HP umpire historical K%/BB% tendencies.  ~98% of pitches
+-- still ride on the human zone in 2026 ABS (only ~2% challenged).  Sourced
+-- from Umpire Scorecards public CSVs by backfill_umpire_tendencies.py.
+CREATE TABLE IF NOT EXISTS umpire_dim (
+    ump_id                 INTEGER NOT NULL,
+    season                 INTEGER NOT NULL,
+    ump_name               TEXT,
+    games_called           INTEGER,
+    called_strike_pct      REAL,         -- absolute called-strike rate
+    k_rate_vs_league       REAL,         -- delta vs league avg (this ump K% − league K%)
+    bb_rate_vs_league      REAL,         -- delta vs league avg
+    x_runs_above_avg       REAL,         -- expected runs added/saved per game
+    observed_at            TEXT NOT NULL,
+    PRIMARY KEY (ump_id, season)
+);
+
+-- Tier 3 D11: Win-Probability-Added (WPA) per HV player game.  Separates
+-- high-leverage HV (1-run game in the 9th, repeatable) from volume HV
+-- (blowout in the 3rd, luck-driven).  Stored as label_event(label_type='wpa').
+-- (No new table — uses the existing label_event store.)
+
+-- Tier 3 D12: per-batted-ball Statcast for HV games.  Lets calibration
+-- ask "did this HV pop come from quality of contact (sustainable) or
+-- BABIP luck (one-off bloop)?".  HV-only by default to keep size sane;
+-- backfill_statcast_pa.py can run with --all-games for a fuller corpus.
+CREATE TABLE IF NOT EXISTS statcast_pa (
+    slate_date              TEXT NOT NULL,
+    mlb_id                  INTEGER NOT NULL,
+    game_date               TEXT NOT NULL,
+    pa_index                INTEGER NOT NULL,
+    exit_velocity_mph       REAL,
+    launch_angle_deg        REAL,
+    hit_distance_ft         REAL,
+    x_woba                  REAL,
+    pitch_type              TEXT,
+    result                  TEXT,
+    observed_at             TEXT NOT NULL,
+    PRIMARY KEY (slate_date, mlb_id, game_date, pa_index)
+);
+CREATE INDEX IF NOT EXISTS idx_statcast_pa_mlb_id
+    ON statcast_pa(mlb_id);
+
+-- Tier 3 D13: pitcher pitch-arsenal × batter pitch-type wOBA crosstab.
+-- Replaces V10.8's "simplified xwOBA-against single number" approach in
+-- score_batter_matchup with a per-pitch-type weighted blend.  Sourced
+-- from Savant per-batter pitch-type splits by
+-- backfill_batter_pitch_type_splits.py.
+CREATE TABLE IF NOT EXISTS batter_pitch_type_woba (
+    slate_date    TEXT NOT NULL,
+    mlb_id        INTEGER NOT NULL,
+    pitch_type    TEXT NOT NULL,
+    pa_count      INTEGER,
+    woba          REAL,
+    observed_at   TEXT NOT NULL,
+    PRIMARY KEY (slate_date, mlb_id, pitch_type)
+);
+CREATE INDEX IF NOT EXISTS idx_bptwoba_mlb_id
+    ON batter_pitch_type_woba(mlb_id);
+
 -- Side table: alias rows used to recover identity for HV box-score players
 -- whose canonical name does not match historical_player_game_logs.csv.  Empty
 -- by default; populated only when the build script encounters a name that
@@ -426,18 +539,20 @@ CREATE TABLE IF NOT EXISTS player_alias (
 # Label-type vocabulary (audit Section F)
 # ---------------------------------------------------------------------------
 # Numeric scalar labels — label_value populated, label_text null.
+# total_value, avg_draft_slot, avg_draft_mult, avg_draft_tv, highest_draft_tv
+# dropped — all derivable from real_score × (2 + card_boost) and the per-lineup
+# `winning_lineup_slot` rows respectively.  Aggregates are recomputed on export.
 LABEL_TYPES_NUMERIC = (
     "real_score",
-    "total_value",
     "card_boost",
     "drafts",
     "draft_count",
-    "avg_draft_slot",
-    "avg_draft_mult",
-    "avg_draft_tv",
-    "highest_draft_tv",
     # Note: `total_mult` is not a standalone label_type — it's encoded
     # inside winning_lineup_slot.label_text JSON alongside rank/slot/etc.
+    # Note: `wpa` is also a valid label_type emitted by scripts/backfill_wpa.py
+    # (Tier 3 D11) but is not in this tuple because it isn't part of the
+    # CSV-ingest path; the corpus may have zero `wpa` rows until the backfill
+    # runs.  The label_event PK accepts any label_type string.
 )
 
 # Boolean-flag leaderboard memberships — label_value=1.0 when the player landed
@@ -449,8 +564,8 @@ LABEL_TYPES_FLAG = (
 )
 
 # Categorical / ordinal — label_text populated, label_value optionally too.
+# `most_common_slot` dropped — derivable from `winning_lineup_slot` rows.
 LABEL_TYPES_CATEGORICAL = (
-    "most_common_slot",
     "injury_status",
     "winning_lineup_slot",
     "box_score",
@@ -621,6 +736,59 @@ def upsert_label_event(
         "(slate_date, mlb_id, label_type, label_value, label_text, source, observed_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (slate_date, mlb_id, label_type, label_value, label_text, source, observed_at),
+    )
+
+
+def upsert_player_dim(
+    conn: sqlite3.Connection,
+    *,
+    mlb_id: int,
+    bat_side: str | None = None,
+    pitch_hand: str | None = None,
+    birth_date: str | None = None,
+    birth_country: str | None = None,
+    mlb_debut_date: str | None = None,
+    height_in: int | None = None,
+    weight_lb: int | None = None,
+    primary_position_code: str | None = None,
+    first_observed_date: str | None = None,
+    last_observed_date: str | None = None,
+    observed_at: str,
+) -> None:
+    """Upsert a `player_dim` row.
+
+    On conflict, COALESCE preserves any non-NULL value already in place
+    (no_op replacement of an existing value with NULL) but always advances
+    `observed_at` and `last_observed_date`, and lowers `first_observed_date`
+    if we've seen the player on an earlier slate than the existing row.
+    """
+    conn.execute(
+        """
+        INSERT INTO player_dim (
+            mlb_id, bat_side, pitch_hand, birth_date, birth_country,
+            mlb_debut_date, height_in, weight_lb, primary_position_code,
+            first_observed_date, last_observed_date, observed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(mlb_id) DO UPDATE SET
+            bat_side             = COALESCE(excluded.bat_side, bat_side),
+            pitch_hand           = COALESCE(excluded.pitch_hand, pitch_hand),
+            birth_date           = COALESCE(excluded.birth_date, birth_date),
+            birth_country        = COALESCE(excluded.birth_country, birth_country),
+            mlb_debut_date       = COALESCE(excluded.mlb_debut_date, mlb_debut_date),
+            height_in            = COALESCE(excluded.height_in, height_in),
+            weight_lb            = COALESCE(excluded.weight_lb, weight_lb),
+            primary_position_code = COALESCE(excluded.primary_position_code, primary_position_code),
+            first_observed_date  = MIN(COALESCE(excluded.first_observed_date, first_observed_date),
+                                        COALESCE(first_observed_date, excluded.first_observed_date)),
+            last_observed_date   = MAX(COALESCE(excluded.last_observed_date, last_observed_date),
+                                        COALESCE(last_observed_date, excluded.last_observed_date)),
+            observed_at          = excluded.observed_at
+        """,
+        (
+            mlb_id, bat_side, pitch_hand, birth_date, birth_country,
+            mlb_debut_date, height_in, weight_lb, primary_position_code,
+            first_observed_date, last_observed_date, observed_at,
+        ),
     )
 
 

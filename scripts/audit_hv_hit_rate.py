@@ -510,16 +510,19 @@ def score_one_player(
     # tv is read strictly as an OUTCOME LABEL.  It is never an input to
     # filter_ev or to any model decision — the assignment below mirrors
     # the rs / is_hv reads, both of which are also outcome labels.
+    # total_value derived inline as rs * (2 + cb) — the standalone CSV
+    # column was dropped in the May 2026 cleanup sweep.
     rs_str = row.get("real_score") or ""
-    tv_str = row.get("total_value") or ""
+    cb_str = row.get("card_boost") or ""
     try:
         rs_outcome = float(rs_str) if rs_str else 0.0
     except ValueError:
         rs_outcome = 0.0
     try:
-        tv_outcome = float(tv_str) if tv_str else 0.0
+        cb_val = float(cb_str) if cb_str else 0.0
     except ValueError:
-        tv_outcome = 0.0
+        cb_val = 0.0
+    tv_outcome = rs_outcome * (2 + cb_val)
 
     return {
         "name": row["player_name"],

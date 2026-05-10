@@ -2,8 +2,11 @@
 Stats API `/api/v1/standings?leagueId=103,104&season=Y&date=Y-M-D`.
 
 External-only — every column is a verbatim value from the standings endpoint
-(games_back, runs_scored, runs_allowed, run_differential, streak code,
-division rank, league rank, home record, away record, winning_pct).
+(games_back, runs_scored, runs_allowed, streak code, division rank,
+league rank, home record, away record).
+
+run_differential and winning_pct were dropped in the May 2026 cleanup
+sweep — both are pure derivations of the columns above.
 
 Usage:
     python scripts/backfill_standings.py
@@ -96,17 +99,19 @@ def fetch_standings(slate_date: str, season: int = 2026) -> dict:
             split_records = (tr.get("records") or {}).get("splitRecords") or []
             home_rec = next((s for s in split_records if s.get("type") == "home"), {})
             away_rec = next((s for s in split_records if s.get("type") == "away"), {})
+            # run_differential and winning_pct intentionally omitted —
+            # both are pure derivations (runs_scored − runs_allowed and
+            # W / (W+L)) that were dropped from slate_game in the May 2026
+            # cleanup sweep.
             out[abbr.upper()] = {
                 "games_back": _safe_float(tr.get("gamesBack")),
                 "runs_scored": _safe_int(tr.get("runsScored")),
                 "runs_allowed": _safe_int(tr.get("runsAllowed")),
-                "run_differential": _safe_int(tr.get("runDifferential")),
                 "streak_code": (tr.get("streak") or {}).get("streakCode"),
                 "division_rank": _safe_int(tr.get("divisionRank")),
                 "league_rank": _safe_int(tr.get("leagueRank")),
                 "home_record": f"{home_rec.get('wins', '?')}-{home_rec.get('losses', '?')}" if home_rec else None,
                 "away_record": f"{away_rec.get('wins', '?')}-{away_rec.get('losses', '?')}" if away_rec else None,
-                "winning_pct": _safe_float(tr.get("winningPercentage")),
             }
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(json.dumps(out, indent=2))
@@ -137,7 +142,10 @@ def main() -> int:
         if args.force:
             where = "WHERE 1=1"
         else:
-            where = "WHERE home_team_run_differential IS NULL"
+            # Skip-detection: rows that already have runs_scored backfilled
+            # don't need a second pass.  (Was `home_team_run_differential
+            # IS NULL`; that column dropped in the May 2026 cleanup sweep.)
+            where = "WHERE home_team_runs_scored IS NULL"
         cur = conn.execute(
             f"SELECT slate_date, game_pk, game_number, home_team, away_team "
             f"FROM slate_game {where} ORDER BY slate_date, game_pk"

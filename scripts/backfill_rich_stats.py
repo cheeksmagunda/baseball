@@ -3,11 +3,6 @@ Backfill rich platform stats onto three historical data files.
 
 Adds to data/historical_players.csv:
   draft_count       — exact integer count (was fuzzy "2.7k" parse)
-  avg_draft_slot    — average slot position (1.0–5.0) the crowd used
-  most_common_slot  — most-common slot ('1'–'5')
-  avg_draft_mult    — average total multiplier (slot + boost) across all drafters
-  avg_draft_tv      — average TV score per drafter
-  highest_draft_tv  — highest TV achieved by any single drafter
   injury_status     — "Active" / "Day-to-Day" / "Out" at scrape time
 
 Adds to data/historical_winning_drafts.csv:
@@ -16,6 +11,11 @@ Adds to data/historical_winning_drafts.csv:
 
 Adds to data/historical_slate_results.json (per-slate envelope):
   num_brawlers      — total unique participants on the slate
+
+avg_draft_slot, most_common_slot, avg_draft_mult, avg_draft_tv,
+highest_draft_tv used to land here too but were dropped in the May 2026
+cleanup sweep — all derivable on export from the per-lineup
+`winning_lineup_slot` rows already kept.
 
 Source: same web.realapp.com direct API used by backfill_card_boost_and_drafts.py.
 Auth: fresh real-request-token captured via playwright once at startup.
@@ -68,11 +68,6 @@ LEADERBOARD_SECTIONS = {
 
 NEW_PLAYER_COLS = (
     "draft_count",
-    "avg_draft_slot",
-    "most_common_slot",
-    "avg_draft_mult",
-    "avg_draft_tv",
-    "highest_draft_tv",
     "injury_status",
 )
 NEW_DRAFT_COLS = ("card_boost", "total_mult")

@@ -1,14 +1,16 @@
 """Backfill per-team post-game box-score totals onto slate_game.
 
 Reuses the gumbo-feed cache from Step 9.  Pulls per-team batting line
-(boxscore.teams.{home|away}.teamStats.batting) plus innings_played from
-linescore.  All pure post-game externals.
+(boxscore.teams.{home|away}.teamStats.batting).  All pure post-game externals.
 
 Schema columns populated:
-  innings_played
-  home/away_team_hits, runs, doubles, triples, hr,
+  home/away_team_hits, doubles, triples, hr,
   home/away_team_walks, strikeouts, left_on_base,
   home/away_team_stolen_bases, errors
+
+Note: innings_played dropped from the schema (~95% are 9; if extras-game
+sensitivity matters, add a binary went_extras column instead).
+home/away_team_runs dropped (duplicates home_score / away_score).
 
 Usage:
     python scripts/backfill_team_boxscore.py
@@ -47,10 +49,11 @@ def _safe_int(v):
 
 
 def _team_batting(team_box: dict) -> dict:
+    # `runs` intentionally omitted — duplicates home_score / away_score
+    # and was dropped from slate_game in the May 2026 cleanup sweep.
     bat = (team_box.get("teamStats") or {}).get("batting") or {}
     return {
         "hits":         _safe_int(bat.get("hits")),
-        "runs":         _safe_int(bat.get("runs")),
         "doubles":      _safe_int(bat.get("doubles")),
         "triples":      _safe_int(bat.get("triples")),
         "hr":           _safe_int(bat.get("homeRuns")),
@@ -66,18 +69,12 @@ def _team_errors(team_box: dict) -> int | None:
     return _safe_int(fld.get("errors"))
 
 
-def _innings_played(payload: dict) -> int | None:
-    ld = payload.get("liveData") or {}
-    ls = ld.get("linescore") or {}
-    return _safe_int(ls.get("currentInning"))
-
-
 def extract(payload: dict) -> dict:
     if not payload:
         return {}
     bx = (payload.get("liveData") or {}).get("boxscore") or {}
     teams = bx.get("teams") or {}
-    out = {"innings_played": _innings_played(payload)}
+    out: dict = {}
     for side in ("home", "away"):
         bat = _team_batting(teams.get(side, {}) or {})
         for k, v in bat.items():
@@ -99,7 +96,10 @@ def main() -> int:
         if args.force:
             where = "WHERE game_pk IS NOT NULL"
         else:
-            where = "WHERE game_pk IS NOT NULL AND innings_played IS NULL"
+            # Skip-detection: rows that already have hits backfilled don't
+            # need a second pass.  (Was `innings_played IS NULL`; that column
+            # dropped in the May 2026 cleanup sweep.)
+            where = "WHERE game_pk IS NOT NULL AND home_team_hits IS NULL"
         cur = conn.execute(
             f"SELECT slate_date, game_pk, game_number FROM slate_game "
             f"{where} ORDER BY slate_date, game_pk"

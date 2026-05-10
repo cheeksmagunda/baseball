@@ -4,13 +4,18 @@ Pulls the live-feed gumbo endpoint (`/api/v1.1/game/{game_pk}/feed/live`) for
 every (slate_date, game_pk) pair in the corpus and writes the following
 EXTERNAL fields directly to data/historical.db:
 
-  - Game info: attendance, game_duration_minutes, day_night, weather_condition
+  - Game info: attendance, day_night
   - Venue static: id, name, capacity, surface (Grass/Turf), roof_type,
     elevation_ft, latitude, longitude, timezone, field-dimension feet
     (lf_line through rf_line)
-  - Umpire crew: HP / 1B / 2B / 3B official ids and HP umpire name
+  - Umpire crew: HP umpire id and name
   - Catcher: actual home / away catcher mlb_id (from boxscore battingOrder
     cross-referenced against position abbreviations)
+
+May 2026 cleanup sweep dropped:
+  - game_duration_minutes (post-game-only, not a predictor)
+  - weather_condition (free-text MLB field; Open-Meteo is more reliable)
+  - ump_1b_id / ump_2b_id / ump_3b_id (only HP ump signals K-rate)
 
 These are pure post-game external observables — no derived / pipeline-
 computed signals.
@@ -120,13 +125,12 @@ def extract_externals(payload: dict) -> dict:
 
     info = gd.get("gameInfo") or {}
     out["attendance"] = _safe_int(info.get("attendance"))
-    out["game_duration_minutes"] = _safe_int(info.get("gameDurationMinutes"))
 
     dt = gd.get("datetime") or {}
     out["day_night"] = dt.get("dayNight")
 
-    weather = gd.get("weather") or {}
-    out["weather_condition"] = weather.get("condition")
+    # weather_condition / game_duration_minutes were dropped in May 2026 —
+    # see module docstring.
 
     venue = gd.get("venue") or {}
     out["venue_id"] = _safe_int(venue.get("id"))
@@ -160,12 +164,8 @@ def extract_externals(payload: dict) -> dict:
     if "Home Plate" in ump_by_type:
         out["ump_hp_id"] = _safe_int(ump_by_type["Home Plate"].get("id"))
         out["ump_hp_name"] = ump_by_type["Home Plate"].get("fullName")
-    if "First Base" in ump_by_type:
-        out["ump_1b_id"] = _safe_int(ump_by_type["First Base"].get("id"))
-    if "Second Base" in ump_by_type:
-        out["ump_2b_id"] = _safe_int(ump_by_type["Second Base"].get("id"))
-    if "Third Base" in ump_by_type:
-        out["ump_3b_id"] = _safe_int(ump_by_type["Third Base"].get("id"))
+    # ump_1b_id / ump_2b_id / ump_3b_id dropped in May 2026 — only HP umpire
+    # has predictive lift on K-rate.
 
     teams = bx.get("teams") or {}
     out["home_catcher_id"] = _find_catcher(teams.get("home", {}) or {})

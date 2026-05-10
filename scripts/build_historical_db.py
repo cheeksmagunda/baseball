@@ -406,10 +406,8 @@ def ingest_slate_envelope(conn, slate_results: list[dict]) -> int:
                 "datetime_utc": g.get("datetime_utc"),
                 "home_score": parse_int_or_none(g.get("home_score")),
                 "away_score": parse_int_or_none(g.get("away_score")),
-                "winner": g.get("winner"),
-                "loser": g.get("loser"),
-                "winner_score": parse_int_or_none(g.get("winner_score")),
-                "loser_score": parse_int_or_none(g.get("loser_score")),
+                # winner/loser/winner_score/loser_score derived on export from
+                # home_team/away_team/home_score/away_score — not stored.
             }
             historical_db.upsert_slate_game(conn, row)
             game_count += 1
@@ -474,16 +472,15 @@ def ingest_players_csv(
             player_rows += 1
 
             # ---- numeric scalar labels ----
+            # total_value, avg_draft_slot, avg_draft_mult, avg_draft_tv,
+            # highest_draft_tv dropped — all are derivations recomputed on
+            # export from real_score × (2 + card_boost) and the per-lineup
+            # `winning_lineup_slot` rows.
             for col_name, label_type in [
                 ("real_score", "real_score"),
-                ("total_value", "total_value"),
                 ("card_boost", "card_boost"),
                 ("drafts", "drafts"),
                 ("draft_count", "draft_count"),
-                ("avg_draft_slot", "avg_draft_slot"),
-                ("avg_draft_mult", "avg_draft_mult"),
-                ("avg_draft_tv", "avg_draft_tv"),
-                ("highest_draft_tv", "highest_draft_tv"),
             ]:
                 v = parse_float_or_none(r.get(col_name))
                 if v is None:
@@ -514,16 +511,8 @@ def ingest_players_csv(
                     label_rows += 1
 
             # ---- categorical labels ----
-            mcs = r.get("most_common_slot")
-            if mcs:
-                historical_db.upsert_label_event(
-                    conn,
-                    slate_date=slate_date, mlb_id=mlb_id, label_type="most_common_slot",
-                    label_value=parse_float_or_none(mcs), label_text=str(mcs),
-                    source=historical_db.SOURCE_REALSPORTS_STATS,
-                    observed_at=observed_at,
-                )
-                label_rows += 1
+            # most_common_slot dropped — derivable on export from
+            # winning_lineup_slot label rows.
             inj = r.get("injury_status")
             if inj:
                 historical_db.upsert_label_event(
@@ -738,11 +727,16 @@ def assert_foreign_keys(conn) -> None:
 
 
 def assert_label_event_coverage(conn) -> None:
-    """Confirm at least one row exists for each label_type the build emits."""
+    """Confirm at least one row exists for each label_type the build emits.
+
+    The May 2026 cleanup sweep dropped 6 derivable types: total_value
+    (= real_score × (2 + card_boost)) and the five draft-shape aggregates
+    (avg_draft_slot, avg_draft_mult, avg_draft_tv, highest_draft_tv,
+    most_common_slot — all reductions over winning_lineup_slot rows).
+    """
     expected_types = {
-        "real_score", "total_value", "card_boost", "drafts",
-        "draft_count", "avg_draft_slot", "avg_draft_mult", "avg_draft_tv",
-        "highest_draft_tv", "most_common_slot", "injury_status",
+        "real_score", "card_boost", "drafts",
+        "draft_count", "injury_status",
         "highest_value", "most_popular", "most_drafted_3x",
         "winning_lineup_slot", "box_score",
     }
@@ -937,12 +931,16 @@ def main() -> int:
     #     (data quality bug — same player+game appearing twice with
     #     conflicting box-score values; we keep the latest).
     if args.synthetic_multiplier == 1:
+        # label_event count shrunk after the May 2026 cleanup sweep dropped
+        # 6 redundant label_types (total_value + 5 draft-shape aggregates).
+        # The corpus on the 43-slate window now lands ~12,500–13,000 rows;
+        # use a wider band to keep the gate useful as the corpus grows.
         assert_row_counts(conn, expected={
             "slate": 43,
             "slate_game": 551,
             "player_slate": 1644,
             "player_game_log": 12290,
-            "label_event": (15000, 30000),
+            "label_event": (10000, 20000),
         })
         assert_foreign_keys(conn)
         assert_label_event_coverage(conn)

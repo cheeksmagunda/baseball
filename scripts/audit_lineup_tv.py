@@ -110,15 +110,19 @@ def build_team_to_game_pk(slate_results: list) -> dict[str, dict[str, int]]:
 
 
 def build_player_outcome_index(historical_players: Path) -> dict:
-    """{(date, name, team): (rs, tv)}"""
+    """{(date, name, team): (rs, tv)}.
+
+    total_value derived inline as `rs * (2 + cb)` per CLAUDE.md — the
+    standalone CSV column was dropped in the May 2026 cleanup sweep."""
     idx: dict = {}
     with historical_players.open() as f:
         for row in csv.DictReader(f):
             try:
                 rs = float(row.get("real_score") or "")
-                tv = float(row.get("total_value") or "")
+                cb = float(row.get("card_boost") or 0)
             except ValueError:
                 continue
+            tv = rs * (2 + cb)
             idx[(row["date"], row["player_name"], canonicalize_team(row["team"]))] = (rs, tv)
     return idx
 

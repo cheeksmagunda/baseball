@@ -140,7 +140,10 @@ def load_records(historical_csv: Path, slate_envs: dict) -> list[dict]:
             other = "away" if is_home else "home"
 
             rs = _opt_float(row["real_score"])
-            tv = _opt_float(row["total_value"])
+            # total_value derived inline as rs * (2 + cb) per CLAUDE.md — the
+            # standalone CSV column was dropped in the May 2026 cleanup sweep.
+            cb = _opt_float(row.get("card_boost"))
+            tv = (rs * (2 + (cb or 0))) if rs is not None else None
             if rs is None or tv is None:
                 continue  # DNP/scratch — no outcome label
 

@@ -228,14 +228,20 @@ def main() -> int:
         )
         lines.append(f"  label_events for 1 slate:           {ms:.2f} ms, {n} rows")
 
-        # Common query: top players by total_value over corpus
+        # Common query: top players by total_value over corpus.
+        # total_value = real_score × (2 + card_boost) per row — derived on the
+        # fly since the standalone label_type was dropped in May 2026.
         ms, n = _time(
             """
-            SELECT ps.player_name, ps.team, SUM(le.label_value) AS total_tv
+            SELECT ps.player_name, ps.team,
+                   SUM(rs.label_value * (2 + COALESCE(cb.label_value, 0))) AS total_tv
             FROM player_slate ps
-            JOIN label_event le
-              ON le.slate_date=ps.slate_date AND le.mlb_id=ps.mlb_id
-            WHERE le.label_type='total_value'
+            JOIN label_event rs
+              ON rs.slate_date=ps.slate_date AND rs.mlb_id=ps.mlb_id
+              AND rs.label_type='real_score'
+            LEFT JOIN label_event cb
+              ON cb.slate_date=ps.slate_date AND cb.mlb_id=ps.mlb_id
+              AND cb.label_type='card_boost'
             GROUP BY ps.player_name, ps.team
             ORDER BY total_tv DESC LIMIT 20
             """

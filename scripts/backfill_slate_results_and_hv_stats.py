@@ -92,20 +92,14 @@ async def fetch_final_games(game_date: str) -> list[dict]:
             away_score = away.get("score")
             if not (home_abbr and away_abbr) or home_score is None or away_score is None:
                 continue
-            if home_score > away_score:
-                winner, loser = home_abbr, away_abbr
-            else:
-                winner, loser = away_abbr, home_abbr
+            # winner/loser/winner_score/loser_score are derived on export
+            # from home/away/home_score/away_score — not stored.
             games.append({
                 "game_pk": g.get("gamePk"),
                 "home": home_abbr,
                 "away": away_abbr,
                 "home_score": home_score,
                 "away_score": away_score,
-                "winner": winner,
-                "loser": loser,
-                "winner_score": max(home_score, away_score),
-                "loser_score": min(home_score, away_score),
             })
     return games
 

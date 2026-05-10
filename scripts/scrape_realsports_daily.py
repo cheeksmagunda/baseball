@@ -66,7 +66,9 @@ HV_STATS_CSV = DATA_DIR / "hv_player_game_stats.csv"
 
 # Slot multipliers per Real Sports MLB DFS (5 slots, position 0 = pitcher anchor)
 SLOT_MULTIPLIERS = [2.0, 1.8, 1.6, 1.4, 1.2]
-BASE_SLOT_MULT = 2.0  # CLAUDE.md: total_value = real_score * (2 + card_boost)
+# CLAUDE.md: total_value = real_score * (2 + card_boost) — derived on export
+# from real_score + card_boost label_event rows; the scraper no longer
+# computes it inline (the BASE_SLOT_MULT constant was removed with that path).
 
 # Username/password only used by --refresh-auth.  Read from env to keep
 # secrets out of source.
@@ -433,20 +435,19 @@ def parse_players(stats_payload: dict, player_info: dict[int, dict],
                   target_date: str) -> list[dict]:
     """
     historical_players.csv columns:
-      date, player_name, team, position, real_score, total_value,
+      date, player_name, team, position, real_score,
       is_highest_value, is_most_popular, is_most_drafted_3x,
-      draft_count, avg_draft_slot, most_common_slot, avg_draft_mult,
-      avg_draft_tv, highest_draft_tv, injury_status
+      draft_count, injury_status
 
     Dedup by (player_name, team), merging flags from HV/MP/3X sections.
-    Rich stats (draft_count, avg_draft_slot, etc.) are taken from the section
-    with the highest count (MP = total drafters, most representative).
-    real_score is rounded to 1 dp to match the platform display + manual ingest;
-    total_value is computed from real_score and the per-row card_boost (boost
-    itself is not persisted — only the post-boost value).
+    real_score is rounded to 1 dp to match the platform display + manual ingest.
+
+    total_value, avg_draft_slot, most_common_slot, avg_draft_mult, avg_draft_tv,
+    highest_draft_tv used to land in the CSV but were all derivable from the
+    per-row real_score / card_boost / winning_lineup_slot data we already keep.
+    Dropped here; the export computes them on demand.
     """
     by_key: dict[tuple[str, str], dict] = {}
-    best_count: dict[tuple[str, str], int] = {}  # tracks which section had the highest count
 
     for sec in stats_payload.get("draftStats", []):
         # Use .get() — platform added a 'My draft' section without sectionName
@@ -468,7 +469,6 @@ def parse_players(stats_payload: dict, player_info: dict[int, dict],
 
             real_score = _round_dp(float(p["value"]), 1)
             boost = float(p["multiplierBonus"])
-            total_value = _round_dp(real_score * (BASE_SLOT_MULT + boost), 2)
             position = _position_for(pl["id"], player_info)
 
             count = p.get("count") or 0
@@ -480,21 +480,14 @@ def parse_players(stats_payload: dict, player_info: dict[int, dict],
                     "team": team,
                     "position": position,
                     "real_score": real_score,
-                    "total_value": total_value,
                     "_mlb_id": pl["id"],          # internal — not written to CSV
                     "_card_boost": boost,         # internal — feeds label_event(card_boost)
                     "is_highest_value": 0,
                     "is_most_popular": 0,
                     "is_most_drafted_3x": 0,
                     "draft_count": count,
-                    "avg_draft_slot": _safe_round(p.get("avgPosition"), 3),
-                    "most_common_slot": p.get("mostCommonPosition", ""),
-                    "avg_draft_mult": _safe_round(p.get("avgMultiplier"), 4),
-                    "avg_draft_tv": _safe_round(p.get("avgScore"), 4),
-                    "highest_draft_tv": _safe_round(p.get("highestScore"), 4),
                     "injury_status": pl.get("injuryStatus", ""),
                 }
-                best_count[key] = count
             else:
                 row = by_key[key]
                 if abs(row["real_score"] - real_score) > 0.05:
@@ -503,14 +496,6 @@ def parse_players(stats_payload: dict, player_info: dict[int, dict],
                 # draft_count: keep the max (MP section carries the total count)
                 if count > (row.get("draft_count") or 0):
                     row["draft_count"] = count
-                # avg_draft_* fields: take from the section with highest count
-                if count > best_count.get(key, 0):
-                    row["avg_draft_slot"] = _safe_round(p.get("avgPosition"), 3)
-                    row["most_common_slot"] = p.get("mostCommonPosition", "")
-                    row["avg_draft_mult"] = _safe_round(p.get("avgMultiplier"), 4)
-                    row["avg_draft_tv"] = _safe_round(p.get("avgScore"), 4)
-                    row["highest_draft_tv"] = _safe_round(p.get("highestScore"), 4)
-                    best_count[key] = count
                 # injury_status: keep first non-empty value
                 if not row.get("injury_status") and pl.get("injuryStatus"):
                     row["injury_status"] = pl["injuryStatus"]
@@ -579,15 +564,11 @@ def parse_games(daily_payload: dict, stats_payload: dict, target_date: str) -> d
         if hs is None or a_s is None:
             # game not finalized; skip env field
             continue
-        winner_key = hk if hs > a_s else ak
-        loser_key = ak if hs > a_s else hk
-        winner_score = max(hs, a_s)
-        loser_score = min(hs, a_s)
+        # winner/loser/winner_score/loser_score are derived on export from
+        # home/away + scores — not stored.
         games_out.append({
             "home": hk, "away": ak,
             "home_score": hs, "away_score": a_s,
-            "winner": winner_key, "loser": loser_key,
-            "winner_score": winner_score, "loser_score": loser_score,
         })
 
     num_brawlers = stats_payload.get("contest", {}).get("numBrawlers") or 0
@@ -739,10 +720,6 @@ def _write_slate_to_db(
                 "away_team": g.get("away", ""),
                 "home_score": g.get("home_score"),
                 "away_score": g.get("away_score"),
-                "winner": g.get("winner"),
-                "loser": g.get("loser"),
-                "winner_score": g.get("winner_score"),
-                "loser_score": g.get("loser_score"),
             })
 
         # --- player_slate + label_event from players_rows ---
@@ -756,16 +733,13 @@ def _write_slate_to_db(
                 "position": r["position"] or "OF",
             })
 
-            # numeric scalar labels
+            # numeric scalar labels.  total_value + 4 draft-shape aggregates
+            # dropped — derivations of real_score × (2 + card_boost) and the
+            # winning_lineup_slot rows respectively, recomputed on export.
             for key, label in [
                 ("real_score", "real_score"),
-                ("total_value", "total_value"),
                 ("_card_boost", "card_boost"),
                 ("draft_count", "draft_count"),
-                ("avg_draft_slot", "avg_draft_slot"),
-                ("avg_draft_mult", "avg_draft_mult"),
-                ("avg_draft_tv", "avg_draft_tv"),
-                ("highest_draft_tv", "highest_draft_tv"),
             ]:
                 v = r.get(key)
                 if v in (None, ""):
@@ -797,15 +771,8 @@ def _write_slate_to_db(
                         observed_at=observed_at,
                     )
 
-            mcs = r.get("most_common_slot")
-            if mcs:
-                historical_db.upsert_label_event(
-                    conn,
-                    slate_date=target_date, mlb_id=mlb_id, label_type="most_common_slot",
-                    label_value=None, label_text=str(mcs),
-                    source=historical_db.SOURCE_REALSPORTS_STATS,
-                    observed_at=observed_at,
-                )
+            # most_common_slot dropped — recomputable on export from the
+            # winning_lineup_slot rows for the same (slate, mlb_id).
             inj = r.get("injury_status")
             if inj:
                 historical_db.upsert_label_event(

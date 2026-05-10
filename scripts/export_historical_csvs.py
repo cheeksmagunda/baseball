@@ -52,7 +52,7 @@ log = logging.getLogger("export_historical_csvs")
 # ---------------------------------------------------------------------------
 HISTORICAL_PLAYERS_COLS = (
     "date", "player_name", "team", "position",
-    "real_score", "total_value",
+    "real_score",
     "is_highest_value", "is_most_popular", "is_most_drafted_3x",
     "ops_at_slate", "iso_at_slate",
     "era_at_slate", "whip_at_slate", "k9_at_slate",
@@ -64,8 +64,7 @@ HISTORICAL_PLAYERS_COLS = (
     "ops_vs_lhp_at_slate", "ops_vs_rhp_at_slate",
     "batting_order_at_slate",
     "card_boost", "drafts",
-    "draft_count", "avg_draft_slot", "most_common_slot",
-    "avg_draft_mult", "avg_draft_tv", "highest_draft_tv",
+    "draft_count",
     "injury_status",
 )
 
@@ -160,15 +159,8 @@ PLAYER_SLATE_FMT = {
 LABEL_FMT = {
     # scraper _round_dp(value, 1) → float → str() → "0.7"
     "real_score": ("round_str", 1),
-    # scraper _round_dp(value, 2) → float → str() → "1.4" or "1.45"
-    "total_value": ("round_str", 2),
     # scraper _round_dp(value, 1) → "0.0" / "1.5"
     "card_boost": ("round_str", 1),
-    # scraper _safe_round(value, 3) → "2.405" or "0.275"
-    "avg_draft_slot": ("round_str", 3),
-    "avg_draft_mult": ("round_str", 4),
-    "avg_draft_tv": ("round_str", 4),
-    "highest_draft_tv": ("round_str", 4),
 }
 
 
@@ -238,23 +230,23 @@ def export_historical_players(conn, path: Path) -> int:
     """Reconstruct historical_players.csv from player_slate + label_event.
 
     For each (slate_date, mlb_id) row in player_slate we attach the matching
-    real_score / total_value / 3 boolean flags / 9 draft-shape labels +
+    real_score / 3 boolean flags / card_boost / drafts / draft_count +
     injury_status from label_event.  Flag rows present in label_event become
     "1"; absent rows become "0" (or empty for non-flag fields).
+
+    total_value, avg_draft_slot, avg_draft_mult, avg_draft_tv, highest_draft_tv,
+    most_common_slot used to be exported but were all derivations of fields
+    we already keep (real_score × (2 + card_boost) for total_value; reductions
+    over winning_lineup_slot rows for the rest).  Dropped here to shrink the
+    CSV; recompute on the fly if a downstream consumer needs them.
     """
     rs_idx = _label_index(conn, "real_score")
-    tv_idx = _label_index(conn, "total_value")
     hv_idx = _label_index(conn, "highest_value")
     mp_idx = _label_index(conn, "most_popular")
     md_idx = _label_index(conn, "most_drafted_3x")
     cb_idx = _label_index(conn, "card_boost")
     dr_idx = _label_index(conn, "drafts")
     dc_idx = _label_index(conn, "draft_count")
-    ds_idx = _label_index(conn, "avg_draft_slot")
-    mc_idx = _label_index(conn, "most_common_slot")
-    dm_idx = _label_index(conn, "avg_draft_mult")
-    dt_idx = _label_index(conn, "avg_draft_tv")
-    ht_idx = _label_index(conn, "highest_draft_tv")
     in_idx = _label_index(conn, "injury_status")
 
     # Canonical sort: (date, player_name).  Matches the natural alphabetical
@@ -266,15 +258,9 @@ def export_historical_players(conn, path: Path) -> int:
     for r in cur.fetchall():
         key = (r["slate_date"], r["mlb_id"])
         rs = rs_idx.get(key, (None, None))[0]
-        tv = tv_idx.get(key, (None, None))[0]
         cb = cb_idx.get(key, (None, None))[0]
         dr = dr_idx.get(key, (None, None))[0]
         dc = dc_idx.get(key, (None, None))[0]
-        ds = ds_idx.get(key, (None, None))[0]
-        mc = mc_idx.get(key, (None, None))
-        dm = dm_idx.get(key, (None, None))[0]
-        dt = dt_idx.get(key, (None, None))[0]
-        ht = ht_idx.get(key, (None, None))[0]
         inj = in_idx.get(key, (None, None))[1]
 
         out = {
@@ -283,7 +269,6 @@ def export_historical_players(conn, path: Path) -> int:
             "team": r["team"],
             "position": r["position"],
             "real_score": _fmt_label_col("real_score", rs),
-            "total_value": _fmt_label_col("total_value", tv),
             "is_highest_value": "1" if (key in hv_idx) else "0",
             "is_most_popular": "1" if (key in mp_idx) else "0",
             "is_most_drafted_3x": "1" if (key in md_idx) else "0",
@@ -291,11 +276,6 @@ def export_historical_players(conn, path: Path) -> int:
             "card_boost": _fmt_label_col("card_boost", cb),
             "drafts": _fmt_int(dr),
             "draft_count": _fmt_int(dc),
-            "avg_draft_slot": _fmt_label_col("avg_draft_slot", ds),
-            "most_common_slot": (mc[1] if mc[1] is not None else _fmt_real(mc[0])),
-            "avg_draft_mult": _fmt_label_col("avg_draft_mult", dm),
-            "avg_draft_tv": _fmt_label_col("avg_draft_tv", dt),
-            "highest_draft_tv": _fmt_label_col("highest_draft_tv", ht),
             "injury_status": inj or "",
         }
         for col in PLAYER_SLATE_FMT:
@@ -465,7 +445,12 @@ def export_slate_results(conn, path: Path) -> int:
 
     Column rename on export: slate_game uses `home_team` / `away_team` for
     schema clarity; the JSON envelope uses `home` / `away` (matching what
-    scrape_realsports_daily.py wrote and what audit scripts read)."""
+    scrape_realsports_daily.py wrote and what audit scripts read).
+
+    On-the-fly derivations (not stored in the DB):
+      - winner / loser / winner_score / loser_score  ←  home_team / away_team
+        / home_score / away_score
+    """
     envelopes: list[dict] = []
     cur_slates = conn.execute(
         "SELECT * FROM slate ORDER BY slate_date"
@@ -492,6 +477,26 @@ def export_slate_results(conn, path: Path) -> int:
                     row["away"] = g[k]
                 else:
                     row[k] = g[k]
+            # Derive winner/loser/winner_score/loser_score on the fly so the
+            # JSON shape matches what scrape_realsports_daily.py historically
+            # wrote — even though the DB no longer stores these as columns.
+            home_team = row.get("home")
+            away_team = row.get("away")
+            hs = row.get("home_score")
+            as_ = row.get("away_score")
+            if hs is not None and as_ is not None and home_team and away_team:
+                if hs > as_:
+                    row["winner"], row["loser"] = home_team, away_team
+                    row["winner_score"], row["loser_score"] = hs, as_
+                elif as_ > hs:
+                    row["winner"], row["loser"] = away_team, home_team
+                    row["winner_score"], row["loser_score"] = as_, hs
+                else:  # tie — vanishingly rare; mirror the legacy null-out.
+                    row["winner"] = row["loser"] = None
+                    row["winner_score"] = row["loser_score"] = hs
+            else:
+                row["winner"] = row["loser"] = None
+                row["winner_score"] = row["loser_score"] = None
             games_out.append(row)
         env = {
             "date": slate_date,

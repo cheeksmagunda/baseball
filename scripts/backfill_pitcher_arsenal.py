@@ -92,16 +92,22 @@ def main() -> int:
     conn = historical_db.connect()
     try:
         historical_db.apply_schema(conn)
+        # Phase C: primary_position_code lives on player_dim now, not
+        # player_slate.  JOIN to filter to pitchers.
         if args.force:
-            where = "WHERE mlb_id > 0 AND primary_position_code IN ('SP', 'RP', 'P', 'TWP')"
+            where = (
+                "WHERE ps.mlb_id > 0 AND pd.primary_position_code "
+                "IN ('SP', 'RP', 'P', 'TWP')"
+            )
         else:
             where = (
-                "WHERE mlb_id > 0 AND arsenal_ff_pct IS NULL "
-                "AND primary_position_code IN ('SP', 'RP', 'P', 'TWP')"
+                "WHERE ps.mlb_id > 0 AND ps.arsenal_ff_pct IS NULL "
+                "AND pd.primary_position_code IN ('SP', 'RP', 'P', 'TWP')"
             )
         cur = conn.execute(
-            f"SELECT slate_date, mlb_id FROM player_slate {where} "
-            f"ORDER BY slate_date, mlb_id"
+            f"SELECT ps.slate_date, ps.mlb_id FROM player_slate ps "
+            f"JOIN player_dim pd ON pd.mlb_id = ps.mlb_id "
+            f"{where} ORDER BY ps.slate_date, ps.mlb_id"
         )
         targets = cur.fetchall()
         log.info("pitcher rows to populate: %d", len(targets))
