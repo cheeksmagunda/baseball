@@ -43,7 +43,7 @@ def _section(title: str) -> str:
 def main() -> int:
     lines: list[str] = []
 
-    lines.append(_section("HISTORICAL-CORPUS AUDIT — post-Step-8 baseline"))
+    lines.append(_section("HISTORICAL-CORPUS AUDIT — post-Step-18"))
     from datetime import datetime, timezone
     lines.append(f"Generated: {datetime.now(timezone.utc).isoformat()}")
     lines.append(f"DB path:   {historical_db.DEFAULT_DB_PATH}")
@@ -244,20 +244,53 @@ def main() -> int:
 
         # ---- Section 9: REPRODUCIBILITY ---------------------------------------
         lines.append(_section("9. REPRODUCIBILITY GATE"))
-        # Build a fresh DB and compare data hashes (excluding observed_at).
+        lines.append(
+            "  Reproducibility = `build_historical_db.py --rebuild` PLUS\n"
+            "  the full external-backfill chain (Steps 9–18).  The CSV/JSON\n"
+            "  exports carry only the original columns; the 150+ post-Step-8\n"
+            "  external columns live in SQLite only and are populated via\n"
+            "  the per-source backfill scripts.")
+        # Build a fresh DB + replay backfills, compare data hashes
+        # (excluding observed_at + autoincrement rowid_seq).
         import tempfile
         with tempfile.TemporaryDirectory() as td:
             tmp_db = Path(td) / "rebuild.db"
+            backfill_env = {
+                **os.environ,
+                "BO_CURRENT_SEASON": "2026",
+                "BO_ODDS_API_KEY": "audit-stub",
+                "HISTORICAL_DB": str(tmp_db),
+            }
             r = subprocess.run(
                 [sys.executable, str(ROOT / "scripts" / "build_historical_db.py"),
                  "--db", str(tmp_db), "--rebuild"],
-                cwd=str(ROOT), capture_output=True, text=True,
-                env={**os.environ, "BO_CURRENT_SEASON": "2026",
-                     "BO_ODDS_API_KEY": "audit-stub"},
+                cwd=str(ROOT), capture_output=True, text=True, env=backfill_env,
             )
             if r.returncode != 0:
                 lines.append(f"  REBUILD FAILED: {r.stderr[:500]}")
                 return 1
+            # Replay every external backfill script that hits SQLite directly.
+            # Order matches dependency: game_externals (venue + lat/lon)
+            # must run before weather_actuals.
+            backfill_chain = (
+                "backfill_game_externals.py",
+                "backfill_pitcher_boxscore.py",
+                "backfill_player_externals.py",
+                "backfill_pitcher_arsenal.py",
+                "backfill_team_boxscore.py",
+                "backfill_weather_actuals.py",
+                "backfill_sprint_oaa.py",
+                "backfill_standings.py",
+                "backfill_game_meta.py",
+                "backfill_bat_tracking.py",
+            )
+            for s in backfill_chain:
+                rr = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts" / s)],
+                    cwd=str(ROOT), capture_output=True, text=True, env=backfill_env,
+                )
+                if rr.returncode != 0:
+                    lines.append(f"  {s} FAILED: {rr.stderr[:300]}")
 
             import hashlib
             import sqlite3

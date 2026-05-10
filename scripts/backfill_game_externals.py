@@ -262,6 +262,11 @@ if __name__ == "__main__":
         _repo = _Path(__file__).resolve().parents[1]
         if str(_repo) not in _sys.path:
             _sys.path.insert(0, str(_repo))
-        from scripts.export_historical_csvs import export_all
-        export_all()
+        # Skip the on-disk /data/ export when we're operating against a
+        # non-canonical DB (audit reproducibility chain) so the canonical
+        # CSV/JSON files in /data/ are not clobbered.
+        import os as _os
+        if not _os.environ.get('HISTORICAL_DB'):
+            from scripts.export_historical_csvs import export_all
+            export_all()
     sys.exit(rc)

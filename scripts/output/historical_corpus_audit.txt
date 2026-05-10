@@ -1,11 +1,11 @@
 
 ==============================================================================
-HISTORICAL-CORPUS AUDIT — post-Step-8 baseline
+HISTORICAL-CORPUS AUDIT — post-Step-18
 ==============================================================================
 
-Generated: 2026-05-09T14:13:40.900644+00:00
+Generated: 2026-05-10T12:27:58.098011+00:00
 DB path:   /Users/hanslarson/Desktop/baseball-main/.claude/worktrees/gracious-kapitsa-093618/data/historical.db
-DB size:   7,790,592 bytes (7.43 MiB)
+DB size:   8,208,384 bytes (7.83 MiB)
 
 ==============================================================================
 1. SCHEMA
@@ -15,9 +15,9 @@ Tables: 6
   label_event: 7 columns
   player_alias: 5 columns
   player_game_log: 21 columns
-  player_slate: 28 columns
+  player_slate: 60 columns
   slate: 7 columns
-  slate_game: 57 columns
+  slate_game: 160 columns
 Indexes: 9
   idx_label_event_date_type on label_event
   idx_label_event_player on label_event
@@ -155,23 +155,28 @@ Status: PASS
 8. QUERY PERFORMANCE (cold-cache)
 ==============================================================================
 
-  popularity fame-index (14d window): 1.65 ms, 549 rows
-  label_events for 1 slate:           0.70 ms, 627 rows
-  top-20 players by total_value:      1.66 ms, 20 rows
+  popularity fame-index (14d window): 1.67 ms, 549 rows
+  label_events for 1 slate:           0.73 ms, 627 rows
+  top-20 players by total_value:      1.72 ms, 20 rows
 
 ==============================================================================
 9. REPRODUCIBILITY GATE
 ==============================================================================
 
-  data-hash original: d883082b8f614d3570dc6fd4b10ec07e919e0edea22c02130fb417bcf78151c8
-  data-hash rebuild:  d883082b8f614d3570dc6fd4b10ec07e919e0edea22c02130fb417bcf78151c8
+  Reproducibility = `build_historical_db.py --rebuild` PLUS
+  the full external-backfill chain (Steps 9–18).  The CSV/JSON
+  exports carry only the original columns; the 150+ post-Step-8
+  external columns live in SQLite only and are populated via
+  the per-source backfill scripts.
+  data-hash original: 01f49a86256b151756aaf52d3e83ed960778af976f2a91ae041316fe8ee16924
+  data-hash rebuild:  01f49a86256b151756aaf52d3e83ed960778af976f2a91ae041316fe8ee16924
   status: MATCH
 
 ==============================================================================
 10. EXTERNAL VERIFICATION GATES
 ==============================================================================
 
-  pytest tests/: 275 passed, 4 warnings in 1.55s (exit 0)
+  pytest tests/: 275 passed, 4 warnings in 1.66s (exit 0)
   audit_live_isolation.py: exit 0
   verify_popularity_parity.py: OK — popularity SQLite path is byte-identical to the CSV legacy path (exit 0)
 
