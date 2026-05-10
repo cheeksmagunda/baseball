@@ -322,6 +322,10 @@ class TestHistoricalSqliteSchemaContract:
             "away_team_streak", "away_team_division_rank",
             "away_team_league_rank", "away_team_home_record",
             "away_team_away_record", "away_team_winning_pct",
+            # Step 17: per-team mound visits + ABS challenges
+            "home_mound_visits_used", "away_mound_visits_used",
+            "home_abs_challenges_used", "home_abs_challenges_won",
+            "away_abs_challenges_used", "away_abs_challenges_won",
         },
         "player_slate": {
             "slate_date", "mlb_id", "player_name", "team", "position",
@@ -347,6 +351,9 @@ class TestHistoricalSqliteSchemaContract:
             # Step 15: per-batter sprint + defensive metrics from Savant
             "sprint_speed_fps", "hp_to_first_sec", "competitive_runs",
             "outs_above_avg", "fielding_runs_prevented",
+            # Step 18: per-batter bat-tracking metrics from Savant
+            "avg_bat_speed_mph", "hard_swing_rate", "swing_length_ft",
+            "squared_up_per_swing", "blast_per_swing", "swords_count",
         },
         "player_game_log": {
             "rowid_seq", "slate_date", "mlb_id", "game_date",

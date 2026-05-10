@@ -257,6 +257,15 @@ CREATE TABLE IF NOT EXISTS slate_game (
     away_team_home_record       TEXT,
     away_team_away_record       TEXT,
     away_team_winning_pct       REAL,
+    -- Step 17: per-team mound visits + ABS challenges from gumbo feed.
+    -- Mound visits are limited per game (5 in 2026); challenges are per
+    -- team per game (2 in 2026 ABS regime).  Captures procedural intensity.
+    home_mound_visits_used      INTEGER,
+    away_mound_visits_used      INTEGER,
+    home_abs_challenges_used    INTEGER,
+    home_abs_challenges_won     INTEGER,
+    away_abs_challenges_used    INTEGER,
+    away_abs_challenges_won     INTEGER,
     PRIMARY KEY (slate_date, game_pk, game_number),
     FOREIGN KEY (slate_date) REFERENCES slate(slate_date)
 );
@@ -330,6 +339,15 @@ CREATE TABLE IF NOT EXISTS player_slate (
     competitive_runs        INTEGER,     -- # of high-effort runs that count
     outs_above_avg          INTEGER,     -- season OAA, can be negative
     fielding_runs_prevented INTEGER,     -- runs saved relative to average
+    -- Step 18: per-batter bat-tracking metrics from Savant 2024+ leaderboard.
+    -- Bat tracking captures swing decisions + bat speed per swing — orthogonal
+    -- to exit-velocity (a swing that misses still has a bat speed).
+    avg_bat_speed_mph       REAL,        -- average bat speed across competitive swings
+    hard_swing_rate         REAL,        -- % of swings >= 75 mph bat speed
+    swing_length_ft         REAL,        -- average bat path length
+    squared_up_per_swing    REAL,        -- "squared up" contact rate per swing
+    blast_per_swing         REAL,        -- top-tier "blast" contact rate per swing
+    swords_count            INTEGER,     -- swings + miss with bat-on-ball expected
     PRIMARY KEY (slate_date, mlb_id)
     -- game_pk is informational only; player_slate cannot foreign-key to
     -- slate_game because the latter's PK includes game_number (doubleheader
