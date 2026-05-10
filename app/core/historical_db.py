@@ -233,6 +233,20 @@ CREATE TABLE IF NOT EXISTS player_slate (
     chase_pct               REAL,
     fb_ivb                  REAL,
     fb_extension            REAL,
+    -- Step 11: per-player externals from MLB Stats API /people endpoint.
+    -- Slowly-changing dimensions (debut_date is fixed; jersey_number drifts
+    -- mid-season; bat_side / pitch_hand stable except for rare switch-back
+    -- decisions); captured per-slate so the corpus reflects the as-of-date
+    -- attribute even if the player's MLB API record subsequently changes.
+    bat_side                TEXT,        -- 'R' / 'L' / 'S' (switch)
+    pitch_hand              TEXT,        -- 'R' / 'L' (pitchers only)
+    birth_date              TEXT,        -- ISO date
+    mlb_debut_date          TEXT,        -- ISO date — fixed once set
+    height_in               INTEGER,     -- inches
+    weight_lb               INTEGER,     -- pounds
+    birth_country           TEXT,
+    primary_position_code   TEXT,        -- '1B' / 'C' / 'SS' / 'OF' / 'SP' / etc.
+    jersey_number           TEXT,        -- TEXT because some are '00' / '0'
     PRIMARY KEY (slate_date, mlb_id)
     -- game_pk is informational only; player_slate cannot foreign-key to
     -- slate_game because the latter's PK includes game_number (doubleheader

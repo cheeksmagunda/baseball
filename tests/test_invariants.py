@@ -307,6 +307,10 @@ class TestHistoricalSqliteSchemaContract:
             "x_era", "x_woba_against",
             "fb_velo", "whiff_pct", "chase_pct",
             "fb_ivb", "fb_extension",
+            # Step 11: per-player externals from MLB people endpoint
+            "bat_side", "pitch_hand", "birth_date", "mlb_debut_date",
+            "height_in", "weight_lb", "birth_country",
+            "primary_position_code", "jersey_number",
         },
         "player_game_log": {
             "rowid_seq", "slate_date", "mlb_id", "game_date",
