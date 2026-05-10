@@ -197,6 +197,18 @@ CREATE TABLE IF NOT EXISTS slate_game (
     away_bullpen_pitchers_used  INTEGER,
     away_bullpen_outs_recorded  INTEGER,
     away_bullpen_pitch_count    INTEGER,
+    -- Step 13: actual weather at first pitch from Open-Meteo Archive API.
+    -- Pre-existing temperature_f / wind_speed_mph / wind_direction* are
+    -- the T-65 *forecast*; these are the *actual* readings at the venue
+    -- coordinate at the first-pitch hour.  Lets calibration ask "did our
+    -- forecast wind-out bonus actually correlate with real wind out?".
+    actual_temperature_f        REAL,
+    actual_wind_speed_mph       REAL,
+    actual_wind_direction_deg   INTEGER,
+    actual_precipitation_mm     REAL,
+    actual_humidity_pct         INTEGER,
+    actual_pressure_hpa         REAL,
+    actual_cloud_cover_pct      INTEGER,
     PRIMARY KEY (slate_date, game_pk, game_number),
     FOREIGN KEY (slate_date) REFERENCES slate(slate_date)
 );

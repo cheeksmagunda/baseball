@@ -294,6 +294,11 @@ class TestHistoricalSqliteSchemaContract:
             "home_bullpen_pitch_count",
             "away_bullpen_pitchers_used", "away_bullpen_outs_recorded",
             "away_bullpen_pitch_count",
+            # Step 13: actual weather at first pitch from Open-Meteo Archive
+            "actual_temperature_f", "actual_wind_speed_mph",
+            "actual_wind_direction_deg", "actual_precipitation_mm",
+            "actual_humidity_pct", "actual_pressure_hpa",
+            "actual_cloud_cover_pct",
         },
         "player_slate": {
             "slate_date", "mlb_id", "player_name", "team", "position",
