@@ -26,7 +26,6 @@ import logging
 import os
 import sys
 from collections import defaultdict
-from datetime import date as DateType
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]

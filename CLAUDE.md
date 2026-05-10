@@ -375,7 +375,7 @@ CSV / test contracts updated to match.  The full `pytest tests/` suite (275 test
 | `player_slate` | 1644 | **87** | Per-(slate_date, mlb_id) identity + at-slate inputs.  Phase E added 13 (TTO 3, inning splits 4, rest 2, BvP 2, IL flag 1, BABIP delta 1) on top of Phase D's 6 (pitcher batted-ball + velo trend). |
 | `venue_dim` | 31 | 18 | Phase D venue static dimensions; Phase E added `hp_to_cf_azimuth_deg` for wind-projection math. |
 | `player_game_log` | 12290 | 21 | Prior-game outcomes per (slate_date, mlb_id, game_date) for the trailing 10-game window. |
-| `label_event` | 14506 | 7 | Typed/sourced/dated outcome labels.  `label_type` ∈ {real_score, card_boost, drafts, draft_count, injury_status, highest_value, most_popular, most_drafted_3x, winning_lineup_slot, box_score, wpa, **transaction**}. |
+| `label_event` | 13319 | 7 | Typed/sourced/dated outcome labels.  `label_type` ∈ {real_score, card_boost, drafts, draft_count, injury_status, highest_value, most_popular, most_drafted_3x, winning_lineup_slot, box_score, wpa, **transaction**}.  Phase F dropped ~1187 NUM jersey-change transaction rows from the prior 14506 count. |
 | `player_alias` | 0 | 5 | Side table for HV box-score identity recovery; populated only on demand. |
 | `player_dim` | 399 | 12 | Per-mlb_id slowly-changing dimensions (handedness / birth / physicals / debut / position).  Populated by `scripts/backfill_player_externals.py`. |
 | `venue_dim` | 31 | 17 | **Phase D add (May 2026):** per-venue slowly-changing dimensions (capacity / surface / roof / elevation / lat-lon / fence-distances).  Joined by `venue_id`. |

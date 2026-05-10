@@ -48,8 +48,8 @@ def _parse_record(rec: str | None) -> tuple[int, int]:
     if not rec or "-" not in rec:
         return 0, 0
     try:
-        w, l = rec.split("-", 1)
-        return int(w), int(l)
+        wins, losses = rec.split("-", 1)
+        return int(wins), int(losses)
     except (ValueError, TypeError):
         return 0, 0
 
@@ -124,14 +124,14 @@ def main() -> int:
                 ra = t[f"{side}_team_runs_allowed"]
                 hw, hl = _parse_record(t[f"{side}_team_home_record"])
                 aw, al = _parse_record(t[f"{side}_team_away_record"])
-                w = hw + aw
-                l = hl + al
-                if rs is not None and ra is not None and (w + l) > 0:
+                wins = hw + aw
+                losses = hl + al
+                if rs is not None and ra is not None and (wins + losses) > 0:
                     if (rs * rs + ra * ra) > 0:
                         pythag = (rs * rs) / (rs * rs + ra * ra)
                     else:
                         continue
-                    actual = w / (w + l)
+                    actual = wins / (wins + losses)
                     updates_dict[f"{side}_pythag_gap"] = round(actual - pythag, 4)
 
             historical_db.update_slate_game_columns(

@@ -107,10 +107,6 @@ def main() -> int:
 
         # For each transaction, find every slate_date within [tx_date, tx_date+14d]
         # where the player appears in player_slate, and write a label_event row.
-        cur = conn.execute("SELECT DISTINCT slate_date FROM player_slate ORDER BY slate_date")
-        slate_dates = [r["slate_date"] for r in cur.fetchall()]
-        slate_dates_set = set(slate_dates)
-
         cur = conn.execute("SELECT slate_date, mlb_id FROM player_slate")
         player_slates: dict[int, list[str]] = {}
         for r in cur.fetchall():
