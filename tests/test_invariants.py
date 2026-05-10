@@ -299,6 +299,18 @@ class TestHistoricalSqliteSchemaContract:
             "actual_wind_direction_deg", "actual_precipitation_mm",
             "actual_humidity_pct", "actual_pressure_hpa",
             "actual_cloud_cover_pct",
+            # Step 14: per-team post-game box-score totals
+            "innings_played",
+            "home_team_hits", "home_team_runs", "home_team_doubles",
+            "home_team_triples", "home_team_hr",
+            "home_team_walks", "home_team_strikeouts",
+            "home_team_left_on_base", "home_team_stolen_bases",
+            "home_team_errors",
+            "away_team_hits", "away_team_runs", "away_team_doubles",
+            "away_team_triples", "away_team_hr",
+            "away_team_walks", "away_team_strikeouts",
+            "away_team_left_on_base", "away_team_stolen_bases",
+            "away_team_errors",
         },
         "player_slate": {
             "slate_date", "mlb_id", "player_name", "team", "position",

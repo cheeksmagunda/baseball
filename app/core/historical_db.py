@@ -209,6 +209,31 @@ CREATE TABLE IF NOT EXISTS slate_game (
     actual_humidity_pct         INTEGER,
     actual_pressure_hpa         REAL,
     actual_cloud_cover_pct      INTEGER,
+    -- Step 14: post-game box-score totals (per-team observables from
+    -- linescore / boxscore.teams.{home|away}.teamStats).  Existing
+    -- home_score / away_score / winner / loser are runs only; these add
+    -- the rest of the team line.
+    innings_played              INTEGER,     -- 9 for regulation, 10+ for extras
+    home_team_hits              INTEGER,
+    home_team_runs              INTEGER,     -- duplicates home_score, kept for symmetry
+    home_team_doubles           INTEGER,
+    home_team_triples           INTEGER,
+    home_team_hr                INTEGER,
+    home_team_walks             INTEGER,
+    home_team_strikeouts        INTEGER,
+    home_team_left_on_base      INTEGER,
+    home_team_stolen_bases      INTEGER,
+    home_team_errors            INTEGER,
+    away_team_hits              INTEGER,
+    away_team_runs              INTEGER,
+    away_team_doubles           INTEGER,
+    away_team_triples           INTEGER,
+    away_team_hr                INTEGER,
+    away_team_walks             INTEGER,
+    away_team_strikeouts        INTEGER,
+    away_team_left_on_base      INTEGER,
+    away_team_stolen_bases      INTEGER,
+    away_team_errors            INTEGER,
     PRIMARY KEY (slate_date, game_pk, game_number),
     FOREIGN KEY (slate_date) REFERENCES slate(slate_date)
 );
