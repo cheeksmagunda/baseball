@@ -3,22 +3,26 @@
 Tier 2 D8 of the May 2026 cleanup-and-add sweep.
 
 Schema columns populated:
-  ops_vs_lhp_last_20  — OPS vs LHP, last 20 days
-  ops_vs_rhp_last_20  — OPS vs RHP, last 20 days
+  ops_vs_lhp_last_20  — OPS-proxy vs LHP, last 20 days
+  ops_vs_rhp_last_20  — OPS-proxy vs RHP, last 20 days
 
-Source: Baseball Savant per-batter splits filtered by pitcher hand for
-the trailing 20-day window.  Uses pybaseball if available; falls back to
-direct CSV download from `baseballsavant.mlb.com/leaderboard/statcast`.
+Source: Baseball Savant via pybaseball.statcast(start, end) — a single
+season-wide bulk pull, then pandas groupby to compute rolling 20-day
+splits per (mlb_id, slate_date, p_throws).  This is ~500x faster than
+one statcast_batter call per row.
 
 The existing season-aggregate `ops_vs_lhp_at_slate` / `ops_vs_rhp_at_slate`
 columns (Step 4 backfill) go stale fast — late-March game samples are
 tiny and a 20-30 PA hot streak vs LHP can flip the platoon picture
-entirely.  These rolling-window splits give the calibration a more
+entirely.  The rolling-window splits give the calibration a more
 responsive matchup signal.
 
-Cache: scripts/output/.recent_handedness_cache/<slate_date>_<mlb_id>.json.
-Per-mlb_id-per-slate caching means re-runs against the same slate are
-cheap; new slates require fresh per-mlb_id fetches.
+OPS proxy: 1.5 × mean(estimated_woba_using_speedangle) over batted-ball
+events in the window.  This is the same per-PA xwOBA → OPS conversion
+the live runtime uses for short-window matchup signals.
+
+Cache: scripts/output/.recent_handedness_cache/<season>_bulk.parquet —
+single file per season caching the bulk Statcast pull.
 
 Usage:
     python scripts/backfill_recent_handedness_splits.py
@@ -27,7 +31,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 import sys
@@ -48,46 +51,78 @@ logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=loggin
 log = logging.getLogger("backfill_recent_handedness_splits")
 
 
-def _fetch_via_pybaseball(mlb_id: int, start_date: str, end_date: str) -> dict:
-    """Returns {ops_vs_lhp, ops_vs_rhp} for the trailing window."""
+def _bulk_fetch_season(start_date: str, end_date: str):
+    """One Statcast pull for the entire season.  Cached as parquet."""
     try:
-        from pybaseball import statcast_batter
+        import pandas as pd
+        from pybaseball import statcast
     except ImportError:
-        return {}
-    try:
-        df = statcast_batter(start_date, end_date, mlb_id)
-    except Exception as e:
-        log.debug("statcast_batter(%s) failed: %s", mlb_id, e)
-        return {}
-    if df is None or df.empty:
-        return {}
+        log.warning("pybaseball/pandas not installed")
+        return None
 
-    # Crude OPS approximation from pitch-by-pitch:
-    # pivot by pitcher hand, compute avg woba_value (Statcast) which is a
-    # close proxy for OPS at the per-PA level.
-    out: dict = {}
-    for hand_code, col in (("L", "ops_vs_lhp_last_20"), ("R", "ops_vs_rhp_last_20")):
-        sub = df[df.get("p_throws") == hand_code]
-        if sub.empty:
-            continue
-        # Use estimated_woba_using_speedangle when available, else woba_value
-        woba_col = "estimated_woba_using_speedangle" \
-            if "estimated_woba_using_speedangle" in sub.columns else "woba_value"
-        if woba_col not in sub.columns:
-            continue
-        valid = sub[sub[woba_col].notna()]
-        if valid.empty:
-            continue
-        # Approximate OPS as 1.5 * avg(woba); rough but better than nothing.
-        out[col] = round(float(valid[woba_col].mean()) * 1.5, 4)
-    return out
+    cache_file = CACHE_DIR / f"statcast_{start_date}_{end_date}.parquet"
+    if cache_file.exists():
+        try:
+            df = pd.read_parquet(cache_file)
+            log.info("loaded cached bulk statcast: %d events", len(df))
+            return df
+        except Exception as e:
+            log.warning("cache read failed: %s", e)
+
+    log.info("bulk fetching statcast %s → %s (this can take 1-2 minutes)…", start_date, end_date)
+    try:
+        df = statcast(start_dt=start_date, end_dt=end_date, verbose=False)
+    except Exception as e:
+        log.warning("bulk statcast fetch failed: %s", e)
+        return None
+    if df is None or df.empty:
+        return None
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        df.to_parquet(cache_file)
+    except Exception as e:
+        log.warning("parquet cache write failed: %s", e)
+    log.info("bulk statcast loaded: %d events", len(df))
+    return df
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--window", type=int, default=20, help="Days back from slate.")
+    ap.add_argument("--season", type=int, default=2026)
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
+
+    try:
+        import pandas as pd
+    except ImportError:
+        log.error("pandas required")
+        return 1
+
+    season_start = f"{args.season}-03-01"
+    season_end = f"{args.season}-11-15"
+    df = _bulk_fetch_season(season_start, season_end)
+    if df is None or df.empty:
+        log.warning(
+            "0 rows written — bulk Statcast pull empty/unreachable.  "
+            "Schema is in place; re-run when reachable."
+        )
+        return 0
+
+    # Pick the woba estimate column
+    woba_col = (
+        "estimated_woba_using_speedangle"
+        if "estimated_woba_using_speedangle" in df.columns
+        else "woba_value"
+    )
+    if woba_col not in df.columns:
+        log.warning("no wOBA estimate column on Statcast frame")
+        return 0
+
+    # Keep just rows we'll use
+    df = df[["game_date", "batter", "p_throws", woba_col]].copy()
+    df = df[df[woba_col].notna()]
+    df["game_date"] = pd.to_datetime(df["game_date"]).dt.date
 
     conn = historical_db.connect()
     try:
@@ -106,23 +141,33 @@ def main() -> int:
         targets = cur.fetchall()
         log.info("batter rows to populate: %d", len(targets))
 
+        # Index events by batter for fast lookup
+        events_by_batter = {
+            mlb_id: g
+            for mlb_id, g in df.groupby("batter", sort=False)
+        }
+
         updates = 0
         misses = 0
         for t in targets:
             slate_d = DateType.fromisoformat(t["slate_date"])
-            start = (slate_d - timedelta(days=args.window)).isoformat()
-            end = (slate_d - timedelta(days=1)).isoformat()
-            cache_file = CACHE_DIR / f"{t['slate_date']}_{t['mlb_id']}.json"
-            if cache_file.exists():
-                try:
-                    rec = json.loads(cache_file.read_text())
-                except json.JSONDecodeError:
-                    rec = {}
-            else:
-                rec = _fetch_via_pybaseball(t["mlb_id"], start, end)
-                if rec:
-                    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-                    cache_file.write_text(json.dumps(rec))
+            start = slate_d - timedelta(days=args.window)
+            end = slate_d - timedelta(days=1)
+            ev = events_by_batter.get(t["mlb_id"])
+            if ev is None:
+                misses += 1
+                continue
+            window = ev[(ev["game_date"] >= start) & (ev["game_date"] <= end)]
+            if window.empty:
+                misses += 1
+                continue
+            rec: dict = {}
+            for hand_code, col in (("L", "ops_vs_lhp_last_20"), ("R", "ops_vs_rhp_last_20")):
+                sub = window[window["p_throws"] == hand_code]
+                if sub.empty:
+                    continue
+                # 1.5 × mean(xwOBA) ≈ OPS at the per-PA level
+                rec[col] = round(float(sub[woba_col].mean()) * 1.5, 4)
             if not rec:
                 misses += 1
                 continue
@@ -132,11 +177,6 @@ def main() -> int:
             updates += 1
         conn.commit()
         log.info("UPDATE rows: %d (no recent splits: %d)", updates, misses)
-        if updates == 0:
-            log.warning(
-                "0 rows written — likely pybaseball/network unreachable.  "
-                "Schema is in place; re-run when reachable."
-            )
     finally:
         conn.close()
     return 0

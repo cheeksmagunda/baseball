@@ -243,8 +243,10 @@ class TestHistoricalSqliteSchemaContract:
     EXPECTED_TABLES = {
         "slate", "slate_game", "player_slate", "player_game_log",
         "label_event", "player_alias", "player_dim",
-        # Tier 1-3 add (May 2026 cleanup-and-add sweep)
-        "umpire_dim", "statcast_pa", "batter_pitch_type_woba",
+        # Phase D add (May 2026): per-venue slowly-changing dimensions.
+        "venue_dim",
+        # Tier 3 add (May 2026 cleanup-and-add sweep)
+        "statcast_pa", "batter_pitch_type_woba",
     }
 
     EXPECTED_COLUMNS = {
@@ -264,8 +266,7 @@ class TestHistoricalSqliteSchemaContract:
             "home_team_framing_runs", "home_team_framing_pct",
             "away_team_ops", "away_team_k_pct", "away_bullpen_era",
             "away_team_framing_runs", "away_team_framing_pct",
-            "home_team_record_w", "home_team_record_l", "home_team_rest_days",
-            "away_team_record_w", "away_team_record_l", "away_team_rest_days",
+            "home_team_rest_days", "away_team_rest_days",
             "home_l10_wins", "home_series_wins",
             "away_l10_wins", "away_series_wins",
             "vegas_total", "home_moneyline", "away_moneyline",
@@ -275,25 +276,38 @@ class TestHistoricalSqliteSchemaContract:
             # Tier 2 D7: rolling bullpen pitch-count window
             "home_bullpen_2d_pitches", "away_bullpen_2d_pitches",
             "home_bullpen_3d_pitches", "away_bullpen_3d_pitches",
-            "park_team", "park_hr_factor",
+            # Phase C: bullpen handedness usage in trailing 2 days
+            "home_bullpen_lhp_pitches_2d", "home_bullpen_rhp_pitches_2d",
+            "away_bullpen_lhp_pitches_2d", "away_bullpen_rhp_pitches_2d",
+            # Phase C: lineup handedness composition
+            "home_lineup_lhb_count", "home_lineup_rhb_count", "home_lineup_switch_count",
+            "away_lineup_lhb_count", "away_lineup_rhb_count", "away_lineup_switch_count",
+            # Phase C: pythagorean expectation gap + team defense
+            "home_pythag_gap", "away_pythag_gap",
+            "home_team_defense_drs", "away_team_defense_drs",
+            # Phase E: team L10 offensive momentum (wOBA + RPG)
+            "home_team_woba_l10", "home_team_rpg_l10",
+            "away_team_woba_l10", "away_team_rpg_l10",
+            # Phase E: bullpen LHP/RHP roster composition (14d distinct)
+            "home_bullpen_lhp_count", "home_bullpen_rhp_count",
+            "away_bullpen_lhp_count", "away_bullpen_rhp_count",
+            # Phase E: schedule context flags
+            "is_getaway_day", "is_day_after_night_game",
+            "park_hr_factor",
+            # Phase C: park HR factor split by batter handedness
+            "park_hr_factor_lhb", "park_hr_factor_rhb",
             "temperature_f", "wind_speed_mph",
             "wind_direction", "wind_direction_deg", "datetime_utc",
-            # winner / loser / winner_score / loser_score derived on export
-            # from home_team / away_team / home_score / away_score (May 2026
-            # cleanup sweep — no longer stored).
+            # Phase E: air density composite (humidity + pressure + ratio)
+            "humidity_pct", "pressure_hpa", "air_density_ratio",
+            # Phase E: travel fatigue (miles in 72h + zones in 24h)
+            "home_team_miles_traveled_72h", "home_team_zones_crossed_24h",
+            "away_team_miles_traveled_72h", "away_team_zones_crossed_24h",
+            # Phase E: wind × handedness pull-field components
+            "wind_to_rf_component", "wind_to_lf_component",
             "home_score", "away_score",
-            # Step 9: external game-info statics from MLB Stats API live feed
-            # (game_duration_minutes + weather_condition dropped May 2026:
-            # post-game-only / Open-Meteo more reliable, respectively.)
-            "attendance", "day_night",
-            "venue_id", "venue_name", "venue_capacity", "venue_surface",
-            "venue_roof_type", "venue_elevation_ft", "venue_latitude",
-            "venue_longitude", "venue_timezone",
-            "venue_lf_line_ft", "venue_lf_ft", "venue_lcf_ft", "venue_cf_ft",
-            "venue_rcf_ft", "venue_rf_ft", "venue_rf_line_ft",
-            # ump_1b_id / ump_2b_id / ump_3b_id dropped May 2026 — only HP
-            # umpire signals K-rate.
-            "ump_hp_id", "ump_hp_name",
+            # Step 9: venue identity (static dimensions in venue_dim).
+            "venue_id", "venue_name",
             "home_catcher_id", "away_catcher_id",
             # Step 10: per-pitcher boxscore detail (post-game external)
             "home_starter_pitch_count", "home_starter_outs_recorded",
@@ -308,40 +322,20 @@ class TestHistoricalSqliteSchemaContract:
             "home_bullpen_pitch_count",
             "away_bullpen_pitchers_used", "away_bullpen_outs_recorded",
             "away_bullpen_pitch_count",
-            # Step 13: actual weather at first pitch from Open-Meteo Archive
-            "actual_temperature_f", "actual_wind_speed_mph",
-            "actual_wind_direction_deg", "actual_precipitation_mm",
-            "actual_humidity_pct", "actual_pressure_hpa",
-            "actual_cloud_cover_pct",
-            # Step 14: per-team post-game box-score totals.  innings_played
-            # and home/away_team_runs dropped May 2026 (~95% are 9; the
-            # latter duplicate home_score/away_score).
-            "home_team_hits", "home_team_doubles",
-            "home_team_triples", "home_team_hr",
-            "home_team_walks", "home_team_strikeouts",
-            "home_team_left_on_base", "home_team_stolen_bases",
-            "home_team_errors",
-            "away_team_hits", "away_team_doubles",
-            "away_team_triples", "away_team_hr",
-            "away_team_walks", "away_team_strikeouts",
-            "away_team_left_on_base", "away_team_stolen_bases",
-            "away_team_errors",
-            # Step 16: as-of-slate-date team standings snapshot.
-            # run_differential and winning_pct dropped May 2026 — pure
-            # derivations of runs_scored − runs_allowed and W / (W+L).
+            # Per-team post-game box-score totals (HR + hits only;
+            # doubles/triples/walks/SO/LOB/SB/errors dropped May 2026 — too
+            # noisy at single-game granularity).
+            "home_team_hits", "home_team_hr",
+            "away_team_hits", "away_team_hr",
+            # As-of-slate-date team standings snapshot (streak / division_rank
+            # / league_rank / W-L dropped May 2026 — autocorrelated /
+            # slow-moving / derivable).
             "home_team_games_back", "home_team_runs_scored",
             "home_team_runs_allowed",
-            "home_team_streak", "home_team_division_rank",
-            "home_team_league_rank", "home_team_home_record",
-            "home_team_away_record",
+            "home_team_home_record", "home_team_away_record",
             "away_team_games_back", "away_team_runs_scored",
             "away_team_runs_allowed",
-            "away_team_streak", "away_team_division_rank",
-            "away_team_league_rank", "away_team_home_record",
-            "away_team_away_record",
-            # (Step 17 mound-visits + ABS-challenges columns dropped May
-            # 2026 — caps of 5 and 2 respectively give too narrow a range
-            # for any predictive lift.)
+            "away_team_home_record", "away_team_away_record",
         },
         "player_slate": {
             "slate_date", "mlb_id", "player_name", "team", "position",
@@ -386,6 +380,18 @@ class TestHistoricalSqliteSchemaContract:
             "dfs_projected_ownership_pct", "dfs_projection_source",
             # Tier 3 D10: vendor projected fantasy points
             "vendor_projected_points", "vendor_projection_source",
+            # Phase C: pitcher batted-ball profile + velocity trend
+            "pitcher_gb_pct", "pitcher_fb_pct", "pitcher_ld_pct", "pitcher_iffb_pct",
+            "pitcher_velo_trend_3start",
+            # Phase E: pitcher TTO + inning splits
+            "pitcher_tto1_woba_against", "pitcher_tto2_woba_against",
+            "pitcher_tto3_woba_against",
+            "pitcher_woba_inning_1", "pitcher_woba_inning_2_3",
+            "pitcher_woba_inning_4_6", "pitcher_woba_inning_7plus",
+            # Phase E: player rest + BvP shrunken + IL flag + BABIP delta
+            "player_consecutive_starts", "player_days_since_rest",
+            "bvp_woba_vs_starter", "bvp_pa_count_vs_starter",
+            "is_fresh_off_il", "babip_delta_30day",
         },
         "player_game_log": {
             "rowid_seq", "slate_date", "mlb_id", "game_date",
@@ -405,11 +411,15 @@ class TestHistoricalSqliteSchemaContract:
             "mlb_debut_date", "height_in", "weight_lb", "primary_position_code",
             "first_observed_date", "last_observed_date", "observed_at",
         },
-        # Tier 1 D1: HP umpire historical K%/BB% tendencies
-        "umpire_dim": {
-            "ump_id", "season", "ump_name", "games_called", "called_strike_pct",
-            "k_rate_vs_league", "bb_rate_vs_league", "x_runs_above_avg",
-            "observed_at",
+        # Phase D: per-venue slowly-changing dimensions
+        "venue_dim": {
+            "venue_id", "venue_name", "venue_capacity", "venue_surface",
+            "venue_roof_type", "venue_elevation_ft", "venue_latitude",
+            "venue_longitude", "venue_timezone",
+            "venue_lf_line_ft", "venue_lf_ft", "venue_lcf_ft", "venue_cf_ft",
+            "venue_rcf_ft", "venue_rf_ft", "venue_rf_line_ft", "observed_at",
+            # Phase E: stadium orientation for wind-projection math
+            "hp_to_cf_azimuth_deg",
         },
         # Tier 3 D12: per-batted-ball Statcast for HV games
         "statcast_pa": {

@@ -40,6 +40,7 @@ os.environ.setdefault("BO_CURRENT_SEASON", "2026")
 os.environ.setdefault("BO_ODDS_API_KEY", "backfill-catcher-framing-stub")
 
 from app.core import historical_db  # noqa: E402
+from scripts._backfill_common import safe_float as _safe_float  # noqa: E402
 
 CACHE_DIR = ROOT / "scripts" / "output" / ".catcher_framing_cache"
 HTTP_TIMEOUT = 30
@@ -56,28 +57,32 @@ def _fetch_leaderboard(season: int) -> dict[int, dict]:
             return {int(k): v for k, v in json.loads(cache_file.read_text()).items()}
         except json.JSONDecodeError:
             pass
-    # Savant CSV download endpoint — same machinery refresh_statcast.py uses
+    # Savant CSV endpoint — verified 2026 schema.  Columns: id, name, pitches,
+    # rv_tot (total run value from framing), pct_tot (overall strike rate above
+    # average), then per-zone breakdowns (rv_11..rv_19 / pct_11..pct_19).
     url = (
         "https://baseballsavant.mlb.com/leaderboard/catcher-framing"
-        f"?season={season}&min_called_pitch=100&csv=true"
+        f"?year={season}&team=&min=q&sort=4,1&csv=true"
     )
     try:
-        r = requests.get(url, timeout=HTTP_TIMEOUT)
+        r = requests.get(url, timeout=HTTP_TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200:
             log.warning("framing leaderboard fetch returned %s", r.status_code)
             return {}
-        reader = csv.DictReader(io.StringIO(r.text))
+        # Savant CSVs are emitted with a UTF-8 BOM that breaks DictReader's
+        # column name match if not stripped.
+        reader = csv.DictReader(io.StringIO(r.text.lstrip("﻿")))
         out: dict[int, dict] = {}
         for row in reader:
             try:
-                pid = int(row.get("player_id") or row.get("mlb_id") or 0)
+                pid = int(row.get("id") or row.get("player_id") or row.get("mlb_id") or 0)
             except ValueError:
                 continue
             if pid <= 0:
                 continue
             out[pid] = {
-                "framing_runs": _safe_float(row.get("runs_extra_strikes")),
-                "framing_strike_rate": _safe_float(row.get("strike_rate_above_average")),
+                "framing_runs": _safe_float(row.get("rv_tot") or row.get("runs_extra_strikes")),
+                "framing_strike_rate": _safe_float(row.get("pct_tot") or row.get("strike_rate_above_average")),
             }
     except Exception as e:
         log.warning("framing leaderboard fetch failed: %s", e)
@@ -85,15 +90,6 @@ def _fetch_leaderboard(season: int) -> dict[int, dict]:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(json.dumps({str(k): v for k, v in out.items()}))
     return out
-
-
-def _safe_float(v):
-    if v is None or v == "":
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
 
 
 def main() -> int:

@@ -39,6 +39,7 @@ os.environ.setdefault("BO_CURRENT_SEASON", "2026")
 os.environ.setdefault("BO_ODDS_API_KEY", "backfill-pitcher-boxscore-stub")
 
 from app.core import historical_db  # noqa: E402
+from scripts._backfill_common import safe_int as _safe_int  # noqa: E402
 
 CACHE_DIR = ROOT / "scripts" / "output" / ".game_externals_cache"
 MLB_API = "https://statsapi.mlb.com/api/v1.1"
@@ -65,15 +66,6 @@ def fetch_game(game_pk: int) -> dict | None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(r.text)
     return r.json()
-
-
-def _safe_int(v):
-    if v is None or v == "":
-        return None
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return None
 
 
 def _ip_to_outs(ip_value) -> int | None:

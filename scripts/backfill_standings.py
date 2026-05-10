@@ -103,13 +103,13 @@ def fetch_standings(slate_date: str, season: int = 2026) -> dict:
             # both are pure derivations (runs_scored − runs_allowed and
             # W / (W+L)) that were dropped from slate_game in the May 2026
             # cleanup sweep.
+            # streak / division_rank / league_rank dropped in May 2026
+            # Phase D — autocorrelated with l10_wins / games_back, and
+            # too slow-moving to carry independent DFS signal.
             out[abbr.upper()] = {
                 "games_back": _safe_float(tr.get("gamesBack")),
                 "runs_scored": _safe_int(tr.get("runsScored")),
                 "runs_allowed": _safe_int(tr.get("runsAllowed")),
-                "streak_code": (tr.get("streak") or {}).get("streakCode"),
-                "division_rank": _safe_int(tr.get("divisionRank")),
-                "league_rank": _safe_int(tr.get("leagueRank")),
                 "home_record": f"{home_rec.get('wins', '?')}-{home_rec.get('losses', '?')}" if home_rec else None,
                 "away_record": f"{away_rec.get('wins', '?')}-{away_rec.get('losses', '?')}" if away_rec else None,
             }
@@ -187,16 +187,9 @@ def main() -> int:
                 continue
             update_dict = {}
             for k, v in home.items():
-                # Map streak_code → streak column
-                if k == "streak_code":
-                    update_dict["home_team_streak"] = v
-                else:
-                    update_dict[f"home_team_{k}"] = v
+                update_dict[f"home_team_{k}"] = v
             for k, v in away.items():
-                if k == "streak_code":
-                    update_dict["away_team_streak"] = v
-                else:
-                    update_dict[f"away_team_{k}"] = v
+                update_dict[f"away_team_{k}"] = v
             historical_db.update_slate_game_columns(
                 conn, t["slate_date"], t["game_pk"], update_dict,
             )

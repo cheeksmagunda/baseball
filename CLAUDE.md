@@ -318,36 +318,69 @@ Net effect: a 15-game slate with first pitches spanning 17:35–22:05 ET produce
 
 Current coverage (as of 2026-05-10): **43 slates, 2026-03-25 → 2026-05-07**.
 
-**Canonical store: `data/historical.db`** (10 SQLite tables — see schema in `app/core/historical_db.py::SCHEMA_DDL`).  The 5 CSV/JSON files in `/data/` are derived exports refreshed automatically by every writer (the daily scraper, the Step-3 backfill scripts, the Step-9-18 external backfills, and the May 2026 cleanup-and-add Tier 1-3 backfills).  Calibration / audit scripts read through the SQLite store; the CSVs remain on disk for ad-hoc inspection.
+**Canonical store: `data/historical.db`** (10 SQLite tables — see schema in `app/core/historical_db.py::SCHEMA_DDL`).  The 5 CSV/JSON files in `/data/` are derived exports refreshed automatically by every writer.  Calibration / audit scripts read through the SQLite store; the CSVs remain on disk for ad-hoc inspection.
 
-### May 2026 cleanup-and-add sweep
+### May 2026 sweeps (Phases A through E + Tier 1-3 + Phase C + DRY)
 
-Three concurrent changes against the post-Step-18 baseline:
+Five concurrent change waves against the post-Step-18 baseline.  Every external scrape source is **free** and **fully populated** on the corpus — no paid-API tier required.
 
-1. **Cleanup — pure derivations dropped** from `slate_game` (winner / loser / winner_score / loser_score / home_team_runs / away_team_runs / home_team_run_differential / away_team_run_differential / home_team_winning_pct / away_team_winning_pct) and from `label_event` (label_types `total_value`, `avg_draft_slot`, `avg_draft_mult`, `avg_draft_tv`, `highest_draft_tv`, `most_common_slot`).  All recomputable from siblings already on the row.  `winner` etc. are still emitted into `historical_slate_results.json` on export — derived inline from `home_team`/`away_team`/`home_score`/`away_score`.  `total_value` recomputable from `real_score × (2 + card_boost)` — calibration scripts that read it now compute inline.
-2. **Cleanup — weak / actionably-zero signals dropped** from `slate_game` (`weather_condition`, `game_duration_minutes`, `innings_played`, `home_mound_visits_used` / `away_mound_visits_used` / `home_abs_challenges_*` / `away_abs_challenges_*`, `ump_1b_id` / `ump_2b_id` / `ump_3b_id`) and from `player_slate` (`jersey_number`).  All zero readers; signal-cost ratio too low to justify storage.  `scripts/backfill_game_meta.py` deleted (all six of its outputs were dropped).
-3. **Phase C — slowly-changing dimensions lifted to `player_dim`.** 8 attributes (bat_side / pitch_hand / birth_date / birth_country / mlb_debut_date / height_in / weight_lb / primary_position_code) moved from per-(slate_date, mlb_id) snapshot on `player_slate` to per-mlb_id `player_dim` (1644 × 8 = 13,152 cells → 399 × 8 = 3,192 cells, ~75% storage reduction).  `scripts/audit_player_dim_drift.py` documents the drift-audit path for future cache refreshes.
+1. **Phase A cleanup — pure derivations dropped** from `slate_game` (winner / loser / winner_score / loser_score / home_team_runs / home_team_run_differential / home_team_winning_pct + away mirrors) and from `label_event` (`total_value` + 5 draft-shape aggregates).  All recomputable from siblings on the row; calibration scripts compute inline.
+2. **Phase B cleanup — weak signals dropped** from `slate_game` (`weather_condition`, `game_duration_minutes`, `innings_played`, mound visits, ABS challenges, `ump_1b_id` / `ump_2b_id` / `ump_3b_id`) and from `player_slate` (`jersey_number`).  Signal-cost ratio too low to justify storage.
+3. **Phase C dimension lift — `player_dim`.** 8 slowly-changing attributes (bat_side / pitch_hand / birth_date / birth_country / mlb_debut_date / height_in / weight_lb / primary_position_code) moved from per-(slate_date, mlb_id) snapshot to per-mlb_id `player_dim` (~75% storage reduction).
+4. **Tier 1-3 external-data expansion** — 13 signal additions across plate-discipline / regression flags / rolling splits / DFS ownership / vendor projections / per-batted-ball Statcast / per-pitch-type wOBA / pitcher rest / Vegas line movement / per-catcher framing.  Every source verified populated; **`backfill_umpire_tendencies` deleted** (2026 ABS Challenge System compresses umpire signal too far for the storage cost).
+5. **Phase D late-2026-05 cleanup + Phase C feature add.**
+   - Lifted 14 venue static columns from `slate_game` (per-game duplication × 80+ games per venue) into a new **`venue_dim`** table — 31 venues, joined by `venue_id`.
+   - Dropped from `slate_game` (50 columns total): `park_team` (synonym for `home_team`), home/away `team_record_w/l` (duplicate of standings home/away_record), home/away `team_streak` / `division_rank` / `league_rank` (autocorrelated / slow-moving), home/away post-game team-box noise (doubles / triples / walks / SO / LOB / SB / errors — kept hits + HR), `actual_*` weather (post-game forecast-validation, not predictive), `attendance` + `day_night` (low DFS signal-cost), and `ump_hp_id` / `ump_hp_name`.  Dropped `umpire_dim` table.
+   - Added 16 new **predictive** columns to `slate_game`: `park_hr_factor_lhb` / `park_hr_factor_rhb` (Savant park factors split by batter side), `home/away_bullpen_lhp_pitches_2d` / `rhp_pitches_2d` (bullpen handedness usage), `home/away_lineup_lhb_count` / `rhb_count` / `switch_count` (starting-lineup composition by batter side), `home/away_pythag_gap` (actual W% − pythagorean W%), `home/away_team_defense_drs` (team OAA × 0.8 runs-saved estimate).
+   - Added 6 new **predictive** columns to `player_slate`: `pitcher_gb_pct` / `pitcher_fb_pct` / `pitcher_ld_pct` / `pitcher_iffb_pct` (batted-ball profile from Statcast `bb_type`), `pitcher_velo_trend_3start` (last-3-starts FB velo minus season FB velo), and `z_contact_pct` is now populated (computed from Statcast in-zone swing/miss data, since Savant percentile-rankings doesn't carry it).  `hr_fb_at_slate` populated (was empty stub; computed from Statcast `launch_angle ≥ 25°` events).
+   - New `label_event` type: `transaction` (1274 rows) — IL moves / call-ups / option / outright / trade / etc. for any slate-relevant `mlb_id` within 14 days of the move.  Sourced from MLB Stats API `/transactions`.
+   - **Vegas line movement** flipped from paid Odds API tier to **SportsbookReview scrape** (parses embedded `__NEXT_DATA__` JSON for opening + current lines per book; consensus-median across books).  447/551 games populated.
+
+6. **Phase E batter sweep (May 2026).**  13 new batter-side predictive features.  Player props were investigated and dropped from the historical scope — every modern sportsbook gates batter-prop history behind paid tiers as of 2026; `vendor_projected_points` (already populated 1277/1644) covers the same role since vendor projections ARE consensus props translated to fantasy points.  The 13 features that DID ship:
+   - **Air density composite** — `humidity_pct` + `pressure_hpa` + computed `air_density_ratio` (Tetens vapor-pressure + ideal-gas).  HR distance scales directly with air density; Coors plays the way it does because of this.  Sourced from Open-Meteo Archive at first-pitch hour.
+   - **TTO penalty + inning splits** — per-pitcher wOBA-against bucketed by Times-Through-Order (1, 2, 3) and inning (1, 2-3, 4-6, 7+) from the bulk Statcast pull.
+   - **Travel fatigue** — `home/away_team_miles_traveled_72h` + `zones_crossed_24h` derived from each team's full season schedule (MLB Stats API `/schedule?teamId=`) and the `venue_dim.latitude/longitude` we already have.  No external HTTP cost beyond one schedule pull per team per season.
+   - **Wind × handedness** — `wind_to_rf_component` + `wind_to_lf_component` projected from the existing wind vector onto the HP→RF / HP→LF axes via a new `venue_dim.hp_to_cf_azimuth_deg` lookup.
+   - **Team L10 wOBA + RPG** — `home/away_team_woba_l10` + `rpg_l10` from the bulk Statcast pull.  Replaces `l10_wins` as an offense-momentum signal (a 7-3 team can have a dead bat).
+   - **Player consecutive starts + days since rest** — `player_consecutive_starts` + `player_days_since_rest` derived from `player_game_log`.
+   - **Bullpen LHP/RHP roster composition** — `home/away_bullpen_lhp_count` + `rhp_count` (distinct relievers in the trailing 14 days, broken down by hand).  Distinct from `bullpen_lhp_pitches_2d` (which is usage burn).
+   - **BvP shrunken wOBA** — `bvp_woba_vs_starter` + `bvp_pa_count_vs_starter`.  Bayesian-shrunk toward league average (α=50 PAs of league prior); 5-PA samples get 90% league-prior, 50-PA samples are 50/50, 200+ PAs get 80% batter-specific.
+   - **Schedule flags** — `is_getaway_day` + `is_day_after_night_game` (binary).
+   - **is_fresh_off_il** — 1 when the player has an IL-return / call-up transaction in the trailing 7 days; pulled from the existing `label_event[type=transaction]` rows.
+   - **babip_delta_30day** — rolling 30-day BABIP minus full-history BABIP.  Captures luck regression independently of the absolute BABIP level.
+
+7. **DRY: shared `scripts/_backfill_common.py` module.**  Consolidates the patterns that were previously duplicated across ~30 scripts: `safe_int` / `safe_float` parsers, the `bootstrap()` env-var setup, the `finalize()` post-success CSV-export hook, and the `read_savant_csv()` helper that strips Savant's UTF-8 BOM.  8 of the 13 scripts whose `_safe_int` / `_safe_float` defs had identical semantics were refactored to import from the shared module; the 4 with edge-case behavior (player_season_stats accepts `"-"`/`".---"` as None; player_game_logs returns 0 not None for missing; standings has `"-"` → 0.0 for division leader; player_platoon_splits has none) were left alone.
+
+8. **Phase F — script consolidation + bug fixes (May 2026).** Cut script count from 49 to 43 by merging redundant scripts and deleting obsolete CSV-first writers:
+   - **Bullpen merge**: `backfill_bullpen_rest.py` + `backfill_bullpen_handedness.py` + `backfill_bullpen_composition.py` → `backfill_bullpen.py`.  The merge fixed a real bug: the old rest derived totals from `slate_game.bullpen_pitch_count` (slate dates only) while handedness derived L/R from `player_game_log` (all games), causing 14/551 mismatches where total ≠ L+R.  Unified script uses ONE source so the totals are L+R exactly.
+   - **Rest merge**: `backfill_pitcher_rest.py` → folded into `backfill_player_rest.py`.  Now produces all three columns (`pitcher_rest_days` + `player_consecutive_starts` + `player_days_since_rest`) in one pass over `player_game_log`.
+   - **BABIP merge**: `backfill_regression_flags.py` + `backfill_babip_delta.py` → `backfill_babip_features.py`.  Single index over per-player game logs + bulk Statcast, all 5 BABIP-related columns produced in one pass.
+   - **Schedule features merge**: `backfill_travel_fatigue.py` + `backfill_schedule_flags.py` → `backfill_schedule_features.py`.  Both shared the team_schedule cache + venue_dim coords; merge eliminates duplicate cache loading.
+   - **Deleted obsolete CSV-first writers**: `backfill_v10_8_signals.py` / `backfill_pitcher_handedness.py` / `backfill_statcast_at_slate.py`.  Their target columns are now populated directly into the SQLite DB by the modern backfills; the old JSON-roundtrip path is dead.
+
+   **Bugs fixed by audit:**
+   - `is_getaway_day` and `is_day_after_night_game` were 0 across all 551 rows (schedule_flags couldn't resolve team abbreviations from the cache; fixed with explicit `team_id → abbr` MLB API lookup).
+   - `is_fresh_off_il` only flagged 9 of 1644 (used type-code `RTN` which doesn't appear in MLB API output; fixed by parsing transaction description text for "activated" / "recalled" / "selected the contract" keywords).
+   - 1187/1276 transaction rows were noise (`NUM` jersey-number changes); now filtered at ingest.  Transaction count cleanly reflects 87 real moves.
+   - 8 venue azimuths used the 45° fallback (lookup keyed by wrong venue_ids); fixed with verified azimuths against the actual venue_ids present in `venue_dim`.
 
 CSV / test contracts updated to match.  The full `pytest tests/` suite (275 tests) passes; `scripts/audit_live_isolation.py` clean; `scripts/validate_ingest.py --date 2026-05-07` passes.  Live pipeline (`app/`) untouched — this is purely historical-store hygiene plus expansion.
 
-### Tier 1-3 external-data expansion (May 2026)
-
-13 new external signals across three priority tiers — see `scripts/backfill_*.py` for the per-source backfill scripts.  All idempotent + per-source cached.  4 of 13 ship verified end-to-end on the existing corpus (D3 / D6 / D7 + the cleanup-side schema migration).  The remaining 9 are functional scripts behind external HTTP / paid API surfaces; they write 0 rows and log a warning when the source is unreachable.  Schema is in place either way.
-
-**SQLite tables** (10 total: 6 from the migration, 1 from Phase C, 3 from Tier 1-3):
+**SQLite tables** (10 total):
 
 | Table | Rows | Cols | Role |
 |---|---|---|---|
 | `slate` | 43 | 7 | One per slate envelope: date, game_count, num_brawlers, season_stage, source, saved_at. |
-| `slate_game` | 551 | **146** | Per-game env signals + post-game outcomes.  PK `(slate_date, game_pk, game_number)`.  Down ~14 from the post-Step-18 peak of 160 after the May 2026 cleanup (10 dropped derivations from Phase A + 12 dropped weak signals from Phase B = 22 dropped, partially offset by 8 added: Tier 1 D4 opening line snapshot — 4 cols + Tier 2 D7 rolling bullpen pitch counts — 4 cols).  Same shape as before for venue static, HP umpire only, catcher, attendance, day/night, full per-team box-score line, per-starter pitching detail, bullpen aggregate, Open-Meteo actual hourly weather, as-of-date team standings. |
-| `player_slate` | 1644 | **69** | Per-(slate_date, mlb_id) identity + at-slate inputs.  Net +9 from the post-Step-18 peak of 60: Phase B dropped jersey_number + Phase C lifted 8 slowly-changing dims to `player_dim` (-9 cols), but Tier 1 D2 (per-catcher framing — 2 cols), Tier 1 D3 (pitcher_rest_days — 1 col), Tier 2 D5 (plate-discipline — 5 cols), Tier 2 D6 (BABIP / HR-FB regression — 4 cols), Tier 2 D8 (rolling-window handedness splits — 2 cols), Tier 2 D9 (DFS-site projected ownership — 2 cols), Tier 3 D10 (vendor projected fantasy points — 2 cols) added 18.  Same shape as before for OPS / ERA / WHIP / K9 / Statcast kinematics + xStats + season-aggregate platoon splits + batting_order_at_slate + arsenal_*_pct + sprint / OAA / bat-tracking. |
+| `slate_game` | 551 | **131** | Per-game env signals + post-game outcomes.  PK `(slate_date, game_pk, game_number)`.  Net of Phase D drops (-50) + Phase C adds (+16) + Phase E adds (+19: air density 3, travel 4, wind×hand 2, team L10 4, bullpen comp 4, schedule flags 2). |
+| `player_slate` | 1644 | **87** | Per-(slate_date, mlb_id) identity + at-slate inputs.  Phase E added 13 (TTO 3, inning splits 4, rest 2, BvP 2, IL flag 1, BABIP delta 1) on top of Phase D's 6 (pitcher batted-ball + velo trend). |
+| `venue_dim` | 31 | 18 | Phase D venue static dimensions; Phase E added `hp_to_cf_azimuth_deg` for wind-projection math. |
 | `player_game_log` | 12290 | 21 | Prior-game outcomes per (slate_date, mlb_id, game_date) for the trailing 10-game window. |
-| `label_event` | 12577 | 7 | Typed/sourced/dated outcome labels.  `label_type` ∈ {real_score, card_boost, drafts, draft_count, injury_status, highest_value, most_popular, most_drafted_3x, winning_lineup_slot, box_score, **wpa**}.  May 2026 cleanup dropped `total_value` + 5 draft-shape aggregates (all recomputable on export); Tier 3 D11 added `wpa` (Win-Probability-Added per HV game from `scripts/backfill_wpa.py`). |
+| `label_event` | 14506 | 7 | Typed/sourced/dated outcome labels.  `label_type` ∈ {real_score, card_boost, drafts, draft_count, injury_status, highest_value, most_popular, most_drafted_3x, winning_lineup_slot, box_score, wpa, **transaction**}. |
 | `player_alias` | 0 | 5 | Side table for HV box-score identity recovery; populated only on demand. |
-| `player_dim` | 399 | 12 | **Phase C add (May 2026):** per-mlb_id slowly-changing dimensions.  Replaces 8 per-slate columns formerly on `player_slate`.  Populated by `scripts/backfill_player_externals.py`. |
-| `umpire_dim` | 0 | 9 | **Tier 1 D1 add:** HP umpire historical K%/BB% tendencies per (ump_id, season).  Populated by `scripts/backfill_umpire_tendencies.py` from Umpire Scorecards. |
-| `statcast_pa` | 0 | 11 | **Tier 3 D12 add:** per-batted-ball Statcast detail (exit velo, launch angle, x_woba, pitch type, result) for HV games by default.  Populated by `scripts/backfill_statcast_pa.py` from pybaseball. |
-| `batter_pitch_type_woba` | 0 | 6 | **Tier 3 D13 add:** per-batter, per-pitch-type wOBA crosstab.  Populated by `scripts/backfill_batter_pitch_type_splits.py` from Savant per-pitch-type leaderboards. |
+| `player_dim` | 399 | 12 | Per-mlb_id slowly-changing dimensions (handedness / birth / physicals / debut / position).  Populated by `scripts/backfill_player_externals.py`. |
+| `venue_dim` | 31 | 17 | **Phase D add (May 2026):** per-venue slowly-changing dimensions (capacity / surface / roof / elevation / lat-lon / fence-distances).  Joined by `venue_id`. |
+| `statcast_pa` | 2983 | 11 | Per-batted-ball Statcast detail (exit velo, launch angle, x_woba, pitch type, result) for HV games by default.  Populated by `scripts/backfill_statcast_pa.py` from the bulk Statcast pull. |
+| `batter_pitch_type_woba` | 7511 | 6 | Per-batter, per-pitch-type wOBA crosstab — derived from the bulk Statcast pull (no extra HTTP). |
 
 **Derived exports** (refreshed on every write to `data/historical.db`):
 
@@ -359,37 +392,63 @@ CSV / test contracts updated to match.  The full `pytest tests/` suite (275 test
 | `hv_player_game_stats.csv` | Calibration ground truth | 751 rows / 43 dates | `label_event WHERE label_type='box_score' JOIN player_slate` for identity columns (box-score values stored as JSON in `label_event.label_text`). |
 | `historical_player_game_logs.csv` | Calibration ground truth | 12290 rows / 41 dates | `player_game_log` ordered by `rowid_seq` (insertion order). |
 
-**External-data backfill scripts (Steps 9-18, May 2026)** — each pulls from a single public source, writes to SQLite directly, caches per-source under `scripts/output/.*_cache/`, and is idempotent (re-run → cache hit → no-op):
+**External-data backfill scripts** — each pulls from a single free public source, writes to SQLite directly, caches per-source under `scripts/output/.*_cache/`, and is idempotent (re-run → cache hit → no-op).
+
+Sources are all free and free of paid-tier gates: MLB Stats API, Baseball Savant (CSV + embedded JSON), Open-Meteo Archive, FantasyPros (HTML scrape), SportsbookReview (NEXT_DATA scrape), pybaseball (bulk Statcast pull, cached as parquet).
 
 | Script | Source | Schema target |
 |---|---|---|
-| `backfill_game_externals.py` | MLB Stats API gumbo `/api/v1.1/game/{pk}/feed/live` | slate_game venue / HP umpire / catcher / attendance / day_night |
+| `backfill_game_externals.py` | MLB Stats API gumbo `/api/v1.1/game/{pk}/feed/live` | slate_game venue_id/name + catcher; **venue_dim** static dimensions |
 | `backfill_pitcher_boxscore.py` | same gumbo cache | slate_game per-starter pitch_count / outs_recorded / hits/R/ER/BB/SO/HR + bullpen aggregate |
-| `backfill_team_boxscore.py` | same gumbo cache | slate_game per-team hits/HR/SO/BB/LOB/SB/errors |
+| `backfill_team_boxscore.py` | same gumbo cache | slate_game per-team hits + HR (post-Phase-D) |
 | `backfill_player_externals.py` | MLB Stats API `/api/v1/people?personIds=` (batched 50/req) | **player_dim** bat_side / pitch_hand / birth_date / mlb_debut_date / physicals / position |
-| `backfill_pitcher_arsenal.py` | Savant `statcast_pitcher_pitch_arsenal(arsenal_type='n_')` | player_slate arsenal_*_pct + arsenal_dominant_pitch (joins to player_dim for position filter) |
+| `backfill_pitcher_arsenal.py` | pybaseball `statcast_pitcher_pitch_arsenal` | player_slate arsenal_*_pct + arsenal_dominant_pitch |
 | `backfill_sprint_oaa.py` | Savant `statcast_sprint_speed` + `outs_above_average` CSV | player_slate sprint_speed_fps / hp_to_first_sec / OAA / fielding_runs_prevented |
-| `backfill_bat_tracking.py` | Savant bat-tracking leaderboard CSV | player_slate avg_bat_speed_mph / hard_swing_rate / swing_length_ft / squared_up / blast / swords |
-| `backfill_weather_actuals.py` | Open-Meteo `archive-api.open-meteo.com/v1/archive` | slate_game actual_temperature_f / wind / humidity / precip / pressure / cloud |
-| `backfill_standings.py` | MLB Stats API `/api/v1/standings?date=Y-M-D&hydrate=team` | slate_game per-team games_back / runs_scored / runs_allowed / streak / rank / home/away record |
+| `backfill_bat_tracking.py` | Savant bat-tracking leaderboard CSV | player_slate bat-tracking metrics |
+| `backfill_standings.py` | MLB Stats API `/api/v1/standings?date=Y-M-D&hydrate=team` | slate_game per-team games_back / runs_scored / runs_allowed / home-and-away record |
+| `backfill_catcher_framing.py` | Savant catcher-framing leaderboard CSV | player_slate framing_runs / framing_strike_rate (catchers only) |
+| `backfill_pitcher_rest.py` | derived from `player_game_log` | player_slate pitcher_rest_days |
+| `backfill_vegas_line_movement.py` | **SportsbookReview** `__NEXT_DATA__` scrape | slate_game opening_total / opening_*_moneyline / line_open_at |
+| `backfill_plate_discipline.py` | Savant percentile-rankings CSV | player_slate bb_pct / k_pct / o_swing_pct / sw_str_pct |
+| `backfill_z_contact_pct.py` | derived from bulk Statcast (in-zone swings) | player_slate z_contact_pct |
+| `backfill_regression_flags.py` | derived from `player_game_log` + bulk Statcast launch_angle | player_slate babip / hr_fb / regression flags |
+| `backfill_bullpen_rest.py` | derived from slate_game bullpen_pitch_count | slate_game home/away_bullpen_2d_pitches / 3d_pitches |
+| `backfill_recent_handedness_splits.py` | bulk Statcast pull (`scripts/_statcast_bulk.py`) | player_slate ops_vs_lhp_last_20 / ops_vs_rhp_last_20 |
+| `backfill_dfs_ownership.py` | FantasyPros MLB ownership scrape | player_slate dfs_projected_ownership_pct / dfs_projection_source |
+| `backfill_vendor_projections.py` | FantasyPros DK projections scrape | player_slate vendor_projected_points / vendor_projection_source |
+| `backfill_wpa.py` | bulk Statcast `delta_home_win_exp` | label_event `wpa` |
+| `backfill_statcast_pa.py` | bulk Statcast pull | `statcast_pa` table (HV-only by default; `--all-games` for full corpus) |
+| `backfill_batter_pitch_type_splits.py` | bulk Statcast pull | `batter_pitch_type_woba` table |
+| `backfill_pitcher_batted_ball.py` | bulk Statcast `bb_type` | player_slate pitcher_gb_pct / fb_pct / ld_pct / iffb_pct |
+| `backfill_pitcher_velo_trend.py` | bulk Statcast `release_speed` (FF only) | player_slate pitcher_velo_trend_3start |
+| `backfill_park_hand_factors.py` | Savant statcast-park-factors (LHB / RHB split) | slate_game park_hr_factor_lhb / park_hr_factor_rhb |
+| `backfill_bullpen_handedness.py` | derived from `player_game_log` JOIN player_dim.pitch_hand | slate_game home/away_bullpen_lhp/rhp_pitches_2d |
+| `backfill_lineup_handedness_and_pythag.py` | derived from player_dim.bat_side + standings | slate_game lineup hand counts + pythag_gap |
+| `backfill_team_defense.py` | derived from per-player OAA aggregate | slate_game home/away_team_defense_drs |
+| `backfill_transactions.py` | MLB Stats API `/transactions` | label_event `transaction` |
+| `backfill_air_density.py` | Open-Meteo Archive (humidity + pressure) | slate_game humidity_pct / pressure_hpa / air_density_ratio |
+| `backfill_pitcher_tto_and_inning.py` | bulk Statcast (at_bat_number / inning) | player_slate TTO + inning-bucket wOBA-against |
+| `backfill_team_l10_offense.py` | bulk Statcast (team-game wOBA + runs) | slate_game team_woba_l10 / team_rpg_l10 |
+| `backfill_player_rest.py` | derived from `player_game_log` | player_slate consecutive_starts / days_since_rest |
+| `backfill_bullpen_composition.py` | derived from `player_game_log` JOIN player_dim | slate_game bullpen LHP/RHP counts |
+| `backfill_bvp_shrunken.py` | bulk Statcast (per-PA, shrunken α=50) | player_slate bvp_woba_vs_starter / bvp_pa_count |
+| `backfill_travel_fatigue.py` | MLB Stats API `/schedule?teamId=` + venue_dim coords | slate_game miles_traveled_72h / zones_crossed_24h |
+| `backfill_venue_orientation.py` | Hardcoded compass-azimuth lookup (31 venues) | venue_dim hp_to_cf_azimuth_deg |
+| `backfill_wind_handedness.py` | derived from wind_dir + venue_dim azimuth | slate_game wind_to_rf_component / wind_to_lf_component |
+| `backfill_schedule_flags.py` | derived from team_schedule cache | slate_game is_getaway_day / is_day_after_night_game |
+| `backfill_il_return_flag.py` | derived from label_event[type=transaction] | player_slate is_fresh_off_il |
+| `backfill_babip_delta.py` | derived from `player_game_log` | player_slate babip_delta_30day |
 
-**Tier 1-3 backfill scripts (May 2026 cleanup-and-add sweep)** — same idempotent + cached posture:
+**DRY layer — `scripts/_backfill_common.py`:**
 
-| Script | Tier | Source | Schema target |
-|---|---|---|---|
-| `backfill_umpire_tendencies.py` | 1 D1 | Umpire Scorecards `/api/umpire/{id}` | new `umpire_dim` table |
-| `backfill_catcher_framing.py` | 1 D2 | Savant catcher-framing leaderboard CSV | player_slate framing_runs / framing_strike_rate (catchers only) |
-| `backfill_pitcher_rest.py` | 1 D3 | derived from `player_game_log` (no external call) | player_slate pitcher_rest_days |
-| `backfill_vegas_line_movement.py` | 1 D4 | The Odds API `/v4/historical/sports/baseball_mlb/odds` (paid tier) | slate_game opening_total / opening_*_moneyline / line_open_at |
-| `backfill_plate_discipline.py` | 2 D5 | Savant batter expected-statistics CSV | player_slate bb_pct / k_pct / o_swing_pct / z_contact_pct / sw_str_pct |
-| `backfill_regression_flags.py` | 2 D6 | derived from `player_game_log` | player_slate babip_at_slate / babip_regression_flag |
-| `backfill_bullpen_rest.py` | 2 D7 | derived from `slate_game.{home,away}_bullpen_pitch_count` | slate_game home/away_bullpen_2d_pitches / 3d_pitches |
-| `backfill_recent_handedness_splits.py` | 2 D8 | pybaseball `statcast_batter` filtered by p_throws | player_slate ops_vs_lhp_last_20 / ops_vs_rhp_last_20 |
-| `backfill_dfs_ownership.py` | 2 D9 | FantasyPros MLB ownership scrape | player_slate dfs_projected_ownership_pct / dfs_projection_source |
-| `backfill_vendor_projections.py` | 3 D10 | FantasyPros DK projections scrape | player_slate vendor_projected_points / vendor_projection_source |
-| `backfill_wpa.py` | 3 D11 | pybaseball statcast_batter `delta_home_win_exp` per HV game | label_event `wpa` |
-| `backfill_statcast_pa.py` | 3 D12 | pybaseball `statcast_batter` per (mlb_id, game_date) | new `statcast_pa` table (HV-only by default; `--all-games` for full corpus) |
-| `backfill_batter_pitch_type_splits.py` | 3 D13 | Savant per-pitch-type batter splits | new `batter_pitch_type_woba` table |
+| Helper | Replaces |
+|---|---|
+| `bootstrap(odds_key_stub)` | `os.environ.setdefault(...)` × 2 + `sys.path.insert(0, ROOT)` boilerplate |
+| `finalize(rc)` | The `if rc == 0 and not HISTORICAL_DB: from scripts.export_historical_csvs import export_all; export_all()` footer |
+| `safe_int(v)` / `safe_float(v)` | Local `_safe_int` / `_safe_float` defs duplicated in 13 scripts (8 refactored) |
+| `read_savant_csv(text)` | `csv.DictReader(io.StringIO(text.lstrip("﻿")))` — strips Savant's BOM |
+
+**Shared bulk Statcast cache (`scripts/_statcast_bulk.py`)** — one season-wide pybaseball pull (~30s, ~200k events) cached as parquet at `scripts/output/.recent_handedness_cache/statcast_<season>.parquet`.  Six backfills consume it: recent handedness splits, statcast_pa, wpa, batter_pitch_type_splits, regression flags (HR/FB), pitcher batted-ball, pitcher velo trend, and z_contact_pct.
 
 **Limitations on point-in-time fidelity** — explicitly named so a future calibration sweep doesn't conflate them with bugs:
 - `ops_vs_lhp_at_slate` / `ops_vs_rhp_at_slate` — MLB API does not honour `endDate` on `stats=statSplits`.  We backfill the season-total split (a single value per player, repeated across every slate the player appears on).  Approximation is exact for the most recent slates and slightly stale for late-March games.
@@ -428,17 +487,53 @@ Daily workflow (after a slate completes):
 .venv/bin/python scripts/backfill_slate_results_and_hv_stats.py         # box scores from MLB API
 .venv/bin/python scripts/backfill_player_season_stats_at_slate.py       # OPS/ERA/WHIP/K9 at the time of the slate
 
-# 3. Step-9-18 external-data backfills (~135 columns, idempotent + cached)
-.venv/bin/python scripts/backfill_game_externals.py                     # venue / umpire / catcher / attendance
-.venv/bin/python scripts/backfill_pitcher_boxscore.py                   # per-starter pitch count + outs + hits/R/ER/BB/SO/HR
-.venv/bin/python scripts/backfill_team_boxscore.py                      # per-team hits/HR/SO/BB/LOB/SB/errors
-.venv/bin/python scripts/backfill_game_meta.py                          # mound visits + ABS challenges
-.venv/bin/python scripts/backfill_player_externals.py                   # handedness / birth / debut / physicals
-.venv/bin/python scripts/backfill_pitcher_arsenal.py                    # pitch arsenal % per pitcher
+# 3. External-data backfills (free sources only; idempotent + cached)
+# Identity / static dims
+.venv/bin/python scripts/backfill_game_externals.py                     # venue identity + venue_dim + catcher
+.venv/bin/python scripts/backfill_player_externals.py                   # player_dim handedness / birth / physicals
+.venv/bin/python scripts/backfill_venue_orientation.py                  # venue_dim HP→CF azimuth (one-shot lookup)
+
+# Per-game env (post-game observables + standings)
+.venv/bin/python scripts/backfill_pitcher_boxscore.py                   # per-starter pitch count + boxscore
+.venv/bin/python scripts/backfill_team_boxscore.py                      # per-team hits + HR
+.venv/bin/python scripts/backfill_standings.py                          # GB / runs / W-L records as-of-date
+.venv/bin/python scripts/backfill_air_density.py                        # humidity + pressure + air-density ratio
+.venv/bin/python scripts/backfill_vegas_line_movement.py                # SBR opening lines
+.venv/bin/python scripts/backfill_park_hand_factors.py                  # park HR factors L/R split
+.venv/bin/python scripts/backfill_wind_handedness.py                    # wind-to-RF / wind-to-LF (depends on venue_orientation)
+.venv/bin/python scripts/backfill_schedule_features.py                  # travel_fatigue + schedule flags (merged)
+
+# Player-aggregate signals (Savant + bulk Statcast)
+.venv/bin/python scripts/backfill_pitcher_arsenal.py                    # arsenal_*_pct per pitcher
 .venv/bin/python scripts/backfill_sprint_oaa.py                         # sprint speed + OAA per batter
-.venv/bin/python scripts/backfill_bat_tracking.py                       # bat-tracking metrics per batter
-.venv/bin/python scripts/backfill_weather_actuals.py                    # actual hourly weather (Open-Meteo Archive)
-.venv/bin/python scripts/backfill_standings.py                          # GB / run differential / streak / rank
+.venv/bin/python scripts/backfill_bat_tracking.py                       # bat-tracking per batter
+.venv/bin/python scripts/backfill_catcher_framing.py                    # catcher framing per catcher
+.venv/bin/python scripts/backfill_plate_discipline.py                   # bb_pct/k_pct/o_swing/sw_str (Savant)
+.venv/bin/python scripts/backfill_z_contact_pct.py                      # Z-Contact% (bulk Statcast)
+.venv/bin/python scripts/backfill_recent_handedness_splits.py           # rolling 20-day OPS splits (bulk Statcast)
+.venv/bin/python scripts/backfill_pitcher_batted_ball.py                # GB%/FB%/LD%/IFFB% (bulk Statcast)
+.venv/bin/python scripts/backfill_pitcher_velo_trend.py                 # last-3-starts FF velo delta
+.venv/bin/python scripts/backfill_pitcher_tto_and_inning.py             # TTO + inning splits per pitcher
+.venv/bin/python scripts/backfill_bvp_shrunken.py                       # career BvP wOBA shrunken (α=50)
+
+# Team rollups (derived; depend on player-aggregate signals being populated)
+.venv/bin/python scripts/backfill_bullpen.py                            # 2d/3d totals + L/R + 14d roster (merged)
+.venv/bin/python scripts/backfill_team_l10_offense.py                   # team L10 wOBA + RPG
+.venv/bin/python scripts/backfill_team_defense.py                       # team defense DRS estimate (OAA × 0.8)
+.venv/bin/python scripts/backfill_lineup_handedness_and_pythag.py       # lineup composition + pythag gap
+
+# Per-player derived
+.venv/bin/python scripts/backfill_player_rest.py                        # pitcher_rest + consecutive_starts + days_since (merged)
+.venv/bin/python scripts/backfill_babip_features.py                     # babip + hr_fb + delta + flags (merged)
+.venv/bin/python scripts/backfill_dfs_ownership.py                      # FantasyPros ownership
+.venv/bin/python scripts/backfill_vendor_projections.py                 # FantasyPros DK projection points
+
+# Outcome labels + side tables
+.venv/bin/python scripts/backfill_transactions.py                       # IL/call-up label_events
+.venv/bin/python scripts/backfill_il_return_flag.py                     # is_fresh_off_il (depends on transactions)
+.venv/bin/python scripts/backfill_wpa.py                                # WPA per HV game
+.venv/bin/python scripts/backfill_statcast_pa.py                        # per-PA Statcast for HV games
+.venv/bin/python scripts/backfill_batter_pitch_type_splits.py           # per-pitch-type wOBA crosstab
 
 # 4. Verify
 .venv/bin/python scripts/validate_ingest.py --date YYYY-MM-DD           # lockstep + duplicate check

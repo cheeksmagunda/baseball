@@ -42,6 +42,7 @@ os.environ.setdefault("BO_CURRENT_SEASON", "2026")
 os.environ.setdefault("BO_ODDS_API_KEY", "backfill-player-externals-stub")
 
 from app.core import historical_db  # noqa: E402
+from scripts._backfill_common import safe_int as _safe_int  # noqa: E402
 
 CACHE_DIR = ROOT / "scripts" / "output" / ".player_externals_cache"
 MLB_API = "https://statsapi.mlb.com/api/v1"
@@ -51,15 +52,6 @@ MAX_WORKERS = 8
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=logging.INFO)
 log = logging.getLogger("backfill_player_externals")
-
-
-def _safe_int(v):
-    if v is None or v == "":
-        return None
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return None
 
 
 def _height_to_inches(height_str: str | None) -> int | None:

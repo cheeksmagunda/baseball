@@ -3,20 +3,17 @@
 Tier 3 D11 of the May 2026 cleanup-and-add sweep.
 
 Writes to label_event(label_type='wpa') — one row per HV player per game,
-label_value = WPA.  Storing as a label_event rather than a column on
+label_value = WPA contribution (sum of |delta_home_win_exp| while batter
+hit).  Storing as a label_event rather than a column on
 hv_player_game_stats keeps the existing CSV header stable and lets WPA
 land for non-HV players too if a future calibration wants it.
 
-Source: pybaseball's `playerid_lookup` + `statcast_batter` provide
-per-pitch WPA via `delta_home_win_exp` cumulative; sum across the game
-to get player WPA contribution.  Free.
+Source: bulk Statcast season pull (Baseball Savant via pybaseball),
+shared with backfill_recent_handedness_splits and statcast_pa.
 
 Calibration unlock: separates "1-run game in the 9th inning" leverage
 HV (repeatable) from "blowout in the 3rd" volume HV (luck-driven).
 Both produce HV but only one is calibration-stable.
-
-Operates on rows already flagged is_highest_value to keep the corpus
-small.  Cache: scripts/output/.wpa_cache/<slate_date>_<mlb_id>.json.
 
 Usage:
     python scripts/backfill_wpa.py
@@ -24,7 +21,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 import sys
@@ -38,56 +34,46 @@ os.environ.setdefault("BO_CURRENT_SEASON", "2026")
 os.environ.setdefault("BO_ODDS_API_KEY", "backfill-wpa-stub")
 
 from app.core import historical_db  # noqa: E402
-
-CACHE_DIR = ROOT / "scripts" / "output" / ".wpa_cache"
+from scripts._statcast_bulk import load_bulk_statcast  # noqa: E402
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=logging.INFO)
 log = logging.getLogger("backfill_wpa")
 
 
-def _fetch_wpa(mlb_id: int, game_date: str) -> float | None:
-    cache_file = CACHE_DIR / f"{game_date}_{mlb_id}.json"
-    if cache_file.exists():
-        try:
-            return json.loads(cache_file.read_text()).get("wpa")
-        except json.JSONDecodeError:
-            pass
-    try:
-        from pybaseball import statcast_batter
-    except ImportError:
-        return None
-    try:
-        df = statcast_batter(game_date, game_date, mlb_id)
-    except Exception:
-        return None
-    if df is None or df.empty:
-        return None
-    if "delta_home_win_exp" not in df.columns:
-        return None
-    valid = df[df["delta_home_win_exp"].notna()]
-    if valid.empty:
-        return None
-    # WPA contribution from the batter's POV: sum of delta_home_win_exp
-    # while batter is hitting.  Statcast already signs it from the batter's
-    # team perspective via inning_topbot, but pybaseball's column is from
-    # home-team perspective.  We approximate by summing the absolute deltas
-    # — gives "leverage volume" rather than directional WPA.  v1 ship.
-    wpa = float(valid["delta_home_win_exp"].abs().sum())
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps({"wpa": wpa}))
-    return wpa
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--season", type=int, default=2026)
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
+
+    try:
+        import pandas as pd
+    except ImportError:
+        log.error("pandas required")
+        return 1
+
+    df = load_bulk_statcast(season=args.season)
+    if df is None or df.empty:
+        log.warning("0 rows written — bulk Statcast unreachable.")
+        return 0
+    if "delta_home_win_exp" not in df.columns:
+        log.warning("delta_home_win_exp column missing")
+        return 0
+
+    # Pre-filter to events with WPA data
+    sub = df[["game_date", "batter", "delta_home_win_exp"]].copy()
+    sub = sub[sub["delta_home_win_exp"].notna()]
+    sub["game_date"] = pd.to_datetime(sub["game_date"]).dt.date.astype(str)
+    sub["abs_delta"] = sub["delta_home_win_exp"].abs()
+    # Per (batter, game_date), sum the absolute deltas while that batter was
+    # hitting.  Statcast keys events by `batter` so this captures their
+    # at-the-plate WPA contribution.
+    grouped = sub.groupby(["batter", "game_date"])["abs_delta"].sum()
+    wpa_lookup = {(int(b), d): float(v) for (b, d), v in grouped.items()}
 
     conn = historical_db.connect()
     try:
         historical_db.apply_schema(conn)
-        # Target: all HV-flagged player_slate rows (where the player has a
-        # `highest_value` label_event row).
         cur = conn.execute(
             "SELECT DISTINCT le.slate_date, le.mlb_id "
             "FROM label_event le "
@@ -108,7 +94,7 @@ def main() -> int:
         upserts = 0
         misses = 0
         for t in hv_targets:
-            wpa = _fetch_wpa(t["mlb_id"], t["slate_date"])
+            wpa = wpa_lookup.get((t["mlb_id"], t["slate_date"]))
             if wpa is None:
                 misses += 1
                 continue
@@ -122,11 +108,6 @@ def main() -> int:
             upserts += 1
         conn.commit()
         log.info("UPSERT label_event(wpa): %d (no PA data: %d)", upserts, misses)
-        if upserts == 0 and hv_targets:
-            log.warning(
-                "0 rows written — likely pybaseball/network unreachable.  "
-                "Schema is in place; re-run when reachable."
-            )
     finally:
         conn.close()
     return 0

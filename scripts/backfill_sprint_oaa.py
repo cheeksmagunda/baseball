@@ -34,27 +34,10 @@ os.environ.setdefault("BO_CURRENT_SEASON", "2026")
 os.environ.setdefault("BO_ODDS_API_KEY", "backfill-sprint-oaa-stub")
 
 from app.core import historical_db  # noqa: E402
+from scripts._backfill_common import safe_int as _safe_int, safe_float as _safe_float  # noqa: E402
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=logging.INFO)
 log = logging.getLogger("backfill_sprint_oaa")
-
-
-def _safe_int(v):
-    if v is None or v == "":
-        return None
-    try:
-        return int(float(v))
-    except (TypeError, ValueError):
-        return None
-
-
-def _safe_float(v):
-    if v is None or v == "":
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
 
 
 def fetch_sprint_speed(season: int):

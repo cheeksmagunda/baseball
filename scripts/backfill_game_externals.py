@@ -38,6 +38,7 @@ import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -49,6 +50,7 @@ os.environ.setdefault("BO_CURRENT_SEASON", "2026")
 os.environ.setdefault("BO_ODDS_API_KEY", "backfill-game-externals-stub")
 
 from app.core import historical_db  # noqa: E402
+from scripts._backfill_common import safe_int as _safe_int, safe_float as _safe_float  # noqa: E402
 
 CACHE_DIR = ROOT / "scripts" / "output" / ".game_externals_cache"
 MLB_API = "https://statsapi.mlb.com/api/v1.1"
@@ -78,24 +80,6 @@ def fetch_game(game_pk: int) -> dict | None:
     return r.json()
 
 
-def _safe_int(v):
-    if v is None or v == "":
-        return None
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return None
-
-
-def _safe_float(v):
-    if v is None or v == "":
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
-
-
 def _find_catcher(team_box: dict) -> int | None:
     """Walk the boxscore players dict; return mlb_id of the player with
     position abbreviation 'C' who is in the starting batting order."""
@@ -114,64 +98,60 @@ def _find_catcher(team_box: dict) -> int | None:
     return None
 
 
-def extract_externals(payload: dict) -> dict:
-    """Pull the external fields out of the gumbo payload into a flat dict
-    matching the slate_game column names added in Step 9."""
+def extract_externals(payload: dict) -> tuple[dict, dict | None]:
+    """Pull the external fields out of the gumbo payload.
+
+    Returns (slate_game_updates, venue_dim_row).  The slate_game side
+    carries only the per-game identity fields (venue_id / venue_name +
+    catcher IDs); venue_dim carries the slowly-changing dimensions
+    (capacity / surface / roof / dimensions / coordinates).
+
+    Per the May 2026 Phase D cleanup, attendance / day_night / ump_hp_*
+    were dropped from slate_game (low DFS signal-cost ratio in 2026
+    given ABS Challenge System compression of the umpire signal).
+    """
     out: dict = {}
+    venue_row: dict | None = None
     if not payload:
-        return out
+        return out, None
     gd = payload.get("gameData") or {}
     ld = payload.get("liveData") or {}
 
-    info = gd.get("gameInfo") or {}
-    out["attendance"] = _safe_int(info.get("attendance"))
-
-    dt = gd.get("datetime") or {}
-    out["day_night"] = dt.get("dayNight")
-
-    # weather_condition / game_duration_minutes were dropped in May 2026 —
-    # see module docstring.
-
     venue = gd.get("venue") or {}
-    out["venue_id"] = _safe_int(venue.get("id"))
+    venue_id = _safe_int(venue.get("id"))
+    out["venue_id"] = venue_id
     out["venue_name"] = venue.get("name")
-    fi = venue.get("fieldInfo") or {}
-    out["venue_capacity"] = _safe_int(fi.get("capacity"))
-    out["venue_surface"] = fi.get("turfType")
-    out["venue_roof_type"] = fi.get("roofType")
-    out["venue_lf_line_ft"] = _safe_int(fi.get("leftLine"))
-    out["venue_lf_ft"] = _safe_int(fi.get("left"))
-    out["venue_lcf_ft"] = _safe_int(fi.get("leftCenter"))
-    out["venue_cf_ft"] = _safe_int(fi.get("center"))
-    out["venue_rcf_ft"] = _safe_int(fi.get("rightCenter"))
-    out["venue_rf_ft"] = _safe_int(fi.get("right"))
-    out["venue_rf_line_ft"] = _safe_int(fi.get("rightLine"))
-    loc = venue.get("location") or {}
-    coords = loc.get("defaultCoordinates") or {}
-    out["venue_elevation_ft"] = _safe_int(loc.get("elevation"))
-    out["venue_latitude"] = _safe_float(coords.get("latitude"))
-    out["venue_longitude"] = _safe_float(coords.get("longitude"))
-    out["venue_timezone"] = (venue.get("timeZone") or {}).get("id") or (venue.get("timeZone") or {}).get("tz")
+
+    if venue_id is not None:
+        fi = venue.get("fieldInfo") or {}
+        loc = venue.get("location") or {}
+        coords = loc.get("defaultCoordinates") or {}
+        venue_row = {
+            "venue_id": venue_id,
+            "venue_name": venue.get("name"),
+            "venue_capacity": _safe_int(fi.get("capacity")),
+            "venue_surface": fi.get("turfType"),
+            "venue_roof_type": fi.get("roofType"),
+            "venue_lf_line_ft": _safe_int(fi.get("leftLine")),
+            "venue_lf_ft": _safe_int(fi.get("left")),
+            "venue_lcf_ft": _safe_int(fi.get("leftCenter")),
+            "venue_cf_ft": _safe_int(fi.get("center")),
+            "venue_rcf_ft": _safe_int(fi.get("rightCenter")),
+            "venue_rf_ft": _safe_int(fi.get("right")),
+            "venue_rf_line_ft": _safe_int(fi.get("rightLine")),
+            "venue_elevation_ft": _safe_int(loc.get("elevation")),
+            "venue_latitude": _safe_float(coords.get("latitude")),
+            "venue_longitude": _safe_float(coords.get("longitude")),
+            "venue_timezone": (venue.get("timeZone") or {}).get("id")
+                or (venue.get("timeZone") or {}).get("tz"),
+        }
 
     bx = ld.get("boxscore") or {}
-    officials = bx.get("officials") or []
-    ump_by_type: dict[str, dict] = {}
-    for o in officials:
-        ot = o.get("officialType")
-        person = o.get("official") or {}
-        if ot:
-            ump_by_type[ot] = person
-    if "Home Plate" in ump_by_type:
-        out["ump_hp_id"] = _safe_int(ump_by_type["Home Plate"].get("id"))
-        out["ump_hp_name"] = ump_by_type["Home Plate"].get("fullName")
-    # ump_1b_id / ump_2b_id / ump_3b_id dropped in May 2026 — only HP umpire
-    # has predictive lift on K-rate.
-
     teams = bx.get("teams") or {}
     out["home_catcher_id"] = _find_catcher(teams.get("home", {}) or {})
     out["away_catcher_id"] = _find_catcher(teams.get("away", {}) or {})
 
-    return out
+    return out, venue_row
 
 
 def main() -> int:
@@ -225,18 +205,22 @@ def main() -> int:
         if args.dry_run:
             sample = next(iter(payloads.values()), None)
             if sample:
-                ext = extract_externals(sample)
+                ext, venue_row = extract_externals(sample)
                 log.info("sample extract: %s", json.dumps(ext, indent=2))
+                log.info("sample venue_dim: %s", json.dumps(venue_row, indent=2))
             return 0
 
+        observed_at = datetime.now(timezone.utc).isoformat()
         updates = 0
         skipped = 0
+        venue_upserts = 0
+        seen_venues: set[int] = set()
         for t in targets:
             payload = payloads.get(t["game_pk"])
             if not payload:
                 skipped += 1
                 continue
-            ext = extract_externals(payload)
+            ext, venue_row = extract_externals(payload)
             if not ext:
                 skipped += 1
                 continue
@@ -244,8 +228,27 @@ def main() -> int:
                 conn, t["slate_date"], t["game_pk"], ext,
             )
             updates += 1
+            if venue_row and venue_row["venue_id"] not in seen_venues:
+                seen_venues.add(venue_row["venue_id"])
+                cols = [
+                    "venue_id", "venue_name", "venue_capacity", "venue_surface",
+                    "venue_roof_type", "venue_elevation_ft", "venue_latitude",
+                    "venue_longitude", "venue_timezone", "venue_lf_line_ft",
+                    "venue_lf_ft", "venue_lcf_ft", "venue_cf_ft", "venue_rcf_ft",
+                    "venue_rf_ft", "venue_rf_line_ft",
+                ]
+                conn.execute(
+                    f"INSERT OR REPLACE INTO venue_dim "
+                    f"({', '.join(cols)}, observed_at) "
+                    f"VALUES ({', '.join(['?'] * len(cols))}, ?)",
+                    tuple(venue_row.get(c) for c in cols) + (observed_at,),
+                )
+                venue_upserts += 1
         conn.commit()
-        log.info("UPDATE rows: %d (skipped %d)", updates, skipped)
+        log.info(
+            "UPDATE slate_game: %d (skipped %d); UPSERT venue_dim: %d",
+            updates, skipped, venue_upserts,
+        )
     finally:
         conn.close()
 

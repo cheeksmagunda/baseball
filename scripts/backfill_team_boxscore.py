@@ -1,16 +1,15 @@
 """Backfill per-team post-game box-score totals onto slate_game.
 
-Reuses the gumbo-feed cache from Step 9.  Pulls per-team batting line
-(boxscore.teams.{home|away}.teamStats.batting).  All pure post-game externals.
+Reuses the gumbo-feed cache from backfill_game_externals.py.
 
 Schema columns populated:
-  home/away_team_hits, doubles, triples, hr,
-  home/away_team_walks, strikeouts, left_on_base,
-  home/away_team_stolen_bases, errors
+  home/away_team_hits, home/away_team_hr
 
-Note: innings_played dropped from the schema (~95% are 9; if extras-game
-sensitivity matters, add a binary went_extras column instead).
-home/away_team_runs dropped (duplicates home_score / away_score).
+Per the May 2026 Phase D cleanup, doubles / triples / walks / strikeouts /
+LOB / stolen_bases / errors were dropped — single-game team-level
+counting stats are too noisy to be useful as calibration outcome
+labels.  HR + hits + runs (already on home_score / away_score) capture
+the offensive line cleanly.
 
 Usage:
     python scripts/backfill_team_boxscore.py
@@ -32,6 +31,7 @@ os.environ.setdefault("BO_CURRENT_SEASON", "2026")
 os.environ.setdefault("BO_ODDS_API_KEY", "backfill-team-boxscore-stub")
 
 from app.core import historical_db  # noqa: E402
+from scripts._backfill_common import safe_int as _safe_int  # noqa: E402
 
 CACHE_DIR = ROOT / "scripts" / "output" / ".game_externals_cache"
 
@@ -39,34 +39,12 @@ logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=loggin
 log = logging.getLogger("backfill_team_boxscore")
 
 
-def _safe_int(v):
-    if v is None or v == "":
-        return None
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return None
-
-
 def _team_batting(team_box: dict) -> dict:
-    # `runs` intentionally omitted — duplicates home_score / away_score
-    # and was dropped from slate_game in the May 2026 cleanup sweep.
     bat = (team_box.get("teamStats") or {}).get("batting") or {}
     return {
-        "hits":         _safe_int(bat.get("hits")),
-        "doubles":      _safe_int(bat.get("doubles")),
-        "triples":      _safe_int(bat.get("triples")),
-        "hr":           _safe_int(bat.get("homeRuns")),
-        "walks":        _safe_int(bat.get("baseOnBalls")),
-        "strikeouts":   _safe_int(bat.get("strikeOuts")),
-        "left_on_base": _safe_int(bat.get("leftOnBase")),
-        "stolen_bases": _safe_int(bat.get("stolenBases")),
+        "hits": _safe_int(bat.get("hits")),
+        "hr":   _safe_int(bat.get("homeRuns")),
     }
-
-
-def _team_errors(team_box: dict) -> int | None:
-    fld = (team_box.get("teamStats") or {}).get("fielding") or {}
-    return _safe_int(fld.get("errors"))
 
 
 def extract(payload: dict) -> dict:
@@ -79,7 +57,6 @@ def extract(payload: dict) -> dict:
         bat = _team_batting(teams.get(side, {}) or {})
         for k, v in bat.items():
             out[f"{side}_team_{k}"] = v
-        out[f"{side}_team_errors"] = _team_errors(teams.get(side, {}) or {})
     return out
 
 

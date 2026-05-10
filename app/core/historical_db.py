@@ -103,11 +103,7 @@ CREATE TABLE IF NOT EXISTS slate_game (
     away_bullpen_era            REAL,
     away_team_framing_runs      REAL,
     away_team_framing_pct       REAL,
-    home_team_record_w          INTEGER,
-    home_team_record_l          INTEGER,
     home_team_rest_days         INTEGER,
-    away_team_record_w          INTEGER,
-    away_team_record_l          INTEGER,
     away_team_rest_days         INTEGER,
     home_l10_wins               INTEGER,
     home_series_wins            INTEGER,
@@ -131,44 +127,107 @@ CREATE TABLE IF NOT EXISTS slate_game (
     away_bullpen_2d_pitches     INTEGER,
     home_bullpen_3d_pitches     INTEGER,
     away_bullpen_3d_pitches     INTEGER,
-    -- park / weather
-    park_team                   TEXT,
+    -- Phase C add: bullpen handedness usage in the trailing 2 days.
+    -- LHP-heavy bullpen burned yesterday → batters get more RHP looks
+    -- tonight (favorable for LHB).  Derived from player_game_log JOIN
+    -- player_dim.pitch_hand by backfill_bullpen_handedness.py.
+    home_bullpen_lhp_pitches_2d INTEGER,
+    home_bullpen_rhp_pitches_2d INTEGER,
+    away_bullpen_lhp_pitches_2d INTEGER,
+    away_bullpen_rhp_pitches_2d INTEGER,
+    -- Phase C add: lineup handedness composition (count of LHB / RHB /
+    -- switch in batting_order ≤ 9).  Derived from player_dim JOIN
+    -- player_slate per slate_date.
+    home_lineup_lhb_count       INTEGER,
+    home_lineup_rhb_count       INTEGER,
+    home_lineup_switch_count    INTEGER,
+    away_lineup_lhb_count       INTEGER,
+    away_lineup_rhb_count       INTEGER,
+    away_lineup_switch_count    INTEGER,
+    -- Phase C add: Pythagorean expectation gap.  Pythag W% =
+    -- runs_scored^2 / (runs_scored^2 + runs_allowed^2).  Gap = actual
+    -- W% - pythag W%.  Negative gap → "unlucky" team likely to regress
+    -- positively; positive gap → "lucky" team due for negative regression.
+    -- Derived from standings runs_scored / runs_allowed / W-L.
+    home_pythag_gap             REAL,
+    away_pythag_gap             REAL,
+    -- Phase C add: team defensive runs saved (DRS).  Suppresses BABIP
+    -- behind a starter — independent signal from framing (which only
+    -- moves K%).  Sourced from FanGraphs' team-defense leaderboard via
+    -- pybaseball (cached).
+    home_team_defense_drs       REAL,
+    away_team_defense_drs       REAL,
+    -- Phase E add: team L10 offensive momentum.  L10 wins ≠ runs scored;
+    -- a team can be 7-3 winning 3-2 every night while the offense is dead.
+    -- L10 wOBA + RPG capture run-environment trend orthogonal to wins.
+    home_team_woba_l10          REAL,
+    home_team_rpg_l10           REAL,
+    away_team_woba_l10          REAL,
+    away_team_rpg_l10           REAL,
+    -- Phase E add: bullpen handedness ROSTER composition (count of distinct
+    -- LHP / RHP relievers active in the trailing 14 days).  Distinct from
+    -- bullpen_lhp_pitches_2d (usage burn) — a team with 4 LHP relievers
+    -- structurally has more late-inning LHB-suppression options regardless
+    -- of yesterday's usage.
+    home_bullpen_lhp_count      INTEGER,
+    home_bullpen_rhp_count      INTEGER,
+    away_bullpen_lhp_count      INTEGER,
+    away_bullpen_rhp_count      INTEGER,
+    -- Phase E add: schedule context flags.  is_getaway_day = 1 when the
+    -- team flies out to a different venue tonight (last game of a series).
+    -- is_day_after_night_game = 1 when the team's previous game ended
+    -- after 22:00 local time — both lightly suppress hitters via fatigue.
+    is_getaway_day              INTEGER,
+    is_day_after_night_game     INTEGER,
+    -- park / weather (pre-game forecast, what the live pipeline reads at T-65)
     park_hr_factor              REAL,
+    -- Phase C add: park HR factor split by batter handedness.  Coors plays
+    -- different for LHB vs RHB; aggregated index masks the asymmetry.
+    -- Sourced from Savant's statcast-park-factors leaderboard (3-year rolling
+    -- window centred on the slate season).
+    park_hr_factor_lhb          REAL,
+    park_hr_factor_rhb          REAL,
     temperature_f               REAL,
     wind_speed_mph              REAL,
     wind_direction              TEXT,
     wind_direction_deg          INTEGER,
+    -- Phase E add: humidity + barometric pressure + computed air-density
+    -- ratio.  HR distance scales DIRECTLY with air density — Coors plays
+    -- the way it does because of this; humid Florida nights play smaller
+    -- than the temperature alone suggests.  Sourced from Open-Meteo
+    -- Archive at first-pitch hour at venue lat/lon.  air_density_ratio is
+    -- a multiplier on ball flight (>1.00 = ball carries less; <1.00 = ball
+    -- carries farther — ratio defined as actual / sea-level-standard).
+    humidity_pct                INTEGER,
+    pressure_hpa                REAL,
+    air_density_ratio           REAL,
+    -- Phase E add: travel fatigue.  Derived from venue chain prior to
+    -- slate_date.  miles_traveled_72h captures back-to-back-to-back road
+    -- fatigue; zones_crossed_24h captures cross-country-flight body-clock
+    -- disruption (the Brewers redeye-east is the canonical example).
+    home_team_miles_traveled_72h INTEGER,
+    home_team_zones_crossed_24h INTEGER,
+    away_team_miles_traveled_72h INTEGER,
+    away_team_zones_crossed_24h INTEGER,
+    -- Phase E add: wind × handedness joint signal.  wind_to_rf_component is
+    -- the wind speed projected onto the HP→RF axis (positive = blowing
+    -- toward RF, helps LHB pull power); wind_to_lf_component projects onto
+    -- HP→LF (helps RHB pull power).  Computed from wind_speed +
+    -- wind_direction_deg + venue_dim.hp_to_cf_azimuth_deg.
+    wind_to_rf_component        REAL,
+    wind_to_lf_component        REAL,
     datetime_utc                TEXT,
     -- post-game outcomes (winner/loser/winner_score/loser_score derived on
     -- export from home_team/away_team/home_score/away_score — not stored).
     home_score                  INTEGER,
     away_score                  INTEGER,
-    -- Step 9: external game-info from MLB Stats API live feed
-    attendance                  INTEGER,
-    day_night                   TEXT,
-    -- Step 9: venue static info (snapshotted per-game so the corpus survives
-    -- mid-season venue changes — e.g. Athletics moving to Sacramento mid-2025)
+    -- Step 9: venue + catcher identity.  Venue static dimensions
+    -- (capacity/surface/roof/lat/lon/fence-distances) live in `venue_dim`
+    -- as of the May 2026 Phase D cleanup — they're slowly-changing
+    -- per-venue properties, not per-game facts.  venue_id is the join
+    -- key.
     venue_id                    INTEGER,
     venue_name                  TEXT,
-    venue_capacity              INTEGER,
-    venue_surface               TEXT,        -- 'Grass' / 'Turf'
-    venue_roof_type             TEXT,        -- 'Open' / 'Dome' / 'Retractable Roof'
-    venue_elevation_ft          INTEGER,
-    venue_latitude              REAL,
-    venue_longitude             REAL,
-    venue_timezone              TEXT,
-    venue_lf_line_ft            INTEGER,
-    venue_lf_ft                 INTEGER,
-    venue_lcf_ft                INTEGER,
-    venue_cf_ft                 INTEGER,
-    venue_rcf_ft                INTEGER,
-    venue_rf_ft                 INTEGER,
-    venue_rf_line_ft            INTEGER,
-    -- Step 9: HP umpire only (only the HP ump calls balls/strikes; base umps
-    -- carry no measurable K-rate signal even before 2026 ABS-challenge
-    -- compression).
-    ump_hp_id                   INTEGER,
-    ump_hp_name                 TEXT,
     -- Step 9: actual catcher IDs (the team-season framing aggregate is
     -- already on home/away_team_framing_runs; this lets calibration ask
     -- "did the team's elite framer actually catch this game?")
@@ -204,65 +263,31 @@ CREATE TABLE IF NOT EXISTS slate_game (
     away_bullpen_pitchers_used  INTEGER,
     away_bullpen_outs_recorded  INTEGER,
     away_bullpen_pitch_count    INTEGER,
-    -- Step 13: actual weather at first pitch from Open-Meteo Archive API.
-    -- Pre-existing temperature_f / wind_speed_mph / wind_direction* are
-    -- the T-65 *forecast*; these are the *actual* readings at the venue
-    -- coordinate at the first-pitch hour.  Lets calibration ask "did our
-    -- forecast wind-out bonus actually correlate with real wind out?".
-    actual_temperature_f        REAL,
-    actual_wind_speed_mph       REAL,
-    actual_wind_direction_deg   INTEGER,
-    actual_precipitation_mm     REAL,
-    actual_humidity_pct         INTEGER,
-    actual_pressure_hpa         REAL,
-    actual_cloud_cover_pct      INTEGER,
-    -- Step 14: post-game box-score totals (per-team observables from
-    -- linescore / boxscore.teams.{home|away}.teamStats).  Existing
-    -- home_score / away_score are runs only; these add the rest of the
-    -- team line.  innings_played dropped (~95% are 9; replace with a
-    -- went_extras flag if calibration motivates).  home/away_team_runs
-    -- dropped (duplicate of home_score / away_score).
+    -- (May 2026 Phase D cleanup dropped: actual_* weather (post-game
+    -- forecast-validation, not a predictor), home/away_team_doubles /
+    -- triples / walks / strikeouts / LOB / SB / errors (post-game team-box
+    -- noise — HR / hits / runs are kept), home/away_team_streak
+    -- (autocorrelated with l10_wins), home/away_team_division_rank /
+    -- league_rank (slow-moving, weak DFS signal, derivable from games_back),
+    -- home/away_team_record_w/_l (duplicate of home/away_record sums),
+    -- attendance + day_night (low DFS signal-cost), park_team (synonym
+    -- for home_team), ump_hp_id / ump_hp_name (2026 ABS Challenge System
+    -- compresses the umpire signal too far for storage to be worth it).
     home_team_hits              INTEGER,
-    home_team_doubles           INTEGER,
-    home_team_triples           INTEGER,
     home_team_hr                INTEGER,
-    home_team_walks             INTEGER,
-    home_team_strikeouts        INTEGER,
-    home_team_left_on_base      INTEGER,
-    home_team_stolen_bases      INTEGER,
-    home_team_errors            INTEGER,
     away_team_hits              INTEGER,
-    away_team_doubles           INTEGER,
-    away_team_triples           INTEGER,
     away_team_hr                INTEGER,
-    away_team_walks             INTEGER,
-    away_team_strikeouts        INTEGER,
-    away_team_left_on_base      INTEGER,
-    away_team_stolen_bases      INTEGER,
-    away_team_errors            INTEGER,
-    -- Step 16: as-of-slate-date team standings snapshot from MLB Stats API
-    -- /standings endpoint.  Pre-existing home/away_team_record_w/_l capture
-    -- W-L only; these add the rest of the standings line.  run_differential
-    -- + winning_pct dropped (pure derivations of runs_scored − runs_allowed
-    -- and W / (W+L) respectively).
+    -- Step 16: as-of-slate-date team standings snapshot from MLB Stats API.
     home_team_games_back        REAL,    -- games behind division leader
     home_team_runs_scored       INTEGER, -- season-to-date
     home_team_runs_allowed      INTEGER,
-    home_team_streak            TEXT,    -- 'W3' / 'L2' / 'W1' etc.
-    home_team_division_rank     INTEGER,
-    home_team_league_rank       INTEGER,
     home_team_home_record       TEXT,    -- '12-8' (W-L when at home)
     home_team_away_record       TEXT,
     away_team_games_back        REAL,
     away_team_runs_scored       INTEGER,
     away_team_runs_allowed      INTEGER,
-    away_team_streak            TEXT,
-    away_team_division_rank     INTEGER,
-    away_team_league_rank       INTEGER,
     away_team_home_record       TEXT,
     away_team_away_record       TEXT,
-    -- (Step 17 mound-visits + ABS-challenges columns dropped — caps of 5
-    -- and 2 respectively give too narrow a range for any predictive lift.)
     PRIMARY KEY (slate_date, game_pk, game_number),
     FOREIGN KEY (slate_date) REFERENCES slate(slate_date)
 );
@@ -377,6 +402,53 @@ CREATE TABLE IF NOT EXISTS player_slate (
     -- agrees with consensus.
     vendor_projected_points       REAL,
     vendor_projection_source      TEXT,
+    -- Phase C add (May 2026): pitcher batted-ball profile.  GB / FB / LD
+    -- breakdown is the cleanest proxy for "what does the contact look
+    -- like when this pitcher gets hit" — extreme GB% suppresses HR risk
+    -- in HR-friendly parks, extreme FB% amplifies it.  IFFB% catches
+    -- pop-up artists.  Derived from Statcast bb_type field.  NULL for
+    -- batters.
+    pitcher_gb_pct                REAL,        -- ground balls / batted balls
+    pitcher_fb_pct                REAL,        -- fly balls / batted balls
+    pitcher_ld_pct                REAL,        -- line drives / batted balls
+    pitcher_iffb_pct              REAL,        -- pop-ups / (fly balls + pop-ups)
+    -- Phase C add: pitcher recent velocity trend.  fb_velo above is the
+    -- season-aggregate; this is (last-3-starts mean) − (season mean).
+    -- Negative values flag declining velocity, often preceding IL stints
+    -- or blow-up starts.  NULL when fewer than 3 prior starts.
+    pitcher_velo_trend_3start     REAL,
+    -- Phase E add (May 2026 batter sweep): Times-Through-Order pitcher
+    -- splits.  TTO penalty is real and ~25-50 wOBA-points per pass; top-
+    -- of-order batters disproportionately face the pitcher in the 1st/2nd
+    -- TTO.  Derived from bulk Statcast at_bat_number bucketed (1–9 = TTO1,
+    -- 10–18 = TTO2, 19+ = TTO3).
+    pitcher_tto1_woba_against     REAL,
+    pitcher_tto2_woba_against     REAL,
+    pitcher_tto3_woba_against     REAL,
+    -- Phase E add: pitcher inning-bucket wOBA-against splits.  Top-of-order
+    -- batters face the pitcher in the 1st more than the 4th-6th; mid-order
+    -- batters face him later.  Per-pitcher, inning ∈ {1, 2-3, 4-6, 7+}.
+    pitcher_woba_inning_1         REAL,
+    pitcher_woba_inning_2_3       REAL,
+    pitcher_woba_inning_4_6       REAL,
+    pitcher_woba_inning_7plus     REAL,
+    -- Phase E add: player rest / consecutive starts.  Derived from
+    -- player_game_log.  Pitchers and batters both populated.
+    player_consecutive_starts     INTEGER,
+    player_days_since_rest        INTEGER,
+    -- Phase E add: career BvP wOBA with Bayesian shrinkage toward league
+    -- rate.  bvp_pa_count_vs_starter is the raw PA sample size for the
+    -- batter vs his game's starter prior to slate_date; bvp_woba_vs_starter
+    -- is the shrunken estimate.  NULL for pitcher rows.
+    bvp_woba_vs_starter           REAL,
+    bvp_pa_count_vs_starter       INTEGER,
+    -- Phase E add: is_fresh_off_il — 1 when an IL-return transaction
+    -- (typeCode='RTN', 'STA' returning to active) landed within 7 days
+    -- prior to slate_date.  Derived from label_event(label_type='transaction').
+    is_fresh_off_il               INTEGER,
+    -- Phase E add: rolling 30-day BABIP minus season-aggregate BABIP.
+    -- Captures luck regression independently of the absolute BABIP.
+    babip_delta_30day             REAL,
     PRIMARY KEY (slate_date, mlb_id)
     -- game_pk is informational only; player_slate cannot foreign-key to
     -- slate_game because the latter's PK includes game_number (doubleheader
@@ -461,20 +533,35 @@ CREATE TABLE IF NOT EXISTS player_dim (
 CREATE INDEX IF NOT EXISTS idx_player_dim_position
     ON player_dim(primary_position_code);
 
--- Tier 1 D1: HP umpire historical K%/BB% tendencies.  ~98% of pitches
--- still ride on the human zone in 2026 ABS (only ~2% challenged).  Sourced
--- from Umpire Scorecards public CSVs by backfill_umpire_tendencies.py.
-CREATE TABLE IF NOT EXISTS umpire_dim (
-    ump_id                 INTEGER NOT NULL,
-    season                 INTEGER NOT NULL,
-    ump_name               TEXT,
-    games_called           INTEGER,
-    called_strike_pct      REAL,         -- absolute called-strike rate
-    k_rate_vs_league       REAL,         -- delta vs league avg (this ump K% − league K%)
-    bb_rate_vs_league      REAL,         -- delta vs league avg
-    x_runs_above_avg       REAL,         -- expected runs added/saved per game
-    observed_at            TEXT NOT NULL,
-    PRIMARY KEY (ump_id, season)
+-- May 2026 Phase D: per-venue slowly-changing dimensions.  Lifted off
+-- slate_game where they were duplicated 80+ times per venue per season.
+-- venue_id is the join key.  Capacity / surface / roof / dimensions
+-- update once or twice per offseason; mid-season changes (Athletics
+-- moving to Sacramento) get the new row on next backfill_game_externals
+-- run.
+CREATE TABLE IF NOT EXISTS venue_dim (
+    venue_id            INTEGER PRIMARY KEY,
+    venue_name          TEXT,
+    venue_capacity      INTEGER,
+    venue_surface       TEXT,        -- 'Grass' / 'Turf'
+    venue_roof_type     TEXT,        -- 'Open' / 'Dome' / 'Retractable Roof'
+    venue_elevation_ft  INTEGER,
+    venue_latitude      REAL,
+    venue_longitude     REAL,
+    venue_timezone      TEXT,
+    venue_lf_line_ft    INTEGER,
+    venue_lf_ft         INTEGER,
+    venue_lcf_ft        INTEGER,
+    venue_cf_ft         INTEGER,
+    venue_rcf_ft        INTEGER,
+    venue_rf_ft         INTEGER,
+    venue_rf_line_ft    INTEGER,
+    -- Phase E add: stadium orientation as the compass azimuth from home
+    -- plate looking toward center field.  0° = N, 90° = E, 180° = S, 270° = W.
+    -- Used to project wind direction onto the HP→pull-field axis for the
+    -- per-handedness wind-assist features on slate_game.
+    hp_to_cf_azimuth_deg REAL,
+    observed_at         TEXT NOT NULL
 );
 
 -- Tier 3 D11: Win-Probability-Added (WPA) per HV player game.  Separates

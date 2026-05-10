@@ -43,21 +43,13 @@ os.environ.setdefault("BO_CURRENT_SEASON", "2026")
 os.environ.setdefault("BO_ODDS_API_KEY", "backfill-plate-discipline-stub")
 
 from app.core import historical_db  # noqa: E402
+from scripts._backfill_common import safe_float as _safe_float  # noqa: E402
 
 CACHE_DIR = ROOT / "scripts" / "output" / ".plate_discipline_cache"
 HTTP_TIMEOUT = 30
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=logging.INFO)
 log = logging.getLogger("backfill_plate_discipline")
-
-
-def _safe_float(v):
-    if v is None or v == "":
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
 
 
 def _fetch_leaderboard(season: int) -> dict[int, dict]:
@@ -69,16 +61,21 @@ def _fetch_leaderboard(season: int) -> dict[int, dict]:
             return {int(k): v for k, v in json.loads(cache_file.read_text()).items()}
         except json.JSONDecodeError:
             pass
+    # Savant's expected_statistics endpoint only returns xStats (xwOBA, xBA,
+    # xSLG) — not plate discipline.  Use the percentile-rankings endpoint
+    # which carries k_percent, bb_percent, whiff_percent, chase_percent.
+    # z_contact_percent is not on Savant's public leaderboard surface; left
+    # NULL here and backfilled separately from FanGraphs (Phase C).
     url = (
-        "https://baseballsavant.mlb.com/leaderboard/expected_statistics"
+        "https://baseballsavant.mlb.com/leaderboard/percentile-rankings"
         f"?type=batter&year={season}&min_pa=50&csv=true"
     )
     try:
-        r = requests.get(url, timeout=HTTP_TIMEOUT)
+        r = requests.get(url, timeout=HTTP_TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200:
             log.warning("plate-discipline leaderboard fetch returned %s", r.status_code)
             return {}
-        reader = csv.DictReader(io.StringIO(r.text))
+        reader = csv.DictReader(io.StringIO(r.text.lstrip("﻿")))
         out: dict[int, dict] = {}
         for row in reader:
             try:
@@ -90,8 +87,11 @@ def _fetch_leaderboard(season: int) -> dict[int, dict]:
             out[pid] = {
                 "bb_pct": _safe_float(row.get("bb_percent")),
                 "k_pct": _safe_float(row.get("k_percent")),
-                "o_swing_pct": _safe_float(row.get("oz_swing_percent")),
-                "z_contact_pct": _safe_float(row.get("z_contact_percent")),
+                # chase_percent is the % of out-of-zone pitches the batter
+                # swings at — same definition as O-Swing%.
+                "o_swing_pct": _safe_float(row.get("chase_percent")),
+                # z_contact_percent not on Savant; populated via FanGraphs.
+                "z_contact_pct": None,
                 "sw_str_pct": _safe_float(row.get("whiff_percent")),
             }
     except Exception as e:

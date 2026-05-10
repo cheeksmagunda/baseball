@@ -2,21 +2,23 @@
 
 Tier 1 D4 of the May 2026 cleanup-and-add sweep.
 
-Source: The Odds API historical odds endpoint
-(/v4/historical/sports/baseball_mlb/odds).  Requires BO_ODDS_API_KEY.
-The historical endpoint is paid-tier; if the key only has the free tier,
-the script falls back to scraping vegasinsider.com opening lines.
+Source: SportsbookReview (https://www.sportsbookreview.com/betting-odds/mlb-baseball/)
+— scrape the embedded `__NEXT_DATA__` JSON which carries openingLine /
+currentLine for every sportsbook per game.  Free, no API key, fully
+historical (the page accepts ?date=YYYY-MM-DD).  Replaces the earlier
+The-Odds-API path which required a paid historical-tier subscription.
 
 Per-game we capture:
-  opening_total           — O/U at first available bookmaker snapshot
-  opening_home_moneyline  — home ML at the same snapshot
-  opening_away_moneyline  — away ML at the same snapshot
-  line_open_at            — ISO timestamp of the snapshot
+  opening_total           — consensus O/U at the first available bookmaker snapshot
+  opening_home_moneyline  — consensus home ML at the same snapshot
+  opening_away_moneyline  — consensus away ML at the same snapshot
+  line_open_at            — ISO timestamp of the snapshot (game's startDate is
+                            the closest stable proxy SBR exposes; openingLine
+                            doesn't carry its own timestamp on the public page)
 
 Calibration unlock: ML drift (closing_ml − opening_ml) is a sharp-money
 signal distinct from the closing line itself.  Lets V14's
-predict_popularity_bucket add a "smart money is on this favorite"
-feature.
+predict_popularity_bucket add a "smart money is on this favorite" feature.
 
 Cache: scripts/output/.line_movement_cache/<slate_date>.json — one file
 per slate.  Re-runs are cheap.
@@ -30,8 +32,9 @@ import argparse
 import json
 import logging
 import os
+import re
+import statistics
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -45,15 +48,58 @@ os.environ.setdefault("BO_ODDS_API_KEY", "backfill-vegas-line-movement-stub")
 from app.core import historical_db  # noqa: E402
 
 CACHE_DIR = ROOT / "scripts" / "output" / ".line_movement_cache"
-ODDS_API_BASE = "https://api.the-odds-api.com/v4/historical/sports/baseball_mlb/odds"
+SBR_BASE_ML = "https://www.sportsbookreview.com/betting-odds/mlb-baseball/"
+SBR_BASE_TOTALS = "https://www.sportsbookreview.com/betting-odds/mlb-baseball/totals/"
 HTTP_TIMEOUT = 30
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=logging.INFO)
 log = logging.getLogger("backfill_vegas_line_movement")
 
+NEXT_DATA_RE = re.compile(
+    r'<script id="__NEXT_DATA__" type="application/json">([^<]+)</script>'
+)
 
-def _fetch_opening_snapshot(slate_date: str, api_key: str) -> dict:
-    """Return {(home_team, away_team): {opening_total, opening_home_moneyline,
+
+def _fetch_next_data(url: str) -> dict | None:
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=HTTP_TIMEOUT)
+    except Exception as e:
+        log.warning("fetch failed for %s: %s", url, e)
+        return None
+    if r.status_code != 200:
+        log.warning("fetch returned %s for %s", r.status_code, url)
+        return None
+    m = NEXT_DATA_RE.search(r.text)
+    if not m:
+        log.warning("no __NEXT_DATA__ in %s", url)
+        return None
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError as e:
+        log.warning("__NEXT_DATA__ JSON parse failed for %s: %s", url, e)
+        return None
+
+
+def _consensus_int(values: list[int | None]) -> int | None:
+    """Median of non-null integer values, rounded.  Used for ML consensus
+    across sportsbooks (different books open the same fav at -130 / -135 / -140,
+    median is the cleanest single number)."""
+    vs = [int(v) for v in values if v is not None]
+    if not vs:
+        return None
+    return int(round(statistics.median(vs)))
+
+
+def _consensus_float(values: list[float | None]) -> float | None:
+    vs = [float(v) for v in values if v is not None]
+    if not vs:
+        return None
+    return float(statistics.median(vs))
+
+
+def _fetch_opening_snapshot(slate_date: str) -> dict:
+    """Return {(home_abbr, away_abbr): {opening_total, opening_home_moneyline,
     opening_away_moneyline, line_open_at}} for the slate."""
     cache_file = CACHE_DIR / f"{slate_date}.json"
     if cache_file.exists():
@@ -61,59 +107,72 @@ def _fetch_opening_snapshot(slate_date: str, api_key: str) -> dict:
             return json.loads(cache_file.read_text())
         except json.JSONDecodeError:
             pass
-    # Snapshot at slate_date 12:00 UTC = "morning of"; the earliest bookmaker
-    # listing for that slate.  The Odds API supports up to ~30-day history
-    # on the free tier as of 2025; older slates require paid tier.
-    iso_date = f"{slate_date}T12:00:00Z"
-    try:
-        r = requests.get(
-            ODDS_API_BASE,
-            params={
-                "apiKey": api_key,
-                "regions": "us",
-                "markets": "h2h,totals",
-                "date": iso_date,
-            },
-            timeout=HTTP_TIMEOUT,
-        )
-        if r.status_code != 200:
-            log.warning("opening snapshot fetch returned %s for %s", r.status_code, slate_date)
-            return {}
-        data = r.json()
-    except Exception as e:
-        log.warning("opening snapshot fetch failed for %s: %s", slate_date, e)
-        return {}
 
     out: dict = {}
-    for game in (data.get("data") if isinstance(data, dict) else data) or []:
-        home = game.get("home_team")
-        away = game.get("away_team")
-        ts = game.get("commence_time") or game.get("timestamp")
-        # Pick the first bookmaker for the opening snapshot
-        bks = game.get("bookmakers", [])
-        if not bks:
-            continue
-        bk = bks[0]
-        ml_home = ml_away = total = None
-        for market in bk.get("markets", []):
-            if market.get("key") == "h2h":
-                for outcome in market.get("outcomes", []):
-                    if outcome.get("name") == home:
-                        ml_home = outcome.get("price")
-                    elif outcome.get("name") == away:
-                        ml_away = outcome.get("price")
-            elif market.get("key") == "totals":
-                outs = market.get("outcomes", [])
-                if outs:
-                    total = outs[0].get("point")
-        out[f"{home}|{away}"] = {
-            "opening_total": total,
-            "opening_home_moneyline": ml_home,
-            "opening_away_moneyline": ml_away,
-            "line_open_at": ts,
-        }
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(out))
+
+    # ---- Moneyline page ----
+    ml_data = _fetch_next_data(f"{SBR_BASE_ML}?date={slate_date}")
+    if ml_data:
+        ml_games = (
+            ml_data.get("props", {})
+            .get("pageProps", {})
+            .get("oddsTables", [{}])[0]
+            .get("oddsTableModel", {})
+            .get("gameRows", [])
+        )
+        for g in ml_games:
+            gv = g.get("gameView", {})
+            home = (gv.get("homeTeam") or {}).get("shortName")
+            away = (gv.get("awayTeam") or {}).get("shortName")
+            if not home or not away:
+                continue
+            ml_homes = []
+            ml_aways = []
+            for ov in g.get("oddsViews", []) or []:
+                if not ov:
+                    continue
+                ol = ov.get("openingLine") or {}
+                if ol.get("homeOdds") is not None:
+                    ml_homes.append(ol["homeOdds"])
+                if ol.get("awayOdds") is not None:
+                    ml_aways.append(ol["awayOdds"])
+            key = f"{home}|{away}"
+            out.setdefault(key, {})
+            out[key]["opening_home_moneyline"] = _consensus_int(ml_homes)
+            out[key]["opening_away_moneyline"] = _consensus_int(ml_aways)
+            out[key]["line_open_at"] = gv.get("startDate")
+
+    # ---- Totals page ----
+    tot_data = _fetch_next_data(f"{SBR_BASE_TOTALS}?date={slate_date}")
+    if tot_data:
+        tot_games = (
+            tot_data.get("props", {})
+            .get("pageProps", {})
+            .get("oddsTables", [{}])[0]
+            .get("oddsTableModel", {})
+            .get("gameRows", [])
+        )
+        for g in tot_games:
+            gv = g.get("gameView", {})
+            home = (gv.get("homeTeam") or {}).get("shortName")
+            away = (gv.get("awayTeam") or {}).get("shortName")
+            if not home or not away:
+                continue
+            totals = []
+            for ov in g.get("oddsViews", []) or []:
+                if not ov:
+                    continue
+                ol = ov.get("openingLine") or {}
+                if ol.get("total") is not None:
+                    totals.append(ol["total"])
+            key = f"{home}|{away}"
+            out.setdefault(key, {})
+            out[key]["opening_total"] = _consensus_float(totals)
+            out[key].setdefault("line_open_at", gv.get("startDate"))
+
+    if out:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(out))
     return out
 
 
@@ -122,21 +181,13 @@ def main() -> int:
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
-    api_key = os.environ.get("BO_ODDS_API_KEY") or ""
-    if not api_key or api_key.endswith("stub"):
-        log.warning(
-            "BO_ODDS_API_KEY not set or stub — script writes 0 rows.  "
-            "Schema is in place; re-run with a valid key when available."
-        )
-        return 0
-
     conn = historical_db.connect()
     try:
         historical_db.apply_schema(conn)
         if args.force:
             where = "WHERE 1=1"
         else:
-            where = "WHERE opening_total IS NULL"
+            where = "WHERE opening_total IS NULL AND opening_home_moneyline IS NULL"
         cur = conn.execute(
             f"SELECT slate_date, game_pk, home_team, away_team FROM slate_game "
             f"{where} ORDER BY slate_date, game_pk"
@@ -145,15 +196,18 @@ def main() -> int:
         unique_dates = sorted({t["slate_date"] for t in targets})
         log.info("targets: %d games across %d dates", len(targets), len(unique_dates))
 
-        date_snapshots = {d: _fetch_opening_snapshot(d, api_key) for d in unique_dates}
+        date_snapshots = {d: _fetch_opening_snapshot(d) for d in unique_dates}
 
         updates = 0
         misses = 0
         for t in targets:
             snap = date_snapshots.get(t["slate_date"]) or {}
             key = f"{t['home_team']}|{t['away_team']}"
-            rec = snap.get(key) or {}
-            if not rec.get("opening_total") and not rec.get("opening_home_moneyline"):
+            rec = snap.get(key)
+            if not rec or not any(
+                rec.get(k) is not None
+                for k in ("opening_total", "opening_home_moneyline", "opening_away_moneyline")
+            ):
                 misses += 1
                 continue
             historical_db.update_slate_game_columns(
