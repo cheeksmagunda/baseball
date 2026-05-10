@@ -316,23 +316,23 @@ Net effect: a 15-game slate with first pitches spanning 17:35–22:05 ET produce
 
 ## Data Files (`/data/`)
 
-Current coverage (as of 2026-05-09): **43 slates, 2026-03-25 → 2026-05-07**.
+Current coverage (as of 2026-05-10): **43 slates, 2026-03-25 → 2026-05-07**.
 
-**Canonical store: `data/historical.db`** (5 SQLite tables — see schema in `app/core/historical_db.py::SCHEMA_DDL`).  The 5 CSV/JSON files in `/data/` are byte-stable derived exports refreshed automatically by every writer (the daily scraper + the 11 backfill scripts).  Calibration / audit scripts read through the SQLite store; the CSVs remain on disk for ad-hoc inspection (`grep`, spreadsheet open) and as a human-readable diff target on PR review.  Schema diffs are reviewable via `sqlite3 data/historical.db .dump | diff`.
+**Canonical store: `data/historical.db`** (5 SQLite tables — see schema in `app/core/historical_db.py::SCHEMA_DDL`).  The 5 CSV/JSON files in `/data/` are byte-stable derived exports refreshed automatically by every writer (the daily scraper, the 11 Step-3 backfill scripts, the 10 Step-9-18 external backfills).  Calibration / audit scripts read through the SQLite store; the CSVs remain on disk for ad-hoc inspection (`grep`, spreadsheet open) and as a human-readable diff target on PR review.  Schema diffs are reviewable via `sqlite3 data/historical.db .dump | diff`.
 
-Schema diff vs CSV era: see commits `step 1` … `step 8` on the migration branch.  Two corrections retracted vs prior CLAUDE.md revisions:
+Schema diff vs CSV era: see commits `step 1` … `step 18` on the migration branch.  Two corrections retracted vs prior CLAUDE.md revisions:
 - `historical_players.csv` is **40 columns** including `card_boost` (col 32) and `drafts` (col 33), restored by the May 2026 backfill cycle.  Earlier text claiming they were "explicitly NOT stored" is stale — both fields persist in `label_event` rows of types `card_boost` and `drafts`, and re-export to the CSV's existing column positions.
 - `historical_winning_drafts.csv` is **10 columns** (`date, winner_rank, slot_index, player_name, team, position, real_score, slot_mult, card_boost, total_mult`).  The `card_boost` and `total_mult` columns were added in May 2026.
 
-**SQLite tables** (5 logical, populated from live MLB API + Real Sports scrape + backfills):
+**SQLite tables** (5 logical, populated from live MLB API + Real Sports scrape + ~20 backfills):
 
-| Table | Rows | Role |
-|---|---|---|
-| `slate` | 43 | One per slate envelope: date, game_count, num_brawlers, season_stage, source, saved_at. |
-| `slate_game` | 551 | Per-game env signals + post-game scores.  PK `(slate_date, game_pk, game_number)` — `game_number` disambiguates doubleheaders that share an MLB game_pk (5 such pairs in current corpus). |
-| `player_slate` | 1644 | Per-(slate_date, mlb_id) identity + at-slate inputs (ops_at_slate, era_at_slate, Statcast x_woba / hard_hit_pct / etc., platoon splits, batting_order_at_slate). |
-| `player_game_log` | 12290 | Prior-game outcomes per (slate_date, mlb_id, game_date) for the trailing 10-game window.  No uniqueness constraint on the natural triple — the source CSV had 63 duplicate rows we preserve via autoincrement `rowid_seq` so calibration scripts behave identically to the CSV-era harness. |
-| `label_event` | 21945 | Typed/sourced/dated outcome labels.  `label_type` ∈ {real_score, total_value, card_boost, drafts, draft_count, avg_draft_slot, avg_draft_mult, avg_draft_tv, highest_draft_tv, most_common_slot, injury_status, highest_value, most_popular, most_drafted_3x, winning_lineup_slot, box_score}.  Presence of a row IS the signal: a player without a `most_popular` row is unambiguously "not on the leaderboard," distinct from "didn't appear at all" (no `player_slate` row). |
+| Table | Rows | Cols | Role |
+|---|---|---|---|
+| `slate` | 43 | 7 | One per slate envelope: date, game_count, num_brawlers, season_stage, source, saved_at. |
+| `slate_game` | 551 | **160** | Per-game env signals + post-game outcomes.  PK `(slate_date, game_pk, game_number)` — `game_number` disambiguates doubleheaders that share an MLB game_pk.  Steps 9-18 grew this from 57 → 160 columns: venue static (capacity, surface, roof, elevation, lat/lon, timezone, field dimensions), umpire crew, actual catcher mlb_id, attendance, day/night, mound visits, ABS challenges, full per-team box-score line (innings_played + hits/HR/SO/BB/LOB/SB/errors per side), per-starter pitching detail (pitch count, outs_recorded, hits/R/ER/BB/SO/HR allowed), bullpen aggregate (pitchers used, outs recorded, pitches), Open-Meteo actual hourly weather (temp/wind/humidity/precip/pressure/cloud), as-of-date team standings (GB, run differential, streak, division/league rank, home/away record). |
+| `player_slate` | 1644 | **60** | Per-(slate_date, mlb_id) identity + at-slate inputs.  Steps 9-18 grew this from 28 → 60 columns: existing OPS / ERA / WHIP / K9 / Statcast kinematics + xStats + platoon splits + batting_order_at_slate, plus per-player MLB-people externals (bat_side / pitch_hand / birth_date / mlb_debut_date / height_in / weight_lb / birth_country / primary_position_code / jersey_number), pitcher pitch-arsenal usage % per type (FF/SI/FC/SL/ST/CU/KC/CH/FS/KN/SV) + dominant pitch, batter sprint metrics (sprint_speed_fps / hp_to_first_sec / competitive_runs), defensive metrics (outs_above_avg / fielding_runs_prevented), bat-tracking (avg_bat_speed_mph / hard_swing_rate / swing_length_ft / squared_up_per_swing / blast_per_swing / swords_count). |
+| `player_game_log` | 12290 | 21 | Prior-game outcomes per (slate_date, mlb_id, game_date) for the trailing 10-game window.  No uniqueness constraint on the natural triple — the source CSV had 63 duplicate rows we preserve via autoincrement `rowid_seq` so calibration scripts behave identically to the CSV-era harness. |
+| `label_event` | 21945 | 7 | Typed/sourced/dated outcome labels.  `label_type` ∈ {real_score, total_value, card_boost, drafts, draft_count, avg_draft_slot, avg_draft_mult, avg_draft_tv, highest_draft_tv, most_common_slot, injury_status, highest_value, most_popular, most_drafted_3x, winning_lineup_slot, box_score}.  Presence of a row IS the signal: a player without a `most_popular` row is unambiguously "not on the leaderboard," distinct from "didn't appear at all" (no `player_slate` row). |
 
 **Derived exports** (refreshed on every write to `data/historical.db`):
 
@@ -344,15 +344,27 @@ Schema diff vs CSV era: see commits `step 1` … `step 8` on the migration branc
 | `hv_player_game_stats.csv` | Calibration ground truth | 751 rows / 43 dates | `label_event WHERE label_type='box_score' JOIN player_slate` for identity columns (box-score values stored as JSON in `label_event.label_text`). |
 | `historical_player_game_logs.csv` | Calibration ground truth | 12290 rows / 41 dates | `player_game_log` ordered by `rowid_seq` (insertion order). |
 
-**Limitations on point-in-time fidelity** — explicitly named so a future calibration sweep doesn't conflate them with bugs:
-- `ops_vs_lhp_at_slate` / `ops_vs_rhp_at_slate` — MLB API does not honour `endDate` on `stats=statSplits`.  We backfill the season-total split (a single value per player, repeated across every slate the player appears on).  Approximation is exact for the most recent slates and slightly stale for late-March games.
-- `batting_order_at_slate` — actual lineup-card slot from the post-hoc MLB box score, NOT the RotoWire pre-game projection the live pipeline reads at T-65.  Pinch-hit / double-switch / late-scratch cases are baked in.  HV-leaderboard players who entered as pinch-hits get a blank slot (correct: they didn't start).
-- Statcast pitcher columns (`fb_velo`, `fb_ivb`, `fb_extension`, `whiff_pct`, `chase_pct`) — derived from pybaseball pitch-by-pitch with a 30-pitch minimum threshold.  Pitchers below the threshold leave columns blank rather than emit noisy values.
+**External-data backfill scripts (Steps 9-18, May 2026)** — each pulls from a single public source, writes to SQLite directly, caches per-source under `scripts/output/.*_cache/`, and is idempotent (re-run → cache hit → no-op):
+
+| Script | Source | Schema target |
+|---|---|---|
+| `backfill_game_externals.py` | MLB Stats API gumbo `/api/v1.1/game/{pk}/feed/live` | slate_game venue / umpire / catcher / attendance / duration / day_night / weather_condition |
+| `backfill_pitcher_boxscore.py` | same gumbo cache | slate_game per-starter pitch_count / outs_recorded / hits/R/ER/BB/SO/HR + bullpen aggregate |
+| `backfill_team_boxscore.py` | same gumbo cache | slate_game innings_played + per-team hits/HR/SO/BB/LOB/SB/errors |
+| `backfill_game_meta.py` | same gumbo cache | slate_game mound visits + ABS challenges per team |
+| `backfill_player_externals.py` | MLB Stats API `/api/v1/people?personIds=` (batched 50/req) | player_slate bat_side / pitch_hand / birth_date / mlb_debut_date / physicals / position / jersey |
+| `backfill_pitcher_arsenal.py` | Savant `statcast_pitcher_pitch_arsenal(arsenal_type='n_')` | player_slate arsenal_*_pct + arsenal_dominant_pitch |
+| `backfill_sprint_oaa.py` | Savant `statcast_sprint_speed` + `outs_above_average` CSV | player_slate sprint_speed_fps / hp_to_first_sec / OAA / fielding_runs_prevented |
+| `backfill_bat_tracking.py` | Savant bat-tracking leaderboard CSV | player_slate avg_bat_speed_mph / hard_swing_rate / swing_length_ft / squared_up / blast / swords |
+| `backfill_weather_actuals.py` | Open-Meteo `archive-api.open-meteo.com/v1/archive` | slate_game actual_temperature_f / wind / humidity / precip / pressure / cloud |
+| `backfill_standings.py` | MLB Stats API `/api/v1/standings?date=Y-M-D&hydrate=team` | slate_game per-team games_back / runs_scored / runs_allowed / run_diff / streak / rank / home/away record |
 
 **Limitations on point-in-time fidelity** — explicitly named so a future calibration sweep doesn't conflate them with bugs:
 - `ops_vs_lhp_at_slate` / `ops_vs_rhp_at_slate` — MLB API does not honour `endDate` on `stats=statSplits`.  We backfill the season-total split (a single value per player, repeated across every slate the player appears on).  Approximation is exact for the most recent slates and slightly stale for late-March games.
 - `batting_order_at_slate` — actual lineup-card slot from the post-hoc MLB box score, NOT the RotoWire pre-game projection the live pipeline reads at T-65.  Pinch-hit / double-switch / late-scratch cases are baked in.  HV-leaderboard players who entered as pinch-hits get a blank slot (correct: they didn't start).
 - Statcast pitcher columns (`fb_velo`, `fb_ivb`, `fb_extension`, `whiff_pct`, `chase_pct`) — derived from pybaseball pitch-by-pitch with a 30-pitch minimum threshold.  Pitchers below the threshold leave columns blank rather than emit noisy values.
+- Savant arsenal / sprint / OAA / bat-tracking columns — populated from the season-aggregate leaderboard at the time of the backfill, NOT a per-slate snapshot.  All slates for a given player carry the same value within a single backfill run.  Re-run mid-season to refresh.
+- Standings snapshot at slate_date is exact-as-of-date (the `/standings?date=` endpoint).  Opening-week games (~3% of corpus) have NULL standings columns because no W-L existed yet.
 
 ## Env Scoring Calibration
 
@@ -375,15 +387,33 @@ The default daily ingest is **automated via `scripts/scrape_realsports_daily.py`
 Daily workflow (after a slate completes):
 
 ```
+# 1. Real Sports leaderboard scrape (writes SQLite + refreshes CSVs/JSON)
 .venv-scraper/bin/python scripts/scrape_realsports_daily.py             # yesterday in EST
 .venv-scraper/bin/python scripts/scrape_realsports_daily.py --date YYYY-MM-DD
+
+# 2. Step-3 backfills (pre-Step-9; populate at-slate stats + slate-game env)
 .venv/bin/python scripts/backfill_slate_env_conditions.py               # Vegas/weather/pitchers per game
 .venv/bin/python scripts/backfill_slate_results_and_hv_stats.py         # box scores from MLB API
 .venv/bin/python scripts/backfill_player_season_stats_at_slate.py       # OPS/ERA/WHIP/K9 at the time of the slate
+
+# 3. Step-9-18 external-data backfills (~135 columns, idempotent + cached)
+.venv/bin/python scripts/backfill_game_externals.py                     # venue / umpire / catcher / attendance
+.venv/bin/python scripts/backfill_pitcher_boxscore.py                   # per-starter pitch count + outs + hits/R/ER/BB/SO/HR
+.venv/bin/python scripts/backfill_team_boxscore.py                      # per-team hits/HR/SO/BB/LOB/SB/errors
+.venv/bin/python scripts/backfill_game_meta.py                          # mound visits + ABS challenges
+.venv/bin/python scripts/backfill_player_externals.py                   # handedness / birth / debut / physicals
+.venv/bin/python scripts/backfill_pitcher_arsenal.py                    # pitch arsenal % per pitcher
+.venv/bin/python scripts/backfill_sprint_oaa.py                         # sprint speed + OAA per batter
+.venv/bin/python scripts/backfill_bat_tracking.py                       # bat-tracking metrics per batter
+.venv/bin/python scripts/backfill_weather_actuals.py                    # actual hourly weather (Open-Meteo Archive)
+.venv/bin/python scripts/backfill_standings.py                          # GB / run differential / streak / rank
+
+# 4. Verify
 .venv/bin/python scripts/validate_ingest.py --date YYYY-MM-DD           # lockstep + duplicate check
+.venv/bin/python scripts/audit_historical_corpus.py                     # full health report
 ```
 
-Each scraper / backfill ends with a hook that calls `app.core.historical_db.rebuild_from_csvs_and_export()` so `data/historical.db` and the on-disk CSVs stay in sync with no manual intervention.
+Step-3 backfills end with `app.core.historical_db.rebuild_from_csvs_and_export()` (CSV-first → DB rebuild from CSVs → re-export).  Step-9-18 backfills write SQLite directly and call `export_historical_csvs.export_all()` (DB-first → CSV refresh) — guarded by a `HISTORICAL_DB` env-var check so audit reproducibility runs against a tmp DB don't clobber `/data/`.
 
 The scraper requires `scraper/storage_state.json` (Playwright auth state). If it returns 401 or zero parseable games, refresh the auth state once interactively:
 

@@ -27,12 +27,23 @@ Figuring this out took 42 slates of real outcome data and several rounds of quar
 
 ## Data sources
 
+Live (T-65) pipeline:
+
 - **MLB Stats API** (`statsapi.mlb.com`) - schedule, rosters, season stats, batting order, game logs. Free, no key required.
 - **The Odds API** (`BO_ODDS_API_KEY`) - Vegas moneylines and over/under totals. Required. The pipeline will not run without it.
 - **Baseball Savant / Statcast** - exit velocity, barrel rate, hard-hit%, xwOBA, xBA, xSLG, xERA, xwOBA-against, FB velocity, induced vertical break, whiff%, chase%. Pulled via `pybaseball`.
 - **RotoWire** - expected batting lineups before the official MLB API posts them. Scrape-based, best-effort, typically available 2-4 hours before first pitch.
-- **Open-Meteo** - stadium weather per game (temperature, wind speed and direction).
-- **Real Sports** - 42+ slates of historical outcome data, scraped daily via `scripts/scrape_realsports_daily.py`. Used only for calibration, never as live pipeline inputs.
+- **Open-Meteo** (forecast) - stadium weather per game (temperature, wind speed and direction).
+- **Real Sports** - daily slate ingest scraped via `scripts/scrape_realsports_daily.py`. Used only for calibration, never as live pipeline inputs.
+
+Historical-corpus (calibration-only; back-population from public sources):
+
+- **MLB Stats API gumbo feed** (`/api/v1.1/game/{game_pk}/feed/live`) — per-game venue, umpire crew, attendance, duration, day/night, mound visits, ABS challenges, full per-team box-score line, per-pitcher detail (pitch count, IP, hits/runs/ER/BB/SO/HR allowed), bullpen aggregate.
+- **MLB Stats API people / standings** — per-player handedness, birth_date, debut_date, height, weight, country, position, jersey number; per-team standings snapshot at slate date (GB, run differential, streak, division rank, home/away record).
+- **Baseball Savant leaderboards** — pitcher pitch-arsenal usage % (FF/SI/FC/SL/ST/CU/KC/CH/FS/KN/SV), batter sprint speed + hp-to-first time, OAA + fielding runs prevented, bat-tracking metrics (avg bat speed, hard-swing rate, swing length, squared-up rate).
+- **Open-Meteo Archive API** — actual hourly weather at venue lat/lon at first-pitch time (temp, wind, humidity, precipitation, pressure, cloud cover) — distinct from the T-65 forecast captured at slate enrichment.
+
+The corpus stores ~135 external columns spanning all of the above per slate. See "Historical Corpus" below.
 
 > **Note on the Real Sports format:** Card boosts (0 to +3.0x) are additive to the slot multiplier and are revealed during the draft, not before. The optimizer ranks players purely on pre-game signals. Card boost is never an input to the model because it's not knowable before you draft.
 
@@ -188,6 +199,49 @@ filter_ev = env_factor x volatility_amplifier x trait_factor x stack_bonus x dnp
 
 ---
 
+## Historical Corpus
+
+`data/historical.db` is the canonical SQLite store backing every calibration sweep.  Five logical tables:
+
+| Table | Rows | Role |
+|---|---|---|
+| `slate` | 43 | One per slate envelope (date, game count, source, num_brawlers) |
+| `slate_game` | 551 | Per-game env signals + post-game outcomes — **160 columns** spanning Vegas, weather (forecast + actual), starter ERA/WHIP/K9/xERA, team OPS/K%/bullpen ERA/framing, standings snapshot (GB, run differential, streak, rank, home/away record), venue static (capacity, surface, roof, elevation, lat/lon, timezone, field dimensions), umpire crew, catcher mlb_id, attendance, day/night, mound visits, ABS challenges, full per-team box-score line, per-pitcher detail (pitch count, IP, hits/R/ER/BB/SO/HR allowed), bullpen aggregate. |
+| `player_slate` | 1644 | Per-(slate_date, mlb_id) identity + at-slate inputs — **60 columns** spanning OPS / ERA / WHIP / K9 at slate, platoon splits, batting-order slot, Statcast kinematics (xwOBA / xBA / xSLG / avg EV / hard-hit% / barrel% / max EV / FB velo / IVB / extension / whiff% / chase%), pitcher arsenal usage % per pitch type (FF/SI/FC/SL/ST/CU/KC/CH/FS/KN/SV) + dominant pitch, sprint speed + hp-to-first, OAA + fielding-runs-prevented, bat tracking (avg bat speed, hard-swing rate, swing length, squared-up rate, blast rate, swords count), plus stable per-player externals (handedness, birth_date, mlb_debut_date, height, weight, country, position, jersey). |
+| `player_game_log` | 12290 | Prior 10-game window per (slate_date, mlb_id) for `recent_form` / `hot_streak` calibration. |
+| `label_event` | 21945 | Outcome labels (typed, sourced, dated): `real_score`, `total_value`, `card_boost`, `drafts`, draft-shape rollups, three leaderboard membership flags (`highest_value` / `most_popular` / `most_drafted_3x`), `winning_lineup_slot` (per ranked lineup), `box_score` (HV-only post-game JSON), `most_common_slot`, `injury_status`. |
+
+**Architecture rule preserved:** the live runtime never reads outcome labels or any column with the word "outcome" in its docstring.  The only `app/` reader of the corpus is `app/core/popularity.py`, which queries `label_event` for the rolling 14-day `most_popular` index — a backward-looking aggregate of pre-game observables, not leakage of the current slate's outcome.  See `scripts/audit_live_isolation.py` for the carve-out.
+
+**Source-of-truth tooling:**
+
+```bash
+# Rebuild data/historical.db from the on-disk CSVs/JSON
+python scripts/build_historical_db.py --rebuild
+
+# Refresh the 5 derived /data/ exports from data/historical.db
+python scripts/export_historical_csvs.py
+
+# Run all 10 external backfills (idempotent; cache hits make re-runs fast)
+for s in scripts/backfill_game_externals.py \
+         scripts/backfill_pitcher_boxscore.py \
+         scripts/backfill_player_externals.py \
+         scripts/backfill_pitcher_arsenal.py \
+         scripts/backfill_team_boxscore.py \
+         scripts/backfill_weather_actuals.py \
+         scripts/backfill_sprint_oaa.py \
+         scripts/backfill_standings.py \
+         scripts/backfill_game_meta.py \
+         scripts/backfill_bat_tracking.py; do python "$s"; done
+
+# Run the comprehensive corpus audit (writes scripts/output/historical_corpus_audit.txt)
+python scripts/audit_historical_corpus.py
+```
+
+Per-source disk caches under `scripts/output/.*_cache/` make re-runs cheap — only newly-added slates hit the network.
+
+---
+
 ## API Endpoints
 
 All endpoints are under `/api/`.
@@ -262,6 +316,8 @@ app/
 |   +-- open_meteo.py       # Weather API client (temperature, wind)
 |   +-- statcast.py         # Baseball Savant kinematics
 |   +-- rotowire.py         # RotoWire daily-lineups parser
+|   +-- historical_db.py    # Historical-corpus SQLite schema + helpers
+|   +-- popularity.py       # Predicted-popularity / leverage signal (V14+)
 +-- models/
 |   +-- player.py           # Player, PlayerStats, PlayerGameLog, TeamSeasonStats
 |   +-- slate.py            # Slate, SlateGame, SlatePlayer
@@ -277,13 +333,15 @@ app/
     +-- data_collection.py  # MLB API + RotoWire data fetching
     +-- pipeline.py         # Fetch, Score, Rank orchestrator
 data/
-+-- historical_players.csv           # Master player ledger (42 slates, 1602 rows)
-+-- historical_winning_drafts.csv    # Top-ranked lineups, 5 slots per lineup
-+-- historical_slate_results.json    # Per-date slate envelope (game results, context)
-+-- hv_player_game_stats.csv         # Box scores for Highest Value players
++-- historical.db                    # Canonical SQLite store (5 tables) — see "Historical Corpus" below
++-- historical_players.csv           # Derived export: master player ledger (1644 rows)
++-- historical_winning_drafts.csv    # Derived export: top-ranked lineups, 5 slots per lineup
++-- historical_slate_results.json    # Derived export: per-date slate envelope (160-col game shape)
++-- historical_player_game_logs.csv  # Derived export: prior 10-game window per player
++-- hv_player_game_stats.csv         # Derived export: box scores for Highest Value players
 ```
 
-Current coverage: 2026-03-25 through 2026-05-06 (42 slates). All four files stay in lockstep.
+Current coverage: 2026-03-25 through 2026-05-07 (43 slates).  The 5 on-disk files are byte-stable derived exports of `data/historical.db` refreshed by every writer.
 
 ---
 
@@ -313,19 +371,34 @@ The script requires `GITHUB_PAT` in cloud secrets (for `gh` CLI and `git push` a
 
 ## Ingesting a New Slate
 
-The default daily ingest is automated via a Playwright scraper (`scripts/scrape_realsports_daily.py`) that captures the day's leaderboards (HV/MP/3X), top-20 winning lineups, and game results from Real Sports' internal JSON endpoints, then writes all four files in lockstep.
+The default daily ingest is automated via a Playwright scraper (`scripts/scrape_realsports_daily.py`) that captures the day's leaderboards (HV/MP/3X), top-20 winning lineups, and game results from Real Sports' internal JSON endpoints, writes them to `data/historical.db`, and refreshes the 5 derived /data/ exports.
 
 ```bash
-# scrape yesterday's results
+# scrape yesterday's slate (writes SQLite + refreshes CSVs/JSON)
 .venv-scraper/bin/python scripts/scrape_realsports_daily.py
 
-# enrich Vegas/weather/pitchers + box-score backfill from MLB API
+# enrich Vegas / weather forecast / starter ERA-WHIP-K9 / opp rest days
 .venv/bin/python scripts/backfill_slate_env_conditions.py
+
+# pull box-score detail + season-stats-at-slate snapshot
 .venv/bin/python scripts/backfill_slate_results_and_hv_stats.py
 .venv/bin/python scripts/backfill_player_season_stats_at_slate.py
 
-# verify lockstep + duplicates
+# back-populate the ~135 external-data columns (one pass; cache hits where possible)
+.venv/bin/python scripts/backfill_game_externals.py       # venue / umpire / catcher / attendance / duration
+.venv/bin/python scripts/backfill_pitcher_boxscore.py     # per-starter pitch count + outs + hits/R/ER/BB/SO/HR
+.venv/bin/python scripts/backfill_team_boxscore.py        # per-team hits/HR/SO/BB/LOB/SB/errors + innings_played
+.venv/bin/python scripts/backfill_player_externals.py     # handedness / birth / debut / physicals
+.venv/bin/python scripts/backfill_pitcher_arsenal.py      # per-pitcher pitch arsenal % via Savant
+.venv/bin/python scripts/backfill_sprint_oaa.py           # batter sprint speed + OAA via Savant
+.venv/bin/python scripts/backfill_bat_tracking.py         # bat speed / hard-swing rate via Savant
+.venv/bin/python scripts/backfill_weather_actuals.py      # actual hourly weather via Open-Meteo Archive
+.venv/bin/python scripts/backfill_standings.py            # GB / run differential / streak / rank
+.venv/bin/python scripts/backfill_game_meta.py            # mound visits + ABS challenges
+
+# verify lockstep + integrity
 .venv/bin/python scripts/validate_ingest.py --date YYYY-MM-DD
+.venv/bin/python scripts/audit_historical_corpus.py
 ```
 
 The scraper reads its auth from `scraper/storage_state.json` (gitignored). If the token expires, refresh it once interactively:
@@ -336,7 +409,7 @@ BO_REALSPORTS_PASSWORD=… .venv-scraper/bin/python scripts/scrape_realsports_da
 
 Manual fallback (screenshot capture + row-by-row append) is documented in CLAUDE.md §"Improved Ingest Process (V9.1)" for cases where the platform layout changes and breaks scraper selectors.
 
-The database does not store historical data. Appending to the four files in `/data/` is the entire ingest.
+The historical-corpus SQLite (`data/historical.db`) is the canonical store. The 5 on-disk CSV/JSON files are byte-stable derived exports refreshed by every writer; calibration scripts read SQLite directly via `app.core.historical_db.connect_readonly()`.
 
 ---
 
