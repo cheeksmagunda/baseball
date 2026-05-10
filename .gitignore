@@ -28,5 +28,4 @@ scripts/output/*
 .venv-scraper/
 scratch/
 scraper/storage_state.json
-FOR_JOHANNES.zip
 !scripts/output/historical_corpus_audit.txt
