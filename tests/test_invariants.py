@@ -333,6 +333,9 @@ class TestHistoricalSqliteSchemaContract:
             "arsenal_sl_pct", "arsenal_st_pct", "arsenal_cu_pct",
             "arsenal_kc_pct", "arsenal_ch_pct", "arsenal_fs_pct",
             "arsenal_kn_pct", "arsenal_sv_pct", "arsenal_dominant_pitch",
+            # Step 15: per-batter sprint + defensive metrics from Savant
+            "sprint_speed_fps", "hp_to_first_sec", "competitive_runs",
+            "outs_above_avg", "fielding_runs_prevented",
         },
         "player_game_log": {
             "rowid_seq", "slate_date", "mlb_id", "game_date",

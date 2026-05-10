@@ -301,6 +301,12 @@ CREATE TABLE IF NOT EXISTS player_slate (
     arsenal_kn_pct          REAL,
     arsenal_sv_pct          REAL,
     arsenal_dominant_pitch  TEXT,        -- the most-thrown pitch type
+    -- Step 15: per-batter sprint + defensive metrics from Savant.
+    sprint_speed_fps        REAL,        -- feet per second; ML average ~27
+    hp_to_first_sec         REAL,        -- home plate to first base time
+    competitive_runs        INTEGER,     -- # of high-effort runs that count
+    outs_above_avg          INTEGER,     -- season OAA, can be negative
+    fielding_runs_prevented INTEGER,     -- runs saved relative to average
     PRIMARY KEY (slate_date, mlb_id)
     -- game_pk is informational only; player_slate cannot foreign-key to
     -- slate_game because the latter's PK includes game_number (doubleheader
