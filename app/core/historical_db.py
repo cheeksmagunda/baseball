@@ -132,6 +132,41 @@ CREATE TABLE IF NOT EXISTS slate_game (
     loser                       TEXT,
     winner_score                INTEGER,
     loser_score                 INTEGER,
+    -- Step 9: external game-info from MLB Stats API live feed
+    attendance                  INTEGER,
+    game_duration_minutes       INTEGER,
+    day_night                   TEXT,
+    weather_condition           TEXT,
+    -- Step 9: venue static info (snapshotted per-game so the corpus survives
+    -- mid-season venue changes — e.g. Athletics moving to Sacramento mid-2025)
+    venue_id                    INTEGER,
+    venue_name                  TEXT,
+    venue_capacity              INTEGER,
+    venue_surface               TEXT,        -- 'Grass' / 'Turf'
+    venue_roof_type             TEXT,        -- 'Open' / 'Dome' / 'Retractable Roof'
+    venue_elevation_ft          INTEGER,
+    venue_latitude              REAL,
+    venue_longitude             REAL,
+    venue_timezone              TEXT,
+    venue_lf_line_ft            INTEGER,
+    venue_lf_ft                 INTEGER,
+    venue_lcf_ft                INTEGER,
+    venue_cf_ft                 INTEGER,
+    venue_rcf_ft                INTEGER,
+    venue_rf_ft                 INTEGER,
+    venue_rf_line_ft            INTEGER,
+    -- Step 9: umpire crew (HP umpire is the highest-leverage; capture all 4
+    -- so a future calibration sweep can profile crew interaction effects)
+    ump_hp_id                   INTEGER,
+    ump_hp_name                 TEXT,
+    ump_1b_id                   INTEGER,
+    ump_2b_id                   INTEGER,
+    ump_3b_id                   INTEGER,
+    -- Step 9: actual catcher IDs (the team-season framing aggregate is
+    -- already on home/away_team_framing_runs; this lets calibration ask
+    -- "did the team's elite framer actually catch this game?")
+    home_catcher_id             INTEGER,
+    away_catcher_id             INTEGER,
     PRIMARY KEY (slate_date, game_pk, game_number),
     FOREIGN KEY (slate_date) REFERENCES slate(slate_date)
 );

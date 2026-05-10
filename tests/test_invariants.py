@@ -272,6 +272,15 @@ class TestHistoricalSqliteSchemaContract:
             "wind_direction", "wind_direction_deg", "datetime_utc",
             "home_score", "away_score", "winner", "loser",
             "winner_score", "loser_score",
+            # Step 9: external game-info statics from MLB Stats API live feed
+            "attendance", "game_duration_minutes", "day_night", "weather_condition",
+            "venue_id", "venue_name", "venue_capacity", "venue_surface",
+            "venue_roof_type", "venue_elevation_ft", "venue_latitude",
+            "venue_longitude", "venue_timezone",
+            "venue_lf_line_ft", "venue_lf_ft", "venue_lcf_ft", "venue_cf_ft",
+            "venue_rcf_ft", "venue_rf_ft", "venue_rf_line_ft",
+            "ump_hp_id", "ump_hp_name", "ump_1b_id", "ump_2b_id", "ump_3b_id",
+            "home_catcher_id", "away_catcher_id",
         },
         "player_slate": {
             "slate_date", "mlb_id", "player_name", "team", "position",
