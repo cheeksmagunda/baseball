@@ -167,6 +167,36 @@ CREATE TABLE IF NOT EXISTS slate_game (
     -- "did the team's elite framer actually catch this game?")
     home_catcher_id             INTEGER,
     away_catcher_id             INTEGER,
+    -- Step 10: per-pitcher boxscore detail (post-game external).  IP is
+    -- expressed as outs_recorded so partial-inning math is clean (3 outs
+    -- per inning; "5.1 IP" → 16 outs).  Lets calibration ask "did this
+    -- starter get pulled early because of pitch count or because of game
+    -- script?" via the pitch_count vs outs_recorded ratio.
+    home_starter_pitch_count    INTEGER,
+    home_starter_outs_recorded  INTEGER,
+    home_starter_hits_allowed   INTEGER,
+    home_starter_runs_allowed   INTEGER,
+    home_starter_er_allowed     INTEGER,
+    home_starter_walks          INTEGER,
+    home_starter_strikeouts     INTEGER,
+    home_starter_hr_allowed     INTEGER,
+    away_starter_pitch_count    INTEGER,
+    away_starter_outs_recorded  INTEGER,
+    away_starter_hits_allowed   INTEGER,
+    away_starter_runs_allowed   INTEGER,
+    away_starter_er_allowed     INTEGER,
+    away_starter_walks          INTEGER,
+    away_starter_strikeouts     INTEGER,
+    away_starter_hr_allowed     INTEGER,
+    -- Step 10: per-team bullpen usage this game (relievers only — starter
+    -- excluded).  outs_recorded gives the workload; pitchers_used the
+    -- arm count.
+    home_bullpen_pitchers_used  INTEGER,
+    home_bullpen_outs_recorded  INTEGER,
+    home_bullpen_pitch_count    INTEGER,
+    away_bullpen_pitchers_used  INTEGER,
+    away_bullpen_outs_recorded  INTEGER,
+    away_bullpen_pitch_count    INTEGER,
     PRIMARY KEY (slate_date, game_pk, game_number),
     FOREIGN KEY (slate_date) REFERENCES slate(slate_date)
 );
